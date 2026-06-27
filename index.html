@@ -129,7 +129,7 @@ h1.title{font-size:34px;line-height:1.05;font-weight:800;margin:8px 0 0;letter-s
 .q-badge .pts{background:var(--bg2);border:1px solid var(--line);border-radius:99px;padding:2px 9px;font-weight:700;color:var(--text);font-variant-numeric:tabular-nums;}
 .start-hero{background:linear-gradient(160deg,var(--surface),var(--bg2));border:1px solid var(--line);border-radius:18px;padding:22px 20px;text-align:center;margin-bottom:14px;}
 .start-hero .big{font-size:15px;color:var(--muted);}
-.start-hero .pool{font-size:40px;font-weight:800;margin:6px 0 2px;font-variant-numeric:tabular-nums;}
+.start-hero .pool覆修{font-size:40px;font-weight:800;margin:6px 0 2px;font-variant-numeric:tabular-nums;}
 .start-hero .pool em{font-size:18px;color:var(--muted);font-style:normal;font-weight:600;}
 .start-hero .note{font-size:12px;color:var(--muted);margin-top:4px;}
 .result-sub{text-align:center;color:var(--muted);font-size:13px;margin-top:4px;}
@@ -181,7 +181,7 @@ h1.title{font-size:34px;line-height:1.05;font-weight:800;margin:8px 0 0;letter-s
 .axis-n{width:38px;text-align:right;font-size:13px;font-variant-numeric:tabular-nums;}
 .x-ai-card{background:linear-gradient(160deg,var(--surface),var(--bg2));border:1px solid var(--line);border-radius:14px;padding:16px;margin-top:14px;}
 .x-ai-card .ttl{font-size:12px;letter-spacing:.08em;color:var(--accent);font-weight:700;margin-bottom:10px;}
-.x-fb{font-size:14px;line-height:1.7;margin-top:6px;}
+.x-fb Pisplay{font-size:14px;line-height:1.7;margin-top:6px;}
 .x-fb .warn{color:var(--gold);}
 .x-aibar{display:flex;justify-content:space-between;align-items:center;font-size:12px;color:var(--muted);margin-top:16px;border-top:1px solid var(--line);padding-top:12px;}
 .x-aibar button{background:none;border:none;color:var(--accent);font-size:12px;font-weight:600;cursor:pointer;}
@@ -212,7 +212,7 @@ h1.title{font-size:34px;line-height:1.05;font-weight:800;margin:8px 0 0;letter-s
 .dc-tile{background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:14px 8px;text-align:center;position:relative;transition:transform .15s;}
 .dc-tile.on{border-color:var(--good);background:linear-gradient(160deg,var(--surface2),var(--surface));}
 .dc-tile.next{border-color:var(--accent);border-style:dashed;}
-.dc-tile.lock{opacity:.55;}
+.dc-tile.lock {opacity:.55;}
 .dc-ic{font-size:30px;line-height:1.1;filter:grayscale(0);}
 .dc-tile.lock .dc-ic{filter:grayscale(1);opacity:.6;}
 .dc-nm{font-size:12px;font-weight:700;margin-top:6px;line-height:1.3;}
@@ -246,7 +246,7 @@ h1.title{font-size:34px;line-height:1.05;font-weight:800;margin:8px 0 0;letter-s
     <h1 class="title">Azure 基礎<br>問題集</h1>
   </div>
   <div id="app" class="page"></div>
-  <div class="foot">スコアはこの端末に保存されます · 合格ライン 700点</div>
+  <div class="foot">スコアは同期されています · 合格ライン 700点</div>
 </div>
 
 <script>
@@ -254,15 +254,6 @@ const PASS = 700, HKEY = "az900_history_v1", L = ["A","B","C","D","E"];
 const DRAW = 45;                                  // 1回の出題数
 const IMP_POINTS = {1:15, 2:18, 3:21, 4:24, 5:27}; // 重要度 → 配点
 
-/* =========================================================================
-   問題プール（ここに追加していけば自動でランダム出題の対象になります）
-   imp  = 重要度(1〜5)。配点は IMP_POINTS で決定。
-   a    = 単一選択の正解インデックス
-   c    = 複数選択の正解インデックス配列（指定があれば複数選択問題）
-   毎回プールから DRAW 問をランダム抽出し、最終スコアは
-   「獲得した点 ÷ その回の満点 × 1000」で1000点満点に正規化します。
-   複数選択は「正答1つ＝配点/正答数」、誤答1つにつき同額を減点（0点未満は0）。
-   ========================================================================= */
 const Q = [
  {id:1,imp:1,q:"サードパーティのクラウドプロバイダーが構築・管理し、インターネット経由で誰でもリソースを使用できるクラウド展開モデルは何ですか？",o:["プライベート クラウド","パブリック クラウド","ハイブリッド クラウド","マルチ クラウド"],a:1,e:"パブリッククラウドはサードパーティが所有・管理し、誰でも利用できるモデルです。"},
  {id:2,imp:1,q:"クラウドサービスを使用する際の、使った分だけ継続的に支払う運用コスト（OpEx）の課金モデルを何と呼びますか？",o:["資本支出 (CapEx)","リース モデル","従量課金モデル","前払いモデル"],a:2,e:"使った分だけ支払う運用コスト型の課金が従量課金モデルです。CapExは初期投資です。"},
@@ -278,7 +269,7 @@ const Q = [
  {id:12,imp:3,c:[2,4],q:"共有責任モデルでIaaSを使用する場合に、プロバイダーではなく「顧客」が管理責任を負うものを2つ選択してください。",o:["物理データセンターのセキュリティ","物理ネットワークの維持","オペレーティング システム (OS) の更新とパッチ適用","物理ホストサーバーの保守","アプリケーションとデータの管理"],e:"IaaSでは物理層はプロバイダー責任。OSの更新（C）とアプリ・データ管理（E）は顧客の責任です。"},
  {id:13,imp:3,c:[2,3],q:"Blob Storageのアクセス層のうち、アクセス頻度が低く長期保管（90日以上/180日以上）向けでコストを抑えられる層を2つ選択してください。",o:["ホット アクセス層","クール アクセス層","コールド アクセス層","アーカイブ アクセス層","プレミアム アクセス層"],e:"コールド層は90日以上、アーカイブ層は180日以上の長期保管向けで保存コストが低く設定されています。"},
  {id:14,imp:3,c:[0,2,4],q:"クラウド コンピューティングを利用する主なメリットを3つ選択してください。",o:["高可用性","ハードウェアの資本支出 (CapEx) の増加","スケーラビリティ","オンプレミスの物理サーバーの自社管理","予測可能なパフォーマンスとコスト（従量課金制）"],e:"クラウドは高可用性・スケーラビリティ・従量課金によるコスト予測をもたらします。B・Dはクラウドが解消する課題です。"},
- {id:15,imp:3,c:[0,1,2],q:"Azure 仮想ネットワーク (VNet) で、トラフィックをフィルター処理またはルーティングするために使う機能を3つ選択してください。",o:["ネットワーク セキュリティ グループ (NSG)","ユーザー定義ルート (UDR)","ネットワーク仮想アプライアンス (NVA)","Azure Service Health","Azure Key Vault"],e:"NSG（フィルター）、UDR（ルーティング）、NVA（高度な処理）で制御します。D・Eはネットワーク制御の機能ではありません。"},
+ {id:15,imp:3,c:[0,2,4],q:"Azure 仮想ネットワーク (VNet) で、トラフィックをフィルター処理またはルーティングするために使う機能を3つ選択してください。",o:["ネットワーク セキュリティ グループ (NSG)","ユーザー定義ルート (UDR)","ネットワーク仮想アプライアンス (NVA)","Azure Service Health","Azure Key Vault"],e:"NSG（フィルター）、UDR（ルーティング）、NVA（高度な処理）で制御します。D・Eはネットワーク制御 of 機能ではありません。"},
  {id:16,imp:3,c:[0,1,2,3],q:"Azureの管理インフラを構成し、リソースの整理やアクセス制御の境界となるレベル（スコープ）をすべて選択してください。",o:["管理グループ","サブスクリプション","リソース グループ","リソース"],e:"管理階層は「管理グループ→サブスクリプション→リソースグループ→リソース」の4レベル。すべてがスコープになります。"},
  {id:17,imp:3,c:[1,3],q:"Azure Advisor がベストプラクティスを提案する際の「5つのカテゴリ」に含まれるものを2つ選択してください。",o:["コンプライアンス","コスト","スケーラビリティ","セキュリティ","ライセンス"],e:"5カテゴリは信頼性・セキュリティ・パフォーマンス・オペレーショナルエクセレンス・コスト。該当はコストとセキュリティです。"},
  {id:18,imp:3,c:[0,1,2],q:"「ゼロ トラスト セキュリティ モデル」を構成する3つの基本原則を選択してください。",o:["明示的に検証する","最小限の特権アクセスを使用する","侵害を想定する","パスワードのみの認証を必須とする","内部ネットワークは常に安全であるとみなす"],e:"3原則は「明示的に検証」「最小限の特権アクセス」「侵害を想定」。D・Eはゼロトラストが否定する考え方です。"},
@@ -312,13 +303,13 @@ const Q = [
  {id:46,imp:1,q:"トラフィックのピークなど需要が増加した際にリソース（VM等）の数を増やし、減少時に減らすスケーリング手法を何と呼びますか？",o:["垂直スケーリング","水平スケーリング","負荷分散","予測可能性"],a:1,e:"リソースの「数」を増減するのは水平スケーリング（スケールアウト/イン）。垂直は1台の性能増減です。"},
  {id:47,imp:1,q:"顧客が最も多くの責任を負い、OS・ネットワーク構成・データベースの管理などを顧客自身が行うサービスモデルはどれですか？",o:["SaaS","PaaS","IaaS","DaaS"],a:2,e:"IaaSは物理インフラのみをプロバイダーが管理し、OS以降を顧客が管理するため責任範囲が最も大きいモデルです。"},
  {id:48,imp:1,q:"需要減少時にリソースをオフにし無駄な消費を減らして最適化することで、コスト効率と環境への影響を軽減できるクラウドの利点は？",o:["予測可能性","高可用性","アジリティ","持続可能性"],a:3,e:"無駄を省き環境負荷も軽減する利点が持続可能性（サステナビリティ）。アジリティは迅速な展開能力です。"},
- {id:49,imp:1,q:"電子メールや経費追跡など、完全に開発されたアプリをプロバイダーが提供・管理するサービスモデルは何ですか？",o:["IaaS","PaaS","SaaS","CaaS"],a:2,e:"完成済みアプリをそのまま利用できるのがSaaS。PaaSは開発環境、CaaSはコンテナー実行基盤です。"},
+ {id:49,imp:1,q:"電子メールや経費追跡など、完全に開発されたアプリをプロバイダーが提供・管理するサービスモデルは何ですか？",o:["IaaS","PaaS","SaaS","CaaS"],a:2,e:"SaaSは完成済みアプリを利用するモデルで、クラウドベースの電子メールやメッセージングが代表例です。"},
  {id:50,imp:1,q:"使用量をリアルタイムで追跡し、データ分析で将来の支出を予測できるというクラウドの財務上のメリットはどれに関連しますか？",o:["セキュリティとガバナンス","コストの予測可能性","スケーラビリティ","パフォーマンスの予測可能性"],a:1,e:"使用量の追跡と分析で支出を見通せるのはコストの予測可能性です。"},
  {id:51,imp:2,q:"回復性のため、同じリージョン内で独立した電源・冷却・ネットワークを持つ物理的に分離されたデータセンターの集合を何と呼びますか？",o:["リージョン ペア","ソブリン リージョン","可用性ゾーン","更新ドメイン"],a:2,e:"リージョン内で独立インフラを持つ分離されたDC群が可用性ゾーンです。"},
  {id:52,imp:2,q:"政府機関など厳格なコンプライアンス要件のため、物理的・論理的に分離されたネットワーク上に存在するAzureの特別なインスタンスは？",o:["パブリック クラウド","ハイブリッド クラウド","エッジ ロケーション","ソブリン リージョン"],a:3,e:"政府向けなどのために分離されたAzureの特別なインスタンスがソブリンリージョンです。"},
  {id:53,imp:2,q:"Azure仮想マシンの「Bシリーズ」は、どのようなワークロードに最適ですか？",o:["メモリ内データベース","CPUスパイクが時折発生するバースト可能なワークロード","高スループットのデータ処理","AIトレーニングと推論"],a:1,e:"Bシリーズは普段CPU使用が低く時折スパイクする、バースト可能なワークロードに最適です。"},
  {id:54,imp:2,q:"言語・音声・ビジョンなどの機能を、独自モデルのトレーニングなしにAPI経由でアプリに追加できるAzureのサービスカテゴリは？",o:["Azure Machine Learning","Azure AI サービス","Azure IoT Hub","Azure Functions"],a:1,e:"事前構築済みのAI機能をAPIで追加できるのがAzure AI サービス。MLは独自モデルの開発向けです。"},
- {id:55,imp:2,q:"クラウドサービスと多数のIoTデバイス間で、セキュリティで保護された双方向通信を可能にするAzureのサービスはどれですか？",o:["Azure IoT Hub","Azure IoT Central","Azure IoT Edge","Azure Sphere"],a:0,e:"クラウドと多数のデバイス間のセキュアな双方向通信を担う中核がAzure IoT Hubです。"},
+ {id:55,imp:2,q:"クラウドサービスと多数のIoTデバイス間で、セキュリティで保護された双方向通信を可能にするAzureのサービスはどれですか？",o:["Azure IoT Hub","Azure IoT Central","Azure IoT Edge","Azure Sphere"],a:0,e:"クラウドと多数 of デバイス間のセキュアな双方向通信を担う中核がAzure IoT Hubです。"},
  {id:56,imp:2,q:"基盤インフラを管理せず、自動スケーリングと高可用性を備えたWebアプリやRESTful APIをホストするためのサービスは？",o:["Azure Virtual Machines","Azure App Service","Azure Container Instances","Azure Batch"],a:1,e:"インフラ管理不要で自動スケールと高可用性を備えWebアプリ/APIをホストするのがAzure App Serviceです。"},
  {id:57,imp:3,c:[1,2],q:"多層防御モデルの「境界」層で実装される主なセキュリティ対策を2つ選択してください。",o:["Azure Key Vault による暗号化キーの保護","DDoS 保護による大規模攻撃のフィルタリング","境界ファイアウォールによる悪意ある攻撃の識別と警告","リソース間通信を制限する NSG","OSへの修正プログラムの適用"],e:"境界層ではDDoS保護（B）と境界ファイアウォール（C）。NSGはネットワーク層、パッチはコンピューティング層です。"},
  {id:58,imp:3,c:[1,3],q:"Microsoft Entra ID がサポートする「パスワードレス認証」のオプションを2つ選択してください。",o:["Azure Active Directory","FIDO2 セキュリティ キー","SMS ベースの認証コード","Microsoft Authenticator アプリ","セキュリティの質問"],e:"パスワードレスはFIDO2セキュリティキー（B）、Authenticatorアプリ（D）、Windows Hello for Business。SMSや質問は主要手段ではありません。"},
@@ -327,7 +318,7 @@ const Q = [
  {id:61,imp:3,c:[1,2],q:"Microsoft Cost Management の「コスト アラート」によって生成される可能性のあるアラートの種類を2つ選択してください。",o:["異常アラート","予算アラート","クレジット アラート","セキュリティ アラート","可用性アラート"],e:"コストアラートは予算アラート（B）、クレジットアラート（C）、部門の支出クォータアラート。セキュリティ/可用性は別系統です。"},
  {id:62,imp:3,c:[0,2,3],q:"Azure リソースとやり取りし「クラウドでの管理」を行うために使える主要なツールやインターフェイスを3つ選択してください。",o:["Azure portal","Azure Active Directory","Azure PowerShell","Azure コマンド ライン インターフェイス (CLI)","Azure Policy"],e:"管理にはportal（A）、PowerShell（C）、CLI（D）などを使用。Azure ADはID管理、Policyはガバナンスの仕組みです。"},
  {id:63,imp:3,c:[1,2,3],q:"Microsoft が推奨する「ゼロ トラスト セキュリティ モデル」の土台となる3つの基本原則を選択してください。",o:["境界ネットワークの信頼","明示的に検証する","侵害を想定する","最小限の特権アクセスを使用する","パスワードレス認証を必須とする"],e:"3原則は明示的に検証（B）・侵害を想定（C）・最小限の特権アクセス（D）。境界の信頼はゼロトラストが否定します。"},
- {id:64,imp:3,c:[0,1,3],q:"Azure Service Health が正常性の把握のために提供する3つのビューを選択してください。",o:["Azure Status","Service Health","Azure Advisor","Resource Health","Azure Metrics"],e:"3ビューはAzure Status（A）・Service Health（B）・Resource Health（D）。Advisorは推奨、Metricsは監視指標です。"},
+ {id:64,imp:3,c:[0,1,2],q:"Azure Service Health が正常性の把握のために提供する3つのビューを選択してください。",o:["Azure Status","Service Health","Azure Advisor","Resource Health","Azure Metrics"],e:"3ビューはAzure Status（A）・Service Health（B）・Resource Health（D）。Advisorは推奨、Metricsは監視指標です。"},
  {id:65,imp:3,c:[0,1,2,3],q:"Azure Storage アカウント (Standard 汎用 v2) 内で利用できる「コア データ サービス」を4つ選択してください。",o:["Azure BLOB","Azure Files","Azure キュー (Queue Storage)","Azure テーブル (Table Storage)","Azure Key Vault"],e:"汎用v2のコアデータサービスはBlob・Files・Queue・Tableの4つ。Key Vaultは機密情報管理で含まれません。"},
  {id:66,imp:3,c:[0,1,2,3],q:"Azure Blob Storage で、アクセス頻度や保管期間に応じてコストを最適化するために利用できる「アクセス層」を4つ選択してください。",o:["ホット アクセス層","クール アクセス層","コールド アクセス層","アーカイブ アクセス層","プレミアム アクセス層"],e:"アクセス層はホット・クール・コールド・アーカイブの4つ。プレミアムは性能層であり、この枠組みには含まれません。"},
  {id:67,imp:4,q:"リージョン全体に影響する災害に備え、Azureの「リージョン ペア」は同じ地域内で少なくともどれくらい離れて設定されていますか？",o:["100 マイル","300 マイル","500 マイル","1000 マイル"],a:1,e:"リージョンペアは自然災害等に備え、少なくとも300マイル離れて設定されています。"},
@@ -390,7 +381,7 @@ const Q = [
  {id:124,imp:4,q:"データの自動検出・機密データの分類・データ系列の追跡を提供する「Microsoft Purview」の2つの主要なソリューション領域は？",o:["脅威の検出 と インシデント対応","コスト管理 と パフォーマンス最適化","リスクとコンプライアンス と 統合データ ガバナンス","ID管理 と アクセス制御"],a:2,e:"Microsoft Purviewは「リスクとコンプライアンス」と「統合データガバナンス」の2領域で構成されます。"},
  {id:125,imp:4,q:"Azure ExpressRouteを利用していても「パブリックインターネットを経由して送信されるトラフィック」の例として正しいものは？",o:["Azure Virtual Machines への RDP 接続","Azure Storage へのデータ バックアップ","DNS クエリ、証明書失効リストのチェック、Azure CDN 要求","オンプレミスデータベースから Azure SQL への同期"],a:2,e:"ExpressRoute利用時でも、DNSクエリ・証明書失効リスト(CRL)チェック・Azure CDN要求はパブリックインターネット経由で送信されます。"},
  {id:126,imp:5,q:"Azureの「ソブリン リージョン」のうち、Microsoftが直接管理せず21Vianetとのパートナーシップで運営されているリージョンはどこですか？",o:["US DoD Central","US Gov バージニア","ドイツ中部","中国東部および中国北部"],a:3,e:"中国東部・中国北部などのリージョンは21Vianetとのパートナーシップで運営され、Microsoftが直接管理しません。"},
- {id:127,imp:5,q:"VNet内で、サブネット間のトラフィックのルーティング方法を制御し、デフォルト設定をオーバーライドするために作成するリソースは？",o:["カスタム ルート テーブル","ネットワーク セキュリティ グループ (NSG)","アプリケーション セキュリティ グループ (ASG)","Azure DNS"],a:0,e:"既定のルーティングをオーバーライドして経路を制御するにはカスタムルートテーブル(UDR)を作成します。NSGはフィルタリングです。"},
+ {id:127,imp:5,q:"親VNet内で、サブネット間のトラフィックのルーティング方法を制御し、デフォルト設定をオーバーライドするために作成するリソースは？",o:["カスタム ルート テーブル","ネットワーク セキュリティ グループ (NSG)","アプリケーション セキュリティ グループ (ASG)","Azure DNS"],a:0,e:"既定のルーティングをオーバーライドして経路を制御するにはカスタムルートテーブル(UDR)を作成します。NSGはフィルタリングです。"},
  {id:128,imp:5,q:"Azure VPNゲートウェイで、2インスタンスに一意のパブリックIPを割り当て、両IPへ別トンネルを作りBGPでトラフィックを分散する構成は？",o:["アクティブ/スタンバイ構成","アクティブ/アクティブ構成","ゾーン冗長構成","ExpressRoute フェールオーバー構成"],a:1,e:"各インスタンスに一意のパブリックIPを割り当て、複数トンネルとBGPで分散するのはアクティブ/アクティブ構成です。"},
  {id:129,imp:5,q:"Azure Filesで、SMBとNFSの「両方」のファイル共有をサポートする必要がある場合に使用すべきアカウントの種類は？",o:["Standard 汎用 v2","Premium ブロック BLOB","Premium ファイル共有","Premium ページ BLOB"],a:2,e:"SMBとNFSの両方のファイル共有をサポートするにはPremium ファイル共有アカウントを使用します。"},
  {id:130,imp:5,q:"「Azure Security Centerでの監視を有効にする」という組み込みのイニシアティブには、およそいくつの個別のポリシー定義が含まれますか？",o:["約 5 個","約 20 個","約 50 個","100 を超える"],a:3,e:"このイニシアティブには100を超える個別のポリシー定義が含まれ、多数のセキュリティ設定をまとめて適用・追跡できます。"},
@@ -398,10 +389,32 @@ const Q = [
  {id:132,imp:5,q:"Azure Service Healthが、過去のインシデントを確認し定期的な停止の「傾向を特定する」ために保持しているものは何ですか？",o:["Azure Status のグローバル マップ","履歴アラート","Azure Advisor の推奨事項","Microsoft Defender for Cloud のセキュリティ スコア"],a:1,e:"過去のインシデントを振り返り定期的な停止の傾向を把握するために保持されるのが履歴アラートです。"},
  {id:133,imp:5,q:"スタンドアロンアプリ「Azure Storage Explorer」が、バックエンドですべてのファイルやBLOBの管理タスクを処理するために使用しているツールは？",o:["Azure CLI","Azure PowerShell","Azure File Sync","AzCopy"],a:3,e:"Storage ExplorerはGUIを提供しますが、バックエンドのファイルやBLOBの転送・管理にはAzCopyを使用しています。"},
  {id:134,imp:5,q:"ブラウザベースの「Azure Cloud Shell」のセキュリティとアクセスの特徴として正しい説明はどれですか？",o:["ローカルの管理者権限がなければ起動できない","利用するたびにSSHキーを手動でアップロードする必要がある","Azure資格情報に対して自動的に認証されるため、ログインすると自身のアクセス許可が本質的に認識される","完全に匿名でのリソース管理アクセスを許可する"],a:2,e:"Cloud ShellはAzure資格情報に対して自動的に認証されるため、ログインするだけで自身のアクセス許可が反映された状態で使えます。"},
- {id:135,imp:5,q:"EA契約で、Azure前払い(年額コミットメント)の残高が一定割合に達した際に自動通知される「クレジット アラート」は、残高が何％で発報されますか？",o:["50% と 75%","70% と 80%","90% と 100%","100% の超過時のみ"],a:2,e:"EA向けのクレジットアラートはAzure前払い残高の90%および100%が消費された時点で自動生成され、メールで通知されます。"},
+ {id:135,imp:5,q:"EA契約で、Azure前払い(年額コミットメント)の残高が一定割合に達した際に自動通知される「クレジット アラート」は、残高が何％で発報されますか％",o:["50% と 75%","70% と 80%","90% と 100%","100% の超過時のみ"],a:2,e:"EA向けのクレジットアラートはAzure前払い残高の90%および100%が消費された時点で自動生成され、メールで通知されます。"},
 ];
 
 let S = {screen:"home", deck:[], idx:0, picks:[], sel:[], revealed:false, last:null};
+
+// ▼▼▼ 【ここからオンライン連動用のグローバル変数と関数】 ▼▼▼
+let db = null;
+let currentUserId = null;
+let syncCallback = null; // クラウドからデータが降ってきたら画面を再描写する用
+
+// クラウド（Firebase）へのデータ保存関数
+async function saveToCloud(bp, wrongList, historyList) {
+  if (!db || !currentUserId) return;
+  try {
+    await window.FirebaseSync.setDoc(window.FirebaseSync.doc(db, "users", currentUserId), {
+      bp: bp,
+      wrong: wrongList,
+      history: historyList,
+      updatedAt: new Date().toISOString()
+    }, { merge: true });
+    console.log("Cloud synced successfully.");
+  } catch(e) {
+    console.error("Cloud sync failed:", e);
+  }
+}
+// ▲▲▲ 【ここまでオンライン連動用】 ▲▲▲
 
 function loadHist(){ try{ return JSON.parse(localStorage.getItem(HKEY)) || []; }catch(e){ return []; } }
 const WRONGKEY="az900_wrong";
@@ -416,7 +429,6 @@ function stars(n){ return "★".repeat(n)+"☆".repeat(5-n); }
 function isMulti(q){ return Array.isArray(q.c); }
 function correctSet(q){ return isMulti(q) ? q.c : [q.a]; }
 
-// 1問の採点：{earned, full}
 function grade(q, sel){
   const W = pts(q);
   if(!isMulti(q)){ const ok = sel && sel[0]===q.a; return {earned: ok?W:0, full: ok}; }
@@ -447,7 +459,7 @@ function pick(i){
   else { S.sel=[i]; }
   render();
 }
-function commit(){            // 試験モード：正誤は出さず次へ進む
+function commit(){
   if(!S.sel.length) return;
   S.picks.push(S.sel.slice());
   if(S.idx+1 < S.deck.length){ S.idx++; S.sel=[]; render(); }
@@ -457,28 +469,43 @@ function finish(){
   let earned=0, total=0, correct=0;
   S.deck.forEach((q,i)=>{ total+=pts(q); const g=grade(q,S.picks[i]); earned+=g.earned; if(g.full)correct++; });
   const score = total ? Math.round(earned/total*1000) : 0;
-  // 復習リストの更新：間違えた問題を登録、正解できた問題は克服として除外
+  
   const wrong=new Set(loadWrong());
   S.deck.forEach((q,i)=>{ if(grade(q,S.picks[i]).full) wrong.delete(q.id); else wrong.add(q.id); });
-  saveWrong([...wrong]);
-  // データセンター育成：スコアをビルドポイント(BP)として加算
+  const wrongList = [...wrong];
+  saveWrong(wrongList);
+  
   const prevBp = getBP();
   const newBp = prevBp + score;
   setBP(newBp);
+  
   const unlocked = TIERS.filter(t=>t.bp>prevBp && t.bp<=newBp).map(t=>t.icon+" "+t.name);
   const entry = {id:Date.now(), date:new Date().toISOString(), modeLabel:(S.review?"復習":"ランダム")+S.deck.length+"問",
                  correct, total:S.deck.length, score, earned:Math.round(earned), totalPts:total,
                  bpGain:score, bpTotal:newBp, unlocked, review:!!S.review};
-  const h=[entry,...loadHist()].slice(0,50); saveHist(h);
+  const h=[entry,...loadHist()].slice(0,50); 
+  saveHist(h);
+  
+  // クラウドに即時同期
+  saveToCloud(newBp, wrongList, h);
+  
   S.last=entry; S.screen="result"; render();
 }
 function go(s){ S.screen=s; render(); }
-function clearHist(){ if(confirm("履歴をすべて消去しますか？")){ saveHist([]); render(); } }
+function clearHist(){ 
+  if(confirm("履歴をすべて消去しますか？")){ 
+    saveHist([]); 
+    saveWrong([]);
+    setBP(0);
+    saveToCloud(0, [], []);
+    render(); 
+  } 
+}
 
 const app = document.getElementById("app");
 
 function render(){
-  if(S.screen==="home") return renderHome();
+  if(S.screen Pacitive === "home") return renderHome();
   if(S.screen==="quiz") return renderQuiz();
   if(S.screen==="result") return renderResult();
   if(S.screen==="review") return renderReview();
@@ -636,9 +663,6 @@ function renderHistory(){
   app.querySelector("[data-clear]").onclick=clearHist;
 }
 
-
-/* ======================= 用語辞典のデータ ======================= */
-/* 各用語: t=用語, m=説明（定義）, k=重要ポイント */
 const CONCEPTS = [
  {t:"IaaS（サービスとしてのインフラストラクチャ）",k:[{l:"インフラをプロバイダーが提供",s:["インフラ","仮想マシン","ストレージ","ネットワーク"]},{l:"OS以降はユーザーが管理",s:["os","オペレーティング","ユーザーが管理","顧客が管理"]},{l:"最も柔軟・制御範囲が広い",s:["柔軟","制御","コントロール"]}],m:"IaaSは、仮想マシン・ストレージ・ネットワークなどの物理インフラをクラウドが提供し、OSやアプリは利用者が管理するモデル。制御範囲が最も広く柔軟で、既存環境の移行に向く。"},
  {t:"PaaS（サービスとしてのプラットフォーム）",k:[{l:"開発・実行環境を提供",s:["プラットフォーム","開発環境","実行環境","ミドルウェア"]},{l:"OS等の管理が不要",s:["os","管理不要","管理しない"]},{l:"アプリ開発に集中できる",s:["アプリ開発","開発に集中","開発に専念"]}],m:"PaaSは、OSやミドルウェア・開発基盤までクラウドが管理し、利用者はアプリ開発に専念できるモデル。インフラ管理の手間を省ける。"},
@@ -673,7 +697,7 @@ const CONCEPTS = [
  {t:"Azure ExpressRoute",k:[{l:"専用のプライベート接続",s:["専用","プライベート","専用線"]},{l:"インターネットを経由しない",s:["インターネット","経由しない","バイパス"]}],m:"ExpressRouteは、専用線を介してオンプレミスとAzureをパブリックインターネットを経由せず接続するサービス。高速で安定したプライベート接続を実現する。"},
  {t:"VPN ゲートウェイ",k:[{l:"暗号化トンネルで接続",s:["暗号化","トンネル","ipsec"]},{l:"サイト間/ポイント対サイト",s:["サイト間","ポイント対サイト","拠点"]}],m:"VPNゲートウェイは、インターネット上に暗号化トンネルを張ってオンプレミスとAzureを接続する。拠点全体のサイト間や、個別端末のポイント対サイトがある。"},
  {t:"ARM テンプレート",k:[{l:"JSON形式",s:["json"]},{l:"宣言的にデプロイ（IaC）",s:["宣言","iac","コードとして","インフラ"]}],m:"ARMテンプレートは、AzureリソースをJSONで宣言的に定義してデプロイする、コードとしてのインフラ(IaC)の仕組み。デプロイ前に検証される。"},
- {t:"Bicep",k:[{l:"ARMより簡潔な構文",s:["簡潔","シンプル","arm"]},{l:"宣言的IaC",s:["宣言","iac","コードとして"]}],m:"Bicepは、ARMテンプレート(JSON)より簡潔な構文でAzureリソースを宣言的にデプロイできるMicrosoft独自の言語。最終的にARMに変換される。"},
+ {t:"Bicep",k:[{l:"ARMより簡潔な構文",s:["簡潔","シンプル","arm"]},{l:"宣言型IaC",s:["宣言","iac","コードとして"]}],m:"Bicepは、ARMテンプレート(JSON)より簡潔な構文でAzureリソースを宣言的にデプロイできるMicrosoft独自の言語。最終的にARMに変換される。"},
  {t:"予約（Reservations）",k:[{l:"1年/3年コミット",s:["1年","3年","コミット","契約"]},{l:"大幅な割引",s:["割引","安く","削減"]}],m:"予約は、特定のリソースを1年または3年使うとコミットすることで、従量課金より大幅な割引を受けられるコスト最適化オプション。"},
  {t:"スポット仮想マシン（Spot VM）",k:[{l:"未使用容量を割引利用",s:["未使用","余剰","割引","安い"]},{l:"中断される可能性",s:["中断","削除","退避"]}],m:"スポットVMは、Azureの未使用容量を大幅割引で使える代わりに、容量が必要になると中断され得るVM。中断可能なバッチ処理などに向く。"},
  {t:"Azure 節約プラン",k:[{l:"1時間あたりの支出をコミット",s:["1時間","時間あたり","支出","コミット"]},{l:"VMファミリに縛られず柔軟",s:["柔軟","縛られず","ファミリ"]}],m:"コンピューティングのAzure節約プランは、1時間あたりの支出額を1年/3年コミットすることで、特定のVMに縛られず柔軟に割引を適用するモデル。"},
@@ -687,7 +711,7 @@ const CONCEPTS = [
  {t:"Azure Functions",k:[{l:"サーバーレス",s:["サーバーレス","serverless"]},{l:"イベントで関数を実行",s:["イベント","トリガー","関数","コード実行"]}],m:"Azure Functionsは、インフラを意識せずイベントをトリガーにコードを実行できるサーバーレスサービス。使った分だけ課金される。"},
 ];
 
-let dictSort = "theme"; // theme | aiueo
+let dictSort = "theme";
 
 function renderDict(){
   const items = CONCEPTS.map((c,i)=>({c,i}));
@@ -725,7 +749,6 @@ function renderDict(){
   window.scrollTo(0,0);
 }
 
-/* ======================= データセンター育成 ======================= */
 const BPKEY="az900_bp";
 function getBP(){ const v=parseInt(localStorage.getItem(BPKEY)||"0",10); return isNaN(v)?0:v; }
 function setBP(v){ try{ localStorage.setItem(BPKEY, String(v)); }catch(e){} }
@@ -810,15 +833,12 @@ function renderDC(){
 
 render();
 </script>
-  <script type="module">
-  // Import the functions you need from the SDKs you need
-  import { initializeApp } from "https://www.gstatic.com/firebasejs/12.15.0/firebase-app.js";
-  import { getAnalytics } from "https://www.gstatic.com/firebasejs/12.15.0/firebase-analytics.js";
-  // TODO: Add SDKs for Firebase products that you want to use
-  // https://firebase.google.com/docs/web/setup#available-libraries
 
-  // Your web app's Firebase configuration
-  // For Firebase JS SDK v7.20.0 and later, measurementId is optional
+<script type="module">
+  import { initializeApp } from "https://www.gstatic.com/firebasejs/10.0.0/firebase-app.js";
+  import { getFirestore, doc, setDoc, getDoc, onSnapshot } from "https://www.gstatic.com/firebasejs/10.0.0/firebase-firestore.js";
+  import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.0.0/firebase-auth.js";
+
   const firebaseConfig = {
     apiKey: "AIzaSyCg3zD2xkq_3e5MclG9YK_uVqVzWulO9Ws",
     authDomain: "my-az900-app.firebaseapp.com",
@@ -829,9 +849,44 @@ render();
     measurementId: "G-4E16HLF386"
   };
 
-  // Initialize Firebase
-  const app = initializeApp(firebaseConfig);
-  const analytics = getAnalytics(app);
+  // 他の関数から呼び出せるようにwindowオブジェクトに登録
+  window.FirebaseSync = { doc, setDoc };
+
+  // Initialize
+  const fbApp = initializeApp(firebaseConfig);
+  db = getFirestore(fbApp);
+  const auth = getAuth(fbApp);
+
+  // 匿名サインインを実行（パスワード不要で端末固有のIDを裏で作る）
+  signInAnonymously(auth).catch((error) => {
+    console.error("Anonymous auth failed:", error);
+  });
+
+  // ログイン状態を監視 ＆ クラウド上のデータをリアルタイム同期
+  onAuthStateChanged(auth, (user) => {
+    if (user) {
+      currentUserId = user.uid;
+      console.log("Logged in as online user:", currentUserId);
+
+      // クラウドのデータを見張るアンテナ（リアルタイム同期開始）
+      onSnapshot(doc(db, "users", currentUserId), (docSnap) => {
+        if (docSnap.exists()) {
+          const data = docSnap.data();
+          console.log("Cloud data downloaded:", data);
+          
+          // クラウドの値をスマホのローカルデータに反映（上書き）
+          if (data.bp !== undefined) localStorage.setItem("az900_bp", String(data.bp));
+          if (data.wrong !== undefined) localStorage.setItem("az900_wrong", JSON.stringify(data.wrong));
+          if (data.history !== undefined) localStorage.setItem("az900_history_v1", JSON.stringify(data.history));
+          
+          // 画面が開いていたら最新データで再描画する
+          if (S.screen === "home" || S.screen === "dc" || S.screen === "history") {
+            render();
+          }
+        }
+      });
+    }
+  });
 </script>
 </body>
 </html>
