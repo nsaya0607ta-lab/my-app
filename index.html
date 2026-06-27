@@ -402,7 +402,7 @@ const Q = [
 ];
 
 let S = {screen:"home", deck:[], idx:0, picks:[], sel:[], revealed:false, last:null};
-
+let db = null, currentUserId = null;
 function loadHist(){ try{ return JSON.parse(localStorage.getItem(HKEY)) || []; }catch(e){ return []; } }
 const WRONGKEY="az900_wrong";
 function loadWrong(){ try{ return JSON.parse(localStorage.getItem(WRONGKEY)) || []; }catch(e){ return []; } }
@@ -475,9 +475,10 @@ function finish(){
   S.deck.forEach((q,i)=>{ total+=pts(q); const g=grade(q,S.picks[i]); earned+=g.earned; if(g.full)correct++; });
   const score = total ? Math.round(earned/total*1000) : 0;
   // 復習リストの更新：間違えた問題を登録、正解できた問題は克服として除外
-  const wrong=new Set(loadWrong());
+    const wrong=new Set(loadWrong());
   S.deck.forEach((q,i)=>{ if(grade(q,S.picks[i]).full) wrong.delete(q.id); else wrong.add(q.id); });
-  saveWrong([...wrong]);
+  const wrongList=[...wrong];   // ← 追加
+  saveWrong(wrongList);         // ← [...wrong] から変更
   // データセンター育成：スコアをビルドポイント(BP)として加算
   const prevBp = getBP();
   const newBp = prevBp + score;
