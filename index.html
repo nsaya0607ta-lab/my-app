@@ -403,6 +403,7 @@ const Q = [
 
 let S = {screen:"home", deck:[], idx:0, picks:[], sel:[], revealed:false, last:null};
 let db = null, currentUserId = null;
+
 function loadHist(){ try{ return JSON.parse(localStorage.getItem(HKEY)) || []; }catch(e){ return []; } }
 const WRONGKEY="az900_wrong";
 function loadWrong(){ try{ return JSON.parse(localStorage.getItem(WRONGKEY)) || []; }catch(e){ return []; } }
