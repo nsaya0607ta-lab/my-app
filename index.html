@@ -484,6 +484,7 @@ function render(){
   if(S.screen==="review") return renderReview();
   if(S.screen==="dict") return renderDict();
   if(S.screen==="dc") return renderDC();
+  if(S.screen==="transfer") return renderTransfer();
   if(S.screen==="history") return renderHistory();
 }
 
@@ -504,6 +505,7 @@ function renderHome(){
     ${(loadWrong().length)?`<button class="ghost rev-btn" data-review style="margin-top:10px">🔁 復習モード（間違えた ${loadWrong().length} 問）</button>`:`<div class="x-hint" style="margin-top:10px;text-align:center">復習モード：間違えた問題がここに溜まり、再挑戦できます</div>`}
     <button class="ghost" data-go="dict" style="margin-top:10px">📖 用語辞典</button>
     <button class="ghost" data-go="dc" style="margin-top:10px">🏗️ データセンター育成</button>
+    <button class="ghost" data-go="transfer" style="margin-top:10px">💾 データ引き継ぎ（保存・復元）</button>
     ${h.length?`<button class="link" data-go="history">スコア履歴を見る（${h.length}件）</button>`:
       `<div class="install">ヒント：ブラウザの共有メニューから「ホーム画面に追加」すると、アプリのように起動できます。</div>`}
   `;
@@ -805,6 +807,78 @@ function renderDC(){
     <button class="cta" data-go="home" style="margin-top:14px">クイズで増築する</button>
   `;
   app.querySelectorAll("[data-go]").forEach(b=>b.onclick=()=>go(b.dataset.go));
+  window.scrollTo(0,0);
+}
+
+/* ======================= データ引き継ぎ（保存・復元） ======================= */
+function b64e(str){ return btoa(unescape(encodeURIComponent(str))); }
+function b64d(b64){ return decodeURIComponent(escape(atob(b64))); }
+function hash36(s){ let h=5381; for(let i=0;i<s.length;i++){ h=((h*33)^s.charCodeAt(i))>>>0; } return h.toString(36); }
+
+function exportCode(){
+  const payload={v:1, bp:getBP(), wrong:loadWrong(), hist:loadHist()};
+  const base=JSON.stringify(payload);
+  payload.sig=hash36(base);
+  return "AZ9-"+b64e(JSON.stringify(payload));
+}
+function importCode(code){
+  code=(code||"").trim().replace(/\s/g,"");
+  if(code.indexOf("AZ9-")===0) code=code.slice(4);
+  if(!code) throw new Error("コードが空です");
+  let obj;
+  try{ obj=JSON.parse(b64d(code)); }catch(e){ throw new Error("コードを読み取れませんでした"); }
+  if(!obj || obj.v!==1) throw new Error("対応していないコード形式です");
+  const sig=obj.sig; delete obj.sig;
+  if(hash36(JSON.stringify(obj))!==sig) throw new Error("コードが壊れているか、入力ミスがあります");
+  if(typeof obj.bp==="number" && obj.bp>=0) setBP(obj.bp);
+  if(Array.isArray(obj.wrong)) saveWrong(obj.wrong);
+  if(Array.isArray(obj.hist)) saveHist(obj.hist);
+  return obj;
+}
+
+function renderTransfer(){
+  const code=exportCode();
+  const h=loadHist();
+  app.innerHTML = `
+    <div class="q-head"><button class="quit" data-go="home">← ホーム</button><span class="q-count">データ引き継ぎ</span></div>
+    <p class="x-hint" style="margin-top:0;margin-bottom:14px">スコア履歴・ビルドポイント・復習リストを1本のコードにまとめて保存／復元できます。アカウント登録は不要です。</p>
+
+    <div class="x-sub" style="margin-top:0">① 引き継ぎコードを書き出す</div>
+    <p class="x-hint" style="margin-top:0;margin-bottom:8px">下のコードをメモ帳などにコピーして保管してください（履歴 ${h.length}件・${getBP().toLocaleString()} BP）。</p>
+    <textarea id="tf-out" class="x-area" readonly style="min-height:96px;font-size:12px">${esc(code)}</textarea>
+    <button class="cta" id="tf-copy" style="margin-top:10px">コードをコピー</button>
+
+    <div class="dc-sub">② コードから復元する</div>
+    <p class="x-hint" style="margin-top:0;margin-bottom:8px">控えておいたコードを貼り付けて復元します。<b style="color:var(--gold)">この端末の現在のデータは上書き</b>されます。</p>
+    <textarea id="tf-in" class="x-area" placeholder="AZ9-... を貼り付け" style="min-height:96px;font-size:12px"></textarea>
+    <button class="ghost" id="tf-load" style="margin-top:10px">このコードで復元する</button>
+    <div id="tf-msg" class="x-hint" style="margin-top:12px"></div>
+  `;
+  app.querySelectorAll("[data-go]").forEach(b=>b.onclick=()=>go(b.dataset.go));
+  const msg=document.getElementById("tf-msg");
+  const setMsg=(t,c)=>{ msg.innerHTML=t; msg.style.color=c||"var(--muted)"; };
+
+  document.getElementById("tf-copy").onclick=()=>{
+    const ta=document.getElementById("tf-out");
+    ta.focus(); ta.select(); ta.setSelectionRange(0,99999);
+    let ok=false;
+    try{ ok=document.execCommand("copy"); }catch(e){}
+    if(navigator.clipboard){ navigator.clipboard.writeText(ta.value).then(()=>{},()=>{}); ok=true; }
+    setMsg(ok?"✓ コピーしました。メモ帳やメールに貼り付けて保管してください。":"自動コピーできませんでした。コードを長押しで選択してコピーしてください。", ok?"var(--good)":"var(--gold)");
+  };
+
+  document.getElementById("tf-load").onclick=()=>{
+    const v=document.getElementById("tf-in").value;
+    if(!v.trim()){ setMsg("コードを貼り付けてください。","var(--gold)"); return; }
+    if(!confirm("この端末の現在のデータ（履歴・BP・復習リスト）を、入力したコードの内容で上書きします。よろしいですか？")) return;
+    try{
+      const obj=importCode(v);
+      setMsg("✓ 復元しました（履歴 "+( (obj.hist||[]).length )+"件・"+(obj.bp||0).toLocaleString()+" BP）。ホームに戻ります。","var(--good)");
+      setTimeout(()=>go("home"), 900);
+    }catch(e){
+      setMsg("⚠ "+esc(String(e.message||e))+"。コードをもう一度確認してください。","var(--bad)");
+    }
+  };
   window.scrollTo(0,0);
 }
 
