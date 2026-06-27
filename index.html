@@ -453,6 +453,23 @@ function commit(){            // 試験モード：正誤は出さず次へ進�
   if(S.idx+1 < S.deck.length){ S.idx++; S.sel=[]; render(); }
   else finish();
 }
+  // ▼▼▼ 【追加】データをクラウドへ送信するための関数 ▼▼▼
+async function saveToCloud(bp, wrongList, historyList) {
+  if (!db || !currentUserId) return;
+  try {
+    await window.FirebaseSync.setDoc(window.FirebaseSync.doc(db, "users", currentUserId), {
+      bp: bp,
+      wrong: wrongList,
+      history: historyList,
+      updatedAt: new Date().toISOString()
+    }, { merge: true });
+    console.log("Cloud synced successfully.");
+  } catch(e) {
+    console.error("Cloud sync failed:", e);
+  }
+}
+// ▲▲▲ 【追加ここまで】 ▲▲▲
+
 function finish(){
   let earned=0, total=0, correct=0;
   S.deck.forEach((q,i)=>{ total+=pts(q); const g=grade(q,S.picks[i]); earned+=g.earned; if(g.full)correct++; });
@@ -470,6 +487,9 @@ function finish(){
                  correct, total:S.deck.length, score, earned:Math.round(earned), totalPts:total,
                  bpGain:score, bpTotal:newBp, unlocked, review:!!S.review};
   const h=[entry,...loadHist()].slice(0,50); saveHist(h);
+    // 🔴【この1行を追加】スコア計算の直後にクラウドへ送信！
+  saveToCloud(newBp, wrongList, h);
+
   S.last=entry; S.screen="result"; render();
 }
 function go(s){ S.screen=s; render(); }
@@ -884,5 +904,45 @@ function renderTransfer(){
 
 render();
 </script>
+  <script type="module">
+  import { initializeApp } from "https://www.gstatic.com/firebasejs/10.0.0/firebase-app.js";
+  import { getFirestore, doc, setDoc, getDoc, onSnapshot } from "https://www.gstatic.com/firebasejs/10.0.0/firebase-firestore.js";
+  import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.0.0/firebase-auth.js";
+
+  const firebaseConfig = {
+    apiKey: "AIzaSyCg3zD2xkq_3e5MclG9YK_uVqVzWulO9Ws",
+    authDomain: "my-az900-app.firebaseapp.com",
+    projectId: "my-az900-app",
+    storageBucket: "my-az900-app.firebasestorage.app",
+    messagingSenderId: "989248012630",
+    appId: "1:989248012630:web:1801a2033c56887320d6f7",
+    measurementId: "G-4E16HLF386"
+  };
+
+  window.FirebaseSync = { doc, setDoc };
+  const fbApp = initializeApp(firebaseConfig);
+  db = getFirestore(fbApp);
+  const auth = getAuth(fbApp);
+
+  // 匿名ログインを実行
+  signInAnonymously(auth).catch((error) => { console.error("Anonymous auth failed:", error); });
+
+  // クラウドのデータをスマホ側へリアルタイム同期
+  onAuthStateChanged(auth, (user) => {
+    if (user) {
+      currentUserId = user.uid;
+      onSnapshot(doc(db, "users", currentUserId), (docSnap) => {
+        if (docSnap.exists()) {
+          const data = docSnap.data();
+          if (data.bp !== undefined) localStorage.setItem("az900_bp", String(data.bp));
+          if (data.wrong !== undefined) localStorage.setItem("az900_wrong", JSON.stringify(data.wrong));
+          if (data.history !== undefined) localStorage.setItem("az900_history_v1", JSON.stringify(data.history));
+          if (S.screen === "home" || S.screen === "dc" || S.screen === "history") { render(); }
+        }
+      });
+    }
+  });
+</script>
+
 </body>
 </html>
