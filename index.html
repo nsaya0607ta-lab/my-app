@@ -475,6 +475,11 @@ const AZ900_Q = [
  {id:133,imp:5,q:"スタンドアロンアプリ「Azure Storage Explorer」が、バックエンドですべてのファイルやBLOBの管理タスクを処理するために使用しているツールは？",o:["Azure CLI","Azure PowerShell","Azure File Sync","AzCopy"],a:3,e:"Storage ExplorerはGUIを提供しますが、バックエンドのファイルやBLOBの転送・管理にはAzCopyを使用しています。"},
  {id:134,imp:5,q:"ブラウザベースの「Azure Cloud Shell」のセキュリティとアクセスの特徴として正しい説明はどれですか？",o:["ローカルの管理者権限がなければ起動できない","利用するたびにSSHキーを手動でアップロードする必要がある","Azure資格情報に対して自動的に認証されるため、ログインすると自身のアクセス許可が本質的に認識される","完全に匿名でのリソース管理アクセスを許可する"],a:2,e:"Cloud ShellはAzure資格情報に対して自動的に認証されるため、ログインするだけで自身のアクセス許可が反映された状態で使えます。"},
  {id:135,imp:5,q:"EA契約で、Azure前払い(年額コミットメント)の残高が一定割合に達した際に自動通知される「クレジット アラート」は、残高が何％で発報されますか？",o:["50% と 75%","70% と 80%","90% と 100%","100% の超過時のみ"],a:2,e:"EA向けのクレジットアラートはAzure前払い残高の90%および100%が消費された時点で自動生成され、メールで通知されます。"},
+ {id:136,imp:3,q:"Azureのサーバーレスコンピューティングサービスであり、インフラを意識することなく、特定のイベントやトリガーに応じてコードを実行できるサービスは？",o:["Azure Virtual Machines","Azure Functions","Azure App Service","Azure Container Instances"],a:1,e:"Azure Functionsはサーバーレスのイベント駆動型コンピューティングサービスであり、トリガーに応じて必要な時だけコードを実行します。"},
+ {id:137,imp:4,q:"組織内で作成されるリソースに対して「特定のリージョンのみへのデプロイを許可する」といった、ガバナンスのルールやコンプライアンスを強制・監査するために使用するサービスは？",o:["Azure RBAC","Azure Policy","リソース ロック","Microsoft Entra ID"],a:1,e:"Azure Policyは組織の標準を適用し、リソースが準拠しているかを監査・強制するためのサービスです。"},
+ {id:138,imp:5,q:"Azureのシステム障害や定期メンテナンスの予定、または個別のリソースの正常性状態など、Azureサービス全体の稼働状況を一元的に確認・通知できるプラットフォームは？",o:["Azure Advisor","Azure Monitor","Azure Service Health","Microsoft Defender for Cloud"],a:2,e:"Azure Service Healthは、Azure Status、Service Health、Resource Healthの3つのビューを提供し、障害情報を一元管理します。"},
+ {id:139,imp:3,c:[0,2,4],q:"Azureストレージアカウント（Standard汎用v2）内において、基本機能として提供される主要な「コアデータサービス」を3つ選択してください。",o:["Azure Blob Storage","Azure Key Vault","Azure Files","Azure SQL Database","Azure Table Storage"],e:"汎用v2アカウントのコアデータサービスは、Blob、Files、Table、Queueの4つです。Key VaultやSQL Databaseは独立した別サービスです。"},
+ {id:140,imp:4,c:[1,2],q:"Microsoftが推奨する「ゼロ トラスト セキュリティ モデル」を構成する3つの基本原則のうち、当てはまるものを2つ選択してください。",o:["内部ネットワークは常に安全であるとみなす","明示的に検証する","侵害を想定する","パスワードによる認証のみを必須とする","特権アクセスは無制限に許可する"],e:"ゼロトラストの3原則は「明示的に検証する」「最小限の特権アクセスを使用する」「侵害を想定する」の3つです。"}
 ];
 
 let S = {screen:"select", cert:null, mode:"exam", deck:[], idx:0, picks:[], sel:[], revealed:false, last:null};
