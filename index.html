@@ -50,7 +50,8 @@ h1.title{font-size:34px;line-height:1.05;font-weight:800;margin:8px 0 0;letter-s
 .link{margin-top:20px;width:100%;background:none;border:none;color:var(--accent);font-size:14px;font-weight:600;cursor:pointer;padding:8px;}
 
 .q-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;}
-.quit{background:none;border:none;color:var(--muted);font-size:13px;cursor:pointer;padding:4px 0;}
+.quit{display:inline-flex;align-items:center;gap:5px;background:var(--surface);border:1px solid var(--line);color:var(--text);font-size:13px;font-weight:600;cursor:pointer;padding:8px 15px;border-radius:99px;transition:background .12s;}
+.quit:active{background:var(--surface2);}
 .q-count{font-size:15px;font-weight:700;font-variant-numeric:tabular-nums;}
 .q-count em{color:var(--muted);font-weight:500;font-size:13px;font-style:normal;}
 .progress{height:5px;background:var(--bg2);border-radius:99px;overflow:hidden;margin-bottom:22px;}
@@ -237,6 +238,14 @@ h1.title{font-size:34px;line-height:1.05;font-weight:800;margin:8px 0 0;letter-s
 @keyframes rise{from{transform:translateY(8px);opacity:0}to{transform:none;opacity:1}}
 .rev-btn{border-color:rgba(245,196,81,.5);color:var(--gold);}
 .rev-tag-q{background:rgba(245,196,81,.15);color:var(--gold);border-radius:99px;padding:1px 8px;font-size:11px;font-weight:700;}
+.auth-wrap{padding:6px 0;}
+.auth-title{font-size:26px;font-weight:800;margin-bottom:8px;}
+.auth-sub{font-size:13px;color:var(--muted);line-height:1.8;margin-bottom:20px;}
+.auth-input{width:100%;background:var(--surface);border:1.5px solid var(--line);border-radius:12px;padding:15px;color:var(--text);font-size:16px;font-family:inherit;margin-bottom:11px;}
+.auth-input:focus{outline:none;border-color:var(--accent);}
+.auth-msg{font-size:13px;color:var(--muted);min-height:18px;margin:2px 0 8px;line-height:1.6;}
+.acct-bar{margin-top:20px;padding-top:16px;border-top:1px solid var(--line);font-size:12px;color:var(--muted);text-align:center;display:flex;align-items:center;justify-content:center;gap:10px;flex-wrap:wrap;}
+.link2{background:none;border:none;color:var(--accent);font-size:12px;font-weight:700;cursor:pointer;text-decoration:underline;padding:0;}
 </style>
 </head>
 <body>
@@ -403,6 +412,7 @@ const Q = [
 
 let S = {screen:"home", deck:[], idx:0, picks:[], sel:[], revealed:false, last:null};
 let db = null, currentUserId = null;
+let currentUser = null, authReady = false, guestMode = false, authMode = "signup", authBusy = false;
 
 function loadHist(){ try{ return JSON.parse(localStorage.getItem(HKEY)) || []; }catch(e){ return []; } }
 const WRONGKEY="az900_wrong";
@@ -500,6 +510,9 @@ function clearHist(){ if(confirm("履歴をすべて消去しますか？")){ sa
 const app = document.getElementById("app");
 
 function render(){
+  // アカウントの認証ゲート（ゲストモードならスキップ）
+  if(!guestMode && !authReady) return renderLoading();
+  if(!guestMode && !currentUser) return renderAuth();
   if(S.screen==="home") return renderHome();
   if(S.screen==="quiz") return renderQuiz();
   if(S.screen==="result") return renderResult();
@@ -508,6 +521,70 @@ function render(){
   if(S.screen==="dc") return renderDC();
   if(S.screen==="transfer") return renderTransfer();
   if(S.screen==="history") return renderHistory();
+}
+
+function renderLoading(){
+  app.innerHTML = `<div class="loading">読み込み中…<br>
+    <button class="link" id="ld-guest" style="margin-top:16px">アカウントなしで使う（この端末のみ）</button></div>`;
+  const g=document.getElementById("ld-guest"); if(g)g.onclick=()=>{ guestMode=true; S.screen="home"; render(); };
+}
+
+function authErrorMsg(e){
+  const c=(e&&(e.code||e.message))||"";
+  if(c.indexOf("email-already-in-use")>=0) return "このメールアドレスは既に登録されています。「ログイン」に切り替えてください。";
+  if(c.indexOf("invalid-email")>=0) return "メールアドレスの形式が正しくありません。";
+  if(c.indexOf("weak-password")>=0) return "パスワードは6文字以上にしてください。";
+  if(c.indexOf("wrong-password")>=0 || c.indexOf("invalid-credential")>=0) return "メールアドレスまたはパスワードが違います。";
+  if(c.indexOf("user-not-found")>=0) return "アカウントが見つかりません。新規登録してください。";
+  if(c.indexOf("too-many-requests")>=0) return "試行回数が多すぎます。少し時間をおいて再度お試しください。";
+  if(c.indexOf("operation-not-allowed")>=0) return "メール認証が有効化されていません（Firebaseの設定が必要です）。";
+  if(c.indexOf("network")>=0) return "通信エラーです。ネット接続を確認してください。";
+  return "エラー: " + ((e&&e.message)||c||"不明");
+}
+
+function renderAuth(){
+  const signup = authMode==="signup";
+  app.innerHTML = `
+    <div class="auth-wrap">
+      <div class="auth-title">${signup?"アカウント作成":"ログイン"}</div>
+      <div class="auth-sub">${signup
+        ? "メールとパスワードでアカウントを作成すると、スコア・BP・復習データがアカウントに保存され、機種変更やアプリの更新後もログインすれば引き継げます。"
+        : "登録済みのメールアドレスとパスワードでログインしてください。"}</div>
+      <input id="auth-email" class="auth-input" type="email" placeholder="メールアドレス" autocomplete="email" inputmode="email">
+      <input id="auth-pw" class="auth-input" type="password" placeholder="パスワード（6文字以上）" autocomplete="${signup?"new-password":"current-password"}">
+      <div id="auth-msg" class="auth-msg"></div>
+      <button class="cta" id="auth-go" style="margin-top:4px">${signup?"アカウントを作成":"ログイン"}</button>
+      <button class="ghost" id="auth-switch">${signup?"すでにアカウントをお持ちの方はログイン":"新規登録はこちら"}</button>
+      <button class="link" id="auth-guest">アカウントなしで使う（この端末のみ・同期なし）</button>
+    </div>
+  `;
+  const emailEl=document.getElementById("auth-email");
+  const pwEl=document.getElementById("auth-pw");
+  const msg=document.getElementById("auth-msg");
+  document.getElementById("auth-switch").onclick=()=>{ authMode = signup?"login":"signup"; render(); };
+  document.getElementById("auth-guest").onclick=()=>{ guestMode=true; S.screen="home"; render(); };
+  document.getElementById("auth-go").onclick=async ()=>{
+    if(authBusy) return;
+    const email=(emailEl.value||"").trim(), pw=pwEl.value||"";
+    if(!email || !pw){ msg.style.color="var(--gold)"; msg.textContent="メールアドレスとパスワードを入力してください。"; return; }
+    if(!window.Auth){ msg.style.color="var(--bad)"; msg.textContent="認証の準備中です。少し待って再度お試しください。"; return; }
+    authBusy=true; msg.style.color="var(--muted)"; msg.textContent="処理中…";
+    try{
+      if(signup) await window.Auth.signup(email,pw);
+      else await window.Auth.login(email,pw);
+      // 成功すると onAuthStateChanged が発火し、自動でホームへ切り替わります
+    }catch(e){
+      msg.style.color="var(--bad)"; msg.textContent=authErrorMsg(e);
+    }finally{ authBusy=false; }
+  };
+  window.scrollTo(0,0);
+}
+
+async function logout(){
+  try{ if(window.Auth) await window.Auth.logout(); }catch(e){}
+  // 別の人のデータが残らないよう、この端末のローカルデータを消去（クラウドには残っています）
+  setBP(0); saveWrong([]); saveHist([]);
+  currentUser=null; currentUserId=null; S.screen="home"; authMode="login"; render();
 }
 
 function renderHome(){
@@ -530,10 +607,15 @@ function renderHome(){
     <button class="ghost" data-go="transfer" style="margin-top:10px">💾 データ引き継ぎ（保存・復元）</button>
     ${h.length?`<button class="link" data-go="history">スコア履歴を見る（${h.length}件）</button>`:
       `<div class="install">ヒント：ブラウザの共有メニューから「ホーム画面に追加」すると、アプリのように起動できます。</div>`}
+    ${currentUser
+      ? `<div class="acct-bar">👤 ${esc(currentUser.email||"ログイン中")}<button class="link2" data-logout>ログアウト</button></div>`
+      : (guestMode ? `<div class="acct-bar">ゲストモード（この端末のみ・同期なし）<button class="link2" data-login>ログイン / 新規登録</button></div>` : "")}
   `;
   const sb=app.querySelector("[data-start]"); if(sb)sb.onclick=()=>start();
   const rv=app.querySelector("[data-review]"); if(rv)rv.onclick=()=>startReview();
   app.querySelectorAll("[data-go]").forEach(b=>b.onclick=()=>go(b.dataset.go));
+  const lo=app.querySelector("[data-logout]"); if(lo)lo.onclick=()=>logout();
+  const li=app.querySelector("[data-login]"); if(li)li.onclick=()=>{ guestMode=false; authMode="login"; render(); };
 }
 
 function renderQuiz(){
@@ -592,7 +674,7 @@ function renderResult(){
     <div class="actions">
       <button class="cta" data-go="review">解答・解説を確認</button>
       <button class="ghost" data-retry>もう一度挑戦</button>
-      <button class="ghost" data-go="home">ホームへ戻る</button>
+      <button class="ghost" data-go="home">🏠 ホームへ戻る</button>
     </div>
   `;
   requestAnimationFrame(()=>{ const c=app.querySelector(".gauge-fg"); if(c)c.style.strokeDashoffset=off; });
@@ -626,7 +708,7 @@ function renderReview(){
   app.innerHTML = `
     <div class="q-head"><button class="quit" data-go="result">← 結果へ</button><span class="q-count">解答・解説</span></div>
     ${rows}
-    <button class="ghost" data-go="home">ホームへ戻る</button>
+    <button class="ghost" data-go="home">🏠 ホームへ戻る</button>
   `;
   app.querySelectorAll("[data-go]").forEach(b=>b.onclick=()=>go(b.dataset.go));
   window.scrollTo(0,0);
@@ -635,13 +717,13 @@ function renderReview(){
 function renderHistory(){
   const h=loadHist();
   if(!h.length){
-    app.innerHTML=`<div class="q-head"><button class="quit" data-go="home">← 戻る</button><span class="q-count">履歴</span></div>
+    app.innerHTML=`<div class="q-head"><button class="quit" data-go="home">🏠 ホーム</button><span class="q-count">履歴</span></div>
       <div class="empty">まだ記録がありません。<br>問題を解くとここにスコアが残ります。</div>`;
     app.querySelector("[data-go]").onclick=()=>go("home"); return;
   }
   const recent=h.slice(0,12).reverse();
   app.innerHTML = `
-    <div class="q-head"><button class="quit" data-go="home">← 戻る</button><span class="q-count">履歴</span></div>
+    <div class="q-head"><button class="quit" data-go="home">🏠 ホーム</button><span class="q-count">履歴</span></div>
     <div class="chart">
       ${recent.map(x=>`<div class="chart-col">
         <div class="chart-bar-track"><div class="chart-bar ${x.score>=PASS?"pass":"fail"}" style="height:${x.score/1000*100}%"></div></div>
@@ -717,7 +799,7 @@ function renderDict(){
   const items = CONCEPTS.map((c,i)=>({c,i}));
   if(dictSort==="aiueo") items.sort((a,b)=>a.c.t.localeCompare(b.c.t,"ja"));
   app.innerHTML = `
-    <div class="q-head"><button class="quit" data-go="home">← ホーム</button><span class="q-count">用語辞典</span></div>
+    <div class="q-head"><button class="quit" data-go="home">🏠 ホーム</button><span class="q-count">用語辞典</span></div>
     <input id="dict-search" class="dict-search" placeholder="用語を検索（例：RBAC、冗長、ゼロトラスト）" autocomplete="off">
     <div class="dict-bar">
       <span id="dict-count">${CONCEPTS.length} 語</span>
@@ -753,6 +835,15 @@ function renderDict(){
 const BPKEY="az900_bp";
 function getBP(){ const v=parseInt(localStorage.getItem(BPKEY)||"0",10); return isNaN(v)?0:v; }
 function setBP(v){ try{ localStorage.setItem(BPKEY, String(v)); }catch(e){} }
+let dcConfirm=false;
+function askResetBP(){ dcConfirm=true; render(); }
+function cancelResetBP(){ dcConfirm=false; render(); }
+function doResetBP(){
+  dcConfirm=false;
+  setBP(0);
+  saveToCloud(0, loadWrong(), loadHist());   // クラウドにも反映
+  render();
+}
 
 const TIERS = [
  {bp:0,     icon:"📦", name:"リソースグループ", desc:"インフラの土台"},
@@ -805,7 +896,7 @@ function renderDC(){
     nextTxt = `次の「${next.icon} ${next.name}」まであと ${(next.bp-bp).toLocaleString()} BP`;
   } else { prog=100; nextTxt="すべてのリソースが稼働中！"; }
   app.innerHTML = `
-    <div class="q-head"><button class="quit" data-go="home">← ホーム</button><span class="q-count">データセンター</span></div>
+    <div class="q-head"><button class="quit" data-go="home">🏠 ホーム</button><span class="q-count">データセンター</span></div>
     <div class="dc-hero">
       <div class="dc-lvl">レベル ${n} / ${TIERS.length}</div>
       <div class="dc-title">${dcTitle(n)}</div>
@@ -827,8 +918,18 @@ function renderDC(){
     </div>
     <div class="x-hint" style="margin-top:16px">クイズで稼いだスコアがそのままBPになり、データセンターが発展します。</div>
     <button class="cta" data-go="home" style="margin-top:14px">クイズで増築する</button>
+    ${dcConfirm?`
+      <div style="margin-top:18px;border:1px solid var(--bad);border-radius:13px;padding:16px;background:rgba(248,114,114,.08)">
+        <div style="font-size:14px;line-height:1.7;color:var(--text);margin-bottom:12px">本当にBP（ビルドポイント）をリセットしますか？<br>データセンターがLv0に戻ります。この操作は元に戻せません。</div>
+        <button class="cta" data-do-reset style="margin-top:0;background:linear-gradient(90deg,var(--bad),#ff9b9b);color:#3a0d0d">はい、リセットする</button>
+        <button class="ghost" data-cancel-reset>キャンセル</button>
+      </div>`:`
+      <button class="ghost danger" data-reset-bp>BPをリセットする</button>`}
   `;
   app.querySelectorAll("[data-go]").forEach(b=>b.onclick=()=>go(b.dataset.go));
+  const rb=app.querySelector("[data-reset-bp]"); if(rb)rb.onclick=askResetBP;
+  const dr=app.querySelector("[data-do-reset]"); if(dr)dr.onclick=doResetBP;
+  const cr=app.querySelector("[data-cancel-reset]"); if(cr)cr.onclick=cancelResetBP;
   window.scrollTo(0,0);
 }
 
@@ -862,7 +963,7 @@ function renderTransfer(){
   const code=exportCode();
   const h=loadHist();
   app.innerHTML = `
-    <div class="q-head"><button class="quit" data-go="home">← ホーム</button><span class="q-count">データ引き継ぎ</span></div>
+    <div class="q-head"><button class="quit" data-go="home">🏠 ホーム</button><span class="q-count">データ引き継ぎ</span></div>
     <p class="x-hint" style="margin-top:0;margin-bottom:14px">スコア履歴・ビルドポイント・復習リストを1本のコードにまとめて保存／復元できます。アカウント登録は不要です。</p>
 
     <div class="x-sub" style="margin-top:0">① 引き継ぎコードを書き出す</div>
@@ -905,11 +1006,17 @@ function renderTransfer(){
 }
 
 render();
+
+// 安全装置：8秒待ってもFirebaseの準備が終わらない（通信が遅い/失敗）場合は
+// 固まらないようログイン画面へ進める。ゲスト利用への導線もそこにあります。
+setTimeout(function(){
+  if(!authReady && !guestMode){ authReady = true; render(); }
+}, 8000);
 </script>
   <script type="module">
   import { initializeApp } from "https://www.gstatic.com/firebasejs/10.0.0/firebase-app.js";
   import { getFirestore, doc, setDoc, getDoc, onSnapshot } from "https://www.gstatic.com/firebasejs/10.0.0/firebase-firestore.js";
-  import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.0.0/firebase-auth.js";
+  import { getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword, signOut, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.0.0/firebase-auth.js";
 
   const firebaseConfig = {
     apiKey: "AIzaSyCg3zD2xkq_3e5MclG9YK_uVqVzWulO9Ws",
@@ -922,28 +1029,53 @@ render();
   };
 
   window.FirebaseSync = { doc, setDoc };
-  const fbApp = initializeApp(firebaseConfig);
-  db = getFirestore(fbApp);
-  const auth = getAuth(fbApp);
+  try {
+    const fbApp = initializeApp(firebaseConfig);
+    db = getFirestore(fbApp);
+    const auth = getAuth(fbApp);
 
-  // 匿名ログインを実行
-  signInAnonymously(auth).catch((error) => { console.error("Anonymous auth failed:", error); });
+    // 画面側（通常スクリプト）から呼び出せる認証API
+    window.Auth = {
+      signup: (email, pw) => createUserWithEmailAndPassword(auth, email, pw),
+      login:  (email, pw) => signInWithEmailAndPassword(auth, email, pw),
+      logout: () => signOut(auth)
+    };
 
-  // クラウドのデータをスマホ側へリアルタイム同期
-  onAuthStateChanged(auth, (user) => {
-    if (user) {
-      currentUserId = user.uid;
-      onSnapshot(doc(db, "users", currentUserId), (docSnap) => {
-        if (docSnap.exists()) {
-          const data = docSnap.data();
-          if (data.bp !== undefined) localStorage.setItem("az900_bp", String(data.bp));
-          if (data.wrong !== undefined) localStorage.setItem("az900_wrong", JSON.stringify(data.wrong));
-          if (data.history !== undefined) localStorage.setItem("az900_history_v1", JSON.stringify(data.history));
-          if (S.screen === "home" || S.screen === "dc" || S.screen === "history") { render(); }
-        }
-      });
-    }
-  });
+    let unsub = null;
+
+    // ログイン状態の監視。ログイン中はそのアカウントのデータをリアルタイム同期
+    onAuthStateChanged(auth, (user) => {
+      authReady = true;
+      if (user) {
+        currentUser = user;
+        currentUserId = user.uid;
+        if (unsub) { unsub(); unsub = null; }
+        unsub = onSnapshot(doc(db, "users", currentUserId), (docSnap) => {
+          if (docSnap.exists()) {
+            // クラウドにデータあり → この端末へ反映
+            const data = docSnap.data();
+            if (data.bp !== undefined) localStorage.setItem("az900_bp", String(data.bp));
+            if (data.wrong !== undefined) localStorage.setItem("az900_wrong", JSON.stringify(data.wrong));
+            if (data.history !== undefined) localStorage.setItem("az900_history_v1", JSON.stringify(data.history));
+            if (S.screen === "home" || S.screen === "dc" || S.screen === "history") { render(); }
+          } else {
+            // 新規アカウント → 今この端末にあるデータでクラウドを初期化（ゲスト時の進捗を引き継ぎ）
+            saveToCloud(getBP(), loadWrong(), loadHist());
+          }
+        });
+      } else {
+        currentUser = null;
+        currentUserId = null;
+        if (unsub) { unsub(); unsub = null; }
+      }
+      render();
+    });
+  } catch (e) {
+    console.error("Firebase init failed:", e);
+    // 初期化に失敗しても画面が固まらないようにゲートを解除
+    authReady = true;
+    render();
+  }
 </script>
 
 </body>
