@@ -200,6 +200,12 @@ h1.title{font-size:34px;line-height:1.05;font-weight:800;margin:8px 0 0;letter-s
 .bp-row{display:flex;justify-content:space-between;align-items:center;font-size:14px;font-weight:700;}
 .bp-gain{color:var(--good);font-size:18px;font-variant-numeric:tabular-nums;}
 .bp-total{font-size:12px;color:var(--muted);margin-top:3px;}
+.bp-exp-line{font-size:13px;color:var(--text);margin-top:6px;font-weight:600;}
+.cta-exam{background:linear-gradient(90deg,var(--gold),#ffd97a);color:#3a2c06;}
+.mode-note{font-size:11px;color:var(--muted);text-align:center;margin-top:6px;line-height:1.5;}
+.mode-tag{border-radius:99px;padding:1px 8px;font-size:11px;font-weight:700;}
+.mode-tag.practice{background:rgba(56,163,255,.15);color:var(--accent);}
+.mode-tag.exam{background:rgba(245,196,81,.15);color:var(--gold);}
 .bp-unlock{margin-top:10px;font-size:13px;color:var(--gold);font-weight:700;line-height:1.6;}
 .bp-link{margin-top:12px;width:100%;background:none;border:1px solid var(--line);border-radius:10px;padding:10px;color:var(--accent);font-size:13px;font-weight:600;cursor:pointer;}
 .dc-hero{background:linear-gradient(160deg,#13314d,#0d1f36);border:1px solid var(--line);border-radius:18px;padding:20px;margin-bottom:16px;}
@@ -231,11 +237,21 @@ h1.title{font-size:34px;line-height:1.05;font-weight:800;margin:8px 0 0;letter-s
 .scene-ground{position:relative;z-index:2;display:flex;align-items:flex-end;justify-content:center;gap:7px;flex-wrap:wrap;padding:0 12px 14px;}
 .scene-ground::before{content:"";position:absolute;left:8px;right:8px;bottom:11px;height:1px;background:linear-gradient(90deg,transparent,rgba(136,164,192,.5),transparent);}
 .scene-b{line-height:1;filter:drop-shadow(0 0 7px rgba(56,163,255,.45));animation:rise .5s ease both;}
-.home-scene.b4 .scene-b{filter:drop-shadow(0 0 8px rgba(245,196,81,.45));}
-.scene-ghost{font-size:22px;opacity:.35;filter:grayscale(1);align-self:flex-end;}
+.home-scene.b4 .scene-b{filter:drop-shadow(0 0 8px rgba(245,196,81,.45));}.scene-ghost{font-size:22px;opacity:.35;filter:grayscale(1);align-self:flex-end;}
 .scene-star{position:absolute;width:3px;height:3px;border-radius:50%;background:#fff;opacity:.4;z-index:1;animation:tw 2.4s infinite;}
 @keyframes tw{0%,100%{opacity:.15}50%{opacity:.9}}
 @keyframes rise{from{transform:translateY(8px);opacity:0}to{transform:none;opacity:1}}
+.scene-map{position:absolute;inset:0;width:100%;height:100%;z-index:1;}
+.scene-map .grat line{stroke:rgba(120,170,255,.10);stroke-width:1;}
+.scene-map .land path{fill:rgba(120,170,255,.16);stroke:rgba(120,170,255,.30);stroke-width:1;}
+.scene-map .rg-dot{fill:#6b86a8;}
+.scene-map .rg.on .rg-dot{fill:var(--gold);}
+.scene-map .rg-glow{fill:rgba(245,201,122,.35);animation:rgpulse 2.2s infinite;}
+.scene-map .rg-nm{fill:#ffe7b0;font-size:7px;font-weight:700;text-anchor:middle;}
+@keyframes rgpulse{0%,100%{opacity:.2}50%{opacity:.65}}
+.dc-phase{margin-top:8px;font-size:12px;color:var(--muted);line-height:1.5;}
+.dc-phase-tag{display:inline-block;background:rgba(56,163,255,.15);border:1px solid var(--accent);color:var(--accent);border-radius:99px;padding:1px 9px;font-weight:700;font-size:11px;margin-right:7px;}
+.dc-phasebar{display:flex;justify-content:space-between;align-items:center;gap:10px;background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:11px 14px;margin-bottom:16px;font-size:12px;color:var(--muted);font-weight:600;}
 .rev-btn{border-color:rgba(245,196,81,.5);color:var(--gold);}
 .rev-tag-q{background:rgba(245,196,81,.15);color:var(--gold);border-radius:99px;padding:1px 8px;font-size:11px;font-weight:700;}
 .auth-wrap{padding:6px 0;}
@@ -248,6 +264,37 @@ h1.title{font-size:34px;line-height:1.05;font-weight:800;margin:8px 0 0;letter-s
 .link2{background:none;border:none;color:var(--accent);font-size:12px;font-weight:700;cursor:pointer;text-decoration:underline;padding:0;}
 .sel-head{margin-bottom:18px;}
 .sel-title{font-size:28px;font-weight:800;margin:6px 0 6px;}
+.me-hero{background:linear-gradient(160deg,#1c3a52,#102338);border:1px solid var(--line);border-radius:18px;padding:18px;margin-bottom:18px;}
+.me-top{display:flex;justify-content:space-between;align-items:flex-start;gap:10px;}
+.me-lab{font-size:11px;letter-spacing:.14em;color:var(--accent);font-weight:700;}
+.me-lvrow{display:flex;align-items:baseline;gap:10px;margin-top:5px;flex-wrap:wrap;}
+.me-lv{font-size:32px;font-weight:800;line-height:1;font-variant-numeric:tabular-nums;}
+.me-title{font-size:13px;font-weight:700;color:var(--gold);}
+.me-bp{font-size:12px;color:var(--muted);font-variant-numeric:tabular-nums;white-space:nowrap;}
+.me-prog{height:9px;background:var(--bg2);border-radius:99px;overflow:hidden;margin-top:14px;}
+.me-prog-f{height:100%;background:linear-gradient(90deg,var(--gold),#ffd97a);border-radius:99px;transition:width .6s;}
+.me-next{font-size:12px;color:var(--muted);margin-top:8px;}
+.me-actions{display:flex;gap:11px;margin-bottom:18px;}
+.me-btn{flex:1;background:var(--surface);border:1px solid var(--line);border-radius:13px;padding:13px;color:var(--text);font-size:14px;font-weight:700;cursor:pointer;}
+.me-btn:active{background:var(--surface2);}
+.lb-me{background:linear-gradient(160deg,var(--surface),var(--bg2));border:1px solid var(--line);border-radius:13px;padding:12px 14px;margin-bottom:14px;font-size:13px;color:var(--text);}
+.lb-me b{color:var(--gold);font-size:15px;}
+.lb-list{display:flex;flex-direction:column;gap:8px;}
+.lb-row{display:flex;align-items:center;gap:12px;background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:10px 13px;}
+.lb-row.me{border-color:var(--accent);background:var(--surface2);}
+.lb-rank{width:28px;text-align:center;font-size:16px;font-weight:800;color:var(--muted);font-variant-numeric:tabular-nums;flex:none;}
+.lb-rank.top{color:var(--gold);}
+.lb-info{flex:1;display:flex;flex-direction:column;gap:1px;min-width:0;}
+.lb-name{font-size:14px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.lb-name small{color:var(--accent);font-weight:600;}
+.lb-cert{font-size:11px;color:var(--muted);}
+.lb-bp{font-size:14px;font-weight:800;font-variant-numeric:tabular-nums;flex:none;}
+.lb-bp small{color:var(--muted);font-weight:600;font-size:11px;}
+.pf-list{display:flex;flex-direction:column;gap:8px;}
+.pf-cert{display:flex;align-items:center;gap:10px;background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:11px 13px;font-size:13px;}
+.pf-cert span:first-child{font-weight:800;}
+.pf-cn{flex:1;color:var(--text);}
+.pf-cl{color:var(--muted);font-variant-numeric:tabular-nums;}
 .sel-sub{font-size:13px;color:var(--muted);line-height:1.7;margin:0;}
 .cert-list{display:flex;flex-direction:column;gap:12px;}
 .cert-card{display:block;width:100%;text-align:left;cursor:pointer;color:var(--text);background:var(--surface);background:
@@ -430,15 +477,15 @@ const AZ900_Q = [
  {id:135,imp:5,q:"EA契約で、Azure前払い(年額コミットメント)の残高が一定割合に達した際に自動通知される「クレジット アラート」は、残高が何％で発報されますか？",o:["50% と 75%","70% と 80%","90% と 100%","100% の超過時のみ"],a:2,e:"EA向けのクレジットアラートはAzure前払い残高の90%および100%が消費された時点で自動生成され、メールで通知されます。"},
 ];
 
-let S = {screen:"select", cert:null, deck:[], idx:0, picks:[], sel:[], revealed:false, last:null};
+let S = {screen:"select", cert:null, mode:"exam", deck:[], idx:0, picks:[], sel:[], revealed:false, last:null};
 let db = null, currentUserId = null;
 let currentUser = null, authReady = false, guestMode = false, authMode = "signup", authBusy = false;
 let cloudData = null;   // クラウド上の資格別データ {az900:{bp,wrong,history}, ...}
 
 function ckey(name){ return "cert_" + (S.cert || "az900") + "_" + name; }
 function loadHist(){ try{ return JSON.parse(localStorage.getItem(ckey("history"))) || []; }catch(e){ return []; } }
-function loadWrong(){ try{ return JSON.parse(localStorage.getItem(ckey("wrong"))) || []; }catch(e){ return []; } }
-function saveWrong(a){ try{ localStorage.setItem(ckey("wrong"), JSON.stringify(a)); }catch(e){} }
+function loadWrong(){ try{ const a=JSON.parse(localStorage.getItem(ckey("wrong")))||[]; return [...new Set(a)]; }catch(e){ return []; } }
+function saveWrong(a){ try{ localStorage.setItem(ckey("wrong"), JSON.stringify([...new Set(a||[])])); }catch(e){} }
 function saveHist(h){ try{ localStorage.setItem(ckey("history"), JSON.stringify(h)); }catch(e){} }
 function shuffle(a){ a=a.slice(); for(let i=a.length-1;i>0;i--){const j=Math.random()*(i+1)|0;[a[i],a[j]]=[a[j],a[i]];} return a; }
 function esc(s){ return s.replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c])); }
@@ -460,8 +507,9 @@ function grade(q, sel){
   return {earned, full};
 }
 
-function start(){
+function start(mode){
   S.review=false;
+  S.mode = (mode==="practice") ? "practice" : "exam";
   S.deck = shuffle(Q).slice(0, Math.min(DRAW, Q.length));
   S.idx=0; S.picks=[]; S.sel=[]; S.screen="quiz"; render();
 }
@@ -502,26 +550,47 @@ async function saveToCloud(bp, wrongList, historyList) {
 }
 // ▲▲▲ 【追加ここまで】 ▲▲▲
 
+/* ===== 経験値(EXP)の計算：モード別 =====
+   ・演習モード：獲得点数がそのままEXP
+   ・試験モード：700点未満は0、以上はスコア帯ごとにボーナス倍率
+   端数は四捨五入（Math.round）で処理 */
+function examMult(score){
+  if(score < 700) return 0;
+  if(score < 800) return 1.25;
+  if(score < 900) return 1.5;
+  if(score < 950) return 1.75;
+  return 2.0;
+}
+function calcExp(score, mode){
+  if(mode === "practice") return score;           // 演習：点数 = EXP
+  return Math.round(score * examMult(score));      // 試験：倍率適用後に四捨五入
+}
+
 function finish(){
   let earned=0, total=0, correct=0;
   S.deck.forEach((q,i)=>{ total+=pts(q); const g=grade(q,S.picks[i]); earned+=g.earned; if(g.full)correct++; });
   const score = total ? Math.round(earned/total*1000) : 0;
   // 復習リストの更新：間違えた問題を登録、正解できた問題は克服として除外
-    const wrong=new Set(loadWrong());
+  const wrong=new Set(loadWrong());
   S.deck.forEach((q,i)=>{ if(grade(q,S.picks[i]).full) wrong.delete(q.id); else wrong.add(q.id); });
-  const wrongList=[...wrong];   // ← 追加
-  saveWrong(wrongList);         // ← [...wrong] から変更
-  // データセンター育成：スコアをビルドポイント(BP)として加算
+  const wrongList=[...wrong];
+  saveWrong(wrongList);
+  // モード別にEXPを算出（復習は演習扱い＝点数そのまま）
+  const expMode = S.review ? "practice" : (S.mode || "exam");
+  const exp = calcExp(score, expMode);
+  const mult = examMult(score);
+  // EXPをBP(=経験値)として加算 → 資格内レベルと全体レベルの両方に反映
   const prevBp = getBP();
-  const newBp = prevBp + score;
+  const newBp = prevBp + exp;
   setBP(newBp);
   const unlocked = TIERS.filter(t=>t.bp>prevBp && t.bp<=newBp).map(t=>t.icon+" "+t.name);
-  const entry = {id:Date.now(), date:new Date().toISOString(), modeLabel:(S.review?"復習":"ランダム")+S.deck.length+"問",
-                 correct, total:S.deck.length, score, earned:Math.round(earned), totalPts:total,
-                 bpGain:score, bpTotal:newBp, unlocked, review:!!S.review};
+  const modeLabel = (S.review ? "復習" : (expMode==="practice" ? "演習" : "試験")) + S.deck.length + "問";
+  const entry = {id:Date.now(), date:new Date().toISOString(), modeLabel,
+                 mode:expMode, mult, correct, total:S.deck.length, score, earned:Math.round(earned), totalPts:total,
+                 bpGain:exp, bpTotal:newBp, unlocked, review:!!S.review};
   const h=[entry,...loadHist()].slice(0,50); saveHist(h);
-    // 🔴【この1行を追加】スコア計算の直後にクラウドへ送信！
   saveToCloud(newBp, wrongList, h);
+  publishLeaderboard();   // ランキング（総合レベル・合計BP）も更新
 
   S.last=entry; S.screen="result"; render();
 }
@@ -534,6 +603,9 @@ function render(){
   // アカウントの認証ゲート（ゲストモードならスキップ）
   if(!guestMode && !authReady) return renderLoading();
   if(!guestMode && !currentUser) return renderAuth();
+  // 資格選択なしでも開ける画面
+  if(S.screen==="ranking") return renderRanking();
+  if(S.screen==="profile") return renderProfile();
   // 大元：資格選択画面
   if(S.screen==="select" || !S.cert) return renderSelect();
   if(S.screen==="home") return renderHome();
@@ -612,6 +684,7 @@ async function logout(){
       localStorage.removeItem("cert_"+c.id+"_wrong");
       localStorage.removeItem("cert_"+c.id+"_history");
     });
+    localStorage.removeItem("profile_name");
   }catch(e){}
   cloudData=null; currentUser=null; currentUserId=null;
   S.cert=null; S.screen="select"; authMode="login"; render();
@@ -620,10 +693,11 @@ async function logout(){
 function renderHome(){
   const h=loadHist(), best=h.reduce((m,x)=>Math.max(m,x.score),0);
   const c=certById(S.cert)||{};
+  const ov=overallStat();
   app.innerHTML = `
     <div class="q-head" style="margin-bottom:14px">
       <button class="quit" data-go="select">← 資格選択</button>
-      <span class="q-count" style="color:${c.accent||'var(--accent)'}">${esc(c.code||"")}</span>
+      <span class="q-count" style="color:${c.accent||'var(--accent)'}">${esc(c.code||"")} <span style="color:var(--muted);font-weight:600;font-size:12px">· 総合Lv.${ov.lv}</span></span>
     </div>
     ${homeScene()}
     <div class="stats">
@@ -635,8 +709,11 @@ function renderHome(){
       <div class="pool">${Q.length}<em> 問</em></div>
       <div class="note">ランダムに ${Math.min(DRAW,Q.length)} 問を出題 ・ 重要度で重み付け ・ 複数選択あり ・ 1000点満点</div>
     </div>
-    <button class="cta" data-start>試験を開始</button>
-    ${(loadWrong().length)?`<button class="ghost rev-btn" data-review style="margin-top:10px">🔁 復習モード（間違えた ${loadWrong().length} 問）</button>`:`<div class="x-hint" style="margin-top:10px;text-align:center">復習モード：間違えた問題がここに溜まり、再挑戦できます</div>`}
+    <button class="cta" data-mode="practice">📝 演習モード</button>
+    <div class="mode-note">解いた点数がそのまま EXP になります（気軽に練習）</div>
+    <button class="cta cta-exam" data-mode="exam" style="margin-top:12px">🎯 試験モード</button>
+    <div class="mode-note">700点以上でボーナスEXP（×1.25〜×2.0）・700点未満は0 EXP</div>
+    ${(loadWrong().length)?`<button class="ghost rev-btn" data-review style="margin-top:12px">🔁 復習モード（間違えた ${loadWrong().length} 問）</button>`:`<div class="x-hint" style="margin-top:12px;text-align:center">復習モード：間違えた問題がここに溜まり、再挑戦できます</div>`}
     <button class="ghost" data-go="dict" style="margin-top:10px">📖 用語辞典</button>
     <button class="ghost" data-go="dc" style="margin-top:10px">🏗️ データセンター育成</button>
     <button class="ghost" data-go="transfer" style="margin-top:10px">💾 データ引き継ぎ（保存・復元）</button>
@@ -646,7 +723,7 @@ function renderHome(){
       ? `<div class="acct-bar">👤 ${esc(currentUser.email||"ログイン中")}<button class="link2" data-logout>ログアウト</button></div>`
       : (guestMode ? `<div class="acct-bar">ゲストモード（この端末のみ・同期なし）<button class="link2" data-login>ログイン / 新規登録</button></div>` : "")}
   `;
-  const sb=app.querySelector("[data-start]"); if(sb)sb.onclick=()=>start();
+  app.querySelectorAll("[data-mode]").forEach(b=>b.onclick=()=>start(b.dataset.mode));
   const rv=app.querySelector("[data-review]"); if(rv)rv.onclick=()=>startReview();
   app.querySelectorAll("[data-go]").forEach(b=>b.onclick=()=>go(b.dataset.go));
   const lo=app.querySelector("[data-logout]"); if(lo)lo.onclick=()=>logout();
@@ -658,7 +735,7 @@ function renderQuiz(){
   app.innerHTML = `
     <div class="q-head">
       <button class="quit" data-go="home">✕ 中断</button>
-      <span class="q-count">${S.review?'<span class="rev-tag-q">🔁 復習</span> ':""}${S.idx+1} <em>/ ${S.deck.length}</em></span>
+      <span class="q-count">${S.review?'<span class="rev-tag-q">🔁 復習</span> ':(S.mode==="practice"?'<span class="mode-tag practice">📝 演習</span> ':'<span class="mode-tag exam">🎯 試験</span> ')}${S.idx+1} <em>/ ${S.deck.length}</em></span>
     </div>
     <div class="progress"><div class="progress-fill" style="width:${pct}%"></div></div>
     <div class="q-badge"><span class="stars">${stars(q.imp)}</span><span>重要度 ${q.imp}</span><span class="pts">${pts(q)} 点</span>${multi?`<span class="multi">複数選択（${q.c.length}つ）</span>`:""}</div>
@@ -682,6 +759,15 @@ function renderResult(){
   const t={high:[0,0],mid:[0,0],low:[0,0]};
   S.deck.forEach((q,i)=>{ const k=q.imp>=4?"high":(q.imp===3?"mid":"low"); t[k][1]++; if(grade(q,S.picks[i]).full)t[k][0]++; });
   const TLAB={high:"重要度 高 (4-5)", mid:"重要度 中 (3)", low:"重要度 低 (1-2)"};
+  const isExam = (e.mode==="exam") && !e.review;
+  const gain = (e.bpGain!=null) ? e.bpGain : e.score;
+  let expLine, verdictTxt, verdictPass;
+  if(e.review){ expLine="復習（演習扱い）：点数がそのまま EXP"; verdictTxt="復習完了"; verdictPass=e.score>=PASS; }
+  else if(e.mode==="practice"){ expLine="演習モード：点数がそのまま EXP"; verdictTxt="演習完了"; verdictPass=e.score>=PASS; }
+  else { // 試験モード
+    expLine = gain>0 ? `試験モード：${e.score}点 × ${e.mult} = ${gain} EXP` : "試験モード：700点未満のため EXP 獲得なし";
+    verdictPass = passed; verdictTxt = passed ? "合格！ボーナス EXP 獲得" : "不合格（700点未満）・EXP なし";
+  }
   app.innerHTML = `
     <div class="gauge-wrap">
       <svg viewBox="0 0 200 200" class="gauge">
@@ -691,7 +777,7 @@ function renderResult(){
       </svg>
       <div class="gauge-mid"><div class="gauge-score">${e.score}</div><div class="gauge-max">/ 1000</div></div>
     </div>
-    <div class="verdict ${passed?"pass":"fail"}">${passed?"合格ライン到達":"あと "+(PASS-e.score)+" 点で合格ライン"}</div>
+    <div class="verdict ${verdictPass?"pass":"fail"}">${verdictTxt}</div>
     <div class="result-meta">完全正解 ${e.correct} / ${e.total} 問</div>
     <div class="result-sub">獲得 ${e.earned} / ${e.totalPts} 点（重み付け・部分点込み）→ 1000点換算で ${e.score} 点</div>
     <div class="breakdown">
@@ -701,8 +787,9 @@ function renderResult(){
         <span class="bd-num">${t[k][0]}/${t[k][1]}</span></div>`).join("")}
     </div>
     <div class="bp-card">
-      <div class="bp-row"><span>🏗️ 獲得ビルドポイント</span><span class="bp-gain">+${e.bpGain||e.score} BP</span></div>
-      <div class="bp-total">データセンター累計 ${(e.bpTotal||getBP()).toLocaleString()} BP</div>
+      <div class="bp-row"><span>⚡ 獲得EXP</span><span class="bp-gain">+${gain} EXP</span></div>
+      <div class="bp-exp-line">${esc(expLine)}</div>
+      <div class="bp-total">資格内＆全体レベルに加算 ・ 累計 ${(e.bpTotal||getBP()).toLocaleString()} BP</div>
       ${(e.unlocked&&e.unlocked.length)?`<div class="bp-unlock">🎉 新たに稼働：${e.unlocked.map(esc).join("、")}</div>`:""}
       <button class="bp-link" data-go="dc">データセンターを見る →</button>
     </div>
@@ -713,7 +800,7 @@ function renderResult(){
     </div>
   `;
   requestAnimationFrame(()=>{ const c=app.querySelector(".gauge-fg"); if(c)c.style.strokeDashoffset=off; });
-  app.querySelector("[data-retry]").onclick=()=>{ if(S.review){ if(loadWrong().length) startReview(); else go("home"); } else start(); };
+  app.querySelector("[data-retry]").onclick=()=>{ if(S.review){ if(loadWrong().length) startReview(); else go("home"); } else start(S.mode); };
   app.querySelectorAll("[data-go]").forEach(b=>b.onclick=()=>go(b.dataset.go));
 }
 
@@ -881,17 +968,17 @@ function doResetBP(){
 
 const AZ900_TIERS = [
  {bp:0,     icon:"📦", name:"リソースグループ", desc:"インフラの土台"},
- {bp:600,   icon:"🔗", name:"仮想ネットワーク", desc:"VNetを構成"},
- {bp:1500,  icon:"🖥️", name:"仮想マシン",       desc:"最初のVMが起動"},
- {bp:2800,  icon:"🗄️", name:"ストレージ",       desc:"Blobでデータ保存"},
- {bp:4500,  icon:"⚖️", name:"ロードバランサー", desc:"負荷を分散"},
- {bp:6800,  icon:"🛢️", name:"SQL Database",     desc:"マネージドDB"},
- {bp:9800,  icon:"🏢", name:"可用性ゾーン",     desc:"3ゾーンで高可用性"},
- {bp:13500, icon:"🐳", name:"コンテナ (AKS)",   desc:"Kubernetes"},
- {bp:18000, icon:"🔐", name:"Key Vault",        desc:"鍵を保護"},
- {bp:23500, icon:"📊", name:"Azure Monitor",    desc:"監視とアラート"},
- {bp:30000, icon:"🌍", name:"geo冗長",          desc:"ペアリージョンへ複製"},
- {bp:38000, icon:"🚀", name:"グローバルCDN",    desc:"世界へ高速配信"},
+ {bp:450,   icon:"🔗", name:"仮想ネットワーク", desc:"VNetを構成"},
+ {bp:1100,  icon:"🖥️", name:"仮想マシン",       desc:"最初のVMが起動"},
+ {bp:2100,  icon:"🗄️", name:"ストレージ",       desc:"Blobでデータ保存"},
+ {bp:3400,  icon:"⚖️", name:"ロードバランサー", desc:"負荷を分散"},
+ {bp:5100,  icon:"🛢️", name:"SQL Database",     desc:"マネージドDB"},
+ {bp:7400,  icon:"🏢", name:"可用性ゾーン",     desc:"3ゾーンで高可用性"},
+ {bp:10100, icon:"🐳", name:"コンテナ (AKS)",   desc:"Kubernetes"},
+ {bp:13500, icon:"🔐", name:"Key Vault",        desc:"鍵を保護"},
+ {bp:17600, icon:"📊", name:"Azure Monitor",    desc:"監視とアラート"},
+ {bp:22500, icon:"🌍", name:"geo冗長",          desc:"ペアリージョンへ複製"},
+ {bp:28500, icon:"🚀", name:"グローバルCDN",    desc:"世界へ高速配信"},
 ];
 function dcCount(bp){ return TIERS.filter(t=>bp>=t.bp).length; }
 function dcTitle(n){
@@ -903,41 +990,96 @@ function dcTitle(n){
   return "リージョン開設";
 }
 
+/* ---- データセンターの「時代（フェーズ）」とビジュアル進化 ----
+   資格レベル(n=稼働リソース数)で背景の世界観が変わる。
+   グローバル期になると背景が世界地図になり、各拠点が点灯する。 */
+const DC_PHASES = [
+  { min:0,  band:"b1", name:"ガレージ期",     note:"プレハブにラックを設置" },
+  { min:4,  band:"b2", name:"オンプレ脱却期", note:"空調と配線の整った建物へ" },
+  { min:7,  band:"b3", name:"リージョン期",   note:"複数棟のキャンパスに拡張" },
+  { min:10, band:"b4", name:"グローバル期",   note:"世界中に拠点が点灯", worldmap:true },
+];
+function dcPhase(n){ return DC_PHASES.filter(p=>n>=p.min).pop() || DC_PHASES[0]; }
+
+/* Azureリージョン（座標は地図SVG viewBox 320×130 上の位置）。lv=点灯に必要なレベル */
+const REGIONS = [
+  { name:"東京",        x:270, y:52, lv:10 },
+  { name:"シンガポール", x:248, y:80, lv:10 },
+  { name:"バージニア",   x:78,  y:50, lv:11 },
+  { name:"西ヨーロッパ", x:160, y:40, lv:11 },
+  { name:"カリフォルニア", x:38, y:52, lv:12 },
+  { name:"シドニー",     x:292, y:106, lv:12 },
+  { name:"ブラジル",     x:96,  y:90, lv:12 },
+];
+function worldMapSVG(n){
+  const dots = REGIONS.map(r=>{
+    const on = n>=r.lv;
+    return `<g class="rg ${on?'on':'off'}">
+      ${on?`<circle class="rg-glow" cx="${r.x}" cy="${r.y}" r="7"/>`:''}
+      <circle class="rg-dot" cx="${r.x}" cy="${r.y}" r="${on?3:2}"/>
+      ${on?`<text class="rg-nm" x="${r.x}" y="${r.y-8}">${esc(r.name)}</text>`:''}
+    </g>`;
+  }).join("");
+  const grat = [26,52,78,104].map(y=>`<line x1="0" y1="${y}" x2="320" y2="${y}"/>`).join("")
+             + [64,128,192,256].map(x=>`<line x1="${x}" y1="0" x2="${x}" y2="130"/>`).join("");
+  return `<svg class="scene-map" viewBox="0 0 320 130" preserveAspectRatio="xMidYMid slice">
+    <g class="grat">${grat}</g>
+    <g class="land">
+      <path d="M30,30 L70,26 L88,46 L80,72 L96,96 L86,116 L66,112 L58,84 L40,66 L34,46 Z"/>
+      <path d="M150,26 L182,30 L188,52 L172,74 L176,96 L160,104 L150,82 L156,58 L146,42 Z"/>
+      <path d="M205,28 L280,24 L300,44 L282,58 L250,62 L232,52 L210,50 Z"/>
+      <path d="M276,96 L302,98 L300,114 L280,112 Z"/>
+    </g>
+    ${dots}
+  </svg>`;
+}
+
 function homeScene(){
-  const bp=getBP(), n=dcCount(bp);
-  const ons=TIERS.filter(t=>bp>=t.bp);
-  const band = n>=10?"b4":(n>=7?"b3":(n>=4?"b2":"b1"));
-  const starN = n>=10?16:(n>=7?9:0);
+  const bp=getBP(), n=dcCount(bp), ph=dcPhase(n);
+  const band=ph.band;
+  const starN = band==="b4"?16:(band==="b3"?9:0);
   let stars="";
   for(let i=0;i<starN;i++){ stars+=`<span class="scene-star" style="left:${(i*37%92)+3}%;top:${(i*29%48)+6}%;animation-delay:${(i%5)*0.4}s"></span>`; }
-  const sizes=[26,31,24,33,28,35,25,30,23,34,27,32];
-  const builds = ons.map((t,i)=>`<span class="scene-b" style="font-size:${sizes[i%sizes.length]}px">${t.icon}</span>`).join("");
-  const next=TIERS.find(t=>t.bp>bp);
-  const tail = next?`<span class="scene-ghost">🏗️</span>`:"";
+  let body;
+  if(ph.worldmap){
+    body = worldMapSVG(n);
+  } else {
+    const ons=TIERS.filter(t=>bp>=t.bp);
+    const sizes=[26,31,24,33,28,35,25,30,23,34,27,32];
+    const builds = ons.map((t,i)=>`<span class="scene-b" style="font-size:${sizes[i%sizes.length]}px">${t.icon}</span>`).join("");
+    const next=TIERS.find(t=>t.bp>bp);
+    const tail = next?`<span class="scene-ghost">🏗️</span>`:"";
+    body = `<div class="scene-ground">${builds}${tail}</div>`;
+  }
   return `<div class="home-scene ${band}">
     ${stars}
-    <div class="scene-info"><span class="scene-lvl">Lv.${n} ${esc(dcTitle(n))}</span><span class="scene-bp">${bp.toLocaleString()} BP</span></div>
-    <div class="scene-ground">${builds}${tail}</div>
+    <div class="scene-info"><span class="scene-lvl">Lv.${n} ${esc(ph.name)}</span><span class="scene-bp">${bp.toLocaleString()} BP</span></div>
+    ${body}
   </div>`;
 }
 
 function renderDC(){
-  const bp=getBP(), n=dcCount(bp), next=TIERS.find(t=>t.bp>bp);
+  const bp=getBP(), n=dcCount(bp), next=TIERS.find(t=>t.bp>bp), ph=dcPhase(n);
   let prog, nextTxt;
   if(next){
     const prevBp = n>0 ? TIERS[n-1].bp : 0;
     prog = Math.round((bp-prevBp)/(next.bp-prevBp)*100);
     nextTxt = `次の「${next.icon} ${next.name}」まであと ${(next.bp-bp).toLocaleString()} BP`;
   } else { prog=100; nextTxt="すべてのリソースが稼働中！"; }
+  const nextPhase = DC_PHASES.find(p=>p.min>n);
+  const phaseTxt = nextPhase ? `次は Lv.${nextPhase.min}「${nextPhase.name}」へ` : "最終フェーズに到達！";
   app.innerHTML = `
     <div class="q-head"><button class="quit" data-go="home">🏠 ホーム</button><span class="q-count">データセンター</span></div>
     <div class="dc-hero">
       <div class="dc-lvl">レベル ${n} / ${TIERS.length}</div>
       <div class="dc-title">${dcTitle(n)}</div>
+      <div class="dc-phase"><span class="dc-phase-tag">${esc(ph.name)}</span>${esc(ph.note)}</div>
       <div class="dc-bp">累計 ${bp.toLocaleString()} BP ・ 稼働リソース ${n}種</div>
       <div class="dc-prog"><div class="dc-prog-f" style="width:${prog}%"></div></div>
       <div class="dc-next">${nextTxt}</div>
     </div>
+    ${ph.worldmap?`<div class="home-scene b4" style="height:150px;margin-bottom:16px">${worldMapSVG(n)}<div class="scene-info"><span class="scene-lvl">🌍 グローバル拠点 ${REGIONS.filter(r=>n>=r.lv).length}/${REGIONS.length}</span></div></div>`
+      :`<div class="dc-phasebar"><span>🏗️ ${esc(ph.name)}</span><span>${esc(phaseTxt)}</span></div>`}
     <div class="dc-sub">あなたのデータセンター</div>
     <div class="dc-grid">
       ${TIERS.map(t=>{
@@ -1074,7 +1216,7 @@ function applyCloud(certId){
   const d = cloudData[certId]; if(!d) return;
   try{
     if(d.bp !== undefined) localStorage.setItem("cert_"+certId+"_bp", String(d.bp));
-    if(d.wrong !== undefined) localStorage.setItem("cert_"+certId+"_wrong", JSON.stringify(d.wrong));
+    if(d.wrong !== undefined) localStorage.setItem("cert_"+certId+"_wrong", JSON.stringify([...new Set(d.wrong||[])]));
     if(d.history !== undefined) localStorage.setItem("cert_"+certId+"_history", JSON.stringify(d.history));
   }catch(e){}
 }
@@ -1121,7 +1263,34 @@ function certStat(c){
   return { bp, best, plays:hist.length, lvl, tiers:tiers.length };
 }
 
+/* ---- 総合エンジニアレベル（全資格の合計BPから連続的に算出）----
+   資格レベルが TIERS の段数なのに対し、総合は「合計BPの数式」で出す。
+   資格が増えても合計BPが増えて自然にレベルが上がるだけなので破綻しない。 */
+const OVERALL_STEP = 300;
+function totalBP(){ return CERTS.reduce((s,c)=>s + (parseInt(localStorage.getItem("cert_"+c.id+"_bp")||"0",10)||0), 0); }
+function overallLevel(tbp){ return Math.floor((Math.sqrt(1 + 8*tbp/OVERALL_STEP) - 1) / 2); }
+function bpForLevel(L){ return OVERALL_STEP * L * (L+1) / 2; }   // レベルLの開始に必要な合計BP
+function overallTitle(lv){
+  if(lv>=40) return "クラウドアーキテクト";
+  if(lv>=30) return "シニアエンジニア";
+  if(lv>=20) return "クラウドエンジニア";
+  if(lv>=12) return "アソシエイト";
+  if(lv>=6)  return "ジュニアエンジニア";
+  if(lv>=1)  return "見習いエンジニア";
+  return "ビギナー";
+}
+function overallStat(){
+  const tbp = totalBP();
+  const lv = overallLevel(tbp);
+  const start = bpForLevel(lv), next = bpForLevel(lv+1);
+  const pct = next>start ? Math.round((tbp-start)/(next-start)*100) : 100;
+  const remain = Math.max(0, next - tbp);
+  const active = CERTS.filter(c=>c.status==="ready" && (parseInt(localStorage.getItem("cert_"+c.id+"_bp")||"0",10)||0)>0).length;
+  return { tbp, lv, pct, remain, active, title:overallTitle(lv) };
+}
+
 function renderSelect(){
+  const ov = overallStat();
   const cards = CERTS.map(c=>{
     if(c.status!=="ready"){
       return `<div class="cert-card locked">
@@ -1144,6 +1313,21 @@ function renderSelect(){
     </button>`;
   }).join("");
   app.innerHTML = `
+    <div class="me-hero">
+      <div class="me-top">
+        <div>
+          <div class="me-lab">総合エンジニアレベル</div>
+          <div class="me-lvrow"><span class="me-lv">Lv.${ov.lv}</span><span class="me-title">${esc(ov.title)}</span></div>
+        </div>
+        <div class="me-bp">${ov.tbp.toLocaleString()} BP</div>
+      </div>
+      <div class="me-prog"><div class="me-prog-f" style="width:${ov.pct}%"></div></div>
+      <div class="me-next">次のレベルまで ${ov.remain.toLocaleString()} BP ・ 学習中 ${ov.active} 資格</div>
+    </div>
+    <div class="me-actions">
+      <button class="me-btn" data-go="ranking">🏆 ランキング</button>
+      <button class="me-btn" data-go="profile">👤 プロフィール</button>
+    </div>
     <div class="sel-head">
       <span class="eyebrow">MICROSOFT 認定対策</span>
       <h2 class="sel-title">資格を選ぶ</h2>
@@ -1155,9 +1339,115 @@ function renderSelect(){
       : (guestMode ? `<div class="acct-bar">ゲストモード（この端末のみ・同期なし）<button class="link2" data-login>ログイン / 新規登録</button></div>` : "")}
   `;
   app.querySelectorAll("[data-cert]").forEach(b=>b.onclick=()=>selectCert(b.dataset.cert));
+  app.querySelectorAll("[data-go]").forEach(b=>b.onclick=()=>go(b.dataset.go));
   const lo=app.querySelector("[data-logout]"); if(lo)lo.onclick=()=>logout();
   const li=app.querySelector("[data-login]"); if(li)li.onclick=()=>{ guestMode=false; authMode="login"; render(); };
   window.scrollTo(0,0);
+}
+
+/* ======================= プロフィール／ランキング ======================= */
+function getProfileName(){ return localStorage.getItem("profile_name") || ""; }
+function setProfileName(n){ try{ localStorage.setItem("profile_name", n); }catch(e){} }
+
+// 公開用の要約データ（個人の問題履歴などは含めない）
+function buildPublic(){
+  const certLevels={};
+  CERTS.forEach(c=>{
+    if(c.status==="ready"){
+      const bp=parseInt(localStorage.getItem("cert_"+c.id+"_bp")||"0",10)||0;
+      certLevels[c.id]=(c.TIERS||[]).filter(t=>bp>=t.bp).length;
+    }
+  });
+  const ov=overallStat();
+  return { displayName:getProfileName()||"名無しエンジニア", totalBP:ov.tbp, overallLevel:ov.lv,
+           title:ov.title, certLevels, updatedAt:new Date().toISOString() };
+}
+// ランキングへ公開・更新（表示名を設定済みのログインユーザーのみ）
+function publishLeaderboard(){
+  if(!window.LB || !currentUserId || guestMode) return;
+  if(!getProfileName()) return;   // オプトイン：名前未設定なら公開しない
+  try{ window.LB.publish(buildPublic()); }catch(e){}
+}
+
+function renderProfile(){
+  const ov=overallStat();
+  const name=getProfileName();
+  const certRows = CERTS.filter(c=>c.status==="ready").map(c=>{
+    const st=certStat(c);
+    return `<div class="pf-cert"><span style="color:${c.accent}">${esc(c.code)}</span><span class="pf-cn">${esc(c.name)}</span><span class="pf-cl">Lv.${st.lvl} ・ 最高 ${st.best}</span></div>`;
+  }).join("");
+  app.innerHTML = `
+    <div class="q-head"><button class="quit" data-go="select">← 資格選択</button><span class="q-count">プロフィール</span></div>
+    <div class="me-hero">
+      <div class="me-lab">総合エンジニアレベル</div>
+      <div class="me-lvrow"><span class="me-lv">Lv.${ov.lv}</span><span class="me-title">${esc(ov.title)}</span></div>
+      <div class="me-next" style="margin-top:6px">${ov.tbp.toLocaleString()} BP ・ 学習中 ${ov.active} 資格</div>
+    </div>
+    <div class="dc-sub">表示名（ランキングで公開されます）</div>
+    <input id="pf-name" class="auth-input" maxlength="16" placeholder="例：くらうど太郎" value="${esc(name)}">
+    <div id="pf-msg" class="auth-msg"></div>
+    <button class="cta" id="pf-save">${guestMode?"※ ログインすると公開できます":"保存してランキングに公開"}</button>
+    <div class="dc-sub">資格別レベル</div>
+    <div class="pf-list">${certRows}</div>
+    <button class="ghost" data-go="ranking" style="margin-top:14px">🏆 ランキングを見る</button>
+  `;
+  app.querySelectorAll("[data-go]").forEach(b=>b.onclick=()=>go(b.dataset.go));
+  const msg=document.getElementById("pf-msg");
+  document.getElementById("pf-save").onclick=()=>{
+    if(guestMode || !currentUser){ msg.style.color="var(--gold)"; msg.textContent="ランキングに参加するにはログインが必要です。"; return; }
+    const v=(document.getElementById("pf-name").value||"").trim();
+    if(!v){ msg.style.color="var(--gold)"; msg.textContent="表示名を入力してください。"; return; }
+    setProfileName(v);
+    publishLeaderboard();
+    msg.style.color="var(--good)"; msg.textContent="✓ 保存し、ランキングに公開しました。";
+  };
+  window.scrollTo(0,0);
+}
+
+function renderRanking(){
+  app.innerHTML = `
+    <div class="q-head"><button class="quit" data-go="select">← 資格選択</button><span class="q-count">ランキング</span></div>
+    <div id="lb-body"><div class="loading">読み込み中…</div></div>
+  `;
+  app.querySelectorAll("[data-go]").forEach(b=>b.onclick=()=>go(b.dataset.go));
+  loadRanking();
+  window.scrollTo(0,0);
+}
+async function loadRanking(){
+  const body=document.getElementById("lb-body"); if(!body) return;
+  if(guestMode || !window.LB || !currentUser){
+    body.innerHTML=`<div class="empty">ランキングを見るにはログインが必要です。<br>ログインして、プロフィールで表示名を設定すると参加できます。</div>`;
+    return;
+  }
+  try{
+    const rows = await window.LB.top(50);
+    const ov = overallStat();
+    let myRank=null; try{ myRank = await window.LB.myRank(ov.tbp); }catch(e){}
+    if(!rows.length){
+      body.innerHTML=`<div class="empty">まだ誰もランキングに登録していません。<br>プロフィールで表示名を設定すると一番乗りで参加できます。</div>`;
+      return;
+    }
+    const myUid=currentUserId;
+    const mine = rows.find(r=>r.uid===myUid);
+    body.innerHTML = `
+      ${(myRank && !mine || myRank)?`<div class="lb-me">あなた：${myRank?("<b>"+myRank+"位</b>"):"未公開"} ・ 総合Lv.${ov.lv} ・ ${ov.tbp.toLocaleString()} BP${getProfileName()?"":' <button class="link2" data-go="profile">表示名を設定</button>'}</div>`:""}
+      <div class="lb-list">
+        ${rows.map((r,i)=>`
+          <div class="lb-row ${r.uid===myUid?'me':''}">
+            <span class="lb-rank ${i<3?'top':''}">${i+1}</span>
+            <div class="lb-info">
+              <span class="lb-name">${esc(r.displayName||"名無し")}${r.uid===myUid?' <small>(あなた)</small>':''}</span>
+              <span class="lb-cert">総合Lv.${r.overallLevel||0}${r.title?" ・ "+esc(r.title):""}</span>
+            </div>
+            <span class="lb-bp">${(r.totalBP||0).toLocaleString()}<small> BP</small></span>
+          </div>`).join("")}
+      </div>
+      <div class="x-hint" style="margin-top:14px">${getProfileName()?"":"※ ランキングに自分を載せるには、プロフィールで表示名を設定してください。"}</div>
+    `;
+    app.querySelectorAll("[data-go]").forEach(b=>b.onclick=()=>go(b.dataset.go));
+  }catch(e){
+    body.innerHTML=`<div class="empty">読み込みに失敗しました。<br>${esc(String(e.message||e))}</div>`;
+  }
 }
 
 migrateOldData();
@@ -1171,7 +1461,7 @@ setTimeout(function(){
 </script>
   <script type="module">
   import { initializeApp } from "https://www.gstatic.com/firebasejs/10.0.0/firebase-app.js";
-  import { getFirestore, doc, setDoc, getDoc, onSnapshot } from "https://www.gstatic.com/firebasejs/10.0.0/firebase-firestore.js";
+  import { getFirestore, doc, setDoc, getDoc, onSnapshot, collection, query, where, orderBy, limit, getDocs, getCountFromServer } from "https://www.gstatic.com/firebasejs/10.0.0/firebase-firestore.js";
   import { getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword, signOut, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.0.0/firebase-auth.js";
 
   const firebaseConfig = {
@@ -1197,6 +1487,31 @@ setTimeout(function(){
       logout: () => signOut(auth)
     };
 
+    // 画面側から呼び出せるランキングAPI（公開コレクション leaderboard）
+    window.LB = {
+      publish: async (data) => {
+        if (!currentUserId) return;
+        await setDoc(doc(db, "leaderboard", currentUserId), data, { merge: true });
+      },
+      top: async (n) => {
+        const q = query(collection(db, "leaderboard"), orderBy("totalBP", "desc"), limit(n || 50));
+        const snap = await getDocs(q);
+        const rows = []; snap.forEach(d => rows.push(Object.assign({ uid: d.id }, d.data())));
+        return rows;
+      },
+      myRank: async (myBP) => {
+        try {
+          const c = await getCountFromServer(query(collection(db, "leaderboard"), where("totalBP", ">", myBP)));
+          return c.data().count + 1;
+        } catch (e) { return null; }
+      },
+      me: async () => {
+        if (!currentUserId) return null;
+        try { const d = await getDoc(doc(db, "leaderboard", currentUserId)); return d.exists() ? d.data() : null; }
+        catch (e) { return null; }
+      }
+    };
+
     let unsub = null;
 
     // ログイン状態の監視。ログイン中はそのアカウントのデータをリアルタイム同期
@@ -1205,6 +1520,15 @@ setTimeout(function(){
       if (user) {
         currentUser = user;
         currentUserId = user.uid;
+        // 公開プロフィール（表示名）をこの端末へ取り込む（機種をまたいで名前が引き継がれる）
+        if (window.LB) {
+          window.LB.me().then(d => {
+            if (d && d.displayName) {
+              localStorage.setItem("profile_name", d.displayName);
+              if (S.screen === "profile" || S.screen === "select" || S.screen === "ranking") render();
+            }
+          }).catch(() => {});
+        }
         if (unsub) { unsub(); unsub = null; }
         unsub = onSnapshot(doc(db, "users", currentUserId), (docSnap) => {
           if (docSnap.exists()) {
