@@ -1349,6 +1349,9 @@ function renderSelect(){
 function getProfileName(){ return localStorage.getItem("profile_name") || ""; }
 function setProfileName(n){ try{ localStorage.setItem("profile_name", n); }catch(e){} }
 
+// 表示名が未設定の場合のデフォルト名（メールは公開せず、ID由来の匿名名）
+function defaultName(){ return "エンジニア" + (currentUserId ? currentUserId.slice(-4).toUpperCase() : "0000"); }
+
 // 公開用の要約データ（個人の問題履歴などは含めない）
 function buildPublic(){
   const certLevels={};
@@ -1359,13 +1362,12 @@ function buildPublic(){
     }
   });
   const ov=overallStat();
-  return { displayName:getProfileName()||"名無しエンジニア", totalBP:ov.tbp, overallLevel:ov.lv,
+  return { displayName:getProfileName()||defaultName(), totalBP:ov.tbp, overallLevel:ov.lv,
            title:ov.title, certLevels, updatedAt:new Date().toISOString() };
 }
-// ランキングへ公開・更新（表示名を設定済みのログインユーザーのみ）
+// ランキングへ自動公開・更新（ログイン中なら表示名の有無に関わらず自動で反映）
 function publishLeaderboard(){
   if(!window.LB || !currentUserId || guestMode) return;
-  if(!getProfileName()) return;   // オプトイン：名前未設定なら公開しない
   try{ window.LB.publish(buildPublic()); }catch(e){}
 }
 
@@ -1383,10 +1385,11 @@ function renderProfile(){
       <div class="me-lvrow"><span class="me-lv">Lv.${ov.lv}</span><span class="me-title">${esc(ov.title)}</span></div>
       <div class="me-next" style="margin-top:6px">${ov.tbp.toLocaleString()} BP ・ 学習中 ${ov.active} 資格</div>
     </div>
-    <div class="dc-sub">表示名（ランキングで公開されます）</div>
-    <input id="pf-name" class="auth-input" maxlength="16" placeholder="例：くらうど太郎" value="${esc(name)}">
+    <div class="dc-sub">表示名</div>
+    <input id="pf-name" class="auth-input" maxlength="16" placeholder="${esc(defaultName())}" value="${esc(name)}">
     <div id="pf-msg" class="auth-msg"></div>
-    <button class="cta" id="pf-save">${guestMode?"※ ログインすると公開できます":"保存してランキングに公開"}</button>
+    <button class="cta" id="pf-save">${guestMode?"※ ログインするとランキングに参加できます":"表示名を保存"}</button>
+    <div class="x-hint" style="margin-top:8px">ランキングはログイン中、クイズを解くたびに<b style="color:var(--good)">自動で更新</b>されます。表示名は未設定でも「${esc(defaultName())}」として自動で参加します。</div>
     <div class="dc-sub">資格別レベル</div>
     <div class="pf-list">${certRows}</div>
     <button class="ghost" data-go="ranking" style="margin-top:14px">🏆 ランキングを見る</button>
@@ -1396,10 +1399,9 @@ function renderProfile(){
   document.getElementById("pf-save").onclick=()=>{
     if(guestMode || !currentUser){ msg.style.color="var(--gold)"; msg.textContent="ランキングに参加するにはログインが必要です。"; return; }
     const v=(document.getElementById("pf-name").value||"").trim();
-    if(!v){ msg.style.color="var(--gold)"; msg.textContent="表示名を入力してください。"; return; }
-    setProfileName(v);
-    publishLeaderboard();
-    msg.style.color="var(--good)"; msg.textContent="✓ 保存し、ランキングに公開しました。";
+    setProfileName(v);                 // 空ならデフォルト名に戻る
+    publishLeaderboard();              // すぐにランキングへ反映
+    msg.style.color="var(--good)"; msg.textContent=v?"✓ 表示名を保存し、ランキングに反映しました。":"✓ デフォルト名でランキングに参加中です。";
   };
   window.scrollTo(0,0);
 }
@@ -1430,7 +1432,7 @@ async function loadRanking(){
     const myUid=currentUserId;
     const mine = rows.find(r=>r.uid===myUid);
     body.innerHTML = `
-      ${(myRank && !mine || myRank)?`<div class="lb-me">あなた：${myRank?("<b>"+myRank+"位</b>"):"未公開"} ・ 総合Lv.${ov.lv} ・ ${ov.tbp.toLocaleString()} BP${getProfileName()?"":' <button class="link2" data-go="profile">表示名を設定</button>'}</div>`:""}
+      ${(myRank && !mine || myRank)?`<div class="lb-me">あなた：${myRank?("<b>"+myRank+"位</b>"):"未公開"} ・ 総合Lv.${ov.lv} ・ ${ov.tbp.toLocaleString()} BP${getProfileName()?"":' <button class="link2" data-go="profile">表示名を変更</button>'}</div>`:""}
       <div class="lb-list">
         ${rows.map((r,i)=>`
           <div class="lb-row ${r.uid===myUid?'me':''}">
@@ -1442,7 +1444,7 @@ async function loadRanking(){
             <span class="lb-bp">${(r.totalBP||0).toLocaleString()}<small> BP</small></span>
           </div>`).join("")}
       </div>
-      <div class="x-hint" style="margin-top:14px">${getProfileName()?"":"※ ランキングに自分を載せるには、プロフィールで表示名を設定してください。"}</div>
+      <div class="x-hint" style="margin-top:14px">${getProfileName()?"":'表示名は未設定でも自動で参加中です。<button class="link2" data-go="profile">表示名を変更</button>'}</div>
     `;
     app.querySelectorAll("[data-go]").forEach(b=>b.onclick=()=>go(b.dataset.go));
   }catch(e){
@@ -1513,6 +1515,7 @@ setTimeout(function(){
     };
 
     let unsub = null;
+    let lbAutoDone = false;   // ログインごとに1回、最新の成績をランキングへ自動反映
 
     // ログイン状態の監視。ログイン中はそのアカウントのデータをリアルタイム同期
     onAuthStateChanged(auth, (user) => {
@@ -1530,6 +1533,7 @@ setTimeout(function(){
           }).catch(() => {});
         }
         if (unsub) { unsub(); unsub = null; }
+        lbAutoDone = false;
         unsub = onSnapshot(doc(db, "users", currentUserId), (docSnap) => {
           if (docSnap.exists()) {
             const data = docSnap.data();
@@ -1544,6 +1548,7 @@ setTimeout(function(){
               cloudData = data.certs;            // クラウドの全資格データを保持
               if (S.cert) applyCloud(S.cert);    // 選択中の資格をこの端末へ反映
               if (S.screen==="home" || S.screen==="dc" || S.screen==="history" || S.screen==="select") { render(); }
+              if (!lbAutoDone) { lbAutoDone = true; try{ publishLeaderboard(); }catch(e){} }  // ログイン時に自動でランキング反映
             } else {
               seedCloudFromLocal();              // 中身が空 → ローカルから初期投入
             }
