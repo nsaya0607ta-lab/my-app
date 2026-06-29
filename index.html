@@ -38,10 +38,13 @@ h1.title{font-size:34px;line-height:1.05;font-weight:800;margin:8px 0 0;letter-s
 .sb-lab{flex:none;width:104px;font-size:11px;color:var(--muted);white-space:nowrap;letter-spacing:.01em;line-height:1;overflow:hidden;text-overflow:ellipsis;}
 .sb-lab b{color:var(--text);font-size:13px;font-weight:800;margin-left:2px;}
 .sb-lab-cert b{color:var(--accent);}
-.sb-prog{flex:1;min-width:40px;height:5px;border-radius:99px;background:rgba(255,255,255,.09);overflow:hidden;}
-.sb-prog-f{height:100%;border-radius:99px;width:0;transition:width .6s ease;}
-.sb-prog-f.overall{background:linear-gradient(90deg,var(--good),var(--gold));background-size:200% 100%;animation:sbflow 2.6s linear infinite;}
-.sb-prog-f.cert{background:linear-gradient(90deg,var(--accent),#7ad0ff);background-size:200% 100%;animation:sbflow 3.2s linear infinite;}
+.sb-prog{flex:1;min-width:40px;height:6px;border-radius:99px;background:var(--bg2);overflow:visible;
+  box-shadow:inset 0 0 0 1px rgba(255,255,255,.06), inset 0 1px 2px rgba(0,0,0,.5), 0 0 5px rgba(56,163,255,.10);}
+.sb-prog-f{height:100%;border-radius:99px;width:0;transition:width .7s cubic-bezier(.22,1,.36,1);}
+.sb-prog-f.overall{background:linear-gradient(90deg,#f0a91e,#ffcb47 55%,#ffe9a8);background-size:200% 100%;animation:sbflow 2.6s linear infinite;
+  box-shadow:0 0 6px 1px rgba(245,196,81,.6), 0 0 12px 2px rgba(245,196,81,.32), inset -4px 0 5px -3px rgba(255,255,255,.7);}
+.sb-prog-f.cert{background:linear-gradient(90deg,#2a86ec,#48a6ff 55%,#a9ddff);background-size:200% 100%;animation:sbflow 3.2s linear infinite;
+  box-shadow:0 0 6px 1px rgba(56,163,255,.6), 0 0 12px 2px rgba(56,163,255,.32), inset -4px 0 5px -3px rgba(255,255,255,.7);}
 @keyframes sbflow{0%{background-position:0 0}100%{background-position:200% 0}}
 .sb-div{align-self:stretch;width:1px;background:var(--line);flex:none;}
 .sb-coin{flex:none;font-size:11px;color:var(--muted);white-space:nowrap;display:flex;align-items:center;gap:4px;}
@@ -812,10 +815,13 @@ function renderStatusBar(){
     let cpct;
     if(next){ const prevBp = lvl>0 ? TIERS[lvl-1].bp : 0; cpct = Math.max(0, Math.min(100, Math.round((bp-prevBp)/(next.bp-prevBp)*100))); }
     else cpct = 100;
+    // どのリソース間の進捗か（例：VM → ストレージ）をツールチップに明示
+    const curName = lvl>0 ? (TIERS[lvl-1].icon+" "+TIERS[lvl-1].name) : "スタート";
+    const certTitle = next ? `${curName} → ${next.icon} ${next.name}（あと ${(next.bp-bp).toLocaleString()} BP）` : "全リソース稼働";
     certRow = `
       <div class="sb-line">
         <span class="sb-lab sb-lab-cert">${esc(c.code||"選択資格")} Lv.<b>${lvl}</b></span>
-        <span class="sb-prog" title="${next?("次のリソースまで "+(next.bp-bp).toLocaleString()+" BP"):"全リソース稼働"}"><span class="sb-prog-f cert" style="width:${cpct}%"></span></span>
+        <span class="sb-prog" title="${esc(certTitle)}"><span class="sb-prog-f cert" style="width:${cpct}%"></span></span>
       </div>`;
   }
 
