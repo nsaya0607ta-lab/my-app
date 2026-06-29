@@ -371,6 +371,35 @@ h1.title{font-size:34px;line-height:1.05;font-weight:800;margin:8px 0 0;letter-s
 .pt-m-title{font-size:16px;font-weight:800;line-height:1.3;margin-bottom:5px;}
 .pt-m-desc{font-size:12.5px;color:var(--muted);line-height:1.65;}
 .pt-m-reward{font-size:12px;color:var(--gold);font-weight:700;margin-top:8px;}
+.pt-mlist-lab{font-size:11px;color:var(--muted);margin:4px 0 10px;letter-spacing:.04em;}
+.pt-mlist{display:flex;flex-direction:column;gap:12px;}
+.pt-mission-btn{display:block;width:100%;text-align:left;cursor:pointer;color:var(--text);
+  transition:transform .12s,border-color .12s,box-shadow .12s;}
+.pt-mission-btn:active{transform:scale(.99);}
+.pt-mission-btn:hover{border-color:rgba(245,196,81,.5);}
+.pt-m-foot{display:flex;align-items:center;justify-content:space-between;margin-top:10px;}
+.pt-m-go{font-size:12px;font-weight:800;color:var(--accent);white-space:nowrap;}
+.pt-cleared{font-size:10px;font-weight:800;color:var(--good);background:rgba(54,211,153,.14);border:1px solid var(--good);border-radius:99px;padding:1px 7px;margin-left:6px;vertical-align:middle;}
+.pt-mission-strip{display:flex;align-items:center;gap:9px;margin-bottom:12px;padding:8px 12px;
+  background:rgba(245,196,81,.06);border:1px solid var(--line);border-radius:12px;}
+.pt-strip-title{font-size:13px;font-weight:800;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.pt-help{margin-left:auto;flex:none;width:30px;height:30px;border-radius:50%;border:1px solid var(--line);
+  background:rgba(255,255,255,.05);color:var(--text);font-size:15px;cursor:pointer;line-height:1;}
+.pt-help:active{transform:scale(.92);border-color:var(--accent);}
+.pt-coinbar-info{font-size:12px;color:var(--muted);}
+.pt-coinbar-info b{color:var(--gold);}
+.pt-vnet-head{display:flex;align-items:center;gap:8px;margin-bottom:10px;flex-wrap:wrap;}
+.pt-vnet-lab{font-size:12px;font-weight:800;color:var(--accent);letter-spacing:.02em;display:flex;align-items:center;}
+.pt-vnetbody{display:flex;flex-direction:column;gap:8px;padding:8px;min-height:70px;background:rgba(255,255,255,.02);border-radius:12px;}
+.pt-vnet-empty{font-size:12px;color:var(--muted);opacity:.75;text-align:center;padding:18px 0;}
+.pt-addr{display:inline-flex;align-items:center;color:var(--muted);font-weight:700;}
+.pt-ip-in{width:38px;margin-left:2px;padding:2px 4px;font-size:12px;font-weight:800;text-align:center;color:var(--text);
+  background:rgba(0,0,0,.3);border:1px solid var(--line);border-radius:6px;outline:none;-webkit-appearance:none;}
+.pt-ip-in:focus{border-color:var(--accent);box-shadow:0 0 0 2px rgba(56,163,255,.25);}
+.pt-ip-oct{width:46px;}
+.pt-hint-head{display:flex;align-items:center;gap:8px;font-size:13px;font-weight:800;color:var(--text);margin-bottom:10px;}
+.pt-hint-list{margin:0 0 14px;padding-left:20px;display:flex;flex-direction:column;gap:8px;}
+.pt-hint-list li{font-size:13px;line-height:1.6;color:var(--text);}
 .pt-sandbox{margin-bottom:12px;}
 .pt-drop{border:1.5px dashed var(--line);border-radius:14px;transition:border-color .15s,box-shadow .15s,background .15s;}
 .pt-over{border-color:var(--gold)!important;box-shadow:0 0 0 3px rgba(245,196,81,.25),0 0 18px rgba(245,196,81,.35) inset!important;background:rgba(245,196,81,.06)!important;}
@@ -420,26 +449,7 @@ let PASS = 700;   // 選択中の資格の合格ライン（loadCertで設定）
 let DRAW = 45;    // 選択中の資格の1回の出題数（loadCertで設定）
 let Q = [], CONCEPTS = [], TIERS = [];   // 選択中の資格のデータ（loadCertで差し替え）
 const IMP_POINTS = {1:15, 2:18, 3:21, 4:24, 5:27}; // 重要度 → 配点
-// ▼▼▼ 【新設】IPアドレス計算・変換用の共通ロジック ▼▼▼
-function ipToNum(ipStr) {
-  const parts = (ipStr || "").split('.').map(Number);
-  if (parts.length !== 4 || parts.some(num => isNaN(num) || num < 0 || num > 255)) return null;
-  return ((parts[0] << 24) >>> 0) + (parts[1] << 16) + (parts[2] << 8) + parts[3];
-}
-function numToIp(num) {
-  return [num >>> 24, (num >>> 16) & 255, (num >>> 8) & 255, num & 255].join('.');
-}
-function getIpRange(ipStr, prefix) {
-  const ipNum = ipToNum(ipStr);
-  if (ipNum === null) return null;
-  const p = parseInt(prefix, 10);
-  if (isNaN(p) || p < 8 || p > 30) return null;
-  const mask = p === 0 ? 0 : (~0 << (32 - p)) >>> 0;
-  const start = (ipNum & mask) >>> 0;
-  const end = (start | ~mask) >>> 0;
-  return { start, end };
-}
-// ▲▲▲ 【追加ここまで】 ▲▲▲
+
 /* =========================================================================
    問題プール（ここに追加していけば自動でランダム出題の対象になります）
    imp  = 重要度(1〜5)。配点は IMP_POINTS で決定。
@@ -588,7 +598,8 @@ const AZ900_Q = [
 ];
 
 let S = {screen:"select", cert:null, mode:"exam", coins:0,
-  infra:{ vnet:false, subnets:{ front:[], back:[] }, lb:false },
+  infra:{ vnet:false, vnetPrefix:"", subnets:[], lb:false },
+  clearedMissions:[],
   deck:[], idx:0, picks:[], sel:[], revealed:false, last:null};
 let practicePick=false;   // 演習モードの問題数選択を表示中か
 let db = null, currentUserId = null;
@@ -793,191 +804,175 @@ function renderStatusBar(){
 }
 
 /* ======================= 仮想Azureデモ環境（ポータル） ======================= */
-/* 購入可能リソース */
+/* ドックのリソース（配置は無料。コインは消費しない） */
 const PT_SHOP = [
-  { key:"vnet", icon:"🌐", name:"VNet", cost:50 },
-  { key:"vm",   icon:"🖥️", name:"VM",   cost:100 },
-  { key:"lb",   icon:"⚖️", name:"LB",   cost:150 },
+  { key:"vnet",   icon:"🌐", name:"VNet" },
+  { key:"subnet", icon:"🗂️", name:"サブネット" },
+  { key:"vm",     icon:"🖥️", name:"VM" },
+  { key:"lb",     icon:"⚖️", name:"LB" },
 ];
+/* 難易度(星)→クリア報酬BP */
+function missionBP(stars){ return ({1:500,2:1000,3:1500,4:2000,5:3000})[stars] || stars*500; }
 
 /* ====== ミッション（お題）レジストリ ======
-   stars: 難易度(1-5) / reward: 報酬AC / check(inf): true でクリア、
-   未達なら不足を示すヒント文字列を返す。新しいお題はここに足すだけ。 */
+   stars: 難易度(1-5) / hints: ❓で表示する設計ヒント / check(inf): true でクリア。
+   新しいお題はここに足すだけで目次に並ぶ。 */
 const MISSIONS = [
   {
-    id: "m1",
-    title: "基本の1台！単一Webサーバーの構築",
-    desc: "VNetの中にサブネットを作り、Webサーバー用のVMを1台デプロイせよ！アドレス設計（プレフィックス長・IP）も入力しよう。",
-    stars: 1,
-    hints: [
+    id:"m1",
+    title:"基本の1台！単一Webサーバーの構築",
+    desc:"VNetの中にサブネットを作り、Webサーバー用のVMを1台デプロイせよ！アドレス設計（プレフィックス長・IP）も入力しよう。",
+    stars:1,
+    hints:[
       "🌐VNetを箱庭へドラッグしてデプロイし、プレフィックス長（例: 16）を入力します。",
       "🗂️サブネットをVNetの中へドラッグし、プレフィックス長（例: 24）を入力します。",
       "🖥️VMをサブネットへドラッグし、第4オクテット（例: 4）を入力します。",
-      "範囲の包含が大切：VNet(/16) ⊃ サブネット(/24) ⊃ VM。サブネットのプレフィックス長はVNetより大きい数字にします。"
+      "範囲の包含が大切：VNet(/16) ⊃ サブネット(/24) ⊃ VM。サブネットのプレフィックス長はVNetより大きい数字（範囲が狭い）にします。",
+      "FrontサブネットはWebサーバーVMを置く公開用のネットワークです。"
     ],
-    check: (inf) => {
-      if (!inf.vnet || (inf.vnetPrefix || "").trim() === "") return { ok: false, msg: "❌ VNetが配置されていないか、プレフィックス長が未入力です。" };
-      if (inf.subnets.length < 1) return { ok: false, msg: "❌ VNetの中にサブネットを1つ以上配置してください。" };
-      
-      const vRange = getIpRange("10.0.0.0", inf.vnetPrefix);
-      if (!vRange) return { ok: false, msg: "❌ VNetのプレフィックス長が不正です（8〜30）。" };
-
+    check:(inf)=>{
+      if(!inf.vnet) return false;
+      if((inf.vnetPrefix||"").trim()==="") return false;
+      if(inf.subnets.length < 1) return false;
       const s = inf.subnets[0];
-      if ((s.prefix || "").trim() === "") return { ok: false, msg: "❌ サブネットのプレフィックス長を入力してください。" };
-      const sRange = getIpRange("10.0.1.0", s.prefix);
-      if (!sRange) return { ok: false, msg: "❌ サブネットのプレフィックス長が不正です（8〜30）。" };
-
-      // VNet ⊃ サブネット の包含チェック
-      if (sRange.start < vRange.start || sRange.end > vRange.end) {
-        return { ok: false, msg: `❌ サブネットの範囲 [${numToIp(sRange.start)}〜${numToIp(sRange.end)}] が、VNetの許容範囲 [${numToIp(vRange.start)}〜${numToIp(vRange.end)}] からはみ出しています！` };
-      }
-
-      if (s.vms.length < 1) return { ok: false, msg: "❌ サブネットの中にVMを配置してください。" };
-      const vm = s.vms[0];
-      if ((vm.octet || "").trim() === "") return { ok: false, msg: "❌ VMのIP（第4オクテット）を入力してください。" };
-      
-      const vmNum = ipToNum("10.0.1." + vm.octet);
-      if (vmNum === null) return { ok: false, msg: "❌ VMのIPアドレスの形式が正しくありません。" };
-
-      // サブネット ⊃ VM のチェック
-      if (vmNum < sRange.start || vmNum > sRange.end) {
-        return { ok: false, msg: `❌ VMのIP [10.0.1.${vm.octet}] は、所属サブネットの範囲 [10.0.1.0〜] に収まっていません！` };
-      }
-
-      // Azure予約IPのチェック
-      const lastOct = parseInt(vm.octet, 10);
-      if (vmNum === sRange.start || vmNum === sRange.end || (lastOct >= 1 && lastOct <= 3)) {
-        return { ok: false, msg: `⚠️ Azure予約IPエラー！\n末尾 .${lastOct} はネットワークアドレスやAzure予約IP（.1〜.3など）のため、VMに割り当てられません！` };
-      }
-
-      return { ok: true };
+      if((s.prefix||"").trim()==="") return false;
+      if(s.vms.length < 1) return false;
+      if(!s.vms.some(v=>(v.octet||"").trim()!=="")) return false;
+      // 簡易アドレス整合：サブネットのプレフィックス長 > VNet（範囲が内側に収まる）
+      const vp=parseInt(inf.vnetPrefix,10), sp=parseInt(s.prefix,10);
+      if(isNaN(vp)||isNaN(sp)||sp<=vp) return false;
+      // VMの第4オクテットが 1〜254（ネットワーク/ブロードキャストと矛盾しない）
+      const oct=parseInt(s.vms[0].octet,10);
+      if(isNaN(oct)||oct<1||oct>254) return false;
+      return true;
     }
   },
   {
-    id: "m2",
-    title: "冗長化Web！ロードバランサー構成",
-    desc: "VNetに2つのサブネットを作り、Front(Web)に2台・Back(DB)に1台のVMを配置。LBも置いて可用性を高めよ！",
-    stars: 2,
-    hints: [
-      "VNetをデプロイし、サブネットを2つ配置します。",
+    id:"m2",
+    title:"冗長化Web！ロードバランサー構成",
+    desc:"VNetに2つのサブネットを作り、Front(Web)に2台・Back(DB)に1台のVMを配置。LBも置いて可用性を高めよ！",
+    stars:2,
+    hints:[
+      "VNetをデプロイし、サブネットを2つ（Front/Back）配置します。",
       "Loadbalancer(⚖️)はVNetヘッダーのスロットへドラッグします。",
-      "1つ目のサブネットにVMを2台、2つ目にVMを1台置きます。"
+      "1つ目のサブネットにWeb用VMを2台、2つ目にDB用VMを1台置きます。",
+      "各サブネットのプレフィックス長と、各VMの第4オクテットを忘れず入力します。"
     ],
-    check: (inf) => {
-      if (!inf.vnet || (inf.vnetPrefix || "").trim() === "") return { ok: false, msg: "❌ VNetが配置されていないか、プレフィックス長が未入力です。" };
-      if (!inf.lb) return { ok: false, msg: "❌ ロードバランサー（⚖️）が設置されていません。" };
-      if (inf.subnets.length < 2) return { ok: false, msg: "❌ サブネットが2つ以上必要です（Front用とBack用）。" };
-
-      const vRange = getIpRange("10.0.0.0", inf.vnetPrefix);
-      if (!vRange) return { ok: false, msg: "❌ VNetのプレフィックス長が不正です。" };
-
-      // ループで全サブネットと全VMを網羅検証
-      for (let i = 0; i < 2; i++) {
-        const s = inf.subnets[i];
-        if ((s.prefix || "").trim() === "") return { ok: false, msg: `❌ サブネット${i+1}のプレフィックス長を入力してください。` };
-        const sRange = getIpRange(`10.0.${i+1}.0`, s.prefix);
-        if (!sRange) return { ok: false, msg: `❌ サブネット${i+1}のプレフィックス長が不正です。` };
-
-        if (sRange.start < vRange.start || sRange.end > vRange.end) {
-          return { ok: false, msg: `❌ サブネット${i+1}の範囲が、VNetの許容範囲からはみ出しています！` };
-        }
-
-        const requiredVmCount = i === 0 ? 2 : 1;
-        if (s.vms.length < requiredVmCount) return { ok: false, msg: `❌ サブネット${i+1}（${i===0?'Front':'Back'}）にはVMを ${requiredVmCount} 台以上配置してください。` };
-
-        for (let j = 0; j < s.vms.length; j++) {
-          const vm = s.vms[j];
-          if ((vm.octet || "").trim() === "") return { ok: false, msg: `❌ サブネット${i+1}の ${j+1}台目のVMのIPが未入力です。` };
-          const vmNum = ipToNum(`10.0.${i+1}.` + vm.octet);
-          
-          if (vmNum < sRange.start || vmNum > sRange.end) {
-            return { ok: false, msg: `❌ サブネット${i+1}のVM [10.0.${i+1}.${vm.octet}] がサブネットの範囲外です。` };
-          }
-          const lastOct = parseInt(vm.octet, 10);
-          if (vmNum === sRange.start || vmNum === sRange.end || (lastOct >= 1 && lastOct <= 3)) {
-            return { ok: false, msg: `⚠️ サブネット${i+1}のVMでAzure予約IP（.${lastOct}）が検出されました。回避してください。` };
-          }
-        }
-      }
-      return { ok: true };
+    check:(inf)=>{
+      if(!inf.vnet || (inf.vnetPrefix||"").trim()==="") return false;
+      if(!inf.lb) return false;
+      if(inf.subnets.length < 2) return false;
+      const front=inf.subnets[0], back=inf.subnets[1];
+      if((front.prefix||"").trim()==="" || (back.prefix||"").trim()==="") return false;
+      if(front.vms.length < 2 || back.vms.length < 1) return false;
+      const allOct = [...front.vms, ...back.vms].every(v=>{ const o=parseInt(v.octet,10); return !isNaN(o)&&o>=1&&o<=254; });
+      if(!allOct) return false;
+      const vp=parseInt(inf.vnetPrefix,10);
+      if([front,back].some(s=>{ const sp=parseInt(s.prefix,10); return isNaN(sp)||sp<=vp; })) return false;
+      return true;
     }
-  }
+  },
 ];
 let currentMission = MISSIONS[0];   // デフォルトのお題
 function missionStars(n){
   let s=""; for(let i=0;i<5;i++) s += `<span class="pt-star ${i<n?'on':''}">★</span>`; return s;
 }
 function ptValidZones(key){
-  if(key==="vnet") return ["vnet"];
-  if(key==="vm")   return ["front","back"];
-  if(key==="lb")   return ["lb"];
+  if(key==="vnet")   return ["canvas"];
+  if(key==="subnet") return ["vnetbody","subnet"];
+  if(key==="vm")     return ["subnet"];
+  if(key==="lb")     return ["lb"];
   return [];
 }
 function resetInfra(){
-  S.infra = { vnet:false, subnets:{ front:[], back:[] }, lb:false };
-  renderPortal();
+  S.infra = { vnet:false, vnetPrefix:"", subnets:[], lb:false };
+  renderSandbox();
   renderStatusBar();
 }
+// 目次画面：ミッションカードのみを表示。タップで構築シミュレーターへ
 function renderPortal(){
-  const inf = S.infra || (S.infra={vnet:false,subnets:{front:[],back:[]},lb:false});
-  const f = inf.subnets.front, b = inf.subnets.back;
-  const vmTag = (role)=> role==="db" ? '🗄️ DB' : '🖥️ Web';
+  S.infra || (S.infra={vnet:false,vnetPrefix:"",subnets:[],lb:false});
+  const cards = MISSIONS.map(mn=>{
+    const cleared = missionCleared(mn.id);
+    return `<button class="pt-mission pt-mission-btn" data-mission="${mn.id}">
+      <div class="pt-m-top"><span class="pt-m-tag">MISSION</span><span class="pt-m-stars" title="難易度 ${mn.stars} / 5">${missionStars(mn.stars)}</span></div>
+      <div class="pt-m-title">${esc(mn.title)}${cleared?' <span class="pt-cleared">✓ クリア済み</span>':''}</div>
+      <div class="pt-m-desc">${esc(mn.desc)}</div>
+      <div class="pt-m-foot"><span class="pt-m-reward">クリア報酬：⚡ ${missionBP(mn.stars).toLocaleString()} BP</span><span class="pt-m-go">挑戦する →</span></div>
+    </button>`;
+  }).join("");
+  app.innerHTML = `
+    <div class="q-head"><button class="quit" data-go="home">🏠 ホーム</button><span class="q-count">Azure デモ環境</span></div>
+    <div class="pt-coinbar pt-coinbar-info">🧪 配置は無料で何度でも試せます。<b>クリアでBP獲得！</b></div>
+    <div class="pt-mlist-lab">ミッション一覧</div>
+    <div class="pt-mlist">${cards}</div>
+  `;
+  app.querySelectorAll("[data-go]").forEach(x=>x.onclick=()=>go(x.dataset.go));
+  app.querySelectorAll("[data-mission]").forEach(x=>x.onclick=()=>openMission(x.dataset.mission));
+  window.scrollTo(0,0);
+}
+function missionCleared(id){ return !!localStorage.getItem("portal_done_"+id) || (S.clearedMissions||[]).includes(id); }
+function openMission(id){
+  const mn = MISSIONS.find(m=>m.id===id); if(!mn) return;
+  currentMission = mn;
+  S.screen = "sandbox"; render();
+}
+
+// 構築シミュレーター画面：ボード・採点・リセット・ドック・アドレス入力・❓ヒント
+function renderSandbox(){
+  const inf = S.infra || (S.infra={vnet:false,vnetPrefix:"",subnets:[],lb:false});
+  const subnetHTML = (sn,i)=>`
+    <div class="pt-drop pt-subnet" data-zone="subnet" data-idx="${i}">
+      <div class="pt-sn-lab">サブネット${i+1} <span class="pt-addr">10.0.${i+1}.0/<input class="pt-ip-in" data-sn-prefix="${i}" value="${esc(sn.prefix||"")}" placeholder="24" inputmode="numeric" maxlength="2"></span></div>
+      <div class="pt-sn-items">${sn.vms.length
+        ? sn.vms.map((vm,j)=>`<span class="pt-chip">🖥️ 10.0.${i+1}.<input class="pt-ip-in pt-ip-oct" data-vm-octet="${i}-${j}" value="${esc(vm.octet||"")}" placeholder="4" inputmode="numeric" maxlength="3"></span>`).join("")
+        : '<span class="pt-empty">VMをここへドラッグ</span>'}</div>
+    </div>`;
   const sandbox = !inf.vnet ? `
-      <div class="pt-drop pt-canvas" data-zone="vnet">
+      <div class="pt-drop pt-canvas" data-zone="canvas">
         <div class="pt-canvas-lab">VNet 未デプロイ</div>
         <div class="pt-canvas-sub">下のドックから「🌐 VNet」をここへドラッグ</div>
       </div>`
     : `
       <div class="pt-vnet">
-        <div class="pt-vnet-lab">VNet（10.0.0.0/16）</div>
-        <div class="pt-drop pt-lbslot ${inf.lb?'filled':''}" data-zone="lb">${inf.lb?'⚖️ Load Balancer 稼働中':'＋ Load Balancer スロット'}</div>
-        <div class="pt-subnets">
-          <div class="pt-drop pt-subnet" data-zone="front" id="sn-front">
-            <div class="pt-sn-lab">Front サブネット<small>10.0.1.0/24</small></div>
-            <div class="pt-sn-items">${f.length? f.map(r=>`<span class="pt-chip">${vmTag(r)}</span>`).join("") : '<span class="pt-empty">Webサーバー用VMを配置</span>'}</div>
-          </div>
-          <div class="pt-drop pt-subnet" data-zone="back" id="sn-back">
-            <div class="pt-sn-lab">Back サブネット<small>10.0.2.0/24</small></div>
-            <div class="pt-sn-items">${b.length? b.map(r=>`<span class="pt-chip">${vmTag(r)}</span>`).join("") : '<span class="pt-empty">データベース用VMを配置</span>'}</div>
-          </div>
+        <div class="pt-vnet-head">
+          <span class="pt-vnet-lab">VNet 10.0.0.0/<input class="pt-ip-in" id="vnet-prefix" value="${esc(inf.vnetPrefix||"")}" placeholder="16" inputmode="numeric" maxlength="2"></span>
+          <span class="pt-drop pt-lbslot ${inf.lb?'filled':''}" data-zone="lb">${inf.lb?'⚖️ LB':'＋ LB'}</span>
+        </div>
+        <div class="pt-drop pt-vnetbody" data-zone="vnetbody">
+          ${inf.subnets.length ? inf.subnets.map((sn,i)=>subnetHTML(sn,i)).join("") : '<div class="pt-vnet-empty">🗂️ サブネットをここへドラッグ</div>'}
         </div>
       </div>`;
-  const dock = PT_SHOP.map(it=>{
-    const locked = (S.coins||0) < it.cost;
-    return `<div class="pt-item ${locked?'locked':''}" data-key="${it.key}" data-cost="${it.cost}">
-      <span class="pt-ic">${it.icon}</span><span class="pt-nm">${it.name}</span><span class="pt-cost">${it.cost} AC</span>
-    </div>`;
-  }).join("");
+  const dock = PT_SHOP.map(it=>`<div class="pt-item" data-key="${it.key}">
+      <span class="pt-ic">${it.icon}</span><span class="pt-nm">${it.name}</span>
+    </div>`).join("");
   app.innerHTML = `
-    <div class="q-head"><button class="quit" data-go="home">🏠 ホーム</button><span class="q-count">Azure デモ環境</span></div>
-    <div class="pt-coinbar">💰 <b id="pt-ac">${(S.coins||0).toLocaleString()}</b> AC<span class="pt-hint">リソースを配置して有効なインフラを構築しよう</span></div>
-    <div class="pt-mission">
-      <div class="pt-m-top"><span class="pt-m-tag">MISSION</span><span class="pt-m-stars" title="難易度 ${currentMission.stars} / 5">${missionStars(currentMission.stars)}</span></div>
-      <div class="pt-m-title">${esc(currentMission.title)}</div>
-      <div class="pt-m-desc">${esc(currentMission.desc)}</div>
-      <div class="pt-m-reward">クリア報酬：💰 ${currentMission.reward} AC</div>
-    </div>
+    <div class="q-head"><button class="quit" data-go="portal">← ミッション一覧</button><span class="q-count">構築シミュレーター</span></div>
+    <div class="pt-mission-strip"><span class="pt-m-stars">${missionStars(currentMission.stars)}</span><span class="pt-strip-title">${esc(currentMission.title)}</span><button class="pt-help" id="pt-help" title="ヒントを見る">❓</button></div>
     <div class="pt-sandbox">${sandbox}</div>
     <div id="pt-result" class="pt-result"></div>
     <button class="cta" id="pt-test">構成をテスト・採点する</button>
-    <div class="pt-btnrow">
-      <button class="ghost" id="pt-reset">リセット</button>
-    </div>
-    <div class="pt-dock-lab">ドック（指で上にドラッグして配置）</div>
+    <div class="pt-btnrow"><button class="ghost" id="pt-reset">リセット</button></div>
+    <div class="pt-dock-lab">ドック（指で上にドラッグして配置・無料）</div>
     <div class="pt-dock">${dock}</div>
   `;
   app.querySelectorAll("[data-go]").forEach(x=>x.onclick=()=>go(x.dataset.go));
   document.getElementById("pt-test").onclick=testInfra;
-  document.getElementById("pt-reset").onclick=()=>{ if(confirm("構築した構成をリセットしますか？（消費したコインは戻りません）")) resetInfra(); };
-  app.querySelectorAll(".pt-item:not(.locked)").forEach(elem=>ptAttachDrag(elem));
+  document.getElementById("pt-help").onclick=openHintModal;
+  document.getElementById("pt-reset").onclick=()=>{ if(confirm("構築した構成をリセットしますか？")) resetInfra(); };
+  // アドレス入力 → S.infra へ即時保存（再描画しないので入力がスムーズ）
+  const vp=document.getElementById("vnet-prefix"); if(vp) vp.oninput=(e)=>{ inf.vnetPrefix = e.target.value; };
+  app.querySelectorAll("[data-sn-prefix]").forEach(el=>el.oninput=(e)=>{ const i=+el.dataset.snPrefix; if(inf.subnets[i]) inf.subnets[i].prefix=e.target.value; });
+  app.querySelectorAll("[data-vm-octet]").forEach(el=>el.oninput=(e)=>{ const [i,j]=el.dataset.vmOctet.split("-").map(Number); if(inf.subnets[i]&&inf.subnets[i].vms[j]) inf.subnets[i].vms[j].octet=e.target.value; });
+  // ★D&D再初期化：描画のたびに最新の .pt-item へタッチ/マウスのハンドラを付け直す
+  app.querySelectorAll(".pt-item").forEach(elem=>ptAttachDrag(elem));
   window.scrollTo(0,0);
 }
-// ドラッグ＆ドロップ（タッチ＆マウス両対応）
+// ドラッグ＆ドロップ（タッチ＆マウス両対応・無料）。サブネット等の動的パーツにも対応
 function ptAttachDrag(elem){
-  const key = elem.dataset.key, cost = parseInt(elem.dataset.cost,10);
+  const key = elem.dataset.key;
   const onStart = (e)=>{
     e.preventDefault();
-    if((S.coins||0) < cost) return;
     const it = PT_SHOP.find(s=>s.key===key);
     const ghost = document.createElement("div");
     ghost.className="pt-ghost"; ghost.textContent=it.icon;
@@ -990,14 +985,14 @@ function ptAttachDrag(elem){
     };
     const end=(ev)=>{
       const p = ev.changedTouches ? ev.changedTouches[0] : ev;
-      const zone = ptZoneAt(p.clientX, p.clientY);
+      const zi = ptZoneAt(p.clientX, p.clientY);
       ghost.remove();
       ptClearHighlight();
       document.removeEventListener("touchmove",move,{passive:false});
       document.removeEventListener("touchend",end);
       document.removeEventListener("mousemove",move);
       document.removeEventListener("mouseup",end);
-      ptDeploy(key, cost, zone);
+      ptDeploy(key, zi);
     };
     move(e);
     document.addEventListener("touchmove",move,{passive:false});
@@ -1008,18 +1003,19 @@ function ptAttachDrag(elem){
   elem.addEventListener("touchstart", onStart, {passive:false});
   elem.addEventListener("mousedown", onStart);
 }
-function ptZoneAt(x,y){
+function ptZoneEl(x,y){
   const el = document.elementFromPoint(x,y);
-  const z = el && el.closest ? el.closest("[data-zone]") : null;
-  return z ? z.dataset.zone : null;
+  return el && el.closest ? el.closest("[data-zone]") : null;
+}
+function ptZoneAt(x,y){
+  const z = ptZoneEl(x,y);
+  if(!z) return null;
+  return { zone:z.dataset.zone, idx: (z.dataset.idx!=null ? parseInt(z.dataset.idx,10) : null) };
 }
 function ptHighlight(x,y,valid){
   ptClearHighlight();
-  const z = ptZoneAt(x,y);
-  if(z && valid.indexOf(z)>=0){
-    const el = document.elementFromPoint(x,y).closest("[data-zone]");
-    if(el) el.classList.add("pt-over");
-  }
+  const z = ptZoneEl(x,y);
+  if(z && valid.indexOf(z.dataset.zone)>=0) z.classList.add("pt-over");
 }
 function ptClearHighlight(){ document.querySelectorAll(".pt-over").forEach(e=>e.classList.remove("pt-over")); }
 function ptMsg(txt, ok){
@@ -1027,44 +1023,51 @@ function ptMsg(txt, ok){
   r.className = "pt-result " + (ok===true?"ok":(ok===false?"ng":""));
   r.innerHTML = txt;
 }
-// 配置（購入・データ追加）
-function ptDeploy(key, cost, zone){
+// 配置（無料・データ追加のみ）。無効なドロップは黙って無視（自動ヒントは出さない）
+function ptDeploy(key, zi){
   const inf = S.infra;
   const valid = ptValidZones(key);
-  if(!zone || valid.indexOf(zone)<0){
-    if((key==="vm"||key==="lb") && !inf.vnet){ ptMsg("⚠️ 先に VNet をデプロイしてください。", false); }
-    return;
-  }
-  if((S.coins||0) < cost){ ptMsg("💰 コインが足りません。", false); return; }
+  if(!zi || valid.indexOf(zi.zone)<0) return;
   if(key==="vnet"){
-    if(inf.vnet){ return; }
-    S.coins -= cost; inf.vnet = true;
+    if(inf.vnet) return;
+    inf.vnet = true;
+  } else if(key==="subnet"){
+    if(!inf.vnet) return;
+    inf.subnets.push({ prefix:"", vms:[] });
   } else if(key==="vm"){
-    if(!inf.vnet){ ptMsg("⚠️ 先に VNet をデプロイしてください。", false); return; }
-    S.coins -= cost;
-    // 着地したサブネットのIDで Front / Back を区別してデータ格納
-    inf.subnets[zone].push(zone==="front" ? "web" : "db");
+    if(!inf.vnet) return;
+    const i = zi.idx;
+    if(i==null || !inf.subnets[i]) return;
+    inf.subnets[i].vms.push({ octet:"" });
   } else if(key==="lb"){
-    if(!inf.vnet){ ptMsg("⚠️ 先に VNet をデプロイしてください。", false); return; }
-    if(inf.lb){ return; }
-    S.coins -= cost; inf.lb = true;
+    if(!inf.vnet || inf.lb) return;
+    inf.lb = true;
   }
-  saveCoins(S.coins);
-  renderPortal();
-  renderStatusBar();
+  renderSandbox();   // 入力値は S.infra に保存済みなので再描画で復元される
 }
-// 採点：現在のミッションのクリア条件で判定（ミッションを差し替えるだけで挙動が変わる）
-// 採点：現在のミッションのクリア条件で判定。ビット演算による詳細フィードバック版
+// ❓ヒント：ユーザーが押した時だけ設計ヒントをモーダル表示（自動表示はしない）
+function openHintModal(){
+  const mn = currentMission;
+  const ov = document.createElement("div"); ov.className="modal-ov";
+  ov.innerHTML = `
+    <div class="modal">
+      <div class="modal-title">❓ ヒント</div>
+      <div class="pt-hint-head">${missionStars(mn.stars)} <span>${esc(mn.title)}</span></div>
+      <ul class="pt-hint-list">${(mn.hints||["このミッションのヒントは準備中です。"]).map(h=>`<li>${esc(h)}</li>`).join("")}</ul>
+      <button class="cta" id="pt-hint-close">閉じる</button>
+    </div>`;
+  document.body.appendChild(ov);
+  const close=()=>{ try{ ov.remove(); }catch(e){} };
+  ov.querySelector("#pt-hint-close").onclick=close;
+  ov.addEventListener("click",(e)=>{ if(e.target===ov) close(); });
+}
+// 採点：現在のミッションのクリア条件で判定。失敗時は具体ヒントを自動表示しない
 function testInfra(){
-  const res = currentMission.check(S.infra);
-  
-  // 判定が失敗（res.okがfalse、または真偽値でfalseが返った場合）
-  if(!res || res.ok === false || res === false){
-    const errMsg = res.msg || "❌ まだ構成が完成していません。右上の「❓」でヒントを確認しながら見直しましょう。";
-    ptMsg(errMsg, false);
+  const ok = currentMission.check(S.infra) === true;
+  if(!ok){
+    ptMsg("❌ まだ構成が完成していません。右上の「❓」でヒントを確認しながら見直しましょう。", false);
     return;
   }
-  
   const id = currentMission.id;
   const already = missionCleared(id);
   let msg = `${"⭐".repeat(currentMission.stars)} ミッション達成！<br>「${esc(currentMission.title)}」をクリアしました。`;
@@ -1110,6 +1113,7 @@ function render(){
   if(S.screen==="transfer") return renderTransfer();
   if(S.screen==="history") return renderHistory();
   if(S.screen==="portal") return renderPortal();
+  if(S.screen==="sandbox") return renderSandbox();
 }
 
 function renderLoading(){
@@ -1180,8 +1184,10 @@ async function logout(){
     });
     localStorage.removeItem("profile_name");
     localStorage.removeItem("coins");
+    MISSIONS.forEach(mn=>localStorage.removeItem("portal_done_"+mn.id));
   }catch(e){}
   cloudData=null; currentUser=null; currentUserId=null; profileChecked=false; S.coins=0;
+  S.clearedMissions=[]; S.infra={vnet:false,vnetPrefix:"",subnets:[],lb:false};
   S.cert=null; S.screen="select"; authMode="login"; render();
 }
 
@@ -1198,9 +1204,11 @@ async function deleteAccount(password){
     });
     localStorage.removeItem("profile_name");
     localStorage.removeItem("coins");
+    MISSIONS.forEach(mn=>localStorage.removeItem("portal_done_"+mn.id));
   }catch(e){}
   // 認証削除で onAuthStateChanged(null) が発火しログイン画面へ遷移するが、保険で状態も初期化
   cloudData=null; currentUser=null; currentUserId=null; profileChecked=false; guestMode=false; S.coins=0;
+  S.clearedMissions=[]; S.infra={vnet:false,vnetPrefix:"",subnets:[],lb:false};
   S.cert=null; S.screen="select"; authMode="login"; render();
 }
 
