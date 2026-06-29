@@ -359,6 +359,18 @@ h1.title{font-size:34px;line-height:1.05;font-weight:800;margin:8px 0 0;letter-s
 .pt-coinbar{display:flex;align-items:center;gap:8px;font-size:13px;color:var(--muted);margin-bottom:12px;}
 .pt-coinbar b{color:var(--gold);font-size:18px;font-weight:800;}
 .pt-coinbar .pt-hint{margin-left:auto;font-size:11px;color:var(--muted);text-align:right;}
+.pt-mission{margin-bottom:14px;padding:13px 15px;border:1px solid var(--line);border-radius:14px;
+  background:linear-gradient(150deg,rgba(245,196,81,.10),rgba(56,163,255,.05) 60%,transparent);
+  box-shadow:0 6px 18px rgba(0,0,0,.22);}
+.pt-m-top{display:flex;align-items:center;justify-content:space-between;margin-bottom:7px;}
+.pt-m-tag{font-size:10px;font-weight:800;letter-spacing:.18em;color:var(--gold);
+  background:rgba(245,196,81,.12);border:1px solid rgba(245,196,81,.4);border-radius:99px;padding:2px 9px;}
+.pt-m-stars{font-size:15px;letter-spacing:1px;line-height:1;}
+.pt-star{color:rgba(255,255,255,.18);}
+.pt-star.on{color:var(--gold);text-shadow:0 0 8px rgba(245,196,81,.5);}
+.pt-m-title{font-size:16px;font-weight:800;line-height:1.3;margin-bottom:5px;}
+.pt-m-desc{font-size:12.5px;color:var(--muted);line-height:1.65;}
+.pt-m-reward{font-size:12px;color:var(--gold);font-weight:700;margin-top:8px;}
 .pt-sandbox{margin-bottom:12px;}
 .pt-drop{border:1.5px dashed var(--line);border-radius:14px;transition:border-color .15s,box-shadow .15s,background .15s;}
 .pt-over{border-color:var(--gold)!important;box-shadow:0 0 0 3px rgba(245,196,81,.25),0 0 18px rgba(245,196,81,.35) inset!important;background:rgba(245,196,81,.06)!important;}
@@ -768,6 +780,40 @@ const PT_SHOP = [
   { key:"vm",   icon:"🖥️", name:"VM",   cost:100 },
   { key:"lb",   icon:"⚖️", name:"LB",   cost:150 },
 ];
+
+/* ====== ミッション（お題）レジストリ ======
+   stars: 難易度(1-5) / reward: 報酬AC / check(inf): true でクリア、
+   未達なら不足を示すヒント文字列を返す。新しいお題はここに足すだけ。 */
+const MISSIONS = [
+  {
+    id:"m1",
+    title:"基本の1台！単一Webサーバーの構築",
+    desc:"仮想ネットワーク（VNet）の中に、Webサイトを公開するためのベースとなる仮想マシン（VM）を1台デプロイせよ！",
+    stars:1,
+    reward:150,
+    check:(inf)=>{
+      if(!inf.vnet) return "まず外側の箱「VNet」をデプロイしましょう。";
+      if(inf.subnets.front.length < 1) return "Front サブネットに Webサーバー用のVM を1台配置してください。";
+      return true;
+    }
+  },
+  // 例）⭐2：ロードバランサーで冗長化（追加するときの雛形）
+  // {
+  //   id:"m2", title:"冗長化Web！ロードバランサー構成", stars:2, reward:300,
+  //   desc:"LBの配下に Front の Webサーバー(VM)を2台並べ、Back に DB(VM)を1台置いて可用性を高めよ！",
+  //   check:(inf)=>{
+  //     if(!inf.vnet) return "VNetをデプロイしましょう。";
+  //     if(!inf.lb) return "Load Balancer を配置してください。";
+  //     if(inf.subnets.front.length < 2) return "Front に Webサーバー用VMを2台以上配置してください。";
+  //     if(inf.subnets.back.length < 1) return "Back に DB用VMを1台配置してください。";
+  //     return true;
+  //   }
+  // },
+];
+let currentMission = MISSIONS[0];   // デフォルトのお題
+function missionStars(n){
+  let s=""; for(let i=0;i<5;i++) s += `<span class="pt-star ${i<n?'on':''}">★</span>`; return s;
+}
 function ptValidZones(key){
   if(key==="vnet") return ["vnet"];
   if(key==="vm")   return ["front","back"];
@@ -812,6 +858,12 @@ function renderPortal(){
   app.innerHTML = `
     <div class="q-head"><button class="quit" data-go="home">🏠 ホーム</button><span class="q-count">Azure デモ環境</span></div>
     <div class="pt-coinbar">💰 <b id="pt-ac">${(S.coins||0).toLocaleString()}</b> AC<span class="pt-hint">リソースを配置して有効なインフラを構築しよう</span></div>
+    <div class="pt-mission">
+      <div class="pt-m-top"><span class="pt-m-tag">MISSION</span><span class="pt-m-stars" title="難易度 ${currentMission.stars} / 5">${missionStars(currentMission.stars)}</span></div>
+      <div class="pt-m-title">${esc(currentMission.title)}</div>
+      <div class="pt-m-desc">${esc(currentMission.desc)}</div>
+      <div class="pt-m-reward">クリア報酬：💰 ${currentMission.reward} AC</div>
+    </div>
     <div class="pt-sandbox">${sandbox}</div>
     <div id="pt-result" class="pt-result"></div>
     <button class="cta" id="pt-test">構成をテスト・採点する</button>
@@ -908,33 +960,23 @@ function ptDeploy(key, cost, zone){
   renderPortal();
   renderStatusBar();
 }
-// 採点：ネスト構造・所属関係を順番に判定
+// 採点：現在のミッションのクリア条件で判定（ミッションを差し替えるだけで挙動が変わる）
 function testInfra(){
-  const inf = S.infra;
-  const f = inf.subnets.front, b = inf.subnets.back;
-  // 条件1：VNet
-  if(!inf.vnet){ ptMsg("❌ 条件1：まず外側の箱「VNet」をデプロイしましょう。", false); return; }
-  // 条件2：サブネット（VNet内に構成されているか）
-  // ※VNetデプロイで Front/Back サブネットが構成される
-  // 条件3：左右の区別（Front/Back のいずれかにリソースが格納されているか）
-  if(f.length===0 && b.length===0){ ptMsg("❌ 条件3：サブネット（Front/Back）にVMを配置してください。ドックのVMをサブネットの上で離すと、左右が区別されて格納されます。", false); return; }
-  // 条件4：各サブネットにVMが内包されているか（Front=Web、Back=DB）
-  if(f.length===0){ ptMsg("❌ 条件4：Front サブネットに <b>Webサーバー用のVM</b> を配置してください。", false); return; }
-  if(b.length===0){ ptMsg("❌ 条件4：Back サブネットに <b>データベース用のVM</b> を配置してください。", false); return; }
+  const r = currentMission.check(S.infra);
+  if(r !== true){ ptMsg("❌ " + r, false); return; }   // 未達：不足ヒントを表示
   // クリア！
-  let msg = "🆗！階層構造が正しく構築されています！<br>VNet ▶ サブネット(Front/Back) ▶ VM の入れ子が正解です。";
-  if(!localStorage.getItem("portal_reward")){
-    const bonus = 300 + (inf.lb ? 50 : 0);
+  const doneKey = "portal_done_" + currentMission.id;
+  let msg = `${"⭐".repeat(currentMission.stars)} ミッション達成！<br>「${esc(currentMission.title)}」をクリアしました。`;
+  if(!localStorage.getItem(doneKey)){
+    const bonus = currentMission.reward;
     S.coins = (S.coins||0) + bonus;
     saveCoins(S.coins);
-    try{ localStorage.setItem("portal_reward","1"); }catch(e){}
-    msg += `<br>🎉 初クリアボーナス <b>+${bonus} AC</b> 獲得！`;
-    // クラウドへ保存（コイン残高も saveToCloud 内で同期される）
-    try{ saveToCloud(getBP(), loadWrong(), loadHist()); }catch(e){}
+    try{ localStorage.setItem(doneKey, "1"); }catch(e){}
+    msg += `<br>🎉 報酬 <b>+${bonus} AC</b> 獲得！`;
+    try{ saveToCloud(getBP(), loadWrong(), loadHist()); }catch(e){}   // クラウド保存（AC残高も同期）
   } else {
-    msg += "<br>（クリアボーナスは取得済みです）";
+    msg += "<br>（このミッションの報酬は取得済みです）";
   }
-  if(!inf.lb) msg += "<br>💡 Load Balancer も置くと、より本格的な可用性構成になります。";
   renderPortal();          // コイン残高・ドックを更新
   renderStatusBar();
   ptMsg(msg, true);        // 採点結果を表示
