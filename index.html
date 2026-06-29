@@ -458,14 +458,24 @@ function ipToNum(ipStr) {
 function numToIp(num) {
   return [num >>> 24, (num >>> 16) & 255, (num >>> 8) & 255, num & 255].join('.');
 }
+// ネットワークの開始・終了IPの数値を計算（プレフィックス長の上限を32に設定・制限）
 function getIpRange(ipStr, prefix) {
   const ipNum = ipToNum(ipStr);
   if (ipNum === null) return null;
+  
   const p = parseInt(prefix, 10);
-  if (isNaN(p) || p < 8 || p > 30) return null;
+  // ❌ プレフィックス長が 8 〜 32 の範囲外、または数字でない場合は無効（制限）
+  if (isNaN(p) || p < 8 || p > 32) return null;
+  
+  // /32 の場合は開始IPと終了IPが全く同じになるため、ビットシフトをせず直接返す
+  if (p === 32) {
+    return { start: ipNum, end: ipNum };
+  }
+  
   const mask = p === 0 ? 0 : (~0 << (32 - p)) >>> 0;
   const start = (ipNum & mask) >>> 0;
   const end = (start | ~mask) >>> 0;
+  
   return { start, end };
 }
 // ▲▲▲ 【追加ここまで】 ▲▲▲
