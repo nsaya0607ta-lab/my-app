@@ -420,7 +420,26 @@ let PASS = 700;   // 選択中の資格の合格ライン（loadCertで設定）
 let DRAW = 45;    // 選択中の資格の1回の出題数（loadCertで設定）
 let Q = [], CONCEPTS = [], TIERS = [];   // 選択中の資格のデータ（loadCertで差し替え）
 const IMP_POINTS = {1:15, 2:18, 3:21, 4:24, 5:27}; // 重要度 → 配点
-
+// ▼▼▼ 【新設】IPアドレス計算・変換用の共通ロジック ▼▼▼
+function ipToNum(ipStr) {
+  const parts = (ipStr || "").split('.').map(Number);
+  if (parts.length !== 4 || parts.some(num => isNaN(num) || num < 0 || num > 255)) return null;
+  return ((parts[0] << 24) >>> 0) + (parts[1] << 16) + (parts[2] << 8) + parts[3];
+}
+function numToIp(num) {
+  return [num >>> 24, (num >>> 16) & 255, (num >>> 8) & 255, num & 255].join('.');
+}
+function getIpRange(ipStr, prefix) {
+  const ipNum = ipToNum(ipStr);
+  if (ipNum === null) return null;
+  const p = parseInt(prefix, 10);
+  if (isNaN(p) || p < 8 || p > 30) return null;
+  const mask = p === 0 ? 0 : (~0 << (32 - p)) >>> 0;
+  const start = (ipNum & mask) >>> 0;
+  const end = (start | ~mask) >>> 0;
+  return { start, end };
+}
+// ▲▲▲ 【追加ここまで】 ▲▲▲
 /* =========================================================================
    問題プール（ここに追加していけば自動でランダム出題の対象になります）
    imp  = 重要度(1〜5)。配点は IMP_POINTS で決定。
@@ -786,29 +805,103 @@ const PT_SHOP = [
    未達なら不足を示すヒント文字列を返す。新しいお題はここに足すだけ。 */
 const MISSIONS = [
   {
-    id:"m1",
-    title:"基本の1台！単一Webサーバーの構築",
-    desc:"仮想ネットワーク（VNet）の中に、Webサイトを公開するためのベースとなる仮想マシン（VM）を1台デプロイせよ！",
-    stars:1,
-    reward:150,
-    check:(inf)=>{
-      if(!inf.vnet) return "まず外側の箱「VNet」をデプロイしましょう。";
-      if(inf.subnets.front.length < 1) return "Front サブネットに Webサーバー用のVM を1台配置してください。";
-      return true;
+    id: "m1",
+    title: "基本の1台！単一Webサーバーの構築",
+    desc: "VNetの中にサブネットを作り、Webサーバー用のVMを1台デプロイせよ！アドレス設計（プレフィックス長・IP）も入力しよう。",
+    stars: 1,
+    hints: [
+      "🌐VNetを箱庭へドラッグしてデプロイし、プレフィックス長（例: 16）を入力します。",
+      "🗂️サブネットをVNetの中へドラッグし、プレフィックス長（例: 24）を入力します。",
+      "🖥️VMをサブネットへドラッグし、第4オクテット（例: 4）を入力します。",
+      "範囲の包含が大切：VNet(/16) ⊃ サブネット(/24) ⊃ VM。サブネットのプレフィックス長はVNetより大きい数字にします。"
+    ],
+    check: (inf) => {
+      if (!inf.vnet || (inf.vnetPrefix || "").trim() === "") return { ok: false, msg: "❌ VNetが配置されていないか、プレフィックス長が未入力です。" };
+      if (inf.subnets.length < 1) return { ok: false, msg: "❌ VNetの中にサブネットを1つ以上配置してください。" };
+      
+      const vRange = getIpRange("10.0.0.0", inf.vnetPrefix);
+      if (!vRange) return { ok: false, msg: "❌ VNetのプレフィックス長が不正です（8〜30）。" };
+
+      const s = inf.subnets[0];
+      if ((s.prefix || "").trim() === "") return { ok: false, msg: "❌ サブネットのプレフィックス長を入力してください。" };
+      const sRange = getIpRange("10.0.1.0", s.prefix);
+      if (!sRange) return { ok: false, msg: "❌ サブネットのプレフィックス長が不正です（8〜30）。" };
+
+      // VNet ⊃ サブネット の包含チェック
+      if (sRange.start < vRange.start || sRange.end > vRange.end) {
+        return { ok: false, msg: `❌ サブネットの範囲 [${numToIp(sRange.start)}〜${numToIp(sRange.end)}] が、VNetの許容範囲 [${numToIp(vRange.start)}〜${numToIp(vRange.end)}] からはみ出しています！` };
+      }
+
+      if (s.vms.length < 1) return { ok: false, msg: "❌ サブネットの中にVMを配置してください。" };
+      const vm = s.vms[0];
+      if ((vm.octet || "").trim() === "") return { ok: false, msg: "❌ VMのIP（第4オクテット）を入力してください。" };
+      
+      const vmNum = ipToNum("10.0.1." + vm.octet);
+      if (vmNum === null) return { ok: false, msg: "❌ VMのIPアドレスの形式が正しくありません。" };
+
+      // サブネット ⊃ VM のチェック
+      if (vmNum < sRange.start || vmNum > sRange.end) {
+        return { ok: false, msg: `❌ VMのIP [10.0.1.${vm.octet}] は、所属サブネットの範囲 [10.0.1.0〜] に収まっていません！` };
+      }
+
+      // Azure予約IPのチェック
+      const lastOct = parseInt(vm.octet, 10);
+      if (vmNum === sRange.start || vmNum === sRange.end || (lastOct >= 1 && lastOct <= 3)) {
+        return { ok: false, msg: `⚠️ Azure予約IPエラー！\n末尾 .${lastOct} はネットワークアドレスやAzure予約IP（.1〜.3など）のため、VMに割り当てられません！` };
+      }
+
+      return { ok: true };
     }
   },
-  // 例）⭐2：ロードバランサーで冗長化（追加するときの雛形）
-  // {
-  //   id:"m2", title:"冗長化Web！ロードバランサー構成", stars:2, reward:300,
-  //   desc:"LBの配下に Front の Webサーバー(VM)を2台並べ、Back に DB(VM)を1台置いて可用性を高めよ！",
-  //   check:(inf)=>{
-  //     if(!inf.vnet) return "VNetをデプロイしましょう。";
-  //     if(!inf.lb) return "Load Balancer を配置してください。";
-  //     if(inf.subnets.front.length < 2) return "Front に Webサーバー用VMを2台以上配置してください。";
-  //     if(inf.subnets.back.length < 1) return "Back に DB用VMを1台配置してください。";
-  //     return true;
-  //   }
-  // },
+  {
+    id: "m2",
+    title: "冗長化Web！ロードバランサー構成",
+    desc: "VNetに2つのサブネットを作り、Front(Web)に2台・Back(DB)に1台のVMを配置。LBも置いて可用性を高めよ！",
+    stars: 2,
+    hints: [
+      "VNetをデプロイし、サブネットを2つ配置します。",
+      "Loadbalancer(⚖️)はVNetヘッダーのスロットへドラッグします。",
+      "1つ目のサブネットにVMを2台、2つ目にVMを1台置きます。"
+    ],
+    check: (inf) => {
+      if (!inf.vnet || (inf.vnetPrefix || "").trim() === "") return { ok: false, msg: "❌ VNetが配置されていないか、プレフィックス長が未入力です。" };
+      if (!inf.lb) return { ok: false, msg: "❌ ロードバランサー（⚖️）が設置されていません。" };
+      if (inf.subnets.length < 2) return { ok: false, msg: "❌ サブネットが2つ以上必要です（Front用とBack用）。" };
+
+      const vRange = getIpRange("10.0.0.0", inf.vnetPrefix);
+      if (!vRange) return { ok: false, msg: "❌ VNetのプレフィックス長が不正です。" };
+
+      // ループで全サブネットと全VMを網羅検証
+      for (let i = 0; i < 2; i++) {
+        const s = inf.subnets[i];
+        if ((s.prefix || "").trim() === "") return { ok: false, msg: `❌ サブネット${i+1}のプレフィックス長を入力してください。` };
+        const sRange = getIpRange(`10.0.${i+1}.0`, s.prefix);
+        if (!sRange) return { ok: false, msg: `❌ サブネット${i+1}のプレフィックス長が不正です。` };
+
+        if (sRange.start < vRange.start || sRange.end > vRange.end) {
+          return { ok: false, msg: `❌ サブネット${i+1}の範囲が、VNetの許容範囲からはみ出しています！` };
+        }
+
+        const requiredVmCount = i === 0 ? 2 : 1;
+        if (s.vms.length < requiredVmCount) return { ok: false, msg: `❌ サブネット${i+1}（${i===0?'Front':'Back'}）にはVMを ${requiredVmCount} 台以上配置してください。` };
+
+        for (let j = 0; j < s.vms.length; j++) {
+          const vm = s.vms[j];
+          if ((vm.octet || "").trim() === "") return { ok: false, msg: `❌ サブネット${i+1}の ${j+1}台目のVMのIPが未入力です。` };
+          const vmNum = ipToNum(`10.0.${i+1}.` + vm.octet);
+          
+          if (vmNum < sRange.start || vmNum > sRange.end) {
+            return { ok: false, msg: `❌ サブネット${i+1}のVM [10.0.${i+1}.${vm.octet}] がサブネットの範囲外です。` };
+          }
+          const lastOct = parseInt(vm.octet, 10);
+          if (vmNum === sRange.start || vmNum === sRange.end || (lastOct >= 1 && lastOct <= 3)) {
+            return { ok: false, msg: `⚠️ サブネット${i+1}のVMでAzure予約IP（.${lastOct}）が検出されました。回避してください。` };
+          }
+        }
+      }
+      return { ok: true };
+    }
+  }
 ];
 let currentMission = MISSIONS[0];   // デフォルトのお題
 function missionStars(n){
@@ -961,25 +1054,35 @@ function ptDeploy(key, cost, zone){
   renderStatusBar();
 }
 // 採点：現在のミッションのクリア条件で判定（ミッションを差し替えるだけで挙動が変わる）
+// 採点：現在のミッションのクリア条件で判定。ビット演算による詳細フィードバック版
 function testInfra(){
-  const r = currentMission.check(S.infra);
-  if(r !== true){ ptMsg("❌ " + r, false); return; }   // 未達：不足ヒントを表示
-  // クリア！
-  const doneKey = "portal_done_" + currentMission.id;
-  let msg = `${"⭐".repeat(currentMission.stars)} ミッション達成！<br>「${esc(currentMission.title)}」をクリアしました。`;
-  if(!localStorage.getItem(doneKey)){
-    const bonus = currentMission.reward;
-    S.coins = (S.coins||0) + bonus;
-    saveCoins(S.coins);
-    try{ localStorage.setItem(doneKey, "1"); }catch(e){}
-    msg += `<br>🎉 報酬 <b>+${bonus} AC</b> 獲得！`;
-    try{ saveToCloud(getBP(), loadWrong(), loadHist()); }catch(e){}   // クラウド保存（AC残高も同期）
-  } else {
-    msg += "<br>（このミッションの報酬は取得済みです）";
+  const res = currentMission.check(S.infra);
+  
+  // 判定が失敗（res.okがfalse、または真偽値でfalseが返った場合）
+  if(!res || res.ok === false || res === false){
+    const errMsg = res.msg || "❌ まだ構成が完成していません。右上の「❓」でヒントを確認しながら見直しましょう。";
+    ptMsg(errMsg, false);
+    return;
   }
-  renderPortal();          // コイン残高・ドックを更新
-  renderStatusBar();
-  ptMsg(msg, true);        // 採点結果を表示
+  
+  const id = currentMission.id;
+  const already = missionCleared(id);
+  let msg = `${"⭐".repeat(currentMission.stars)} ミッション達成！<br>「${esc(currentMission.title)}」をクリアしました。`;
+  if(!already){
+    const bp = missionBP(currentMission.stars);
+    setBP(getBP() + bp);                         // 資格BPに加算 → レベル/ステータスバーへ反映
+    if(!S.clearedMissions) S.clearedMissions=[];
+    S.clearedMissions.push(id);
+    try{ localStorage.setItem("portal_done_"+id, "1"); }catch(e){}
+    msg += `<br>🎉 初クリア報酬 <b>+${bp.toLocaleString()} BP</b> 獲得！レベルに反映されました。`;
+    try{ publishLeaderboard(); }catch(e){}        // ランキングも更新
+    try{ saveToCloud(getBP(), loadWrong(), loadHist()); }catch(e){}  // クラウド同期
+  } else {
+    msg += "<br>（このミッションの報酬は獲得済みです）";
+  }
+  renderSandbox();
+  renderStatusBar();   // 最上部のBPバー・レベルに即反映
+  ptMsg(msg, true);
 }
 
 
