@@ -1,13 +1,12 @@
-// 修正後の状態オブジェクト
+// 状態オブジェクト
 export const S = {
   screen:"select", cert:null, mode:"exam", coins:0,
-  currentSkin:"default",       // 🔥 追加：現在適用中のスキン
-  ownedSkins:["default"],       // 🔥 追加：購入済みスキンのリスト
+  currentSkin:"default",       // 現在適用中のスキン
+  ownedSkins:["default"],      // 購入済みスキンのリスト
   infra:{ vnet:false, vnetPrefix:"", subnets:[], lb:false },
   clearedMissions:[],
   deck:[], idx:0, picks:[], sel:[], revealed:false, last:null
 };
-
 
 export const state = {
   practicePick:false,

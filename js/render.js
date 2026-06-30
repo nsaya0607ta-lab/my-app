@@ -1,6 +1,6 @@
 import { CERTS } from './data/certs.js';
 import { DC_PHASES, L, REGIONS } from './data/constants.js';
-import { CONCEPTS, DRAW, PASS, Q, TIERS, certById, certStat, commit, correctSet, dcCount, dcPhase, dcTitle, esc, exportCode, fmt, getBP, getProfileName, grade, importCode, isMulti, loadHist, loadReviewStats, loadWrong, overallLevel, overallStat, pick, pts, publishLeaderboard, saveToCloud, selectCert, setBP, setProfileName, stars, start, startReview, totalBP } from './core.js';
+import { CONCEPTS, DRAW, PASS, Q, TIERS, certById, certStat, commit, correctSet, dcCount, dcPhase, dcTitle, esc, exportCode, fmt, getBP, getProfileName, grade, importCode, isMulti, loadHist, loadReviewStats, loadWrong, overallLevel, overallStat, pick, pts, publishLeaderboard, saveSkins, saveToCloud, selectCert, setBP, setProfileName, stars, start, startReview, totalBP } from './core.js';
 import { MISSIONS, PT_SHOP } from './data/missions.js';
 import { S, state } from './state.js';
 
@@ -330,6 +330,9 @@ export function testInfra(){
 
 export function render(){
   renderStatusBar();   // 画面が変わっても常に最新の Lv/BP/AC を反映
+  // 🎨 アプリ全体の背景スキンを body に適用（default のときは元の背景のまま）
+  const sk = S.currentSkin || "default";
+  document.body.className = (sk && sk!=="default") ? ("sb-theme-"+sk) : "";
   // アカウントの認証ゲート（ゲストモードならスキップ）
   if(!state.guestMode && !state.authReady) return renderLoading();
   if(!state.guestMode && !state.currentUser) return renderAuth();
@@ -341,6 +344,7 @@ export function render(){
   // 資格選択なしでも開ける画面
   if(S.screen==="ranking") return renderRanking();
   if(S.screen==="profile") return renderProfile();
+  if(S.screen==="analytics") return renderAnalytics();
   // 大元：資格選択画面
   if(S.screen==="select" || !S.cert) return renderSelect();
   if(S.screen==="home") return renderHome();
@@ -348,7 +352,6 @@ export function render(){
   if(S.screen==="result") return renderResult();
   if(S.screen==="review") return renderReview();
   if(S.screen==="dict") return renderDict();
-  if(S.screen==="dc") return renderDC();
   if(S.screen==="transfer") return renderTransfer();
   if(S.screen==="history") return renderHistory();
   if(S.screen==="portal") return renderPortal();
@@ -560,7 +563,7 @@ export function renderHome(){
     <div class="mode-note">${DRAW}問・1000点満点換算・700点以上でボーナスEXP（×1.25〜×2.0）</div>
     ${(loadWrong().length)?`<button class="ghost rev-btn" data-review style="margin-top:12px">🔁 復習モード（間違えた ${loadWrong().length} 問）</button>`:`<div class="x-hint" style="margin-top:12px;text-align:center">復習モード：間違えた問題がここに溜まり、再挑戦できます</div>`}
     <button class="ghost" data-go="dict" style="margin-top:10px">📖 用語辞典</button>
-    <button class="ghost" data-go="dc" style="margin-top:10px">🏗️ データセンター育成</button>
+    <button class="ghost" data-go="analytics" style="margin-top:10px">📊 統計パネル（全ユーザー傾向）</button>
     <button class="ghost" data-go="portal" style="margin-top:10px">🧪 Azure デモ環境（コインで構築）</button>
     <button class="ghost" data-go="transfer" style="margin-top:10px">💾 データ引き継ぎ（保存・復元）</button>
     ${h.length?`<button class="link" data-go="history">スコア履歴を見る（${h.length}件）</button>`:
@@ -652,7 +655,7 @@ export function renderResult(){
       <div class="bp-exp-line">${esc(expLine)}</div>
       <div class="bp-total">資格内＆全体レベルに加算 ・ 累計 ${(e.bpTotal||getBP()).toLocaleString()} BP</div>
       ${(e.unlocked&&e.unlocked.length)?`<div class="bp-unlock">🎉 新たに稼働：${e.unlocked.map(esc).join("、")}</div>`:""}
-      <button class="bp-link" data-go="dc">データセンターを見る →</button>
+      <button class="bp-link" data-go="analytics">📊 全ユーザーの統計を見る →</button>
     </div>
     <div class="coin-card">
       <div class="coin-row"><span class="coin-ic">💰</span><span class="coin-gain">+${(e.coinGain!=null?e.coinGain:0)} AC 獲得！</span></div>
@@ -776,19 +779,6 @@ export function renderDict(){
 
 /* ======================= データセンター育成 ======================= */
 
-export let dcConfirm=false;
-
-export function askResetBP(){ dcConfirm=true; render(); }
-
-export function cancelResetBP(){ dcConfirm=false; render(); }
-
-export function doResetBP(){
-  dcConfirm=false;
-  setBP(0);
-  saveToCloud(0, loadWrong(), loadHist());   // クラウドにも反映
-  render();
-}
-
 export function worldMapSVG(n){
   const dots = REGIONS.map(r=>{
     const on = n>=r.lv;
@@ -838,60 +828,67 @@ export function homeScene(){
   // 🔥 【修正】クラス名に ${skinClass} を上書き合体
   return `<div class="home-scene ${skinClass}">
     ${stars}
-    <div class="scene-info"><span class="scene-lvl">Lv.${n} ${esc(ph.name)}</span><span class="scene-bp">${bp.toLocaleString()} BP</span></div>
+    <div class="scene-info"><span class="scene-lvl">Lv.${n}</span><span class="scene-bp">${bp.toLocaleString()} BP</span></div>
     ${body}
   </div>`;
 }
 
 
-export function renderDC(){
-  const bp=getBP(), n=dcCount(bp), next=TIERS.find(t=>t.bp>bp), ph=dcPhase(n);
-  let prog, nextTxt;
-  if(next){
-    const prevBp = n>0 ? TIERS[n-1].bp : 0;
-    prog = Math.round((bp-prevBp)/(next.bp-prevBp)*100);
-    nextTxt = `次の「${next.icon} ${next.name}」まであと ${(next.bp-bp).toLocaleString()} BP`;
-  } else { prog=100; nextTxt="すべてのリソースが稼働中！"; }
-  const nextPhase = DC_PHASES.find(p=>p.min>n);
-  const phaseTxt = nextPhase ? `次は Lv.${nextPhase.min}「${nextPhase.name}」へ` : "最終フェーズに到達！";
+export function renderAnalytics(){
+  // 匿名化された試験モードのスコア分布（モック集計データ：0-99 … 900-1000 の10区間）
+  const bins   = [2,5,9,16,28,44,63,52,30,14];
+  const labels = ["0","100","200","300","400","500","600","700","800","900"];
+  const total = bins.reduce((a,b)=>a+b,0);
+  const maxv  = Math.max(...bins);
+  const avg   = Math.round(bins.reduce((s,c,i)=>s + c*(i*100+50), 0) / total);
+  const passCount = bins.slice(7).reduce((a,b)=>a+b,0);   // 700点以上
+  const passRate  = Math.round(passCount/total*100);
+
+  const barsHTML = bins.map((c,i)=>{
+    const h = Math.max(4, Math.round(c/maxv*100));
+    const isPass = i>=7;
+    return `<div class="an-bar-wrap">
+      <div class="an-bar ${isPass?'an-pass':''}" style="height:${h}%"><span class="an-bar-v">${c}</span></div>
+      <div class="an-bar-x">${labels[i]}</div>
+    </div>`;
+  }).join("");
+
+  // 直近クリアした匿名エンジニア5名（モック・毎回更新でシャッフル）
+  const hex = ()=>Math.floor(Math.random()*0xffff).toString(16).toUpperCase().padStart(4,"0");
+  const logHTML = Array.from({length:5}).map((_,i)=>{
+    const sc = 480 + Math.floor(Math.random()*520);   // 480〜999点
+    const ok = sc>=700;
+    return `<div class="an-log-row ${ok?'ok':'ng'}" style="animation-delay:${i*0.06}s">
+      <span class="an-log-id">エンジニア${hex()}</span>
+      <span class="an-log-arrow">➔</span>
+      <span class="an-log-score">${sc}点</span>
+      <span class="an-log-judge">${ok?'合格！':'不合格'}</span>
+    </div>`;
+  }).join("");
+
   app.innerHTML = `
-    <div class="q-head"><button class="quit" data-go="home">🏠 ホーム</button><span class="q-count">データセンター</span></div>
-    <div class="dc-hero">
-      <div class="dc-lvl">レベル ${n} / ${TIERS.length}</div>
-      <div class="dc-title">${dcTitle(n)}</div>
-      <div class="dc-phase"><span class="dc-phase-tag">${esc(ph.name)}</span>${esc(ph.note)}</div>
-      <div class="dc-bp">累計 ${bp.toLocaleString()} BP ・ 稼働リソース ${n}種</div>
-      <div class="dc-prog"><div class="dc-prog-f" style="width:${prog}%"></div></div>
-      <div class="dc-next">${nextTxt}</div>
+    <div class="q-head"><button class="quit" data-go="${S.cert?'home':'select'}">← 戻る</button><span class="q-count">統計パネル</span></div>
+    <div class="an-card">
+      <div class="an-ttl">全ユーザーの試験モード結果</div>
+      <div class="an-sub">匿名化されたスコア分布（0〜1000点）</div>
+      <div class="an-chart">
+        <div class="an-passline"><span>合格 700</span></div>
+        ${barsHTML}
+      </div>
+      <div class="an-aggro">
+        <div class="an-ag"><div class="an-ag-num">${avg}</div><div class="an-ag-lab">全ユーザー平均点</div></div>
+        <div class="an-ag"><div class="an-ag-num">${passRate}<small>%</small></div><div class="an-ag-lab">合格率（700点以上）</div></div>
+        <div class="an-ag"><div class="an-ag-num">${total.toLocaleString()}</div><div class="an-ag-lab">集計サンプル数</div></div>
+      </div>
     </div>
-    ${ph.worldmap?`<div class="home-scene b4" style="height:150px;margin-bottom:16px">${worldMapSVG(n)}<div class="scene-info"><span class="scene-lvl">🌍 グローバル拠点 ${REGIONS.filter(r=>n>=r.lv).length}/${REGIONS.length}</span></div></div>`
-      :`<div class="dc-phasebar"><span>🏗️ ${esc(ph.name)}</span><span>${esc(phaseTxt)}</span></div>`}
-    <div class="dc-sub">あなたのデータセンター</div>
-    <div class="dc-grid">
-      ${TIERS.map(t=>{
-        const on=bp>=t.bp, isNext=next&&t.name===next.name;
-        return `<div class="dc-tile ${on?"on":(isNext?"next lock":"lock")}">
-          ${on?'<span class="dc-on-badge">稼働中</span>':""}
-          <div class="dc-ic">${on?t.icon:"🔒"}</div>
-          <div class="dc-nm">${esc(t.name)}</div>
-          <div class="dc-rq">${on?esc(t.desc):t.bp.toLocaleString()+" BP"}</div>
-        </div>`;
-      }).join("")}
+    <div class="an-card">
+      <div class="an-ttl">📡 直近クリアした匿名エンジニア</div>
+      <div class="an-log">${logHTML}</div>
+      <button class="ghost" id="an-refresh" style="margin-top:10px">🔄 最新を取得</button>
     </div>
-    <div class="x-hint" style="margin-top:16px">クイズで稼いだスコアがそのままBPになり、データセンターが発展します。</div>
-    <button class="cta" data-go="home" style="margin-top:14px">クイズで増築する</button>
-    ${dcConfirm?`
-      <div style="margin-top:18px;border:1px solid var(--bad);border-radius:13px;padding:16px;background:rgba(248,114,114,.08)">
-        <div style="font-size:14px;line-height:1.7;color:var(--text);margin-bottom:12px">本当にBP（ビルドポイント）をリセットしますか？<br>データセンターがLv0に戻ります。この操作は元に戻せません。</div>
-        <button class="cta" data-do-reset style="margin-top:0;background:linear-gradient(90deg,var(--bad),#ff9b9b);color:#3a0d0d">はい、リセットする</button>
-        <button class="ghost" data-cancel-reset>キャンセル</button>
-      </div>`:`
-      <button class="ghost danger" data-reset-bp>BPをリセットする</button>`}
   `;
   app.querySelectorAll("[data-go]").forEach(b=>b.onclick=()=>go(b.dataset.go));
-  const rb=app.querySelector("[data-reset-bp]"); if(rb)rb.onclick=askResetBP;
-  const dr=app.querySelector("[data-do-reset]"); if(dr)dr.onclick=doResetBP;
-  const cr=app.querySelector("[data-cancel-reset]"); if(cr)cr.onclick=cancelResetBP;
+  const rf=document.getElementById("an-refresh"); if(rf) rf.onclick=()=>renderAnalytics();
   window.scrollTo(0,0);
 }
 
@@ -965,6 +962,7 @@ export function renderSelect(){
       <div class="cert-top"><span class="cert-code">${esc(c.code)}</span><span class="cert-go">${started?"学習を続ける":"はじめる"} →</span></div>
       <div class="cert-name">${esc(c.name)}</div>
       <div class="cert-sub">${esc(c.sub||"")}</div>
+      <div class="cert-pool">出題プール：${(c.Q||[]).length} 問</div>
       <div class="cert-stats">
         <span>Lv.${st.lvl}<small>/${st.tiers}</small></span>
         <span>最高 ${st.best}</span>
@@ -1169,8 +1167,10 @@ function initSkinShopLogic() {
           btn.onclick = () => { 
             S.currentSkin = sk.key; 
             board.className = "sb-theme-" + sk.key; 
+            saveSkins();                                   // 端末へ永続化
             renderSkinShopList(); 
             render(); // 🏠 ホーム画面の背景も即時同期するために全体再描画を呼ぶ
+            try { saveToCloud(getBP(), loadWrong(), loadHist()); } catch(e){} // ☁️ 適用状態もクラウドへ同期
           };
         }
       } else {
@@ -1182,6 +1182,7 @@ function initSkinShopLogic() {
             S.currentSkin = sk.key;
             board.className = "sb-theme-" + sk.key;
             saveCoins(S.coins);
+            saveSkins();                                   // 端末へ永続化
             renderStatusBar();
             renderSkinShopList();
             render(); // 所持金減額と背景をホームに即反映

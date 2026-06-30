@@ -130,6 +130,8 @@ export async function saveToCloud(bp, wrongList, historyList) {
     await window.FirebaseSync.setDoc(window.FirebaseSync.doc(state.db, "users", state.currentUserId), {
       certs: patch,
       coins: (S.coins || 0),   // アカウント共通のコイン残高（資格横断）
+      currentSkin: (S.currentSkin || "default"),   // ☁️ 背景スキンもクラウドへバックアップ
+      ownedSkins: (S.ownedSkins || ["default"]),
       updatedAt: new Date().toISOString()
     }, { merge: true });
     console.log("Cloud synced:", S.cert);
@@ -162,6 +164,23 @@ export function calcExp(score, mode){
 export function loadCoins(){ const v=parseInt(localStorage.getItem("coins")||"0",10); return isNaN(v)?0:v; }
 
 export function saveCoins(v){ try{ localStorage.setItem("coins", String(v||0)); }catch(e){} }
+
+/* ===== スキン（背景テーマ）の永続化：端末ローカルに保存 ===== */
+export function saveSkins(){
+  try{
+    localStorage.setItem("currentSkin", S.currentSkin || "default");
+    localStorage.setItem("ownedSkins", JSON.stringify(S.ownedSkins || ["default"]));
+  }catch(e){}
+}
+export function loadSkins(){
+  try{
+    const cur = localStorage.getItem("currentSkin");
+    const own = JSON.parse(localStorage.getItem("ownedSkins") || "null");
+    if(cur) S.currentSkin = cur;
+    if(Array.isArray(own) && own.length) S.ownedSkins = own;
+    if(!S.ownedSkins.includes("default")) S.ownedSkins.unshift("default");
+  }catch(e){}
+}
 // 獲得コイン：試験はスコア帯で固定、演習・復習は「正解数×3」
 
 export function coinReward(runMode, correct, score){
@@ -323,6 +342,15 @@ export function applyCloud(certId){
   }catch(e){}
 }
 
+/* クラウドのアカウント単位データ（スキン）を反映。db.js の onSnapshot から applyCloudSkins(data) で呼ぶ */
+export function applyCloudSkins(data){
+  if(!data) return;
+  if(data.currentSkin) S.currentSkin = data.currentSkin;
+  if(Array.isArray(data.ownedSkins) && data.ownedSkins.length) S.ownedSkins = data.ownedSkins;
+  if(!S.ownedSkins.includes("default")) S.ownedSkins.unshift("default");
+  saveSkins();
+}
+
 // 新規アカウント時：この端末にあるローカルの各資格データをクラウドへ初期投入
 
 export function seedCloudFromLocal(){
@@ -355,6 +383,7 @@ export function migrateOldData(){
   map.forEach(([o,n])=>{
     try{ const v=localStorage.getItem(o); if(v!==null && localStorage.getItem(n)===null) localStorage.setItem(n,v); }catch(e){}
   });
+  loadSkins();   // 起動時に保存済みスキンを S へ復元
 }
 
 // 資格カード1枚分のステータス（ローカル保存から算出）
