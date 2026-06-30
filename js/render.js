@@ -785,6 +785,11 @@ export function worldMapSVG(n){
 
 export function homeScene(){
   const bp=getBP(), n=dcCount(bp), ph=dcPhase(n);
+  
+  // 🔥 【追加】デフォルト背景（b1〜b4）の代わりに購入したスキン背景のクラスを適用
+  const currentSkin = S.currentSkin || "default";
+  const skinClass = "sb-theme-" + currentSkin;
+
   const band=ph.band;
   const starN = band==="b4"?16:(band==="b3"?9:0);
   let stars="";
@@ -800,12 +805,15 @@ export function homeScene(){
     const tail = next?`<span class="scene-ghost">🏗️</span>`:"";
     body = `<div class="scene-ground">${builds}${tail}</div>`;
   }
-  return `<div class="home-scene ${band}">
+  
+  // 🔥 【修正】クラス名に ${skinClass} を上書き合体
+  return `<div class="home-scene ${skinClass}">
     ${stars}
     <div class="scene-info"><span class="scene-lvl">Lv.${n} ${esc(ph.name)}</span><span class="scene-bp">${bp.toLocaleString()} BP</span></div>
     ${body}
   </div>`;
 }
+
 
 export function renderDC(){
   const bp=getBP(), n=dcCount(bp), next=TIERS.find(t=>t.bp>bp), ph=dcPhase(n);
