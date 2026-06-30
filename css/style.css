@@ -461,3 +461,44 @@ h1.title{font-size:34px;line-height:1.05;font-weight:800;margin:8px 0 0;letter-s
 .sb-skin-btn.sb-locked { cursor:not-allowed; border-color:var(--line); color:var(--muted); background:rgba(255,255,255,.04); }
 #sb-toast-skin { position:absolute; left:50%; top:70px; transform:translateX(-50%); z-index:1100; padding:9px 14px; border-radius:12px; font-size:12.5px; font-weight:700; background:rgba(10,20,34,.95); border:1px solid var(--line); color:var(--text); opacity:0; pointer-events:none; transition:opacity .25s; }
 #sb-toast-skin.sb-show { opacity:1; }
+
+/* ============ 追加：全体背景スキンの可読性スクリム ============ */
+body[class*="sb-theme-"]{ background-attachment: fixed; }
+body[class*="sb-theme-"]::before{ content:""; position:fixed; inset:0; background:rgba(8,16,30,.5); z-index:-1; pointer-events:none; }
+
+/* ============ 追加：資格カードの出題プール数（デジタル風・muted） ============ */
+.cert-pool{ margin-top:8px; font-family:ui-monospace,Menlo,Consolas,monospace; font-size:11px; letter-spacing:.04em; color:var(--muted); }
+.cert-pool::before{ content:"▌ "; color:var(--accent); }
+
+/* ============ 追加：統計パネル（renderAnalytics） ============ */
+.an-card{ background:rgba(20,38,62,.5); border:1px solid var(--line); border-radius:18px; padding:18px 16px; margin-bottom:16px; }
+.an-ttl{ font-size:15px; font-weight:800; }
+.an-sub{ font-size:11px; color:var(--muted); margin:2px 0 14px; }
+.an-chart{ position:relative; display:flex; align-items:flex-end; gap:6px; height:150px; padding:6px 2px 0; border-bottom:1px solid var(--line); }
+.an-bar-wrap{ flex:1; display:flex; flex-direction:column; align-items:center; justify-content:flex-end; height:100%; }
+.an-bar{ width:100%; min-height:4px; border-radius:6px 6px 0 0; position:relative;
+  background:linear-gradient(180deg,#5cb6ff,#2f6fe6); box-shadow:0 0 10px rgba(56,163,255,.4);
+  transition:height .5s cubic-bezier(.22,1,.36,1); }
+.an-bar.an-pass{ background:linear-gradient(180deg,#7ff0c0,#2bd39a); box-shadow:0 0 10px rgba(54,211,153,.45); }
+.an-bar-v{ position:absolute; top:-15px; left:50%; transform:translateX(-50%); font-size:9px; color:var(--muted); }
+.an-bar-x{ margin-top:5px; font-size:9px; color:var(--muted); font-variant-numeric:tabular-nums; }
+.an-passline{ position:absolute; top:0; bottom:22px; left:70%; width:2px; z-index:2;
+  background:linear-gradient(180deg,var(--accent),transparent); box-shadow:0 0 8px var(--accent); }
+.an-passline span{ position:absolute; top:-2px; left:4px; font-size:9px; font-weight:800; color:var(--accent); white-space:nowrap; }
+.an-aggro{ display:flex; gap:10px; margin-top:16px; }
+.an-ag{ flex:1; text-align:center; background:rgba(56,163,255,.06); border:1px solid var(--line); border-radius:12px; padding:10px 6px; }
+.an-ag-num{ font-size:22px; font-weight:800; color:var(--text); font-variant-numeric:tabular-nums; }
+.an-ag-num small{ font-size:12px; color:var(--muted); }
+.an-ag-lab{ font-size:10px; color:var(--muted); margin-top:3px; }
+.an-log{ display:flex; flex-direction:column; gap:7px; }
+@keyframes anIn{ from{opacity:0; transform:translateX(-8px);} to{opacity:1; transform:translateX(0);} }
+.an-log-row{ display:flex; align-items:center; gap:8px; padding:9px 11px; border-radius:11px; border:1px solid var(--line);
+  background:rgba(13,28,48,.5); font-size:13px; animation:anIn .4s both; }
+.an-log-row.ok{ border-left:3px solid var(--good); }
+.an-log-row.ng{ border-left:3px solid var(--muted); }
+.an-log-id{ font-family:ui-monospace,Menlo,Consolas,monospace; color:var(--text); font-weight:700; }
+.an-log-arrow{ color:var(--muted); }
+.an-log-score{ margin-left:auto; font-weight:800; font-variant-numeric:tabular-nums; }
+.an-log-judge{ font-size:11px; font-weight:800; padding:2px 8px; border-radius:8px; }
+.an-log-row.ok .an-log-judge{ color:#06281c; background:var(--good); }
+.an-log-row.ng .an-log-judge{ color:var(--muted); background:rgba(255,255,255,.06); }
