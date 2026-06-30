@@ -1095,9 +1095,9 @@ export async function loadRanking(){
     body.innerHTML=`<div class="empty">読み込みに失敗しました。<br>${esc(String(e.message||e))}</div>`;
   }
 }
-// =========================================================================
-// 🎨 背景スキンショップ＆固定マップ制御エンジン（パン移動無効化・自動展開版）
-// =========================================================================
+/* =========================================================================
+   🎨 背景スキンショップ＆無限マップパン移動制御エンジン
+   ========================================================================= */
 import { saveCoins } from './core.js';
 
 const SKIN_DATA = [
@@ -1107,8 +1107,7 @@ const SKIN_DATA = [
   { key:"retro",   icon:"👾", name:"レトロドット絵",     sub:"ファミコン風ドット",        cost:400 },
 ];
 
-// 画面中央付近に見やすく配置するための固定座標
-let sbPanX = -1100, sbPanY = -1200; 
+let sbPanX = -1050, sbPanY = -1100; // 初期表示座標
 
 function initSkinShopLogic() {
   const viewport = document.getElementById("sb-viewport");
@@ -1126,7 +1125,6 @@ function initSkinShopLogic() {
     setTimeout(() => { if(toastEl) toastEl.classList.remove("sb-show"); }, 2000);
   }
 
-  // 座標を固定位置に適用
   function applyPan() {
     if(!board) return;
     board.style.transform = "translate3d(" + sbPanX + "px," + sbPanY + "px,0)";
@@ -1161,10 +1159,10 @@ function initSkinShopLogic() {
           btn.onclick = () => { 
             S.currentSkin = sk.key; 
             board.className = "sb-theme-" + sk.key; 
-            saveSkins();
+            saveSkins();                                   // 端末へ永続化
             renderSkinShopList(); 
-            render();
-            try { saveToCloud(getBP(), loadWrong(), loadHist()); } catch(e){}
+            render(); // 🏠 ホーム画面の背景も即時同期するために全体再描画を呼ぶ
+            try { saveToCloud(getBP(), loadWrong(), loadHist()); } catch(e){} // ☁️ 適用状態もクラウドへ同期
           };
         }
       } else {
@@ -1176,12 +1174,12 @@ function initSkinShopLogic() {
             S.currentSkin = sk.key;
             board.className = "sb-theme-" + sk.key;
             saveCoins(S.coins);
-            saveSkins();
+            saveSkins();                                   // 端末へ永続化
             renderStatusBar();
             renderSkinShopList();
-            render();
+            render(); // 所持金減額と背景をホームに即反映
             toast(`「${sk.name}」を購入・適用しました！`);
-            try { saveToCloud(getBP(), loadWrong(), loadHist()); } catch(e){}
+            try { saveToCloud(getBP(), loadWrong(), loadHist()); } catch(e){} // ☁️ Firebase/Cloudへのバックアップ
           };
         } else {
           btn.classList.add("sb-locked"); btn.textContent = "🔒 不足"; btn.disabled = true;
@@ -1192,23 +1190,32 @@ function initSkinShopLogic() {
     });
   }
 
-  // クローズ処理と背景オーバーレイのクリックイベント
+  document.getElementById("sb-skin-fab").onclick = () => { shop.classList.add("sb-open"); shopBd.classList.add("sb-open"); renderSkinShopList(); };
   const closeShop = () => { shop.classList.remove("sb-open"); shopBd.classList.remove("sb-open"); };
   document.getElementById("sb-shop-x").onclick = closeShop;
   shopBd.onclick = closeShop;
 
-  // 【変更】指でのパン移動（ドラッグ）イベントをすべて削除・無効化
-  // ビューポート上の操作を受け付けないようにポインターイベントを抑止
+  // マップパン（ドラッグ移動）制御
+  let isPanning = false, startX = 0, startY = 0, origX = 0, origY = 0;
+  viewport.onpointerdown = (e) => {
+    if (e.target.closest("input") || e.target.closest("button") || e.target.closest(".pt-item") || e.target.closest(".pt-chip")) return;
+    isPanning = true; startX = e.clientX; startY = e.clientY; origX = sbPanX; origY = sbPanY;
+    viewport.classList.add("sb-grabbing");
+    try { viewport.setPointerCapture(e.pointerId); } catch(_) {}
+  };
+  viewport.onpointermove = (e) => {
+    if (!isPanning) return;
+    sbPanX = origX + (e.clientX - startX);
+    sbPanY = origY + (e.clientY - startY);
+    sbPanX = Math.min(0, Math.max(viewport.clientWidth - 3000, sbPanX));
+    sbPanY = Math.min(0, Math.max(viewport.clientHeight - 3000, sbPanY));
+    applyPan();
+  };
+  const endPan = () => { isPanning = false; viewport.classList.remove("sb-grabbing"); };
+  viewport.onpointerup = endPan;
+  viewport.onpointercancel = endPan;
 
-  // 固定座標を適用
   applyPan();
-
-  // 【追加】ページを開いた時点で、スキン選択画面をはじめから自動で展開する
-  if(shop && shopBd) {
-    shop.classList.add("sb-open");
-    shopBd.classList.add("sb-open");
-    renderSkinShopList();
-  }
 }
 
 export function renderSettings() {
