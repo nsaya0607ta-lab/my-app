@@ -530,9 +530,20 @@ export function renderUsername(){
 }
 
 export function renderHome(){
-  const h=loadHist(), best=h.reduce((m,x)=>Math.max(m,x.score),0);
+  const h=loadHist();
   const c=certById(S.cert)||{};
   const ov=overallStat();
+  const bp=getBP(); // 現在の資格の獲得ビルドポイント(EXP)
+
+  // 統計データの集計
+  const examHistory = h.filter(x => x.mode === "exam");
+  const examPlays = examHistory.length;
+  const examBest = examPlays > 0 ? examHistory.reduce((m, x) => Math.max(m, x.score), 0) : 0;
+  const examAvg = examPlays > 0 ? Math.round(examHistory.reduce((s, x) => s + x.score, 0) / examPlays) : 0;
+
+  const practiceHistory = h.filter(x => x.mode === "practice");
+  const practiceQuestions = practiceHistory.reduce((s, x) => s + (x.total || 0), 0);
+
   app.innerHTML = `
     <div class="q-head" style="margin-bottom:14px">
       <button class="quit" data-go="select">← 資格選択</button>
@@ -550,7 +561,35 @@ export function renderHome(){
       <button class="link" data-pcancel>キャンセル</button>
     </div>` : `
     <button class="cta" data-practice>📝 演習モード</button>`}
+    
     <button class="cta cta-exam" data-mode="exam" style="margin-top:12px">🎯 試験モード</button>
+
+    <div class="an-card" style="margin-top:16px; background:rgba(255,255,255,0.85);">
+      <div class="an-ttl" style="display:flex; align-items:center; gap:6px; font-size:14px; color:var(--text);">
+        📊 ${esc(c.code)} 学習統計ダッシュボード
+      </div>
+      <div class="an-aggro" style="display:grid; grid-template-columns: repeat(2, 1fr); gap:10px; margin-top:12px;">
+        <div class="an-ag" style="background:var(--bg); padding:10px; border-radius:10px; text-align:center;">
+          <div class="an-ag-num" style="font-size:20px; font-weight:800; color:var(--accent);">${practiceQuestions}<small style="font-size:11px; font-weight:600; color:var(--muted); margin-left:2px;">問</small></div>
+          <div class="an-ag-lab" style="font-size:10.5px; color:var(--muted); margin-top:2px;">演習解いた問題数</div>
+        </div>
+        <div class="an-ag" style="background:var(--bg); padding:10px; border-radius:10px; text-align:center;">
+          <div class="an-ag-num" style="font-size:20px; font-weight:800; color:var(--gold);">${examPlays}<small style="font-size:11px; font-weight:600; color:var(--muted); margin-left:2px;">回</small></div>
+          <div class="an-ag-lab" style="font-size:10.5px; color:var(--muted); margin-top:2px;">試験モード実施回数</div>
+        </div>
+        <div class="an-ag" style="background:var(--bg); padding:10px; border-radius:10px; text-align:center; grid-column: span 1;">
+          <div class="an-ag-num" style="font-size:16px; font-weight:800; color:var(--text); line-height:1.2;">
+            <span style="color:var(--good);">${examBest}</span><span style="font-size:11px; color:var(--muted); font-weight:500;"> / ${examAvg}</span>
+          </div>
+          <div class="an-ag-lab" style="font-size:10.5px; color:var(--muted); margin-top:2px;">試験最高得点 / 平均点</div>
+        </div>
+        <div class="an-ag" style="background:var(--bg); padding:10px; border-radius:10px; text-align:center;">
+          <div class="an-ag-num" style="font-size:18px; font-weight:800; color:var(--good);">⚡ ${bp.toLocaleString()}</div>
+          <div class="an-ag-lab" style="font-size:10.5px; color:var(--muted); margin-top:2px;">現在の獲得経験値(BP)</div>
+        </div>
+      </div>
+    </div>
+
     ${(loadWrong().length)?`<button class="ghost rev-btn" data-review style="margin-top:12px">🔁 復習モード（間違えた ${loadWrong().length} 問）</button>`:`<div class="x-hint" style="margin-top:12px;text-align:center">復習モード：間違えた問題がここに溜まり、再挑戦できます</div>`}
     <button class="ghost" data-go="dict" style="margin-top:10px">📖 用語辞典</button>
     <button class="ghost" data-go="analytics" style="margin-top:10px">📊 統計パネル </button>
