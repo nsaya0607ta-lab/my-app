@@ -1318,7 +1318,7 @@ function initSkinShopLogic() {
   viewport.onpointercancel = endPan;
 
   applyPan();
-}
+
 
 export function renderSettings() {
   app.innerHTML = `
