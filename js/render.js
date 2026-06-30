@@ -116,8 +116,11 @@ export function openMission(id){
 
 // 構築シミュレーター画面：ボード・採点・リセット・ドック・アドレス入力・❓ヒント
 
+// 構築シミュレーター画面（無限キャンバス・背景スキンショップ対応完全版）
 export function renderSandbox(){
   const inf = S.infra || (S.infra={vnet:false,vnetPrefix:"",subnets:[],lb:false});
+  const currentSkin = S.currentSkin || "default"; // 現在のスキンを読み込む
+
   const subnetHTML = (sn,i)=>`
     <div class="pt-drop pt-subnet" data-zone="subnet" data-idx="${i}">
       <div class="pt-sn-lab">サブネット${i+1} <span class="pt-addr">10.0.${i+1}.0/<input class="pt-ip-in" data-sn-prefix="${i}" value="${esc(sn.prefix||"")}" placeholder="24" inputmode="numeric" maxlength="2"></span></div>
@@ -143,10 +146,33 @@ export function renderSandbox(){
   const dock = PT_SHOP.map(it=>`<div class="pt-item" data-key="${it.key}">
       <span class="pt-ic">${it.icon}</span><span class="pt-nm">${it.name}</span>
     </div>`).join("");
+    
+  // 🔥 無限ビューポートとスキンショップボトムシートを組み込んだレイアウト構造
   app.innerHTML = `
     <div class="q-head"><button class="quit" data-go="portal">← ミッション一覧</button><span class="q-count">構築シミュレーター</span></div>
     <div class="pt-mission-strip"><span class="pt-m-stars">${missionStars(currentMission.stars)}</span><span class="pt-strip-title">${esc(currentMission.title)}</span><button class="pt-help" id="pt-help" title="ヒントを見る">❓</button></div>
-    <div class="pt-sandbox">${sandbox}</div>
+    
+    <div id="sb-viewport">
+      <div id="sb-board" class="sb-theme-${currentSkin}">
+        <div id="sb-mark">SANDBOX</div>
+        <div style="position:absolute; left:1300px; top:1350px; width:400px; padding:10px;">
+          ${sandbox}
+        </div>
+      </div>
+      <div id="sb-coord">X: <b id="sb-cx">0</b>　Y: <b id="sb-cy">0</b></div>
+      <div id="sb-skin-fab">🎨 スキン</div>
+      <div id="sb-toast-skin"></div>
+      
+      <div id="sb-shop-bd"></div>
+      <div id="sb-shop">
+        <div class="sb-shop-hd">
+          <div class="sb-shop-ttl">背景スキン<small>見た目をカスタマイズ</small></div>
+          <div class="sb-shop-x" id="sb-shop-x">✕</div>
+        </div>
+        <div id="sb-skin-list"></div>
+      </div>
+    </div>
+
     <div id="pt-result" class="pt-result"></div>
     <button class="cta" id="pt-test">構成をテスト・採点する</button>
     <div class="pt-btnrow"><button class="ghost" id="pt-reset">リセット</button></div>
@@ -157,14 +183,17 @@ export function renderSandbox(){
   document.getElementById("pt-test").onclick=testInfra;
   document.getElementById("pt-help").onclick=openHintModal;
   document.getElementById("pt-reset").onclick=()=>{ if(confirm("構築した構成をリセットしますか？")) resetInfra(); };
-  // アドレス入力 → S.infra へ即時保存（再描画しないので入力がスムーズ）
+  
   const vp=document.getElementById("vnet-prefix"); if(vp) vp.oninput=(e)=>{ inf.vnetPrefix = e.target.value; };
   app.querySelectorAll("[data-sn-prefix]").forEach(el=>el.oninput=(e)=>{ const i=+el.dataset.snPrefix; if(inf.subnets[i]) inf.subnets[i].prefix=e.target.value; });
   app.querySelectorAll("[data-vm-octet]").forEach(el=>el.oninput=(e)=>{ const [i,j]=el.dataset.vmOctet.split("-").map(Number); if(inf.subnets[i]&&inf.subnets[i].vms[j]) inf.subnets[i].vms[j].octet=e.target.value; });
-  // ★D&D再初期化：描画のたびに最新の .pt-item へタッチ/マウスのハンドラを付け直す
   app.querySelectorAll(".pt-item").forEach(elem=>ptAttachDrag(elem));
+  
+  // 🔥 【追加】次に追記するショップ開閉・スワイプの制御エンジンを起動
+  initSkinShopLogic();
   window.scrollTo(0,0);
 }
+
 // ドラッグ＆ドロップ（タッチ＆マウス両対応・無料）。サブネット等の動的パーツにも対応
 
 export function ptAttachDrag(elem){
@@ -1076,3 +1105,123 @@ export async function loadRanking(){
     body.innerHTML=`<div class="empty">読み込みに失敗しました。<br>${esc(String(e.message||e))}</div>`;
   }
 }
+/* =========================================================================
+   🎨 背景スキンショップ＆無限マップパン移動制御エンジン
+   ========================================================================= */
+import { saveCoins } from './core.js';
+
+const SKIN_DATA = [
+  { key:"default", icon:"🌐", name:"標準グリッド",       sub:"初期テーマ",                cost:0 },
+  { key:"space",   icon:"🌌", name:"宇宙空間",           sub:"星空＆ネビュラ",            cost:300 },
+  { key:"magma",   icon:"🌋", name:"マグマ冷却基地",     sub:"赤黒サイバー・脈動グロー",  cost:300 },
+  { key:"retro",   icon:"👾", name:"レトロドット絵",     sub:"ファミコン風ドット",        cost:400 },
+];
+
+let sbPanX = -1050, sbPanY = -1100; // 初期表示座標
+
+function initSkinShopLogic() {
+  const viewport = document.getElementById("sb-viewport");
+  const board    = document.getElementById("sb-board");
+  const cxEl     = document.getElementById("sb-cx");
+  const cyEl     = document.getElementById("sb-cy");
+  const shop     = document.getElementById("sb-shop");
+  const shopBd   = document.getElementById("sb-shop-bd");
+  const listEl   = document.getElementById("sb-skin-list");
+  const toastEl  = document.getElementById("sb-toast-skin");
+
+  function toast(msg) {
+    if(!toastEl) return;
+    toastEl.textContent = msg; toastEl.classList.add("sb-show");
+    setTimeout(() => { if(toastEl) toastEl.classList.remove("sb-show"); }, 2000);
+  }
+
+  function applyPan() {
+    if(!board) return;
+    board.style.transform = "translate3d(" + sbPanX + "px," + sbPanY + "px,0)";
+    if(cxEl && cyEl) { cxEl.textContent = Math.round(-sbPanX); cyEl.textContent = Math.round(-sbPanY); }
+  }
+
+  function renderSkinShopList() {
+    if(!listEl) return;
+    listEl.innerHTML = "";
+    SKIN_DATA.forEach(sk => {
+      const isOwned = S.ownedSkins.includes(sk.key);
+      const isApplied = S.currentSkin === sk.key;
+      
+      const card = document.createElement("div");
+      card.className = "sb-skin-card" + (isApplied ? " sb-applied" : "");
+      card.innerHTML = `
+        <div class="sb-skin-prev sb-theme-${sk.key}"></div>
+        <div class="sb-skin-meta">
+          <div class="sb-skin-nm">${sk.icon} ${sk.name}</div>
+          <div class="sb-skin-sub">${sk.sub}${sk.cost > 0 ? ' (' + sk.cost + ' AC)' : ' (無料)'}</div>
+        </div>
+      `;
+      
+      const btn = document.createElement("button");
+      btn.className = "sb-skin-btn";
+      
+      if (isOwned) {
+        if (isApplied) {
+          btn.classList.add("sb-applied-btn"); btn.textContent = "適用中"; btn.disabled = true;
+        } else {
+          btn.textContent = "適用する";
+          btn.onclick = () => { 
+            S.currentSkin = sk.key; 
+            board.className = "sb-theme-" + sk.key; 
+            renderSkinShopList(); 
+            render(); // 🏠 ホーム画面の背景も即時同期するために全体再描画を呼ぶ
+          };
+        }
+      } else {
+        if ((S.coins || 0) >= sk.cost) {
+          btn.classList.add("sb-buy"); btn.textContent = `購入 (${sk.cost}AC)`;
+          btn.onclick = () => {
+            S.coins -= sk.cost;
+            S.ownedSkins.push(sk.key);
+            S.currentSkin = sk.key;
+            board.className = "sb-theme-" + sk.key;
+            saveCoins(S.coins);
+            renderStatusBar();
+            renderSkinShopList();
+            render(); // 所持金減額と背景をホームに即反映
+            toast(`「${sk.name}」を購入・適用しました！`);
+            try { saveToCloud(getBP(), loadWrong(), loadHist()); } catch(e){} // ☁️ Firebase/Cloudへのバックアップ
+          };
+        } else {
+          btn.classList.add("sb-locked"); btn.textContent = "🔒 不足"; btn.disabled = true;
+        }
+      }
+      card.appendChild(btn);
+      listEl.appendChild(card);
+    });
+  }
+
+  document.getElementById("sb-skin-fab").onclick = () => { shop.classList.add("sb-open"); shopBd.classList.add("sb-open"); renderSkinShopList(); };
+  const closeShop = () => { shop.classList.remove("sb-open"); shopBd.classList.remove("sb-open"); };
+  document.getElementById("sb-shop-x").onclick = closeShop;
+  shopBd.onclick = closeShop;
+
+  // マップパン（ドラッグ移動）制御
+  let isPanning = false, startX = 0, startY = 0, origX = 0, origY = 0;
+  viewport.onpointerdown = (e) => {
+    if (e.target.closest("input") || e.target.closest("button") || e.target.closest(".pt-item") || e.target.closest(".pt-chip")) return;
+    isPanning = true; startX = e.clientX; startY = e.clientY; origX = sbPanX; origY = sbPanY;
+    viewport.classList.add("sb-grabbing");
+    try { viewport.setPointerCapture(e.pointerId); } catch(_) {}
+  };
+  viewport.onpointermove = (e) => {
+    if (!isPanning) return;
+    sbPanX = origX + (e.clientX - startX);
+    sbPanY = origY + (e.clientY - startY);
+    sbPanX = Math.min(0, Math.max(viewport.clientWidth - 3000, sbPanX));
+    sbPanY = Math.min(0, Math.max(viewport.clientHeight - 3000, sbPanY));
+    applyPan();
+  };
+  const endPan = () => { isPanning = false; viewport.classList.remove("sb-grabbing"); };
+  viewport.onpointerup = endPan;
+  viewport.onpointercancel = endPan;
+
+  applyPan();
+}
+
