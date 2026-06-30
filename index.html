@@ -10,7 +10,430 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="AZ-900">
 <link rel="apple-touch-icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 180 180'%3E%3Crect width='180' height='180' rx='40' fill='%230a1626'/%3E%3Ctext x='90' y='118' font-size='78' font-family='Arial' font-weight='bold' fill='%2338a3ff' text-anchor='middle'%3EAZ%3C/text%3E%3C/svg%3E">
-<link rel="stylesheet" href="css/style.css">
+<style>
+:root{
+  --bg:#0a1626; --bg2:#0f2238; --surface:#13304d; --surface2:#1a3d61;
+  --line:#234b73; --accent:#38a3ff; --good:#36d399; --gold:#f5c451; --bad:#f87272;
+  --text:#eaf2fb; --muted:#88a4c0;
+}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent;}
+html,body{margin:0;padding:0;}
+body{
+  font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","Hiragino Sans","Yu Gothic UI",sans-serif;
+  background:radial-gradient(120% 90% at 50% -10%, #16395c 0%, var(--bg) 55%) fixed;
+  color:var(--text); min-height:100vh; -webkit-font-smoothing:antialiased;
+}
+.shell{max-width:480px;margin:0 auto;padding:max(22px,env(safe-area-inset-top)) 18px calc(30px + env(safe-area-inset-bottom));display:flex;flex-direction:column;min-height:100vh;}
+.top{margin-bottom:18px;}
+.eyebrow{font-size:11px;letter-spacing:.22em;color:var(--accent);font-weight:700;}
+h1.title{font-size:34px;line-height:1.05;font-weight:800;margin:8px 0 0;letter-spacing:-.01em;}
+.page{flex:1;animation:fade .35s ease;}
+.statusbar{display:none;align-self:stretch;width:100%;box-sizing:border-box;align-items:center;gap:12px;
+  position:sticky;top:6px;z-index:50;margin:0 0 16px;padding:9px 14px;
+  background:rgba(13,28,48,.6);-webkit-backdrop-filter:blur(10px);backdrop-filter:blur(10px);
+  border:1px solid var(--line);border-radius:14px;box-shadow:0 8px 22px rgba(0,0,0,.3);}
+.statusbar.show{display:flex;}
+.sb-levels{flex:1;min-width:0;display:flex;flex-direction:column;gap:6px;}
+.sb-line{display:flex;align-items:center;gap:10px;}
+.sb-lab{flex:none;width:104px;font-size:11px;color:var(--muted);white-space:nowrap;letter-spacing:.01em;line-height:1;overflow:hidden;text-overflow:ellipsis;}
+.sb-lab b{color:var(--text);font-size:13px;font-weight:800;margin-left:2px;}
+.sb-lab-cert b{color:var(--accent);}
+.sb-prog{flex:1;min-width:40px;height:6px;border-radius:99px;background:var(--bg2);overflow:visible;
+  box-shadow:inset 0 0 0 1px rgba(255,255,255,.06), inset 0 1px 2px rgba(0,0,0,.5), 0 0 5px rgba(56,163,255,.10);}
+.sb-prog-f{display:block;height:100%;border-radius:99px;width:0;transition:width .7s cubic-bezier(.22,1,.36,1);}
+.sb-prog-f.overall{background:linear-gradient(90deg,#f0a91e,#ffcb47 55%,#ffe9a8);background-size:200% 100%;animation:sbflow 2.6s linear infinite;
+  box-shadow:0 0 6px 1px rgba(245,196,81,.6), 0 0 12px 2px rgba(245,196,81,.32), inset -4px 0 5px -3px rgba(255,255,255,.7);}
+.sb-prog-f.cert{background:linear-gradient(90deg,#2a86ec,#48a6ff 55%,#a9ddff);background-size:200% 100%;animation:sbflow 3.2s linear infinite;
+  box-shadow:0 0 6px 1px rgba(56,163,255,.6), 0 0 12px 2px rgba(56,163,255,.32), inset -4px 0 5px -3px rgba(255,255,255,.7);}
+@keyframes sbflow{0%{background-position:0 0}100%{background-position:200% 0}}
+.sb-div{align-self:stretch;width:1px;background:var(--line);flex:none;}
+.sb-coin{flex:none;font-size:11px;color:var(--muted);white-space:nowrap;display:flex;align-items:center;gap:4px;}
+.sb-coin b{color:var(--gold);font-size:16px;font-weight:800;}
+@media (max-width:360px){
+  .sb-lab{width:92px;font-size:10px;}
+  .sb-lab b{font-size:12px;}
+  .sb-coin b{font-size:14px;}
+}
+@keyframes fade{from{opacity:0;transform:translateY(8px);}to{opacity:1;transform:none;}}
+.foot{margin-top:18px;font-size:11px;color:var(--muted);text-align:center;letter-spacing:.02em;}
+.empty,.loading{color:var(--muted);text-align:center;padding:50px 0;line-height:1.7;}
+
+.stats{display:flex;gap:12px;margin-bottom:26px;}
+.stat{flex:1;background:linear-gradient(160deg,var(--surface),var(--bg2));border:1px solid var(--line);border-radius:16px;padding:16px 14px;}
+.stat-num{font-size:30px;font-weight:800;font-variant-numeric:tabular-nums;}
+.stat-best{color:var(--gold);}
+.stat-lab{font-size:12px;color:var(--muted);margin-top:2px;}
+
+.section-lab{font-size:12px;letter-spacing:.14em;color:var(--muted);font-weight:700;margin-bottom:12px;}
+.modes{display:flex;flex-direction:column;gap:11px;}
+.mode{display:flex;align-items:center;gap:14px;width:100%;text-align:left;cursor:pointer;background:var(--surface);border:1px solid var(--line);border-radius:15px;padding:16px;color:var(--text);transition:transform .12s,border-color .12s,background .12s;}
+.mode:active{transform:scale(.985);background:var(--surface2);}
+.mode-dot{width:10px;height:10px;border-radius:50%;flex:none;}
+.mode-text{display:flex;flex-direction:column;flex:1;}
+.mode-label{font-weight:700;font-size:16px;}
+.mode-sub{font-size:12px;color:var(--muted);margin-top:1px;}
+.mode-arrow{color:var(--muted);font-size:18px;}
+.link{margin-top:20px;width:100%;background:none;border:none;color:var(--accent);font-size:14px;font-weight:600;cursor:pointer;padding:8px;}
+
+.q-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;}
+.quit{display:inline-flex;align-items:center;gap:5px;background:var(--surface);border:1px solid var(--line);color:var(--text);font-size:13px;font-weight:600;cursor:pointer;padding:8px 15px;border-radius:99px;transition:background .12s;}
+.quit:active{background:var(--surface2);}
+.q-count{font-size:15px;font-weight:700;font-variant-numeric:tabular-nums;}
+.q-count em{color:var(--muted);font-weight:500;font-size:13px;font-style:normal;}
+.progress{height:5px;background:var(--bg2);border-radius:99px;overflow:hidden;margin-bottom:22px;}
+.progress-fill{height:100%;background:linear-gradient(90deg,var(--accent),#7ac6ff);border-radius:99px;transition:width .4s;}
+.q-text{font-size:18px;line-height:1.6;font-weight:600;margin:0 0 22px;}
+.opts{display:flex;flex-direction:column;gap:10px;}
+.opt{display:flex;align-items:center;gap:13px;width:100%;text-align:left;cursor:pointer;background:var(--surface);border:1.5px solid var(--line);border-radius:13px;padding:14px;color:var(--text);font-size:15px;line-height:1.4;transition:all .12s;}
+.opt-key{width:26px;height:26px;flex:none;border-radius:7px;background:var(--bg2);display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:700;color:var(--muted);}
+.opt-label{flex:1;}
+.opt-mark{font-weight:800;font-size:16px;}
+.opt.picked{border-color:var(--accent);background:var(--surface2);}
+.opt.picked .opt-key{background:var(--accent);color:#06243f;}
+.opt.correct{border-color:var(--good);background:rgba(54,211,153,.12);}
+.opt.correct .opt-key{background:var(--good);color:#063527;}
+.opt.correct .opt-mark{color:var(--good);}
+.opt.wrong{border-color:var(--bad);background:rgba(248,114,114,.1);}
+.opt.wrong .opt-key{background:var(--bad);color:#3a0d0d;}
+.opt.wrong .opt-mark{color:var(--bad);}
+.opt.dim{opacity:.5;}
+.opt:disabled{cursor:default;}
+
+.expl{display:flex;flex-direction:column;gap:4px;margin-top:16px;padding:14px;border-radius:12px;font-size:14px;line-height:1.6;border:1px solid var(--line);background:var(--bg2);}
+.expl strong{font-size:13px;letter-spacing:.05em;}
+.expl.ok strong{color:var(--good);}
+.expl.ng strong{color:var(--bad);}
+
+.cta{width:100%;margin-top:20px;padding:16px;border:none;border-radius:13px;cursor:pointer;font-size:16px;font-weight:700;color:#062340;background:linear-gradient(90deg,var(--accent),#62b8ff);transition:transform .1s,opacity .15s;}
+.cta:active{transform:scale(.99);}
+.cta:disabled{opacity:.4;cursor:default;}
+.ghost{width:100%;margin-top:10px;padding:14px;border:1px solid var(--line);border-radius:13px;background:none;color:var(--text);font-size:15px;font-weight:600;cursor:pointer;}
+.danger{color:var(--bad);border-color:rgba(248,114,114,.4);margin-top:24px;}
+
+.gauge-wrap{position:relative;width:200px;height:200px;margin:8px auto 4px;}
+.gauge{width:100%;height:100%;}
+.gauge-bg{fill:none;stroke:var(--bg2);stroke-width:14;}
+.gauge-fg{fill:none;stroke-width:14;stroke-linecap:round;transition:stroke-dashoffset 1s cubic-bezier(.22,1,.36,1);}
+.gauge-fg.pass{stroke:var(--good);}
+.gauge-fg.fail{stroke:var(--gold);}
+.gauge-mid{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;}
+.gauge-score{font-size:52px;font-weight:800;line-height:1;font-variant-numeric:tabular-nums;}
+.gauge-max{font-size:14px;color:var(--muted);margin-top:4px;}
+.verdict{text-align:center;font-weight:700;font-size:17px;margin-top:10px;}
+.verdict.pass{color:var(--good);}
+.verdict.fail{color:var(--gold);}
+.result-meta{text-align:center;color:var(--muted);font-size:14px;margin-top:6px;}
+.breakdown{margin-top:24px;display:flex;flex-direction:column;gap:11px;}
+.bd-row{display:flex;align-items:center;gap:12px;}
+.bd-lab{width:48px;font-size:13px;color:var(--muted);}
+.bd-bar{flex:1;height:8px;background:var(--bg2);border-radius:99px;overflow:hidden;}
+.bd-fill{height:100%;background:linear-gradient(90deg,var(--accent),#7ac6ff);border-radius:99px;}
+.bd-num{width:40px;text-align:right;font-size:13px;font-variant-numeric:tabular-nums;}
+.actions{margin-top:28px;}
+
+.chart{position:relative;display:flex;align-items:flex-end;gap:8px;height:160px;margin:8px 0 24px;padding:10px 4px 0;border-bottom:1px solid var(--line);}
+.chart-col{flex:1;display:flex;flex-direction:column;align-items:center;height:100%;justify-content:flex-end;gap:5px;}
+.chart-bar-track{flex:1;width:100%;display:flex;align-items:flex-end;}
+.chart-bar{width:100%;border-radius:5px 5px 0 0;min-height:3px;}
+.chart-bar.pass{background:linear-gradient(180deg,var(--good),#1f9c6e);}
+.chart-bar.fail{background:linear-gradient(180deg,var(--gold),#c79321);}
+.chart-val{font-size:10px;color:var(--muted);font-variant-numeric:tabular-nums;}
+.chart-passline{position:absolute;left:0;right:0;border-top:1px dashed rgba(245,196,81,.5);}
+.chart-passline span{position:absolute;right:0;top:-16px;font-size:10px;color:var(--gold);}
+.hist-list{display:flex;flex-direction:column;gap:8px;}
+.hist-row{display:flex;justify-content:space-between;align-items:center;background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:12px 14px;}
+.hist-left{display:flex;flex-direction:column;gap:2px;}
+.hist-mode{font-weight:700;font-size:14px;}
+.hist-date{font-size:12px;color:var(--muted);}
+.hist-right{display:flex;align-items:baseline;gap:10px;}
+.hist-score{font-size:22px;font-weight:800;font-variant-numeric:tabular-nums;}
+.hist-score.pass{color:var(--good);}
+.hist-score.fail{color:var(--gold);}
+.hist-correct{font-size:12px;color:var(--muted);}
+.install{margin-top:14px;font-size:11px;color:var(--muted);text-align:center;line-height:1.7;border:1px dashed var(--line);border-radius:12px;padding:12px;}
+.q-badge{display:inline-flex;align-items:center;gap:7px;font-size:12px;color:var(--muted);margin-bottom:14px;}
+.q-badge .stars{color:var(--gold);letter-spacing:1px;}
+.q-badge .pts{background:var(--bg2);border:1px solid var(--line);border-radius:99px;padding:2px 9px;font-weight:700;color:var(--text);font-variant-numeric:tabular-nums;}
+.start-hero{background:linear-gradient(160deg,var(--surface),var(--bg2));border:1px solid var(--line);border-radius:18px;padding:22px 20px;text-align:center;margin-bottom:14px;}
+.start-hero .big{font-size:15px;color:var(--muted);}
+.start-hero .pool{font-size:40px;font-weight:800;margin:6px 0 2px;font-variant-numeric:tabular-nums;}
+.start-hero .pool em{font-size:18px;color:var(--muted);font-style:normal;font-weight:600;}
+.start-hero .note{font-size:12px;color:var(--muted);margin-top:4px;}
+.result-sub{text-align:center;color:var(--muted);font-size:13px;margin-top:4px;}
+.q-badge .multi{background:rgba(56,163,255,.15);border:1px solid var(--accent);color:var(--accent);border-radius:99px;padding:2px 9px;font-weight:700;}
+.opt-key.box{border-radius:6px;}
+.opt.picked .opt-key.box::after{content:"";}
+.expl.partial{border-color:rgba(245,196,81,.5);}
+.expl.partial strong{color:var(--gold);}
+.expl .earn{color:var(--muted);font-size:12px;margin-top:2px;}
+.review-q{margin-bottom:8px;padding:16px 0 18px;border-bottom:1px solid var(--line);}
+.review-q .q-text{font-size:15px;font-weight:600;margin:0 0 12px;}
+.review-q .opts{gap:8px;}
+.review-q .opt{cursor:default;font-size:14px;padding:11px 13px;}
+.review-q .expl{margin-top:12px;}
+.review-num{display:flex;justify-content:space-between;align-items:center;gap:10px;font-size:12px;color:var(--muted);font-weight:700;margin-bottom:8px;}
+.rv-tag{flex:none;border-radius:99px;padding:2px 10px;font-size:11px;}
+.rv-tag.ok{background:rgba(54,211,153,.15);color:var(--good);}
+.rv-tag.partial{background:rgba(245,196,81,.15);color:var(--gold);}
+.rv-tag.ng{background:rgba(248,114,114,.15);color:var(--bad);}
+.xhero{background:linear-gradient(160deg,#1c2b52,#11203a);border:1px solid var(--line);border-radius:18px;padding:20px;margin-bottom:14px;}
+.xhero .lab{font-size:11px;letter-spacing:.14em;color:var(--accent);font-weight:700;}
+.xhero .term{font-size:26px;font-weight:800;margin:6px 0 2px;}
+.xhero .note{font-size:12px;color:var(--muted);}
+.x-sub{font-size:12px;letter-spacing:.12em;color:var(--muted);font-weight:700;margin:18px 0 10px;}
+.x-grid{display:flex;flex-wrap:wrap;gap:8px;}
+.x-pill{background:var(--surface);border:1px solid var(--line);border-radius:99px;padding:9px 14px;font-size:13px;color:var(--text);cursor:pointer;}
+.x-pill:active{background:var(--surface2);}
+.x-term-head{font-size:22px;font-weight:800;margin:6px 0 14px;}
+.x-area{width:100%;min-height:140px;background:var(--surface);border:1.5px solid var(--line);border-radius:14px;padding:14px;color:var(--text);font-size:16px;line-height:1.6;font-family:inherit;resize:vertical;}
+.x-area:focus{outline:none;border-color:var(--accent);}
+.x-tools{display:flex;gap:10px;margin-top:10px;}
+.mic{flex:none;display:flex;align-items:center;gap:7px;background:var(--surface);border:1.5px solid var(--line);border-radius:12px;padding:0 16px;color:var(--text);font-size:14px;font-weight:600;cursor:pointer;}
+.mic.rec{border-color:var(--bad);color:var(--bad);background:rgba(248,114,114,.1);}
+.x-hint{font-size:12px;color:var(--muted);margin-top:8px;line-height:1.6;}
+.score-big{text-align:center;font-size:60px;font-weight:800;line-height:1;font-variant-numeric:tabular-nums;margin:6px 0;}
+.score-big small{font-size:20px;color:var(--muted);font-weight:600;}
+.score-cap{text-align:center;font-size:13px;color:var(--muted);margin-bottom:18px;}
+.chips{display:flex;flex-wrap:wrap;gap:7px;margin:8px 0 4px;}
+.chip{border-radius:99px;padding:5px 12px;font-size:13px;font-weight:600;}
+.chip.hit{background:rgba(54,211,153,.15);color:var(--good);}
+.chip.partial{background:rgba(245,196,81,.15);color:var(--gold);}
+.chip.miss{background:var(--bg2);color:var(--muted);border:1px dashed var(--line);}
+.x-model{background:var(--bg2);border:1px solid var(--line);border-radius:13px;padding:14px;margin-top:14px;font-size:14px;line-height:1.7;}
+.x-model strong{display:block;font-size:12px;color:var(--accent);margin-bottom:5px;letter-spacing:.05em;}
+.axis{display:flex;align-items:center;gap:10px;margin:9px 0;}
+.axis-l{width:84px;font-size:13px;color:var(--muted);}
+.axis-bar{flex:1;height:9px;background:var(--bg2);border-radius:99px;overflow:hidden;}
+.axis-f{height:100%;border-radius:99px;background:linear-gradient(90deg,var(--accent),#7ac6ff);}
+.axis-n{width:38px;text-align:right;font-size:13px;font-variant-numeric:tabular-nums;}
+.x-ai-card{background:linear-gradient(160deg,var(--surface),var(--bg2));border:1px solid var(--line);border-radius:14px;padding:16px;margin-top:14px;}
+.x-ai-card .ttl{font-size:12px;letter-spacing:.08em;color:var(--accent);font-weight:700;margin-bottom:10px;}
+.x-fb{font-size:14px;line-height:1.7;margin-top:6px;}
+.x-fb .warn{color:var(--gold);}
+.x-aibar{display:flex;justify-content:space-between;align-items:center;font-size:12px;color:var(--muted);margin-top:16px;border-top:1px solid var(--line);padding-top:12px;}
+.x-aibar button{background:none;border:none;color:var(--accent);font-size:12px;font-weight:600;cursor:pointer;}
+.x-loading{text-align:center;color:var(--muted);font-size:13px;padding:14px;}
+.dict-search{width:100%;background:var(--surface);border:1.5px solid var(--line);border-radius:12px;padding:13px 14px;color:var(--text);font-size:15px;font-family:inherit;margin-bottom:10px;}
+.dict-search:focus{outline:none;border-color:var(--accent);}
+.dict-bar{display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;font-size:12px;color:var(--muted);}
+.dict-sortbtn{background:none;border:none;color:var(--accent);font-size:12px;font-weight:600;cursor:pointer;padding:0;}
+.dict-card{background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:15px;margin-bottom:10px;}
+.dict-term{font-size:16px;font-weight:800;margin-bottom:6px;}
+.dict-def{font-size:14px;line-height:1.75;color:var(--text);}
+.dict-points{display:flex;flex-wrap:wrap;gap:6px;margin-top:11px;}
+.dict-pt{font-size:11px;background:var(--bg2);border:1px solid var(--line);border-radius:99px;padding:3px 10px;color:var(--muted);}
+.bp-card{margin-top:18px;background:linear-gradient(160deg,#1c3a2e,#11253a);border:1px solid var(--line);border-radius:16px;padding:16px;}
+.coin-card{margin-top:12px;background:linear-gradient(160deg,#3a2f10,#2a2208);border:1px solid rgba(245,196,81,.4);border-radius:16px;padding:14px 16px;}
+.coin-row{display:flex;align-items:center;gap:8px;}
+.coin-ic{font-size:20px;}
+.coin-gain{font-size:18px;font-weight:800;color:var(--gold);font-variant-numeric:tabular-nums;}
+.coin-total{font-size:12px;color:var(--muted);margin-top:4px;}
+.bp-row{display:flex;justify-content:space-between;align-items:center;font-size:14px;font-weight:700;}
+.bp-gain{color:var(--good);font-size:18px;font-variant-numeric:tabular-nums;}
+.bp-total{font-size:12px;color:var(--muted);margin-top:3px;}
+.bp-exp-line{font-size:13px;color:var(--text);margin-top:6px;font-weight:600;}
+.cta-exam{background:linear-gradient(90deg,var(--gold),#ffd97a);color:#3a2c06;}
+.mode-note{font-size:11px;color:var(--muted);text-align:center;margin-top:6px;line-height:1.5;}
+.mode-tag{border-radius:99px;padding:1px 8px;font-size:11px;font-weight:700;}
+.mode-tag.practice{background:rgba(56,163,255,.15);color:var(--accent);}
+.mode-tag.exam{background:rgba(245,196,81,.15);color:var(--gold);}
+.pcount-wrap{background:var(--surface);border:1px solid var(--accent);border-radius:14px;padding:14px;text-align:center;}
+.pcount-lab{font-size:13px;font-weight:700;color:var(--accent);margin-bottom:10px;}
+.pcount{display:flex;gap:10px;}
+.pcount-btn{flex:1;background:linear-gradient(180deg,#1d3550,#142840);border:1px solid var(--line);border-radius:12px;padding:16px 0;color:var(--text);font-size:16px;font-weight:800;cursor:pointer;}
+.pcount-btn:active{transform:scale(.97);border-color:var(--accent);}
+.hist-score small{color:var(--muted);font-weight:600;font-size:10px;}
+.qstat{margin-top:10px;font-size:12px;color:var(--muted);border-top:1px solid var(--line);padding-top:8px;}
+.qstat-v{font-weight:800;color:var(--accent);font-variant-numeric:tabular-nums;}
+.qstat-n{color:var(--muted);font-weight:600;margin-left:4px;}
+.danger-zone{margin-top:22px;border:1px solid rgba(255,107,107,.35);border-radius:14px;padding:14px;background:rgba(255,107,107,.05);}
+.dz-title{font-size:13px;font-weight:800;color:var(--bad);margin-bottom:4px;}
+.dz-note{font-size:12px;color:var(--muted);line-height:1.6;margin-bottom:10px;}
+.modal-ov{position:fixed;inset:0;background:rgba(4,10,20,.72);display:flex;align-items:center;justify-content:center;padding:22px;z-index:1000;}
+.modal{width:100%;max-width:380px;background:var(--bg2);border:1px solid var(--line);border-radius:18px;padding:20px;box-shadow:0 20px 60px rgba(0,0,0,.5);}
+.modal-title{font-size:18px;font-weight:800;color:var(--bad);margin-bottom:10px;}
+.modal-body{font-size:13px;color:var(--text);line-height:1.7;margin-bottom:14px;}
+.danger-solid{background:var(--bad)!important;color:#fff!important;}
+.bp-unlock{margin-top:10px;font-size:13px;color:var(--gold);font-weight:700;line-height:1.6;}
+.bp-link{margin-top:12px;width:100%;background:none;border:1px solid var(--line);border-radius:10px;padding:10px;color:var(--accent);font-size:13px;font-weight:600;cursor:pointer;}
+.dc-hero{background:linear-gradient(160deg,#13314d,#0d1f36);border:1px solid var(--line);border-radius:18px;padding:20px;margin-bottom:16px;}
+.dc-lvl{font-size:11px;letter-spacing:.14em;color:var(--accent);font-weight:700;}
+.dc-title{font-size:24px;font-weight:800;margin:5px 0 2px;}
+.dc-bp{font-size:13px;color:var(--muted);}
+.dc-prog{height:8px;background:var(--bg2);border-radius:99px;overflow:hidden;margin-top:14px;}
+.dc-prog-f{height:100%;background:linear-gradient(90deg,var(--good),#7ac6ff);border-radius:99px;transition:width .6s;}
+.dc-next{font-size:12px;color:var(--muted);margin-top:8px;}
+.dc-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;}
+.dc-tile{background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:14px 8px;text-align:center;position:relative;transition:transform .15s;}
+.dc-tile.on{border-color:var(--good);background:linear-gradient(160deg,var(--surface2),var(--surface));}
+.dc-tile.next{border-color:var(--accent);border-style:dashed;}
+.dc-tile.lock{opacity:.55;}
+.dc-ic{font-size:30px;line-height:1.1;filter:grayscale(0);}
+.dc-tile.lock .dc-ic{filter:grayscale(1);opacity:.6;}
+.dc-nm{font-size:12px;font-weight:700;margin-top:6px;line-height:1.3;}
+.dc-rq{font-size:10px;color:var(--muted);margin-top:3px;}
+.dc-on-badge{position:absolute;top:6px;right:6px;font-size:10px;color:var(--good);font-weight:800;}
+.dc-sub{font-size:12px;letter-spacing:.12em;color:var(--muted);font-weight:700;margin:18px 0 10px;}
+.home-scene{position:relative;height:144px;border-radius:18px;overflow:hidden;border:1px solid var(--line);margin-bottom:16px;display:flex;flex-direction:column;justify-content:flex-end;}
+.home-scene.b1{background:linear-gradient(180deg,#102338 0%,#0a1626 100%);}
+.home-scene.b2{background:linear-gradient(180deg,#103a4d 0%,#0a1626 80%);}
+.home-scene.b3{background:linear-gradient(180deg,#0c4d5c 0%,#11204a 75%,#0a1626 100%);}
+.home-scene.b4{background:linear-gradient(180deg,#3a2a66 0%,#143a6b 55%,#0a1626 100%);}
+.scene-info{position:absolute;top:0;left:0;right:0;display:flex;justify-content:space-between;align-items:center;padding:12px 14px;z-index:3;}
+.scene-lvl{font-weight:800;font-size:13px;color:var(--text);}
+.scene-bp{font-size:12px;color:var(--muted);font-variant-numeric:tabular-nums;}
+.scene-ground{position:relative;z-index:2;display:flex;align-items:flex-end;justify-content:center;gap:7px;flex-wrap:wrap;padding:0 12px 14px;}
+.scene-ground::before{content:"";position:absolute;left:8px;right:8px;bottom:11px;height:1px;background:linear-gradient(90deg,transparent,rgba(136,164,192,.5),transparent);}
+.scene-b{line-height:1;filter:drop-shadow(0 0 7px rgba(56,163,255,.45));animation:rise .5s ease both;}
+.home-scene.b4 .scene-b{filter:drop-shadow(0 0 8px rgba(245,196,81,.45));}.scene-ghost{font-size:22px;opacity:.35;filter:grayscale(1);align-self:flex-end;}
+.scene-star{position:absolute;width:3px;height:3px;border-radius:50%;background:#fff;opacity:.4;z-index:1;animation:tw 2.4s infinite;}
+@keyframes tw{0%,100%{opacity:.15}50%{opacity:.9}}
+@keyframes rise{from{transform:translateY(8px);opacity:0}to{transform:none;opacity:1}}
+.scene-map{position:absolute;inset:0;width:100%;height:100%;z-index:1;}
+.scene-map .grat line{stroke:rgba(120,170,255,.10);stroke-width:1;}
+.scene-map .land path{fill:rgba(120,170,255,.16);stroke:rgba(120,170,255,.30);stroke-width:1;}
+.scene-map .rg-dot{fill:#6b86a8;}
+.scene-map .rg.on .rg-dot{fill:var(--gold);}
+.scene-map .rg-glow{fill:rgba(245,201,122,.35);animation:rgpulse 2.2s infinite;}
+.scene-map .rg-nm{fill:#ffe7b0;font-size:7px;font-weight:700;text-anchor:middle;}
+@keyframes rgpulse{0%,100%{opacity:.2}50%{opacity:.65}}
+.dc-phase{margin-top:8px;font-size:12px;color:var(--muted);line-height:1.5;}
+.dc-phase-tag{display:inline-block;background:rgba(56,163,255,.15);border:1px solid var(--accent);color:var(--accent);border-radius:99px;padding:1px 9px;font-weight:700;font-size:11px;margin-right:7px;}
+.dc-phasebar{display:flex;justify-content:space-between;align-items:center;gap:10px;background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:11px 14px;margin-bottom:16px;font-size:12px;color:var(--muted);font-weight:600;}
+.rev-btn{border-color:rgba(245,196,81,.5);color:var(--gold);}
+.rev-tag-q{background:rgba(245,196,81,.15);color:var(--gold);border-radius:99px;padding:1px 8px;font-size:11px;font-weight:700;}
+.auth-wrap{padding:6px 0;}
+.auth-title{font-size:26px;font-weight:800;margin-bottom:8px;}
+.auth-sub{font-size:13px;color:var(--muted);line-height:1.8;margin-bottom:20px;}
+.auth-input{width:100%;background:var(--surface);border:1.5px solid var(--line);border-radius:12px;padding:15px;color:var(--text);font-size:16px;font-family:inherit;margin-bottom:11px;}
+.auth-input:focus{outline:none;border-color:var(--accent);}
+.auth-msg{font-size:13px;color:var(--muted);min-height:18px;margin:2px 0 8px;line-height:1.6;}
+.acct-bar{margin-top:20px;padding-top:16px;border-top:1px solid var(--line);font-size:12px;color:var(--muted);text-align:center;display:flex;align-items:center;justify-content:center;gap:10px;flex-wrap:wrap;}
+.link2{background:none;border:none;color:var(--accent);font-size:12px;font-weight:700;cursor:pointer;text-decoration:underline;padding:0;}
+.sel-head{margin-bottom:18px;}
+.sel-title{font-size:28px;font-weight:800;margin:6px 0 6px;}
+.me-hero{background:linear-gradient(160deg,#1c3a52,#102338);border:1px solid var(--line);border-radius:18px;padding:18px;margin-bottom:18px;}
+.me-top{display:flex;justify-content:space-between;align-items:flex-start;gap:10px;}
+.me-lab{font-size:11px;letter-spacing:.14em;color:var(--accent);font-weight:700;}
+.me-lvrow{display:flex;align-items:baseline;gap:10px;margin-top:5px;flex-wrap:wrap;}
+.me-lv{font-size:32px;font-weight:800;line-height:1;font-variant-numeric:tabular-nums;}
+.me-title{font-size:13px;font-weight:700;color:var(--gold);}
+.me-bp{font-size:12px;color:var(--muted);font-variant-numeric:tabular-nums;white-space:nowrap;}
+.me-prog{height:9px;background:var(--bg2);border-radius:99px;overflow:hidden;margin-top:14px;}
+.me-prog-f{height:100%;background:linear-gradient(90deg,var(--gold),#ffd97a);border-radius:99px;transition:width .6s;}
+.me-next{font-size:12px;color:var(--muted);margin-top:8px;}
+.me-actions{display:flex;gap:11px;margin-bottom:18px;}
+.me-btn{flex:1;background:var(--surface);border:1px solid var(--line);border-radius:13px;padding:13px;color:var(--text);font-size:14px;font-weight:700;cursor:pointer;}
+.me-btn:active{background:var(--surface2);}
+.lb-me{background:linear-gradient(160deg,var(--surface),var(--bg2));border:1px solid var(--line);border-radius:13px;padding:12px 14px;margin-bottom:14px;font-size:13px;color:var(--text);}
+.lb-me b{color:var(--gold);font-size:15px;}
+.lb-list{display:flex;flex-direction:column;gap:8px;}
+.lb-row{display:flex;align-items:center;gap:12px;background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:10px 13px;}
+.lb-row.me{border-color:var(--accent);background:var(--surface2);}
+.lb-rank{width:28px;text-align:center;font-size:16px;font-weight:800;color:var(--muted);font-variant-numeric:tabular-nums;flex:none;}
+.lb-rank.top{color:var(--gold);}
+.lb-info{flex:1;display:flex;flex-direction:column;gap:1px;min-width:0;}
+.lb-name{font-size:14px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.lb-name small{color:var(--accent);font-weight:600;}
+.lb-cert{font-size:11px;color:var(--muted);}
+.lb-bp{font-size:14px;font-weight:800;font-variant-numeric:tabular-nums;flex:none;}
+.lb-bp small{color:var(--muted);font-weight:600;font-size:11px;}
+.pf-list{display:flex;flex-direction:column;gap:8px;}
+.pf-cert{display:flex;align-items:center;gap:10px;background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:11px 13px;font-size:13px;}
+.pf-cert span:first-child{font-weight:800;}
+.pf-cn{flex:1;color:var(--text);}
+.pf-cl{color:var(--muted);font-variant-numeric:tabular-nums;}
+.sel-sub{font-size:13px;color:var(--muted);line-height:1.7;margin:0;}
+.cert-list{display:flex;flex-direction:column;gap:12px;}
+.cert-card{display:block;width:100%;text-align:left;cursor:pointer;color:var(--text);background:var(--surface);background:
+  linear-gradient(160deg, color-mix(in srgb, var(--ca, #38a3ff) 22%, var(--surface)), var(--bg2));
+  border:1px solid var(--line);border-left:4px solid var(--ca,#38a3ff);border-radius:16px;padding:16px 17px;transition:transform .12s,border-color .12s;}
+.cert-card:active{transform:scale(.99);}
+.cert-top{display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;}
+.cert-code{font-size:13px;font-weight:800;letter-spacing:.08em;color:var(--ca,#38a3ff);}
+.cert-go{font-size:12px;font-weight:700;color:var(--muted);}
+.cert-soon{font-size:12px;font-weight:700;color:var(--muted);}
+.cert-name{font-size:19px;font-weight:800;line-height:1.25;}
+.cert-sub{font-size:11px;color:var(--muted);margin-top:2px;}
+.cert-stats{display:flex;gap:14px;margin-top:12px;font-size:13px;color:var(--text);font-variant-numeric:tabular-nums;}
+.cert-stats small{color:var(--muted);font-size:11px;}
+.cert-card.locked{background:var(--bg2);border-left-color:var(--line);cursor:default;opacity:.7;}
+.cert-card.locked .cert-code{color:var(--muted);}
+.pt-coinbar{display:flex;align-items:center;gap:8px;font-size:13px;color:var(--muted);margin-bottom:12px;}
+.pt-coinbar b{color:var(--gold);font-size:18px;font-weight:800;}
+.pt-coinbar .pt-hint{margin-left:auto;font-size:11px;color:var(--muted);text-align:right;}
+.pt-mission{margin-bottom:14px;padding:13px 15px;border:1px solid var(--line);border-radius:14px;
+  background:linear-gradient(150deg,rgba(245,196,81,.10),rgba(56,163,255,.05) 60%,transparent);
+  box-shadow:0 6px 18px rgba(0,0,0,.22);}
+.pt-m-top{display:flex;align-items:center;justify-content:space-between;margin-bottom:7px;}
+.pt-m-tag{font-size:10px;font-weight:800;letter-spacing:.18em;color:var(--gold);
+  background:rgba(245,196,81,.12);border:1px solid rgba(245,196,81,.4);border-radius:99px;padding:2px 9px;}
+.pt-m-stars{font-size:15px;letter-spacing:1px;line-height:1;}
+.pt-star{color:rgba(255,255,255,.18);}
+.pt-star.on{color:var(--gold);text-shadow:0 0 8px rgba(245,196,81,.5);}
+.pt-m-title{font-size:16px;font-weight:800;line-height:1.3;margin-bottom:5px;}
+.pt-m-desc{font-size:12.5px;color:var(--muted);line-height:1.65;}
+.pt-m-reward{font-size:12px;color:var(--gold);font-weight:700;margin-top:8px;}
+.pt-mlist-lab{font-size:11px;color:var(--muted);margin:4px 0 10px;letter-spacing:.04em;}
+.pt-mlist{display:flex;flex-direction:column;gap:12px;}
+.pt-mission-btn{display:block;width:100%;text-align:left;cursor:pointer;color:var(--text);
+  transition:transform .12s,border-color .12s,box-shadow .12s;}
+.pt-mission-btn:active{transform:scale(.99);}
+.pt-mission-btn:hover{border-color:rgba(245,196,81,.5);}
+.pt-m-foot{display:flex;align-items:center;justify-content:space-between;margin-top:10px;}
+.pt-m-go{font-size:12px;font-weight:800;color:var(--accent);white-space:nowrap;}
+.pt-cleared{font-size:10px;font-weight:800;color:var(--good);background:rgba(54,211,153,.14);border:1px solid var(--good);border-radius:99px;padding:1px 7px;margin-left:6px;vertical-align:middle;}
+.pt-mission-strip{display:flex;align-items:center;gap:9px;margin-bottom:12px;padding:8px 12px;
+  background:rgba(245,196,81,.06);border:1px solid var(--line);border-radius:12px;}
+.pt-strip-title{font-size:13px;font-weight:800;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.pt-help{margin-left:auto;flex:none;width:30px;height:30px;border-radius:50%;border:1px solid var(--line);
+  background:rgba(255,255,255,.05);color:var(--text);font-size:15px;cursor:pointer;line-height:1;}
+.pt-help:active{transform:scale(.92);border-color:var(--accent);}
+.pt-coinbar-info{font-size:12px;color:var(--muted);}
+.pt-coinbar-info b{color:var(--gold);}
+.pt-vnet-head{display:flex;align-items:center;gap:8px;margin-bottom:10px;flex-wrap:wrap;}
+.pt-vnet-lab{font-size:12px;font-weight:800;color:var(--accent);letter-spacing:.02em;display:flex;align-items:center;}
+.pt-vnetbody{display:flex;flex-direction:column;gap:8px;padding:8px;min-height:70px;background:rgba(255,255,255,.02);border-radius:12px;}
+.pt-vnet-empty{font-size:12px;color:var(--muted);opacity:.75;text-align:center;padding:18px 0;}
+.pt-addr{display:inline-flex;align-items:center;color:var(--muted);font-weight:700;}
+.pt-ip-in{width:38px;margin-left:2px;padding:2px 4px;font-size:12px;font-weight:800;text-align:center;color:var(--text);
+  background:rgba(0,0,0,.3);border:1px solid var(--line);border-radius:6px;outline:none;-webkit-appearance:none;}
+.pt-ip-in:focus{border-color:var(--accent);box-shadow:0 0 0 2px rgba(56,163,255,.25);}
+.pt-ip-oct{width:46px;}
+.pt-hint-head{display:flex;align-items:center;gap:8px;font-size:13px;font-weight:800;color:var(--text);margin-bottom:10px;}
+.pt-hint-list{margin:0 0 14px;padding-left:20px;display:flex;flex-direction:column;gap:8px;}
+.pt-hint-list li{font-size:13px;line-height:1.6;color:var(--text);}
+.pt-sandbox{margin-bottom:12px;}
+.pt-drop{border:1.5px dashed var(--line);border-radius:14px;transition:border-color .15s,box-shadow .15s,background .15s;}
+.pt-over{border-color:var(--gold)!important;box-shadow:0 0 0 3px rgba(245,196,81,.25),0 0 18px rgba(245,196,81,.35) inset!important;background:rgba(245,196,81,.06)!important;}
+.pt-canvas{min-height:160px;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;background:rgba(255,255,255,.02);}
+.pt-canvas-lab{font-size:16px;font-weight:800;color:var(--muted);}
+.pt-canvas-sub{font-size:12px;color:var(--muted);margin-top:6px;}
+.pt-vnet{border:1.5px solid var(--accent);border-radius:16px;padding:12px;background:linear-gradient(160deg,rgba(56,163,255,.08),transparent);}
+.pt-vnet-lab{font-size:12px;font-weight:800;color:var(--accent);margin-bottom:10px;letter-spacing:.02em;}
+.pt-lbslot{padding:10px;text-align:center;font-size:13px;font-weight:700;color:var(--muted);margin-bottom:10px;background:rgba(255,255,255,.02);}
+.pt-lbslot.filled{border-style:solid;border-color:var(--good);color:var(--good);}
+.pt-subnets{display:flex;gap:10px;}
+.pt-subnet{flex:1;min-height:120px;padding:10px;background:rgba(255,255,255,.02);display:flex;flex-direction:column;}
+.pt-sn-lab{font-size:12px;font-weight:800;color:var(--text);margin-bottom:8px;display:flex;flex-direction:column;}
+.pt-sn-lab small{font-size:10px;color:var(--muted);font-weight:600;}
+.pt-sn-items{display:flex;flex-wrap:wrap;gap:6px;align-content:flex-start;flex:1;}
+.pt-chip{background:rgba(56,163,255,.16);border:1px solid var(--accent);color:var(--text);border-radius:8px;padding:4px 8px;font-size:12px;font-weight:700;height:fit-content;}
+.pt-empty{font-size:11px;color:var(--muted);opacity:.7;}
+.pt-result{font-size:13px;line-height:1.6;border-radius:12px;margin-bottom:12px;}
+.pt-result.ok{background:rgba(54,211,153,.12);border:1px solid var(--good);color:var(--text);padding:12px 14px;}
+.pt-result.ng{background:rgba(255,107,107,.1);border:1px solid var(--bad);color:var(--text);padding:12px 14px;}
+.pt-btnrow{margin-top:10px;}
+.pt-dock-lab{font-size:11px;color:var(--muted);margin:16px 0 8px;text-align:center;}
+.pt-dock{display:flex;gap:10px;justify-content:center;}
+.pt-item{flex:1;max-width:120px;display:flex;flex-direction:column;align-items:center;gap:2px;padding:12px 6px;border:1px solid var(--line);border-radius:14px;background:linear-gradient(180deg,#15294025,#0e1d3340);cursor:grab;user-select:none;-webkit-user-select:none;touch-action:none;}
+.pt-item:active{transform:scale(.96);border-color:var(--accent);}
+.pt-item.locked{opacity:.38;pointer-events:none;filter:grayscale(.5);}
+.pt-ic{font-size:26px;}
+.pt-nm{font-size:13px;font-weight:800;}
+.pt-cost{font-size:11px;color:var(--gold);font-weight:700;}
+.pt-ghost{position:fixed;transform:translate(-50%,-50%);font-size:34px;z-index:2000;pointer-events:none;filter:drop-shadow(0 6px 10px rgba(0,0,0,.5));transition:none;}
+</style>
 </head>
 <body>
 <div class="shell">
@@ -23,6 +446,2013 @@
   <div class="foot">スコアはこの端末に保存されます · 合格ライン 700点</div>
 </div>
 
-<script type="module" src="js/main.js"></script>
+<script>
+const L = ["A","B","C","D","E"];
+let PASS = 700;   // 選択中の資格の合格ライン（loadCertで設定）
+let DRAW = 45;    // 選択中の資格の1回の出題数（loadCertで設定）
+let Q = [], CONCEPTS = [], TIERS = [];   // 選択中の資格のデータ（loadCertで差し替え）
+const IMP_POINTS = {1:15, 2:18, 3:21, 4:24, 5:27}; // 重要度 → 配点
+// ▼▼▼ 【新設】IPアドレス計算・変換用の共通ロジック ▼▼▼
+function ipToNum(ipStr) {
+  const parts = (ipStr || "").split('.').map(Number);
+  if (parts.length !== 4 || parts.some(num => isNaN(num) || num < 0 || num > 255)) return null;
+  return ((parts[0] << 24) >>> 0) + (parts[1] << 16) + (parts[2] << 8) + parts[3];
+}
+function numToIp(num) {
+  return [num >>> 24, (num >>> 16) & 255, (num >>> 8) & 255, num & 255].join('.');
+}
+// ネットワークの開始・終了IPの数値を計算（プレフィックス長の上限を32に設定・制限）
+function getIpRange(ipStr, prefix) {
+  const ipNum = ipToNum(ipStr);
+  if (ipNum === null) return null;
+  
+  const p = parseInt(prefix, 10);
+  // ❌ プレフィックス長が 8 〜 32 の範囲外、または数字でない場合は無効（制限）
+  if (isNaN(p) || p < 8 || p > 32) return null;
+  
+  // /32 の場合は開始IPと終了IPが全く同じになるため、ビットシフトをせず直接返す
+  if (p === 32) {
+    return { start: ipNum, end: ipNum };
+  }
+  
+  const mask = p === 0 ? 0 : (~0 << (32 - p)) >>> 0;
+  const start = (ipNum & mask) >>> 0;
+  const end = (start | ~mask) >>> 0;
+  
+  return { start, end };
+}
+// ▲▲▲ 【追加ここまで】 ▲▲▲
+
+/* =========================================================================
+   問題プール（ここに追加していけば自動でランダム出題の対象になります）
+   imp  = 重要度(1〜5)。配点は IMP_POINTS で決定。
+   a    = 単一選択の正解インデックス
+   c    = 複数選択の正解インデックス配列（指定があれば複数選択問題）
+   毎回プールから DRAW 問をランダム抽出し、最終スコアは
+   「獲得した点 ÷ その回の満点 × 1000」で1000点満点に正規化します。
+   複数選択は「正答1つ＝配点/正答数」、誤答1つにつき同額を減点（0点未満は0）。
+   ========================================================================= */
+const AZ900_Q = [
+ {id:1,imp:1,q:"サードパーティのクラウドプロバイダーが構築・管理し、インターネット経由で誰でもリソースを使用できるクラウド展開モデルは何ですか？",o:["プライベート クラウド","パブリック クラウド","ハイブリッド クラウド","マルチ クラウド"],a:1,e:"パブリッククラウドはサードパーティが所有・管理し、誰でも利用できるモデルです。"},
+ {id:2,imp:1,q:"クラウドサービスを使用する際の、使った分だけ継続的に支払う運用コスト（OpEx）の課金モデルを何と呼びますか？",o:["資本支出 (CapEx)","リース モデル","従量課金モデル","前払いモデル"],a:2,e:"使った分だけ支払う運用コスト型の課金が従量課金モデルです。CapExは初期投資です。"},
+ {id:3,imp:1,q:"物理サーバーやネットワークなどのインフラをプロバイダーが提供し、OSやアプリはユーザーが管理する最も柔軟なサービスモデルはどれですか？",o:["IaaS（サービスとしてのインフラストラクチャ）","PaaS（サービスとしてのプラットフォーム）","SaaS（サービスとしてのソフトウェア）","DaaS（サービスとしてのデスクトップ）"],a:0,e:"IaaSは物理インフラのみを提供し、OS以降をユーザーが管理する最も柔軟なモデルです。"},
+ {id:4,imp:1,q:"開発フレームワークやデータベースなど、アプリ構築に必要な環境をプロバイダーが管理し、ユーザーが開発に集中できるサービスモデルは？",o:["IaaS","PaaS","SaaS","CaaS"],a:1,e:"PaaSはOS/ミドルウェアや開発環境まで提供し、ユーザーはアプリ開発に専念できます。"},
+ {id:5,imp:1,q:"ソフトウェアをインストールせず、インターネット経由で完成したアプリ（メールや経費精算など）を利用できるサービスモデルは？",o:["IaaS","PaaS","SaaS","FaaS"],a:2,e:"SaaSはインストール不要で完成済みアプリを利用できるモデルです。"},
+ {id:6,imp:2,q:"Azureにおいて、1つ以上のデータセンターから構成される地理的な領域を何と呼びますか？",o:["リソース グループ","サブスクリプション","リージョン","可用性ゾーン"],a:2,e:"リージョンは1つ以上のデータセンターを含む地理的領域です。"},
+ {id:7,imp:2,q:"Azureで作成したリソースを論理的にまとめ、一括して削除などの管理ができるコンテナーはどれですか？",o:["サブスクリプション","管理グループ","テナント","リソース グループ"],a:3,e:"リソースグループはリソースを論理的にまとめ、まとめて管理・削除できる入れ物です。"},
+ {id:8,imp:2,q:"ユーザーがOSやソフトウェアを完全に制御でき、物理サーバーのように利用できるAzureのコンピューティングサービスは？",o:["Azure App Service","Azure Container Instances","Azure Virtual Machines","Azure Functions"],a:2,e:"Azure VM はIaaSで、OSレベルまで完全に制御できます。"},
+ {id:9,imp:2,q:"インフラを管理せず、任意の言語でWebアプリやREST APIをホストするためのHTTPベースのサービスはどれですか？",o:["Azure App Service","Azure Virtual Machines","Azure Arc","Azure Service Health"],a:0,e:"Azure App Serviceはインフラ管理不要でWebアプリやAPIをホストするフルマネージドサービスです。"},
+ {id:10,imp:2,q:"仮想マシンを管理せずに、軽量で迅速にアプリを実行できる分離環境（Dockerなど）を提供するサービスは？",o:["Azure Functions","Azure Container Instances","Azure 仮想デスクトップ","Azure Kubernetes Service"],a:1,e:"Azure Container Instances (ACI) はVMを管理せずコンテナーを手軽に実行できます。"},
+ {id:11,imp:2,q:"画像・動画・ログファイルなどの非構造化データを大規模に保存するのに最適なオブジェクトストレージサービスは？",o:["Azure Table Storage","Azure Queue Storage","Azure Blob Storage","Azure Files"],a:2,e:"Azure Blob Storageは非構造化データ向けのオブジェクトストレージです。"},
+ {id:12,imp:3,c:[2,4],q:"共有責任モデルでIaaSを使用する場合に、プロバイダーではなく「顧客」が管理責任を負うものを2つ選択してください。",o:["物理データセンターのセキュリティ","物理ネットワークの維持","オペレーティング システム (OS) の更新とパッチ適用","物理ホストサーバーの保守","アプリケーションとデータの管理"],e:"IaaSでは物理層はプロバイダー責任。OSの更新（C）とアプリ・データ管理（E）は顧客の責任です。"},
+ {id:13,imp:3,c:[2,3],q:"Blob Storageのアクセス層のうち、アクセス頻度が低く長期保管（90日以上/180日以上）向けでコストを抑えられる層を2つ選択してください。",o:["ホット アクセス層","クール アクセス層","コールド アクセス層","アーカイブ アクセス層","プレミアム アクセス層"],e:"コールド層は90日以上、アーカイブ層は180日以上の長期保管向けで保存コストが低く設定されています。"},
+ {id:14,imp:3,c:[0,2,4],q:"クラウド コンピューティングを利用する主なメリットを3つ選択してください。",o:["高可用性","ハードウェアの資本支出 (CapEx) の増加","スケーラビリティ","オンプレミスの物理サーバーの自社管理","予測可能なパフォーマンスとコスト（従量課金制）"],e:"クラウドは高可用性・スケーラビリティ・従量課金によるコスト予測をもたらします。B・Dはクラウドが解消する課題です。"},
+ {id:15,imp:3,c:[0,1,2],q:"Azure 仮想ネットワーク (VNet) で、トラフィックをフィルター処理またはルーティングするために使う機能を3つ選択してください。",o:["ネットワーク セキュリティ グループ (NSG)","ユーザー定義ルート (UDR)","ネットワーク仮想アプライアンス (NVA)","Azure Service Health","Azure Key Vault"],e:"NSG（フィルター）、UDR（ルーティング）、NVA（高度な処理）で制御します。D・Eはネットワーク制御の機能ではありません。"},
+ {id:16,imp:3,c:[0,1,2,3],q:"Azureの管理インフラを構成し、リソースの整理やアクセス制御の境界となるレベル（スコープ）をすべて選択してください。",o:["管理グループ","サブスクリプション","リソース グループ","リソース"],e:"管理階層は「管理グループ→サブスクリプション→リソースグループ→リソース」の4レベル。すべてがスコープになります。"},
+ {id:17,imp:3,c:[1,3],q:"Azure Advisor がベストプラクティスを提案する際の「5つのカテゴリ」に含まれるものを2つ選択してください。",o:["コンプライアンス","コスト","スケーラビリティ","セキュリティ","ライセンス"],e:"5カテゴリは信頼性・セキュリティ・パフォーマンス・オペレーショナルエクセレンス・コスト。該当はコストとセキュリティです。"},
+ {id:18,imp:3,c:[0,1,2],q:"「ゼロ トラスト セキュリティ モデル」を構成する3つの基本原則を選択してください。",o:["明示的に検証する","最小限の特権アクセスを使用する","侵害を想定する","パスワードのみの認証を必須とする","内部ネットワークは常に安全であるとみなす"],e:"3原則は「明示的に検証」「最小限の特権アクセス」「侵害を想定」。D・Eはゼロトラストが否定する考え方です。"},
+ {id:19,imp:3,c:[0,2],q:"大規模なデータセットをオンプレミスからAzureへ移行、またはファイル移動するために使うサービスやツールを2つ選択してください。",o:["Azure Migrate","Azure Advisor","AzCopy","Azure Policy","Azure Arc"],e:"Azure Migrate（サーバー/DB移行）と AzCopy（ストレージ間の高速コピー）が該当します。"},
+ {id:20,imp:3,c:[0,1,2,3],q:"Azure Storage で、プライマリ/セカンダリリージョンのデータ保護のために提供される基本の冗長性オプションをすべて選択してください。",o:["ローカル冗長ストレージ (LRS)","ゾーン冗長ストレージ (ZRS)","geo 冗長ストレージ (GRS)","geo ゾーン冗長ストレージ (GZRS)"],e:"基本の冗長性は LRS・ZRS・GRS・GZRS の4種類。すべてが正解です。"},
+ {id:21,imp:3,c:[0,2],q:"Azure Service Health に組み込まれ、正常性や障害情報を提供する3つのビューのうち2つを選択してください。",o:["Azure Status","Azure Monitor","Resource Health","Azure Policy","Azure Advisor"],e:"3ビューは Azure Status・Service Health・Resource Health。選択肢では Azure Status と Resource Health が該当します。"},
+ {id:22,imp:4,q:"クラウドアプリへのサインインやアクセス管理を行う、MicrosoftのクラウドベースのID管理サービスは何ですか？",o:["Microsoft Entra ID","Azure Key Vault","Microsoft Purview","Azure Policy"],a:0,e:"Microsoft Entra ID（旧 Azure AD）はクラウドベースのIDおよびアクセス管理サービスです。"},
+ {id:23,imp:4,q:"パスワードの他に、スマホ承認や生体認証などの追加要素を要求してセキュリティを強化する仕組みは何ですか？",o:["パスワードレス認証","シングル サインオン (SSO)","多要素認証 (MFA)","ゼロ トラスト"],a:2,e:"MFAは知識（パスワード）に加え所持や生体などの要素を要求します。"},
+ {id:24,imp:4,q:"ユーザーの場所やデバイス状態などのシグナルに基づき、アクセスを許可・拒否・MFA要求する機能は何ですか？",o:["Azure RBAC","ゼロ トラスト モデル","リソース ロック","条件付きアクセス"],a:3,e:"条件付きアクセスはシグナルに基づき if-then のロジックでアクセスを制御します。"},
+ {id:25,imp:4,q:"ユーザーやグループが「どのスコープで」「どのアクションを実行できるか」を細かく制御するアクセス制御システムは？",o:["ネットワーク セキュリティ グループ (NSG)","Azure のロールベースのアクセス制御 (Azure RBAC)","Azure Policy","Microsoft Defender for Cloud"],a:1,e:"Azure RBACは、誰がどのスコープで何を実行できるかをロールで細かく制御します。"},
+ {id:26,imp:4,q:"物理・ネットワーク・アプリ・データなど複数の層に保護を配置し、単一の防御層への依存をなくす戦略は？",o:["多層防御","ゼロ トラスト","マイクロ セグメンテーション","条件付きアクセス"],a:0,e:"多層防御（Defense in Depth）は複数の層に防御を重ね、単一層の突破で破られないようにします。"},
+ {id:27,imp:4,q:"アプリのパスワード・暗号化キー・証明書などの機密情報をコードに書かず、安全に一元管理するサービスは？",o:["Microsoft Purview","Azure Key Vault","Azure Storage","Microsoft Defender for Cloud"],a:1,e:"Azure Key Vaultはキー・シークレット・証明書を安全に一元管理します。"},
+ {id:28,imp:4,q:"クラウド・オンプレ・マルチクラウドのセキュリティ態勢を継続評価し、脅威からの保護を提供するサービスは？",o:["Azure Monitor","Azure Advisor","Microsoft Defender for Cloud","Service Trust Portal"],a:2,e:"Defender for Cloudはセキュリティ態勢の継続評価（CSPM）と脅威保護を提供します。"},
+ {id:29,imp:4,q:"Azure RBACの権限にかかわらず、誤って重要なリソースが削除・変更されるのを防ぐために適用する機能は？",o:["Azure Policy","管理グループ","条件付きアクセス","リソース ロック"],a:3,e:"リソースロックはRBACの権限に関係なくリソースの誤削除・誤変更を防ぎます。"},
+ {id:30,imp:4,q:"パートナー企業やサプライヤーのユーザーを「ゲスト」として招待し、安全にコラボレーションするための機能は？",o:["Microsoft Entra Domain Services","B2B コラボレーション (Microsoft Entra External ID)","シングル サインオン (SSO)","Active Directory フェデレーション サービス"],a:1,e:"External IDのB2Bコラボレーションは外部ユーザーをゲストとして招待し安全に協業できます。"},
+ {id:31,imp:4,q:"地域規模の災害に備え、少なくとも300マイル離れたAzureリージョン同士を相互にバックアップとして構成する概念は？",o:["可用性ゾーン","リージョン ペア","マルチ リージョン","ソブリン リージョン"],a:1,e:"リージョンペアは地域災害に備え少なくとも300マイル離れたリージョン同士を組み合わせる概念です。"},
+ {id:32,imp:4,q:"単一リージョン内で、独立した電源とネットワークを持つ複数の物理データセンターに分散し、DC障害から保護する機能は？",o:["可用性ゾーン","可用性セット","リージョン ペア","リソース グループ"],a:0,e:"可用性ゾーンはリージョン内の独立した電源・ネットワークを持つ分離されたデータセンターです。"},
+ {id:33,imp:4,q:"VMのダウンタイムを最小化するため、VMを「更新ドメイン」と「障害ドメイン」に分散させる論理的なグループは？",o:["可用性ゾーン","仮想マシン 可用性セット","仮想マシン スケール セット","ネットワーク セキュリティ グループ"],a:1,e:"可用性セットはVMを更新ドメインと障害ドメインに分散し、メンテや障害時のダウンタイムを最小化します。"},
+ {id:34,imp:4,q:"タグの必須化やデプロイ先リージョンの制限など、組織の標準やコンプライアンス要件を適用・監査するサービスは？",o:["Azure RBAC","Azure Policy","リソース ロック","Microsoft Purview"],a:1,e:"Azure Policyはルールを適用・監査し、コンプライアンス準拠を強制します。"},
+ {id:35,imp:4,q:"請求の整理やコストセンター割り当て、運用管理のために、リソースにメタデータ（名前と値のペア）を付与する機能は？",o:["Azure Policy","タグ","Azure Advisor","管理グループ"],a:1,e:"タグは名前と値のペアをリソースに付与し、請求の整理や運用管理に役立てます。"},
+ {id:36,imp:5,q:"アプリ・OS・ネットワーク層からログとメトリックを収集し、分析やアラート作成を一元的に行うプラットフォームは？",o:["Azure Service Health","Azure Advisor","Azure Monitor","Microsoft Purview"],a:2,e:"Azure Monitorは各層からログとメトリックを収集し、分析・可視化・アラートを一元的に行います。"},
+ {id:37,imp:5,q:"組織のAzure支出パターンを分析し、予算を設定して使用量を監視するための統合ツールスイートは？",o:["Azure 料金計算ツール","TCO 計算ツール","Microsoft Cost Management","Azure Advisor"],a:2,e:"Microsoft Cost Managementは支出の分析・予算設定・使用量監視を行う統合ツールです。"},
+ {id:38,imp:5,q:"Cost Managementで、EA契約向けのAzure前払いが90%/100%消費された際に自動通知されるアラートは？",o:["予算アラート","クレジット アラート","部門の支出クォータアラート","異常アラート"],a:1,e:"クレジットアラートはEA契約の前払い残高が90%・100%消費された時点で自動通知されます。"},
+ {id:39,imp:5,q:"リソースをプロビジョニングする前に、構成（リージョン・層・サイズ等）に基づき将来の月額コストを見積もるツールは？",o:["Azure 料金計算ツール","Microsoft Cost Management","TCO 計算ツール","Azure コスト分析"],a:0,e:"Azure 料金計算ツールはデプロイ前に構成を指定して将来コストを見積もるツールです。"},
+ {id:40,imp:5,q:"予測可能なワークロードに対し、1年または3年の利用をコミットして従量課金よりコストを大幅削減できるオプションは？",o:["スポット価格","予約 (Reservations)","コンピューティングのための Azure 節約プラン","専用ホスト"],a:1,e:"予約は1年/3年の利用コミットにより従量課金より大幅に割引されるオプションです。"},
+ {id:41,imp:5,q:"中断されても問題ないバッチ処理向けに、Azureの未使用容量を大幅割引で利用できる仮想マシンのオプションは？",o:["予約 (Reservations)","コンピューティングのための Azure 節約プラン","スポット 仮想マシン (Spot VM)","バースト可能な VM"],a:2,e:"スポットVMは未使用容量を割引で使える代わりに容量が必要になると中断され得るため、中断可能な処理向けです。"},
+ {id:42,imp:5,q:"ARMテンプレートやBicepを使い、インフラをコード（IaC）として宣言的にデプロイできるAzureのデプロイ・管理サービスは？",o:["Azure CLI","Azure PowerShell","Azure Resource Manager","Azure Cloud Shell"],a:2,e:"Azure Resource Manager (ARM) はテンプレートやBicepによる宣言的デプロイ・管理を担う基盤層です。"},
+ {id:43,imp:5,q:"オンプレや他社クラウド（AWS/GCP）のサーバーやKubernetesを、Azureのコントロールプレーンに投影して一元管理するサービスは？",o:["Azure Policy","Microsoft Defender for Cloud","Azure Arc","Microsoft Purview"],a:2,e:"Azure ArcはAzure以外のリソースを Azure Resource Manager に投影し、Azure上で一元管理できるようにします。"},
+ {id:44,imp:5,q:"オンプレ・マルチクラウド・SaaSに分散するデータを自動検出し、分類や系列追跡など統合的なデータガバナンスを提供するのは？",o:["Microsoft Purview","Microsoft Defender for Cloud","Azure Policy","Service Trust Portal"],a:0,e:"Microsoft Purviewは分散したデータの自動検出・分類・系列追跡など統合的なデータガバナンスを提供します。"},
+ {id:45,imp:5,q:"Microsoftのセキュリティ・プライバシー・コンプライアンスのドキュメント（監査レポートなど）を取得できるポータルは？",o:["Microsoft Purview","Service Trust Portal","Azure Policy","Microsoft Defender for Cloud"],a:1,e:"Service Trust PortalはMicrosoftの監査レポートやコンプライアンス文書を取得できるポータルです。"},
+ {id:46,imp:1,q:"トラフィックのピークなど需要が増加した際にリソース（VM等）の数を増やし、減少時に減らすスケーリング手法を何と呼びますか？",o:["垂直スケーリング","水平スケーリング","負荷分散","予測可能性"],a:1,e:"リソースの「数」を増減するのは水平スケーリング（スケールアウト/イン）。垂直は1台の性能増減です。"},
+ {id:47,imp:1,q:"顧客が最も多くの責任を負い、OS・ネットワーク構成・データベースの管理などを顧客自身が行うサービスモデルはどれですか？",o:["SaaS","PaaS","IaaS","DaaS"],a:2,e:"IaaSは物理インフラのみをプロバイダーが管理し、OS以降を顧客が管理するため責任範囲が最も大きいモデルです。"},
+ {id:48,imp:1,q:"需要減少時にリソースをオフにし無駄な消費を減らして最適化することで、コスト効率と環境への影響を軽減できるクラウドの利点は？",o:["予測可能性","高可用性","アジリティ","持続可能性"],a:3,e:"無駄を省き環境負荷も軽減する利点が持続可能性（サステナビリティ）。アジリティは迅速な展開能力です。"},
+ {id:49,imp:1,q:"電子メールや経費追跡など、完全に開発されたアプリをプロバイダーが提供・管理するサービスモデルは何ですか？",o:["IaaS","PaaS","SaaS","CaaS"],a:2,e:"完成済みアプリをそのまま利用できるのがSaaS。PaaSは開発環境、CaaSはコンテナー実行基盤です。"},
+ {id:50,imp:1,q:"使用量をリアルタイムで追跡し、データ分析で将来の支出を予測できるというクラウドの財務上のメリットはどれに関連しますか？",o:["セキュリティとガバナンス","コストの予測可能性","スケーラビリティ","パフォーマンスの予測可能性"],a:1,e:"使用量の追跡と分析で支出を見通せるのはコストの予測可能性です。"},
+ {id:51,imp:2,q:"回復性のため、同じリージョン内で独立した電源・冷却・ネットワークを持つ物理的に分離されたデータセンターの集合を何と呼びますか？",o:["リージョン ペア","ソブリン リージョン","可用性ゾーン","更新ドメイン"],a:2,e:"リージョン内で独立インフラを持つ分離されたDC群が可用性ゾーンです。"},
+ {id:52,imp:2,q:"政府機関など厳格なコンプライアンス要件のため、物理的・論理的に分離されたネットワーク上に存在するAzureの特別なインスタンスは？",o:["パブリック クラウド","ハイブリッド クラウド","エッジ ロケーション","ソブリン リージョン"],a:3,e:"政府向けなどのために分離されたAzureの特別なインスタンスがソブリンリージョンです。"},
+ {id:53,imp:2,q:"Azure仮想マシンの「Bシリーズ」は、どのようなワークロードに最適ですか？",o:["メモリ内データベース","CPUスパイクが時折発生するバースト可能なワークロード","高スループットのデータ処理","AIトレーニングと推論"],a:1,e:"Bシリーズは普段CPU使用が低く時折スパイクする、バースト可能なワークロードに最適です。"},
+ {id:54,imp:2,q:"言語・音声・ビジョンなどの機能を、独自モデルのトレーニングなしにAPI経由でアプリに追加できるAzureのサービスカテゴリは？",o:["Azure Machine Learning","Azure AI サービス","Azure IoT Hub","Azure Functions"],a:1,e:"事前構築済みのAI機能をAPIで追加できるのがAzure AI サービス。MLは独自モデルの開発向けです。"},
+ {id:55,imp:2,q:"クラウドサービスと多数のIoTデバイス間で、セキュリティで保護された双方向通信を可能にするAzureのサービスはどれですか？",o:["Azure IoT Hub","Azure IoT Central","Azure IoT Edge","Azure Sphere"],a:0,e:"クラウドと多数のデバイス間のセキュアな双方向通信を担う中核がAzure IoT Hubです。"},
+ {id:56,imp:2,q:"基盤インフラを管理せず、自動スケーリングと高可用性を備えたWebアプリやRESTful APIをホストするためのサービスは？",o:["Azure Virtual Machines","Azure App Service","Azure Container Instances","Azure Batch"],a:1,e:"インフラ管理不要で自動スケールと高可用性を備えWebアプリ/APIをホストするのがAzure App Serviceです。"},
+ {id:57,imp:3,c:[1,2],q:"多層防御モデルの「境界」層で実装される主なセキュリティ対策を2つ選択してください。",o:["Azure Key Vault による暗号化キーの保護","DDoS 保護による大規模攻撃のフィルタリング","境界ファイアウォールによる悪意ある攻撃の識別と警告","リソース間通信を制限する NSG","OSへの修正プログラムの適用"],e:"境界層ではDDoS保護（B）と境界ファイアウォール（C）。NSGはネットワーク層、パッチはコンピューティング層です。"},
+ {id:58,imp:3,c:[1,3],q:"Microsoft Entra ID がサポートする「パスワードレス認証」のオプションを2つ選択してください。",o:["Azure Active Directory","FIDO2 セキュリティ キー","SMS ベースの認証コード","Microsoft Authenticator アプリ","セキュリティの質問"],e:"パスワードレスはFIDO2セキュリティキー（B）、Authenticatorアプリ（D）、Windows Hello for Business。SMSや質問は主要手段ではありません。"},
+ {id:59,imp:3,c:[0,1],q:"Azure 仮想ネットワークで、サブネット間や外部とのトラフィックをフィルター処理して通信を制限するリソースを2つ選択してください。",o:["ネットワーク セキュリティ グループ (NSG)","ネットワーク仮想アプライアンス (NVA)","仮想ネットワーク ピアリング","Azure ExpressRoute","Azure DNS"],e:"トラフィックをフィルタリングするのはNSG（A）とNVA（B）。ピアリングは接続、ExpressRouteは専用線、DNSは名前解決です。"},
+ {id:60,imp:3,c:[2,3],q:"Azure Storage で、地域災害に備えプライマリから地理的に離れたセカンダリリージョンへ複製する冗長性オプションを2つ選択してください。",o:["ローカル冗長ストレージ (LRS)","ゾーン冗長ストレージ (ZRS)","geo 冗長ストレージ (GRS)","geo ゾーン冗長ストレージ (GZRS)","Premium ブロック BLOB"],e:"セカンダリリージョンへ複製するのはGRS（C）とGZRS（D）。LRSは同一DC内、ZRSは同一リージョン内にとどまります。"},
+ {id:61,imp:3,c:[1,2],q:"Microsoft Cost Management の「コスト アラート」によって生成される可能性のあるアラートの種類を2つ選択してください。",o:["異常アラート","予算アラート","クレジット アラート","セキュリティ アラート","可用性アラート"],e:"コストアラートは予算アラート（B）、クレジットアラート（C）、部門の支出クォータアラート。セキュリティ/可用性は別系統です。"},
+ {id:62,imp:3,c:[0,2,3],q:"Azure リソースとやり取りし「クラウドでの管理」を行うために使える主要なツールやインターフェイスを3つ選択してください。",o:["Azure portal","Azure Active Directory","Azure PowerShell","Azure コマンド ライン インターフェイス (CLI)","Azure Policy"],e:"管理にはportal（A）、PowerShell（C）、CLI（D）などを使用。Azure ADはID管理、Policyはガバナンスの仕組みです。"},
+ {id:63,imp:3,c:[1,2,3],q:"Microsoft が推奨する「ゼロ トラスト セキュリティ モデル」の土台となる3つの基本原則を選択してください。",o:["境界ネットワークの信頼","明示的に検証する","侵害を想定する","最小限の特権アクセスを使用する","パスワードレス認証を必須とする"],e:"3原則は明示的に検証（B）・侵害を想定（C）・最小限の特権アクセス（D）。境界の信頼はゼロトラストが否定します。"},
+ {id:64,imp:3,c:[0,1,3],q:"Azure Service Health が正常性の把握のために提供する3つのビューを選択してください。",o:["Azure Status","Service Health","Azure Advisor","Resource Health","Azure Metrics"],e:"3ビューはAzure Status（A）・Service Health（B）・Resource Health（D）。Advisorは推奨、Metricsは監視指標です。"},
+ {id:65,imp:3,c:[0,1,2,3],q:"Azure Storage アカウント (Standard 汎用 v2) 内で利用できる「コア データ サービス」を4つ選択してください。",o:["Azure BLOB","Azure Files","Azure キュー (Queue Storage)","Azure テーブル (Table Storage)","Azure Key Vault"],e:"汎用v2のコアデータサービスはBlob・Files・Queue・Tableの4つ。Key Vaultは機密情報管理で含まれません。"},
+ {id:66,imp:3,c:[0,1,2,3],q:"Azure Blob Storage で、アクセス頻度や保管期間に応じてコストを最適化するために利用できる「アクセス層」を4つ選択してください。",o:["ホット アクセス層","クール アクセス層","コールド アクセス層","アーカイブ アクセス層","プレミアム アクセス層"],e:"アクセス層はホット・クール・コールド・アーカイブの4つ。プレミアムは性能層であり、この枠組みには含まれません。"},
+ {id:67,imp:4,q:"リージョン全体に影響する災害に備え、Azureの「リージョン ペア」は同じ地域内で少なくともどれくらい離れて設定されていますか？",o:["100 マイル","300 マイル","500 マイル","1000 マイル"],a:1,e:"リージョンペアは自然災害等に備え、少なくとも300マイル離れて設定されています。"},
+ {id:68,imp:4,q:"Azure Policyで、複数の関連ポリシー定義を1つにまとめ、より大きなコンプライアンス目標の追跡を容易にする機能は？",o:["管理グループ","イニシアティブ","ロール割り当て","サブスクリプション"],a:1,e:"複数のポリシー定義をまとめて目標追跡を容易にするのがイニシアティブです。"},
+ {id:69,imp:4,q:"オンライン転送が遅すぎる場合に、数十TBの大規模データを専用の物理デバイスでAzureへオフライン移行するサービスは？",o:["Azure Migrate","Azure File Sync","Azure Data Box","AzCopy"],a:2,e:"物理デバイスを輸送して大規模データをオフライン移行するのがAzure Data Boxです。"},
+ {id:70,imp:4,q:"ストレージアカウント間でBLOBやファイルをコピー・同期するコマンドラインで、双方向ではなく「一方向の同期」を行うものは？",o:["Azure Storage Explorer","Azure File Sync","AzCopy","Azure Data Box"],a:2,e:"AzCopyはストレージ間のコピーや一方向同期を行うCLIユーティリティ。File Syncは双方向同期です。"},
+ {id:71,imp:4,q:"オンプレミスのWindowsファイルサーバーをキャッシュとして利用し、Azure Filesとファイルを双方向に自動同期させる機能は？",o:["AzCopy","Azure Migrate","Azure File Sync","Azure ExpressRoute"],a:2,e:"WindowsサーバーをキャッシュとしてAzure Filesと双方向同期するのがAzure File Syncです。"},
+ {id:72,imp:4,q:"Azure portal からブラウザで直接アクセスでき、インストール不要・ログイン済みでCLIやPowerShellを実行できる環境は？",o:["Azure DevOps","Azure Cloud Shell","Azure Arc","Azure Resource Manager"],a:1,e:"ブラウザ上でインストール不要・認証済みでCLI/PowerShellを実行できるのがAzure Cloud Shellです。"},
+ {id:73,imp:4,q:"Azureにデプロイするリソースを宣言的に定義し、デプロイ前にAzureによって検証されるJSON形式のファイルは何ですか？",o:["Bicep ファイル","ARM テンプレート","PowerShell スクリプト","YAML ファイル"],a:1,e:"JSON形式で宣言的にリソースを定義し検証されるのがARMテンプレート。BicepはJSONより簡潔な独自構文です。"},
+ {id:74,imp:4,q:"ARMテンプレート(JSON)よりシンプルで簡潔な構文を使い、Azureリソースをコード(IaC)としてデプロイする宣言型言語は？",o:["Python","C#","Bicep","Bash"],a:2,e:"JSONより簡潔な構文で宣言的にデプロイできるMicrosoft独自の言語がBicepです。"},
+ {id:75,imp:4,q:"条件付きアクセスがアクセスの許可・拒否・MFA要求を決定するために評価する「シグナル」の例として適切なものは？",o:["Azure VM の CPU 使用率","ユーザーの場所やアクセス元のデバイスの状態","ストレージ アカウントのデータサイズ","サブスクリプションの課金残高"],a:1,e:"条件付きアクセスはユーザーの場所やデバイスの状態などのシグナルを評価して判断します。"},
+ {id:76,imp:4,q:"ドメインコントローラーを自前で構築せず、レガシアプリ向けにグループポリシー・LDAP・Kerberos/NTLM等のマネージドドメイン機能を提供するのは？",o:["Microsoft Entra External ID","Microsoft Entra Domain Services","Azure RBAC","Microsoft Purview"],a:1,e:"DCを自前構築せずマネージドドメイン機能を提供するのがMicrosoft Entra Domain Servicesです。"},
+ {id:77,imp:4,q:"AWSやGCPなどマルチクラウドのリソースをエージェントレスでセキュリティ態勢評価(CSPM)し、推奨事項を一元管理するサービスは？",o:["Azure Monitor","Microsoft Defender for Cloud","Azure Service Health","Azure Advisor"],a:1,e:"マルチクラウドのCSPMを一元的に行うのがMicrosoft Defender for Cloudです。"},
+ {id:78,imp:4,q:"特定VMファミリに縛られず、1年/3年の「1時間あたりの支出額」をコミットすることで使用量に割引が自動適用されるモデルは？",o:["予約 (Reservations)","コンピューティングのための Azure 節約プラン","スポット価格","従量課金制"],a:1,e:"VMファミリに縛られず時間あたりの支出をコミットして柔軟に割引を受けるのがAzure 節約プランです。"},
+ {id:79,imp:4,q:"リソースをプロビジョニングする前に、リージョンや冗長性などの設定に応じた月額コストの「見積もり」を作成するツールは？",o:["Microsoft Cost Management","Azure Advisor","Azure 料金計算ツール","TCO 計算ツール"],a:2,e:"デプロイ前に構成に応じた月額コストを見積もるのがAzure 料金計算ツールです。"},
+ {id:80,imp:4,q:"Azureにおける「タグ」の継承の仕様について、正しい説明はどれですか？",o:["リソースグループのタグはその中の全リソースに自動継承される","サブスクリプションのタグは全リソースグループに継承される","リソースはサブスクリプションやリソースグループからタグを自動継承しない","管理グループのタグのみが全リソースに継承される"],a:2,e:"タグは既定では継承されません。継承させたい場合はAzure Policyで明示的に適用する必要があります。"},
+ {id:81,imp:5,q:"オンプレミスの複数拠点同士を、パブリックインターネットを経由せずExpressRoute回線とMicrosoftバックボーン経由で直接接続する機能は？",o:["サイト間 VPN","仮想ネットワーク ピアリング","ExpressRoute Global Reach","Azure Route Server"],a:2,e:"ExpressRoute回線とバックボーン経由で拠点同士を直接接続するのがExpressRoute Global Reachです。"},
+ {id:82,imp:5,q:"Azure DNSで、基になるAzureリソース(Traffic Managerやパブリック IP等)のIPが変わってもシームレスに自動更新されるレコードは？",o:["A レコード","CNAME レコード","エイリアス レコード","PTR レコード"],a:2,e:"基になるリソースのIP変更に自動追従するのがエイリアスレコードです。"},
+ {id:83,imp:5,q:"ツール・API・SDKからのすべての要求を受け取り、認証と承認を行ってから対象サービスへ要求を送る「一貫した管理レイヤー」は？",o:["Azure portal","Azure Resource Manager","Azure Policy","Microsoft Entra ID"],a:1,e:"要求を受け取り認証・承認を経てサービスへ渡す一貫した管理レイヤーがAzure Resource Manager (ARM) です。"},
+ {id:84,imp:5,q:"Azureの未使用計算容量を低価格で利用でき、容量が必要になると削除され得るため中断可能なバッチ処理に適したVMのオプションは？",o:["スポット仮想マシン","バースト可能な仮想マシン (B シリーズ)","予約インスタンス","専用ホスト"],a:0,e:"未使用容量を割引で使える代わりに削除され得るのがスポット仮想マシンで、中断可能な処理向けです。"},
+ {id:85,imp:5,q:"VMを個別管理せず、同一構成のVMグループを作って負荷分散し、需要に応じて自動でスケールアウト/インできるサービスは？",o:["可用性セット","Azure Container Instances","仮想マシン スケール セット","Azure App Service"],a:2,e:"同一構成のVM群を負荷分散し自動スケールするのが仮想マシン スケール セットです。可用性セットにスケール機能はありません。"},
+ {id:86,imp:5,q:"ソリューションビルダー向けに提供され、多数のIoTデバイスの接続・監視・管理を簡素化するSaaSのIoTプラットフォームは？",o:["Azure IoT Hub","Azure IoT Edge","Azure IoT Central","Azure Sphere"],a:2,e:"多数のIoTデバイスの接続・監視・管理を簡素化するSaaS型プラットフォームがAzure IoT Centralです。"},
+ {id:87,imp:5,q:"コードに資格情報をハードコーディングせず、マネージドIDと連携してシークレット・暗号化キー・証明書を安全に一元管理するサービスは？",o:["Microsoft Purview","Azure Key Vault","Azure Storage","Microsoft Entra Domain Services"],a:1,e:"シークレット・キー・証明書を安全に一元管理し、マネージドIDと連携できるのがAzure Key Vaultです。"},
+ {id:88,imp:5,q:"自動データ検出・機密データの分類・データ系列の追跡など、オンプレ/マルチクラウドに分散するデータ全体の統合的なデータガバナンスを提供するのは？",o:["Microsoft Defender for Cloud","Azure Policy","Microsoft Purview","Service Trust Portal"],a:2,e:"分散したデータの検出・分類・系列追跡など統合的なデータガバナンスを提供するのがMicrosoft Purviewです。"},
+ {id:89,imp:5,q:"Microsoftのセキュリティ・プライバシー・コンプライアンスの実装に関する監査レポートや詳細ドキュメントを取得できるポータルは？",o:["Microsoft Defender for Cloud","Service Trust Portal","Azure Advisor","Microsoft Purview"],a:1,e:"監査レポートやコンプライアンス文書を取得できるのがService Trust Portalです。"},
+ {id:90,imp:5,q:"Azure RBAC(許可モデル)で、リソースグループAへ「読み取り」ロール、別の割り当てで同じAへ「書き込み」ロールが付与された場合の最終権限は？",o:["競合が発生しすべてのアクセスが拒否される","読み取りアクセスのみが許可される","書き込みアクセスのみが許可される","読み取りと書き込みの両方のアクセス許可を持つ"],a:3,e:"RBACは許可モデルのため複数ロールの許可は加算され、読み取りと書き込みの両方が可能になります（拒否割り当てがある場合のみ優先）。"},
+ {id:91,imp:1,q:"オンプレミスのデータセンターで、サーバーやネットワークハードウェアなどの物理インフラに対する「事前の支出」を何と呼びますか？",o:["運用支出 (OpEx)","資本支出 (CapEx)","リース費用","従量課金"],a:1,e:"物理インフラへの事前のまとまった投資が資本支出 (CapEx)。OpExは使った分を継続的に支払う運用コストです。"},
+ {id:92,imp:1,q:"共有責任モデルで、IaaS・PaaS・SaaSのどのモデルでも常にクラウドプロバイダーが単独で責任を負う領域はどれですか？",o:["アプリケーションの更新","物理データセンターと物理ネットワークの保守","ID とアクセス管理","クライアント デバイスのセキュリティ"],a:1,e:"モデルを問わず常にプロバイダーが負うのは物理DC・物理ネットワーク・物理ホストの保守です。"},
+ {id:93,imp:1,q:"夜間や週末に開発環境のVMを自動シャットダウンするなど、不要な消費を減らすプラクティスが直接支えるビジネス目標は？",o:["高可用性","弾力性","持続可能性","ディザスター リカバリー"],a:2,e:"不要な消費を減らし環境負荷とコストを抑える取り組みは持続可能性を直接支えます。"},
+ {id:94,imp:1,q:"SaaS (サービスとしてのソフトウェア) の一般的なユースケースに該当するものはどれですか？",o:["仮想マシンのホスティング","クラウドベースの電子メールとメッセージング","カスタムデータベースのインフラ構築","仮想ネットワークの構成"],a:1,e:"SaaSは完成済みアプリを利用するモデルで、クラウドベースの電子メールやメッセージングが代表例です。"},
+ {id:95,imp:1,q:"Azureの導入により、インフラの計画は「長期的な調達サイクル」からどのように変化しますか？",o:["オンデマンドのプロビジョニングに変わる","より長い承認プロセスが必要になる","固定費のサブスクリプションモデルに変わる","オンプレミスの物理ハードウェア購入が必須になる"],a:0,e:"クラウドにより、長い調達サイクルは必要な時に確保するオンデマンドプロビジョニングに変わります。"},
+ {id:96,imp:2,q:"Azureの「保存時の暗号化 (Encryption at rest)」の保護対象として適切なものはどれですか？",o:["ユーザーのブラウザとAzure間の通信","ExpressRoute回線を通過するトラフィック","データベース・ディスク・ストレージアカウント内のデータ","仮想ネットワーク間のピアリングトラフィック"],a:2,e:"保存時の暗号化はディスクやDB、ストレージなどメディアに保存されたデータを保護します。他は転送時の暗号化の対象です。"},
+ {id:97,imp:2,q:"Azure Blob Storageのアクセス層のうち、アカウントレベルでは設定できず、BLOBレベルでのみ設定が可能な層はどれですか？",o:["ホット アクセス層","クール アクセス層","コールド アクセス層","アーカイブ アクセス層"],a:3,e:"ホット・クール・コールドはアカウントレベルで設定可能ですが、アーカイブアクセス層はBLOBレベルでのみ設定可能です。"},
+ {id:98,imp:2,q:"Azureの「タグ」で、リソースの可用性が操作にとってどれほど重要か(SLA要件など)をグループ化する目的はどれに該当しますか？",o:["コスト管理","セキュリティの分類","運用管理","リソースの展開"],a:2,e:"可用性の重要度に応じてグループ化し運用に役立てるのは運用管理を目的としたタグ付けです。"},
+ {id:99,imp:2,q:"Azure App Serviceの機能で、バックグラウンドタスクやスクリプト(.cmd/.bat/PowerShell等)をスケジュール実行できるものは？",o:["Web Apps","API Apps","WebJobs","Mobile Apps"],a:2,e:"WebJobsはWebアプリと同じコンテキストでバックグラウンドタスクやスクリプトを実行・スケジュールできる機能です。"},
+ {id:100,imp:2,q:"Azureの「無料アカウント」で、30日間のクレジットに加えて「常に無料」でアクセスできるサービスはいくつ以上ありますか？",o:["10以上","25以上","40以上","65以上"],a:3,e:"無料アカウントでは30日間のクレジットや12ヶ月の無料製品に加え、常に無料のサービスが65以上提供されます。"},
+ {id:101,imp:2,q:"計画メンテナンス時にVMが同時に再起動されないよう「更新ドメイン」と「障害ドメイン」にVMを分散させる機能は？",o:["仮想マシン スケール セット","可用性セット","可用性ゾーン","リージョン ペア"],a:1,e:"可用性セットはVMを更新ドメイン(同時再起動の防止)と障害ドメイン(物理障害の共有)に分散します。"},
+ {id:102,imp:3,c:[0,2],q:"「多層防御モデル」の「ネットワーク層」で実行することが重要とされるアクションを2つ選択してください。",o:["リソース間の通信を制限し、既定で通信を拒否する","物理的なコンピューティングハードウェアを保護する","オンプレミスネットワークへのセキュアな接続を実装する","アプリにセキュリティの脆弱性がないかスキャンする","ユーザーのIDとパスワードのポリシーを管理する"],e:"ネットワーク層では通信の制限・既定での拒否(A)とオンプレへのセキュア接続(C)が重要。Bは物理層、Dはアプリ層、EはID層です。"},
+ {id:103,imp:3,c:[0,2],q:"「ゼロ トラスト モデル」の原則「侵害を想定する」に該当するアプローチを2つ選択してください。",o:["潜在的な影響とセグメントへのアクセスを制限する","パスワードレス認証を全ユーザーに必須化する","エンドツーエンドの暗号化を検証する","内部ネットワークのデバイスは常に安全であるとみなす","すべてのネットワークトラフィックをファイアウォールで許可する"],e:"「侵害を想定する」では影響範囲を限定するセグメンテーション(A)とE2E暗号化の検証(C)を行います。D・Eは内部を無条件に信頼する反する考え方です。"},
+ {id:104,imp:3,c:[0,1],q:"「ルートベースのVPNゲートウェイ」をデプロイする際の特徴を2つ選択してください。",o:["IPSecトンネルはネットワークインターフェイスまたは仮想トンネルインターフェイスとしてモデル化される","静的または動的ルーティングプロトコル(BGP等)を使用してトンネルを選択する","暗号化が必要なパケットのIPアドレスを静的にのみ指定する","Azure ExpressRouteゲートウェイとの共存はサポートされない","HTTP/HTTPS 通信のみをサポートする"],e:"ルートベースVPNはIPSecトンネルがインターフェイスとしてモデル化され(A)、BGP等のルーティングでトンネルを選択(B)。Cはポリシーベースの特徴、D・Eは誤りです。"},
+ {id:105,imp:3,c:[1,3],q:"Enterprise Agreement (EA) を使用している組織に固有の「Microsoft Cost Management」のコストアラートを2つ選択してください。",o:["予算アラート","クレジット アラート","異常アラート","部門の支出クォータアラート","Service Health アラート"],e:"クレジットアラート(B)と部門の支出クォータアラート(D)はEA契約固有です。予算アラートは広く利用でき、異常はコスト急増検知、Service Healthは障害通知です。"},
+ {id:106,imp:3,c:[0,3],q:"Azureストレージアカウントの「名前付け規則」として正しいものを2つ選択してください。",o:["長さは 3 から 24 文字である必要がある","大文字と小文字、および特殊記号を使用できる","ストレージアカウント名はリソースグループ内でのみ一意であればよい","数字と小文字のみを使用できる","長さは最大 64 文字まで可能である"],e:"名前は3〜24文字(A)で数字と小文字のみ(D)。大文字や特殊記号は使えず、RG内ではなくAzure全体で一意、最大は24文字なのでC・Eは誤りです。"},
+ {id:107,imp:3,c:[0,1,3],q:"Azureが提供する「IoT(モノのインターネット)」に関連する主なサービスを3つ選択してください。",o:["Azure IoT Hub","Azure IoT Central","Azure AI サービス","Azure IoT Edge","Azure Machine Learning"],e:"IoTサービスは通信のIoT Hub(A)、SaaS型のIoT Central(B)、エッジ処理のIoT Edge(D)。AI サービスとMachine LearningはAI系です。"},
+ {id:108,imp:3,c:[0,1,2],q:"VNetを使ってオンプレミスのリソースと安全に通信するための3つの主要な接続方法を選択してください。",o:["ポイント対サイト VPN","サイト間 VPN","Azure ExpressRoute","仮想ネットワーク ピアリング","Azure サービス エンドポイント"],e:"オンプレ接続はポイント対サイトVPN(A)・サイト間VPN(B)・ExpressRoute(C)。ピアリングはVNet同士、サービスエンドポイントはPaaSへの経路です。"},
+ {id:109,imp:3,c:[0,2,4],q:"Microsoft Entra External ID がテナント境界を越えたコラボレーションや顧客アクセスのために使う3つの主要な機能を選択してください。",o:["B2B コラボレーション","B2C ダイレクト ルーティング","B2B 直接接続","Microsoft Entra Domain Services","顧客向け Microsoft Entra External ID"],e:"External IDはB2Bコラボレーション(A)、B2B直接接続(C)、顧客向けExternal ID(E、旧B2C)で構成。Bは該当機能名でなく、Domain Servicesはマネージドドメイン機能です。"},
+ {id:110,imp:3,c:[0,1,3,4],q:"「クラウドでの管理(クラウドリソースの管理の容易さ)」が提供する具体的な利点や機能を4つ選択してください。",o:["必要に応じてリソースの展開を自動的にスケーリングする","手動設定を排除し、事前構成済みテンプレートに基づいてリソースを展開する","コマンドラインのみでGUIを使用せずに管理を強制する","リソースの正常性を監視し、問題のあるリソースを自動的に交換する","構成されたメトリックに基づいて自動アラートを受け取る"],e:"利点は自動スケーリング(A)・テンプレート展開(B)・正常性監視と自動交換(D)・メトリックに基づくアラート(E)。CはGUIを使わせない誤った記述です。"},
+ {id:111,imp:3,c:[0,1,2,3],q:"Azure 仮想マシン(VM)をプロビジョニングする際に、ワークロードに合わせてカスタマイズできる構成オプションを4つ選択してください。",o:["vCPU の数","RAM の容量","ディスク構成 (IOPSやスループット)","ネットワーク スループット","物理データセンターのラック位置の指定"],e:"vCPU数(A)・RAM(B)・ディスク構成(C)・ネットワークスループット(D)を選択可能。Eの物理ラック位置はプロバイダーが管理する領域です。"},
+ {id:112,imp:4,q:"Azureの「課金ゾーン」は、コストを決定する際に何に影響を与えるための地理的なグループですか？",o:["仮想マシンのライセンス費用","データベースのトランザクション費用","データ転送 (帯域幅の送信) の価格","Azure Defender for Cloud の利用料金"],a:2,e:"課金ゾーンは、データセンターから外部へ送信されるデータ転送(送信帯域幅)の価格を決めるための地理的グループです。"},
+ {id:113,imp:4,q:"ZRSを使用している環境で1つの可用性ゾーンが使用不可になった場合、DNSの再ポイントなどのネットワーク更新を自動実行するのは誰ですか？",o:["お客様のIT管理者","Azure プラットフォーム","サードパーティのDNSプロバイダー","Azure DNS リゾルバー"],a:1,e:"ZRSでゾーン障害時、DNSの再ポイント等のネットワーク更新はAzureプラットフォームが自動的に実行して復旧します。"},
+ {id:114,imp:4,q:"「Azure Migrate」において、Microsoftが提供する2つの主要なネイティブツールは何ですか？",o:["Discovery and Assessment と Server Migration","Azure Data Box と AzCopy","Azure Policy と Azure Advisor","Azure Resource Manager と Bicep"],a:0,e:"Azure Migrateの主要ツールはDiscovery and Assessment(検出と評価)とServer Migration(サーバーの移行)です。"},
+ {id:115,imp:4,q:"特定VMファミリに縛られず、1年/3年の「1時間あたりの支出額」にコミットして柔軟に割引が適用されるコスト最適化モデルは？",o:["予約 (Reservations)","スポット価格","従量課金制","コンピューティングのための Azure 節約プラン"],a:3,e:"VMファミリに縛られず時間あたりの支出をコミットして柔軟に割引を受けるのがAzure 節約プランです。予約は特定リソースへのコミットです。"},
+ {id:116,imp:4,q:"ARMテンプレートで、デプロイ前後に「追加のセットアップ手順」が必要な場合、テンプレート内から何を呼び出せますか？",o:["Bicep ファイル","PowerShell または Bash のデプロイ スクリプト","Azure Cloud Shell","Azure Advisor"],a:1,e:"ARMテンプレートでは追加セットアップが必要な場合にPowerShellまたはBashのデプロイスクリプトを呼び出せます。"},
+ {id:117,imp:4,q:"先進認証を使えないレガシアプリ向けに、DCを自前構築せずグループポリシーやKerberos/NTLM認証機能を提供するサービスは？",o:["Microsoft Entra Connect","Microsoft Entra ID","Microsoft Entra Domain Services","Azure RBAC"],a:2,e:"DCを自前構築せずマネージドドメイン機能を提供するのがMicrosoft Entra Domain Services。ConnectはオンプレADとの同期です。"},
+ {id:118,imp:4,q:"フルマネージドのWebホスティングであるAzure App Serviceで、ホストOSとして選択できるのはどれですか？",o:["Windows のみ","Linux のみ","Windows と Linux の両方","Windows, Linux, および macOS"],a:2,e:"Azure App ServiceではホストOSとしてWindowsまたはLinuxを選択できます。macOSは提供されていません。"},
+ {id:119,imp:4,q:"宣言型言語Bicepが、何度同じファイルを実行してもデプロイ結果が一貫した状態に保たれる性質を何と呼びますか？",o:["弾力性 (Elasticity)","べき等 (Idempotency)","多層防御 (Defense in depth)","ステートフル (Stateful)"],a:1,e:"同じファイルを何度実行しても結果が一貫する性質をべき等(Idempotency)と呼びます。"},
+ {id:120,imp:4,q:"Azureのロールベースのアクセス制御 (Azure RBAC) に関して正しい記述はどれですか？",o:["ネットワーク層のファイアウォール規則を定義する","アプリケーションレベルおよびデータレベルでのアクセス許可を直接適用する","Azure Resource Manager を経由するアクションに対してのみアクセス許可を適用する","リソースが誤って削除されるのを物理的にブロックする"],a:2,e:"RBACはAzure Resource Managerを経由するアクションに対して適用されます。アプリ内・データ内の制御は対象外で、誤削除防止はリソースロックの役割です。"},
+ {id:121,imp:4,q:"パスワードレス認証の「Windows Hello for Business」は、どのようなユーザーシナリオに最も適していますか？",o:["モバイルデバイスのみを使用する現場の従業員","共有のキオスク端末を使用する契約社員","指定された自分専用のWindows PCを持つインフォメーションワーカー","ブラウザベースのアクセスのみの外部ゲストユーザー"],a:2,e:"Windows Hello for Businessは生体認証やPINをデバイスに紐づけるため、自分専用PCを持つインフォメーションワーカーに最適です。"},
+ {id:122,imp:4,q:"Microsoft Defender for CloudをAWS環境に接続した場合、Amazon EKSクラスターに対して拡張される保護機能はどれですか？",o:["Defender for Servers","Defender for Containers","Defender for App Service","Defender for SQL"],a:1,e:"EKS(Kubernetes)はコンテナーのオーケストレーション基盤のため、拡張されるのはDefender for Containersです。"},
+ {id:123,imp:4,q:"Azure Policyが非準拠のリソースに対して実行できる自動化アクションの例はどれですか？",o:["非準拠VMを物理ホストから自動的に移行する","必須だが見つからない「タグ」を自動的に修復(追加)する","データベースのパスワードを自動的にローテーションする","サブスクリプションの課金を一時停止する"],a:1,e:"Azure Policyは必須タグが欠けている場合に自動追加するなど、非準拠リソースを修復(remediation)できます。"},
+ {id:124,imp:4,q:"データの自動検出・機密データの分類・データ系列の追跡を提供する「Microsoft Purview」の2つの主要なソリューション領域は？",o:["脅威の検出 と インシデント対応","コスト管理 と パフォーマンス最適化","リスクとコンプライアンス と 統合データ ガバナンス","ID管理 と アクセス制御"],a:2,e:"Microsoft Purviewは「リスクとコンプライアンス」と「統合データガバナンス」の2領域で構成されます。"},
+ {id:125,imp:4,q:"Azure ExpressRouteを利用していても「パブリックインターネットを経由して送信されるトラフィック」の例として正しいものは？",o:["Azure Virtual Machines への RDP 接続","Azure Storage へのデータ バックアップ","DNS クエリ、証明書失効リストのチェック、Azure CDN 要求","オンプレミスデータベースから Azure SQL への同期"],a:2,e:"ExpressRoute利用時でも、DNSクエリ・証明書失効リスト(CRL)チェック・Azure CDN要求はパブリックインターネット経由で送信されます。"},
+ {id:126,imp:5,q:"Azureの「ソブリン リージョン」のうち、Microsoftが直接管理せず21Vianetとのパートナーシップで運営されているリージョンはどこですか？",o:["US DoD Central","US Gov バージニア","ドイツ中部","中国東部および中国北部"],a:3,e:"中国東部・中国北部などのリージョンは21Vianetとのパートナーシップで運営され、Microsoftが直接管理しません。"},
+ {id:127,imp:5,q:"VNet内で、サブネット間のトラフィックのルーティング方法を制御し、デフォルト設定をオーバーライドするために作成するリソースは？",o:["カスタム ルート テーブル","ネットワーク セキュリティ グループ (NSG)","アプリケーション セキュリティ グループ (ASG)","Azure DNS"],a:0,e:"既定のルーティングをオーバーライドして経路を制御するにはカスタムルートテーブル(UDR)を作成します。NSGはフィルタリングです。"},
+ {id:128,imp:5,q:"Azure VPNゲートウェイで、2インスタンスに一意のパブリックIPを割り当て、両IPへ別トンネルを作りBGPでトラフィックを分散する構成は？",o:["アクティブ/スタンバイ構成","アクティブ/アクティブ構成","ゾーン冗長構成","ExpressRoute フェールオーバー構成"],a:1,e:"各インスタンスに一意のパブリックIPを割り当て、複数トンネルとBGPで分散するのはアクティブ/アクティブ構成です。"},
+ {id:129,imp:5,q:"Azure Filesで、SMBとNFSの「両方」のファイル共有をサポートする必要がある場合に使用すべきアカウントの種類は？",o:["Standard 汎用 v2","Premium ブロック BLOB","Premium ファイル共有","Premium ページ BLOB"],a:2,e:"SMBとNFSの両方のファイル共有をサポートするにはPremium ファイル共有アカウントを使用します。"},
+ {id:130,imp:5,q:"「Azure Security Centerでの監視を有効にする」という組み込みのイニシアティブには、およそいくつの個別のポリシー定義が含まれますか？",o:["約 5 個","約 20 個","約 50 個","100 を超える"],a:3,e:"このイニシアティブには100を超える個別のポリシー定義が含まれ、多数のセキュリティ設定をまとめて適用・追跡できます。"},
+ {id:131,imp:5,q:"多層防御モデルで、機密性の高いアプリのシークレットをAzure Key Vaultなどの安全なメディアに格納することは、どの防御層の主な役割ですか？",o:["ID とアクセス層","コンピューティング層","アプリケーション層","データ層"],a:2,e:"開発ライフサイクルにセキュリティを組み込み、アプリのシークレットをKey Vault等に安全に格納するのはアプリケーション層の役割です。"},
+ {id:132,imp:5,q:"Azure Service Healthが、過去のインシデントを確認し定期的な停止の「傾向を特定する」ために保持しているものは何ですか？",o:["Azure Status のグローバル マップ","履歴アラート","Azure Advisor の推奨事項","Microsoft Defender for Cloud のセキュリティ スコア"],a:1,e:"過去のインシデントを振り返り定期的な停止の傾向を把握するために保持されるのが履歴アラートです。"},
+ {id:133,imp:5,q:"スタンドアロンアプリ「Azure Storage Explorer」が、バックエンドですべてのファイルやBLOBの管理タスクを処理するために使用しているツールは？",o:["Azure CLI","Azure PowerShell","Azure File Sync","AzCopy"],a:3,e:"Storage ExplorerはGUIを提供しますが、バックエンドのファイルやBLOBの転送・管理にはAzCopyを使用しています。"},
+ {id:134,imp:5,q:"ブラウザベースの「Azure Cloud Shell」のセキュリティとアクセスの特徴として正しい説明はどれですか？",o:["ローカルの管理者権限がなければ起動できない","利用するたびにSSHキーを手動でアップロードする必要がある","Azure資格情報に対して自動的に認証されるため、ログインすると自身のアクセス許可が本質的に認識される","完全に匿名でのリソース管理アクセスを許可する"],a:2,e:"Cloud ShellはAzure資格情報に対して自動的に認証されるため、ログインするだけで自身のアクセス許可が反映された状態で使えます。"},
+ {id:135,imp:5,q:"EA契約で、Azure前払い(年額コミットメント)の残高が一定割合に達した際に自動通知される「クレジット アラート」は、残高が何％で発報されますか？",o:["50% と 75%","70% と 80%","90% と 100%","100% の超過時のみ"],a:2,e:"EA向けのクレジットアラートはAzure前払い残高の90%および100%が消費された時点で自動生成され、メールで通知されます。"},
+];
+
+let S = {screen:"select", cert:null, mode:"exam", coins:0,
+  infra:{ vnet:false, vnetPrefix:"", subnets:[], lb:false },
+  clearedMissions:[],
+  deck:[], idx:0, picks:[], sel:[], revealed:false, last:null};
+let practicePick=false;   // 演習モードの問題数選択を表示中か
+let db = null, currentUserId = null;
+let currentUser = null, authReady = false, guestMode = false, authMode = "signup", authBusy = false;
+let cloudData = null;   // クラウド上の資格別データ {az900:{bp,wrong,history}, ...}
+let profileChecked = false;   // ログイン後、ユーザー名の有無を確認済みか
+
+function ckey(name){ return "cert_" + (S.cert || "az900") + "_" + name; }
+function loadHist(){ try{ return JSON.parse(localStorage.getItem(ckey("history"))) || []; }catch(e){ return []; } }
+function loadWrong(){ try{ const a=JSON.parse(localStorage.getItem(ckey("wrong")))||[]; return [...new Set(a)]; }catch(e){ return []; } }
+function saveWrong(a){ try{ localStorage.setItem(ckey("wrong"), JSON.stringify([...new Set(a||[])])); }catch(e){} }
+function saveHist(h){ try{ localStorage.setItem(ckey("history"), JSON.stringify(h)); }catch(e){} }
+function shuffle(a){ a=a.slice(); for(let i=a.length-1;i>0;i--){const j=Math.random()*(i+1)|0;[a[i],a[j]]=[a[j],a[i]];} return a; }
+function esc(s){ return s.replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c])); }
+function fmt(iso){ const d=new Date(iso),p=n=>String(n).padStart(2,"0"); return `${d.getFullYear()}/${p(d.getMonth()+1)}/${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`; }
+function pts(q){ return IMP_POINTS[q.imp] || 21; }
+function stars(n){ return "★".repeat(n)+"☆".repeat(5-n); }
+function isMulti(q){ return Array.isArray(q.c); }
+function correctSet(q){ return isMulti(q) ? q.c : [q.a]; }
+
+// 1問の採点：{earned, full}
+function grade(q, sel){
+  const W = pts(q);
+  if(!isMulti(q)){ const ok = sel && sel[0]===q.a; return {earned: ok?W:0, full: ok}; }
+  const cor = q.c, per = W/cor.length;
+  let cs=0, ws=0;
+  (sel||[]).forEach(i=>{ if(cor.indexOf(i)>=0) cs++; else ws++; });
+  const earned = Math.max(0, (cs-ws)*per);
+  const full = (cs===cor.length && ws===0);
+  return {earned, full};
+}
+
+function start(mode, count){
+  practicePick=false;
+  S.review=false;
+  S.mode = (mode==="practice") ? "practice" : "exam";
+  const n = (S.mode==="practice") ? (count||10) : DRAW;   // 演習は選択数、試験は従来どおりDRAW
+  S.deck = shuffle(Q).slice(0, Math.min(n, Q.length));
+  S.idx=0; S.picks=[]; S.sel=[]; S.screen="quiz"; render();
+}
+function startReview(){
+  practicePick=false;
+  const wrong=loadWrong();
+  const pool=Q.filter(q=>wrong.indexOf(q.id)>=0);
+  if(!pool.length){ go("home"); return; }
+  S.review=true;
+  S.deck = shuffle(pool).slice(0, Math.min(DRAW, pool.length));
+  S.idx=0; S.picks=[]; S.sel=[]; S.screen="quiz"; render();
+}
+function pick(i){
+  const q=S.deck[S.idx];
+  if(isMulti(q)){ const k=S.sel.indexOf(i); if(k>=0)S.sel.splice(k,1); else S.sel.push(i); }
+  else { S.sel=[i]; }
+  render();
+}
+function commit(){            // 試験モード：正誤は出さず次へ進む
+  if(!S.sel.length) return;
+  S.picks.push(S.sel.slice());
+  if(S.idx+1 < S.deck.length){ S.idx++; S.sel=[]; render(); }
+  else finish();
+}
+  // ▼▼▼ 【追加】データをクラウドへ送信するための関数 ▼▼▼
+async function saveToCloud(bp, wrongList, historyList) {
+  if (!db || !currentUserId || !S.cert) return;
+  try {
+    const patch = {};
+    patch[S.cert] = { bp: bp, wrong: wrongList, history: historyList };
+    await window.FirebaseSync.setDoc(window.FirebaseSync.doc(db, "users", currentUserId), {
+      certs: patch,
+      coins: (S.coins || 0),   // アカウント共通のコイン残高（資格横断）
+      updatedAt: new Date().toISOString()
+    }, { merge: true });
+    console.log("Cloud synced:", S.cert);
+  } catch(e) {
+    console.error("Cloud sync failed:", e);
+  }
+}
+// ▲▲▲ 【追加ここまで】 ▲▲▲
+
+/* ===== 経験値(EXP)の計算：モード別 =====
+   ・演習モード：獲得点数がそのままEXP
+   ・試験モード：700点未満は0、以上はスコア帯ごとにボーナス倍率
+   端数は四捨五入（Math.round）で処理 */
+function examMult(score){
+  if(score < 700) return 0;
+  if(score < 800) return 1.25;
+  if(score < 900) return 1.5;
+  if(score < 950) return 1.75;
+  return 2.0;
+}
+function calcExp(score, mode){
+  if(mode === "practice") return score;           // 演習：点数 = EXP
+  return Math.round(score * examMult(score));      // 試験：倍率適用後に四捨五入
+}
+
+/* ===== コイン(AC) ===== アカウント共通のウォレット（資格横断） */
+function loadCoins(){ const v=parseInt(localStorage.getItem("coins")||"0",10); return isNaN(v)?0:v; }
+function saveCoins(v){ try{ localStorage.setItem("coins", String(v||0)); }catch(e){} }
+// 獲得コイン：試験はスコア帯で固定、演習・復習は「正解数×3」
+function coinReward(runMode, correct, score){
+  if(runMode === "exam"){
+    if(score < 700) return 50;
+    if(score < 800) return 150;
+    if(score < 900) return 200;
+    if(score < 950) return 250;
+    return 300;
+  }
+  return correct * 3;   // 演習・復習
+}
+
+function finish(){
+  let earned=0, total=0, correct=0;
+  S.deck.forEach((q,i)=>{ total+=pts(q); const g=grade(q,S.picks[i]); earned+=g.earned; if(g.full)correct++; });
+  // 復習リストの更新：間違えた問題を登録、正解できた問題は克服として除外
+  const wrong=new Set(loadWrong());
+  S.deck.forEach((q,i)=>{ if(grade(q,S.picks[i]).full) wrong.delete(q.id); else wrong.add(q.id); });
+  const wrongList=[...wrong];
+  saveWrong(wrongList);
+
+  // モード判定（exam=試験 / practice=演習 / review=復習）
+  const runMode = S.review ? "review" : (S.mode==="practice" ? "practice" : "exam");
+  let score, scoreMax, exp, mult=0;
+  if(runMode==="practice"){
+    // 演習：1000点換算を廃止。実際の配点合計(total)を満点、獲得点を切り上げてスコア。EXP=スコア
+    score = Math.ceil(earned);
+    scoreMax = total;
+    exp = score;
+  } else {
+    // 試験・復習：従来どおり1000点満点換算（変更しない）
+    score = total ? Math.round(earned/total*1000) : 0;
+    scoreMax = 1000;
+    if(runMode==="exam"){ mult = examMult(score); exp = calcExp(score, "exam"); }
+    else { exp = score; }   // 復習：従来どおり点数がそのままEXP
+  }
+
+  // EXPをBP(=経験値)として加算 → 資格内レベルと全体レベルの両方に反映
+  const prevBp = getBP();
+  const newBp = prevBp + exp;
+  setBP(newBp);
+  // コイン(AC)の獲得：試験はスコア帯で固定、演習・復習は正解数×3
+  const coinGain = coinReward(runMode, correct, score);
+  S.coins = (S.coins||0) + coinGain;
+  saveCoins(S.coins);
+  const unlocked = TIERS.filter(t=>t.bp>prevBp && t.bp<=newBp).map(t=>t.icon+" "+t.name);
+  const modeLabel = (runMode==="review" ? "復習" : runMode==="practice" ? "演習" : "試験") + S.deck.length + "問";
+  const entry = {id:Date.now(), date:new Date().toISOString(), modeLabel,
+                 mode:runMode, mult, correct, total:S.deck.length, score, scoreMax, earned:Math.ceil(earned), totalPts:total,
+                 bpGain:exp, bpTotal:newBp, coinGain, coinTotal:S.coins, unlocked, review:!!S.review};
+  const h=[entry,...loadHist()].slice(0,50); saveHist(h);
+  saveToCloud(newBp, wrongList, h);
+  publishLeaderboard();   // ランキング（総合レベル・合計BP）も更新
+  // 問題ごとの正答率を集計（出題+1・全問正解なら正答+1）
+  if(window.QStats){
+    const results = S.deck.map((q,i)=>({ qid:q.id, correct: grade(q,S.picks[i]).full }));
+    window.QStats.record(S.cert, results);
+  }
+
+  S.last=entry; S.screen="result"; render();
+}
+function go(s){ S.screen=s; render(); }
+
+// 右上の共通ステータスバー：上段=総合Lv／下段=選択中の資格Lv／右=AC。render()のたびに最新化
+function renderStatusBar(){
+  const el=document.getElementById("statusbar"); if(!el) return;
+  // 認証前・ユーザー名未設定などプレイヤーが確定していない画面では非表示
+  const gated = (!guestMode && !authReady)
+             || (!guestMode && !currentUser)
+             || (!guestMode && currentUser && (!profileChecked || !getProfileName()));
+  if(gated){ el.classList.remove("show"); el.innerHTML=""; return; }
+  const ov = overallStat();          // 上段：全資格合計から総合Lvと次Lvまでの進捗(%)
+  const coins = (S.coins||0);
+
+  // 下段：選択中の資格レベルと、次のリソース解放までの進捗（データセンターと同じロジック）
+  let certRow = "";
+  if(S.cert){
+    const c = certById(S.cert) || {};
+    const bp = getBP();
+    const lvl = dcCount(bp);
+    const next = TIERS.find(t=>t.bp>bp);
+    let cpct;
+    if(next){ const prevBp = lvl>0 ? TIERS[lvl-1].bp : 0; cpct = Math.max(0, Math.min(100, Math.round((bp-prevBp)/(next.bp-prevBp)*100))); }
+    else cpct = 100;
+    // どのリソース間の進捗か（例：VM → ストレージ）をツールチップに明示
+    const curName = lvl>0 ? (TIERS[lvl-1].icon+" "+TIERS[lvl-1].name) : "スタート";
+    const certTitle = next ? `${curName} → ${next.icon} ${next.name}（あと ${(next.bp-bp).toLocaleString()} BP）` : "全リソース稼働";
+    certRow = `
+      <div class="sb-line">
+        <span class="sb-lab sb-lab-cert">${esc(c.code||"選択資格")} Lv.<b>${lvl}</b></span>
+        <span class="sb-prog" title="${esc(certTitle)}"><span class="sb-prog-f cert" style="width:${cpct}%"></span></span>
+      </div>`;
+  }
+
+  el.innerHTML = `
+    <div class="sb-levels">
+      <div class="sb-line">
+        <span class="sb-lab">総合ランク Lv.<b>${ov.lv}</b></span>
+        <span class="sb-prog" title="次の総合Lvまで ${ov.remain.toLocaleString()} BP"><span class="sb-prog-f overall" style="width:${ov.pct}%"></span></span>
+      </div>
+      ${certRow}
+    </div>
+    <span class="sb-div"></span>
+    <span class="sb-coin">💰 <b>${coins.toLocaleString()}</b> AC</span>
+  `;
+  el.classList.add("show");
+}
+
+/* ======================= 仮想Azureデモ環境（ポータル） ======================= */
+/* ドックのリソース（配置は無料。コインは消費しない） */
+const PT_SHOP = [
+  { key:"vnet",   icon:"🌐", name:"VNet" },
+  { key:"subnet", icon:"🗂️", name:"サブネット" },
+  { key:"vm",     icon:"🖥️", name:"VM" },
+  { key:"lb",     icon:"⚖️", name:"LB" },
+];
+/* 難易度(星)→クリア報酬BP */
+function missionBP(stars){ return ({1:500,2:1000,3:1500,4:2000,5:3000})[stars] || stars*500; }
+
+/* ====== ミッション（お題）レジストリ ======
+   stars: 難易度(1-5) / hints: ❓で表示する設計ヒント / check(inf): true でクリア。
+   新しいお題はここに足すだけで目次に並ぶ。 */
+const MISSIONS = [
+  {
+    id: "m1",
+    title: "基本の1台！単一Webサーバーの構築",
+    desc: "VNetの中にサブネットを作り、Webサーバー用のVMを1台デプロイせよ！アドレス設計（プレフィックス長・IP）も入力しよう。",
+    stars: 1,
+    hints: [
+      "🌐VNetを箱庭へドラッグしてデプロイし、プレフィックス長（例: 16）を入力します。",
+      "🗂️サブネットをVNetの中へドラッグし、プレフィックス長（例: 24）を入力します。",
+      "🖥️VMをサブネットへドラッグし、第4オクテット（例: 4）を入力します。",
+      "範囲の包含が大切：VNet(/16) ⊃ サブネット(/24) ⊃ VM。サブネットのプレフィックス長はVNetより大きい数字にします。"
+    ],
+    check: (inf) => {
+      if (!inf.vnet || (inf.vnetPrefix || "").trim() === "") return { ok: false, msg: "❌ VNetが配置されていないか、プレフィックス長が未入力です。" };
+      if (inf.subnets.length < 1) return { ok: false, msg: "❌ VNetの中にサブネットを1つ以上配置してください。" };
+      
+      const vRange = getIpRange("10.0.0.0", inf.vnetPrefix);
+      if (!vRange) return { ok: false, msg: "❌ VNetのプレフィックス長が不正です（8〜30）。" };
+
+      const s = inf.subnets[0];
+      if ((s.prefix || "").trim() === "") return { ok: false, msg: "❌ サブネットのプレフィックス長を入力してください。" };
+      const sRange = getIpRange("10.0.1.0", s.prefix);
+      if (!sRange) return { ok: false, msg: "❌ サブネットのプレフィックス長が不正です（8〜30）。" };
+
+      // VNet ⊃ サブネット の包含チェック
+      if (sRange.start < vRange.start || sRange.end > vRange.end) {
+        return { ok: false, msg: `❌ サブネットの範囲 [${numToIp(sRange.start)}〜${numToIp(sRange.end)}] が、VNetの許容範囲 [${numToIp(vRange.start)}〜${numToIp(vRange.end)}] からはみ出しています！` };
+      }
+
+      if (s.vms.length < 1) return { ok: false, msg: "❌ サブネットの中にVMを配置してください。" };
+      const vm = s.vms[0];
+      if ((vm.octet || "").trim() === "") return { ok: false, msg: "❌ VMのIP（第4オクテット）を入力してください。" };
+      
+      const vmNum = ipToNum("10.0.1." + vm.octet);
+      if (vmNum === null) return { ok: false, msg: "❌ VMのIPアドレスの形式が正しくありません。" };
+
+      // サブネット ⊃ VM のチェック
+      if (vmNum < sRange.start || vmNum > sRange.end) {
+        return { ok: false, msg: `❌ VMのIP [10.0.1.${vm.octet}] は、所属サブネットの範囲 [10.0.1.0〜] に収まっていません！` };
+      }
+
+      // Azure予約IPのチェック
+      const lastOct = parseInt(vm.octet, 10);
+      if (vmNum === sRange.start || vmNum === sRange.end || (lastOct >= 1 && lastOct <= 3)) {
+        return { ok: false, msg: `⚠️ Azure予約IPエラー！\n末尾 .${lastOct} はネットワークアドレスやAzure予約IP（.1〜.3など）のため、VMに割り当てられません！` };
+      }
+
+      return { ok: true };
+    }
+  },
+  {
+    id: "m2",
+    title: "冗長化Web！ロードバランサー構成",
+    desc: "VNetに2つのサブネットを作り、Front(Web)に2台・Back(DB)に1台のVMを配置。LBも置いて可用性を高めよ！",
+    stars: 2,
+    hints: [
+      "VNetをデプロイし、サブネットを2つ配置します。",
+      "Loadbalancer(⚖️)はVNetヘッダーのスロットへドラッグします。",
+      "1つ目のサブネットにVMを2台、2つ目にVMを1台置きます。"
+    ],
+    check: (inf) => {
+      if (!inf.vnet || (inf.vnetPrefix || "").trim() === "") return { ok: false, msg: "❌ VNetが配置されていないか、プレフィックス長が未入力です。" };
+      if (!inf.lb) return { ok: false, msg: "❌ ロードバランサー（⚖️）が設置されていません。" };
+      if (inf.subnets.length < 2) return { ok: false, msg: "❌ サブネットが2つ以上必要です（Front用とBack用）。" };
+
+      const vRange = getIpRange("10.0.0.0", inf.vnetPrefix);
+      if (!vRange) return { ok: false, msg: "❌ VNetのプレフィックス長が不正です。" };
+
+      // ループで全サブネットと全VMを網羅検証
+      for (let i = 0; i < 2; i++) {
+        const s = inf.subnets[i];
+        if ((s.prefix || "").trim() === "") return { ok: false, msg: `❌ サブネット${i+1}のプレフィックス長を入力してください。` };
+        const sRange = getIpRange(`10.0.${i+1}.0`, s.prefix);
+        if (!sRange) return { ok: false, msg: `❌ サブネット${i+1}のプレフィックス長が不正です。` };
+
+        if (sRange.start < vRange.start || sRange.end > vRange.end) {
+          return { ok: false, msg: `❌ サブネット${i+1}の範囲が、VNetの許容範囲からはみ出しています！` };
+        }
+
+        const requiredVmCount = i === 0 ? 2 : 1;
+        if (s.vms.length < requiredVmCount) return { ok: false, msg: `❌ サブネット${i+1}（${i===0?'Front':'Back'}）にはVMを ${requiredVmCount} 台以上配置してください。` };
+
+        for (let j = 0; j < s.vms.length; j++) {
+          const vm = s.vms[j];
+          if ((vm.octet || "").trim() === "") return { ok: false, msg: `❌ サブネット${i+1}の ${j+1}台目のVMのIPが未入力です。` };
+          const vmNum = ipToNum(`10.0.${i+1}.` + vm.octet);
+          
+          if (vmNum < sRange.start || vmNum > sRange.end) {
+            return { ok: false, msg: `❌ サブネット${i+1}のVM [10.0.${i+1}.${vm.octet}] がサブネットの範囲外です。` };
+          }
+          const lastOct = parseInt(vm.octet, 10);
+          if (vmNum === sRange.start || vmNum === sRange.end || (lastOct >= 1 && lastOct <= 3)) {
+            return { ok: false, msg: `⚠️ サブネット${i+1}のVMでAzure予約IP（.${lastOct}）が検出されました。回避してください。` };
+          }
+        }
+      }
+      return { ok: true };
+    }
+  }
+];
+let currentMission = MISSIONS[0];   // デフォルトのお題
+function missionStars(n){
+  let s=""; for(let i=0;i<5;i++) s += `<span class="pt-star ${i<n?'on':''}">★</span>`; return s;
+}
+function ptValidZones(key){
+  if(key==="vnet")   return ["canvas"];
+  if(key==="subnet") return ["vnetbody","subnet"];
+  if(key==="vm")     return ["subnet"];
+  if(key==="lb")     return ["lb"];
+  return [];
+}
+function resetInfra(){
+  S.infra = { vnet:false, vnetPrefix:"", subnets:[], lb:false };
+  renderSandbox();
+  renderStatusBar();
+}
+// 目次画面：ミッションカードのみを表示。タップで構築シミュレーターへ
+function renderPortal(){
+  S.infra || (S.infra={vnet:false,vnetPrefix:"",subnets:[],lb:false});
+  const cards = MISSIONS.map(mn=>{
+    const cleared = missionCleared(mn.id);
+    return `<button class="pt-mission pt-mission-btn" data-mission="${mn.id}">
+      <div class="pt-m-top"><span class="pt-m-tag">MISSION</span><span class="pt-m-stars" title="難易度 ${mn.stars} / 5">${missionStars(mn.stars)}</span></div>
+      <div class="pt-m-title">${esc(mn.title)}${cleared?' <span class="pt-cleared">✓ クリア済み</span>':''}</div>
+      <div class="pt-m-desc">${esc(mn.desc)}</div>
+      <div class="pt-m-foot"><span class="pt-m-reward">クリア報酬：⚡ ${missionBP(mn.stars).toLocaleString()} BP</span><span class="pt-m-go">挑戦する →</span></div>
+    </button>`;
+  }).join("");
+  app.innerHTML = `
+    <div class="q-head"><button class="quit" data-go="home">🏠 ホーム</button><span class="q-count">Azure デモ環境</span></div>
+    <div class="pt-coinbar pt-coinbar-info">🧪 配置は無料で何度でも試せます。<b>クリアでBP獲得！</b></div>
+    <div class="pt-mlist-lab">ミッション一覧</div>
+    <div class="pt-mlist">${cards}</div>
+  `;
+  app.querySelectorAll("[data-go]").forEach(x=>x.onclick=()=>go(x.dataset.go));
+  app.querySelectorAll("[data-mission]").forEach(x=>x.onclick=()=>openMission(x.dataset.mission));
+  window.scrollTo(0,0);
+}
+function missionCleared(id){ return !!localStorage.getItem("portal_done_"+id) || (S.clearedMissions||[]).includes(id); }
+function openMission(id){
+  const mn = MISSIONS.find(m=>m.id===id); if(!mn) return;
+  currentMission = mn;
+  S.screen = "sandbox"; render();
+}
+
+// 構築シミュレーター画面：ボード・採点・リセット・ドック・アドレス入力・❓ヒント
+function renderSandbox(){
+  const inf = S.infra || (S.infra={vnet:false,vnetPrefix:"",subnets:[],lb:false});
+  const subnetHTML = (sn,i)=>`
+    <div class="pt-drop pt-subnet" data-zone="subnet" data-idx="${i}">
+      <div class="pt-sn-lab">サブネット${i+1} <span class="pt-addr">10.0.${i+1}.0/<input class="pt-ip-in" data-sn-prefix="${i}" value="${esc(sn.prefix||"")}" placeholder="24" inputmode="numeric" maxlength="2"></span></div>
+      <div class="pt-sn-items">${sn.vms.length
+        ? sn.vms.map((vm,j)=>`<span class="pt-chip">🖥️ 10.0.${i+1}.<input class="pt-ip-in pt-ip-oct" data-vm-octet="${i}-${j}" value="${esc(vm.octet||"")}" placeholder="4" inputmode="numeric" maxlength="3"></span>`).join("")
+        : '<span class="pt-empty">VMをここへドラッグ</span>'}</div>
+    </div>`;
+  const sandbox = !inf.vnet ? `
+      <div class="pt-drop pt-canvas" data-zone="canvas">
+        <div class="pt-canvas-lab">VNet 未デプロイ</div>
+        <div class="pt-canvas-sub">下のドックから「🌐 VNet」をここへドラッグ</div>
+      </div>`
+    : `
+      <div class="pt-vnet">
+        <div class="pt-vnet-head">
+          <span class="pt-vnet-lab">VNet 10.0.0.0/<input class="pt-ip-in" id="vnet-prefix" value="${esc(inf.vnetPrefix||"")}" placeholder="16" inputmode="numeric" maxlength="2"></span>
+          <span class="pt-drop pt-lbslot ${inf.lb?'filled':''}" data-zone="lb">${inf.lb?'⚖️ LB':'＋ LB'}</span>
+        </div>
+        <div class="pt-drop pt-vnetbody" data-zone="vnetbody">
+          ${inf.subnets.length ? inf.subnets.map((sn,i)=>subnetHTML(sn,i)).join("") : '<div class="pt-vnet-empty">🗂️ サブネットをここへドラッグ</div>'}
+        </div>
+      </div>`;
+  const dock = PT_SHOP.map(it=>`<div class="pt-item" data-key="${it.key}">
+      <span class="pt-ic">${it.icon}</span><span class="pt-nm">${it.name}</span>
+    </div>`).join("");
+  app.innerHTML = `
+    <div class="q-head"><button class="quit" data-go="portal">← ミッション一覧</button><span class="q-count">構築シミュレーター</span></div>
+    <div class="pt-mission-strip"><span class="pt-m-stars">${missionStars(currentMission.stars)}</span><span class="pt-strip-title">${esc(currentMission.title)}</span><button class="pt-help" id="pt-help" title="ヒントを見る">❓</button></div>
+    <div class="pt-sandbox">${sandbox}</div>
+    <div id="pt-result" class="pt-result"></div>
+    <button class="cta" id="pt-test">構成をテスト・採点する</button>
+    <div class="pt-btnrow"><button class="ghost" id="pt-reset">リセット</button></div>
+    <div class="pt-dock-lab">ドック（指で上にドラッグして配置・無料）</div>
+    <div class="pt-dock">${dock}</div>
+  `;
+  app.querySelectorAll("[data-go]").forEach(x=>x.onclick=()=>go(x.dataset.go));
+  document.getElementById("pt-test").onclick=testInfra;
+  document.getElementById("pt-help").onclick=openHintModal;
+  document.getElementById("pt-reset").onclick=()=>{ if(confirm("構築した構成をリセットしますか？")) resetInfra(); };
+  // アドレス入力 → S.infra へ即時保存（再描画しないので入力がスムーズ）
+  const vp=document.getElementById("vnet-prefix"); if(vp) vp.oninput=(e)=>{ inf.vnetPrefix = e.target.value; };
+  app.querySelectorAll("[data-sn-prefix]").forEach(el=>el.oninput=(e)=>{ const i=+el.dataset.snPrefix; if(inf.subnets[i]) inf.subnets[i].prefix=e.target.value; });
+  app.querySelectorAll("[data-vm-octet]").forEach(el=>el.oninput=(e)=>{ const [i,j]=el.dataset.vmOctet.split("-").map(Number); if(inf.subnets[i]&&inf.subnets[i].vms[j]) inf.subnets[i].vms[j].octet=e.target.value; });
+  // ★D&D再初期化：描画のたびに最新の .pt-item へタッチ/マウスのハンドラを付け直す
+  app.querySelectorAll(".pt-item").forEach(elem=>ptAttachDrag(elem));
+  window.scrollTo(0,0);
+}
+// ドラッグ＆ドロップ（タッチ＆マウス両対応・無料）。サブネット等の動的パーツにも対応
+function ptAttachDrag(elem){
+  const key = elem.dataset.key;
+  const onStart = (e)=>{
+    e.preventDefault();
+    const it = PT_SHOP.find(s=>s.key===key);
+    const ghost = document.createElement("div");
+    ghost.className="pt-ghost"; ghost.textContent=it.icon;
+    document.body.appendChild(ghost);
+    const valid = ptValidZones(key);
+    const move=(ev)=>{
+      const p = ev.touches ? ev.touches[0] : ev;
+      ghost.style.left = p.clientX+"px"; ghost.style.top = p.clientY+"px";
+      ptHighlight(p.clientX, p.clientY, valid);
+    };
+    const end=(ev)=>{
+      const p = ev.changedTouches ? ev.changedTouches[0] : ev;
+      const zi = ptZoneAt(p.clientX, p.clientY);
+      ghost.remove();
+      ptClearHighlight();
+      document.removeEventListener("touchmove",move,{passive:false});
+      document.removeEventListener("touchend",end);
+      document.removeEventListener("mousemove",move);
+      document.removeEventListener("mouseup",end);
+      ptDeploy(key, zi);
+    };
+    move(e);
+    document.addEventListener("touchmove",move,{passive:false});
+    document.addEventListener("touchend",end);
+    document.addEventListener("mousemove",move);
+    document.addEventListener("mouseup",end);
+  };
+  elem.addEventListener("touchstart", onStart, {passive:false});
+  elem.addEventListener("mousedown", onStart);
+}
+function ptZoneEl(x,y){
+  const el = document.elementFromPoint(x,y);
+  return el && el.closest ? el.closest("[data-zone]") : null;
+}
+function ptZoneAt(x,y){
+  const z = ptZoneEl(x,y);
+  if(!z) return null;
+  return { zone:z.dataset.zone, idx: (z.dataset.idx!=null ? parseInt(z.dataset.idx,10) : null) };
+}
+function ptHighlight(x,y,valid){
+  ptClearHighlight();
+  const z = ptZoneEl(x,y);
+  if(z && valid.indexOf(z.dataset.zone)>=0) z.classList.add("pt-over");
+}
+function ptClearHighlight(){ document.querySelectorAll(".pt-over").forEach(e=>e.classList.remove("pt-over")); }
+function ptMsg(txt, ok){
+  const r=document.getElementById("pt-result"); if(!r) return;
+  r.className = "pt-result " + (ok===true?"ok":(ok===false?"ng":""));
+  r.innerHTML = txt;
+}
+// 配置（無料・データ追加のみ）。無効なドロップは黙って無視（自動ヒントは出さない）
+function ptDeploy(key, zi){
+  const inf = S.infra;
+  const valid = ptValidZones(key);
+  if(!zi || valid.indexOf(zi.zone)<0) return;
+  if(key==="vnet"){
+    if(inf.vnet) return;
+    inf.vnet = true;
+  } else if(key==="subnet"){
+    if(!inf.vnet) return;
+    inf.subnets.push({ prefix:"", vms:[] });
+  } else if(key==="vm"){
+    if(!inf.vnet) return;
+    const i = zi.idx;
+    if(i==null || !inf.subnets[i]) return;
+    inf.subnets[i].vms.push({ octet:"" });
+  } else if(key==="lb"){
+    if(!inf.vnet || inf.lb) return;
+    inf.lb = true;
+  }
+  renderSandbox();   // 入力値は S.infra に保存済みなので再描画で復元される
+}
+// ❓ヒント：ユーザーが押した時だけ設計ヒントをモーダル表示（自動表示はしない）
+function openHintModal(){
+  const mn = currentMission;
+  const ov = document.createElement("div"); ov.className="modal-ov";
+  ov.innerHTML = `
+    <div class="modal">
+      <div class="modal-title">❓ ヒント</div>
+      <div class="pt-hint-head">${missionStars(mn.stars)} <span>${esc(mn.title)}</span></div>
+      <ul class="pt-hint-list">${(mn.hints||["このミッションのヒントは準備中です。"]).map(h=>`<li>${esc(h)}</li>`).join("")}</ul>
+      <button class="cta" id="pt-hint-close">閉じる</button>
+    </div>`;
+  document.body.appendChild(ov);
+  const close=()=>{ try{ ov.remove(); }catch(e){} };
+  ov.querySelector("#pt-hint-close").onclick=close;
+  ov.addEventListener("click",(e)=>{ if(e.target===ov) close(); });
+}
+// 採点：現在のミッションのクリア条件で判定。失敗時は具体ヒントを自動表示しない
+// 採点：現在のミッションのクリア条件で判定。ビット演算による詳細フィードバック版
+function testInfra(){
+  const res = currentMission.check(S.infra);
+  
+  // 判定が失敗（res.okがfalse、または真偽値でfalseが返った場合）
+  if(!res || res.ok === false || res === false){
+    const errMsg = res.msg || "❌ まだ構成が完成していません。右上の「❓」でヒントを確認しながら見直しましょう。";
+    ptMsg(errMsg, false);
+    return;
+  }
+  
+  const id = currentMission.id;
+  const already = missionCleared(id);
+  let msg = `${"⭐".repeat(currentMission.stars)} ミッション達成！<br>「${esc(currentMission.title)}」をクリアしました。`;
+  if(!already){
+    const bp = missionBP(currentMission.stars);
+    setBP(getBP() + bp);                         // 資格BPに加算 → レベル/ステータスバーへ反映
+    if(!S.clearedMissions) S.clearedMissions=[];
+    S.clearedMissions.push(id);
+    try{ localStorage.setItem("portal_done_"+id, "1"); }catch(e){}
+    msg += `<br>🎉 初クリア報酬 <b>+${bp.toLocaleString()} BP</b> 獲得！レベルに反映されました。`;
+    try{ publishLeaderboard(); }catch(e){}        // ランキングも更新
+    try{ saveToCloud(getBP(), loadWrong(), loadHist()); }catch(e){}  // クラウド同期
+  } else {
+    msg += "<br>（このミッションの報酬は獲得済みです）";
+  }
+  renderSandbox();
+  renderStatusBar();   // 最上部のBPバー・レベルに即反映
+  ptMsg(msg, true);
+}
+
+
+function render(){
+  renderStatusBar();   // 画面が変わっても常に最新の Lv/BP/AC を反映
+  // アカウントの認証ゲート（ゲストモードならスキップ）
+  if(!guestMode && !authReady) return renderLoading();
+  if(!guestMode && !currentUser) return renderAuth();
+  // ログイン済みでユーザー名が未設定なら、必ずユーザー名設定画面へ
+  if(!guestMode && currentUser){
+    if(!profileChecked) return renderLoading();
+    if(!getProfileName()) return renderUsername();
+  }
+  // 資格選択なしでも開ける画面
+  if(S.screen==="ranking") return renderRanking();
+  if(S.screen==="profile") return renderProfile();
+  // 大元：資格選択画面
+  if(S.screen==="select" || !S.cert) return renderSelect();
+  if(S.screen==="home") return renderHome();
+  if(S.screen==="quiz") return renderQuiz();
+  if(S.screen==="result") return renderResult();
+  if(S.screen==="review") return renderReview();
+  if(S.screen==="dict") return renderDict();
+  if(S.screen==="dc") return renderDC();
+  if(S.screen==="transfer") return renderTransfer();
+  if(S.screen==="history") return renderHistory();
+  if(S.screen==="portal") return renderPortal();
+  if(S.screen==="sandbox") return renderSandbox();
+}
+
+function renderLoading(){
+  app.innerHTML = `<div class="loading">読み込み中…<br>
+    <button class="link" id="ld-guest" style="margin-top:16px">アカウントなしで使う（この端末のみ）</button></div>`;
+  const g=document.getElementById("ld-guest"); if(g)g.onclick=()=>{ guestMode=true; S.screen="home"; render(); };
+}
+
+function authErrorMsg(e){
+  const c=(e&&(e.code||e.message))||"";
+  if(c.indexOf("email-already-in-use")>=0) return "このメールアドレスは既に登録されています。「ログイン」に切り替えてください。";
+  if(c.indexOf("invalid-email")>=0) return "メールアドレスの形式が正しくありません。";
+  if(c.indexOf("weak-password")>=0) return "パスワードは6文字以上にしてください。";
+  if(c.indexOf("wrong-password")>=0 || c.indexOf("invalid-credential")>=0) return "メールアドレスまたはパスワードが違います。";
+  if(c.indexOf("user-not-found")>=0) return "アカウントが見つかりません。新規登録してください。";
+  if(c.indexOf("too-many-requests")>=0) return "試行回数が多すぎます。少し時間をおいて再度お試しください。";
+  if(c.indexOf("operation-not-allowed")>=0) return "メール認証が有効化されていません（Firebaseの設定が必要です）。";
+  if(c.indexOf("network")>=0) return "通信エラーです。ネット接続を確認してください。";
+  return "エラー: " + ((e&&e.message)||c||"不明");
+}
+
+function renderAuth(){
+  const signup = authMode==="signup";
+  app.innerHTML = `
+    <div class="auth-wrap">
+      <div class="auth-title">${signup?"アカウント作成":"ログイン"}</div>
+      <div class="auth-sub">${signup
+        ? "メールとパスワードでアカウントを作成すると、スコア・BP・復習データがアカウントに保存され、機種変更やアプリの更新後もログインすれば引き継げます。"
+        : "登録済みのメールアドレスとパスワードでログインしてください。"}</div>
+      <input id="auth-email" class="auth-input" type="email" placeholder="メールアドレス" autocomplete="email" inputmode="email">
+      <input id="auth-pw" class="auth-input" type="password" placeholder="パスワード（6文字以上）" autocomplete="${signup?"new-password":"current-password"}">
+      <div id="auth-msg" class="auth-msg"></div>
+      <button class="cta" id="auth-go" style="margin-top:4px">${signup?"アカウントを作成":"ログイン"}</button>
+      <button class="ghost" id="auth-switch">${signup?"すでにアカウントをお持ちの方はログイン":"新規登録はこちら"}</button>
+      <button class="link" id="auth-guest">アカウントなしで使う（この端末のみ・同期なし）</button>
+    </div>
+  `;
+  const emailEl=document.getElementById("auth-email");
+  const pwEl=document.getElementById("auth-pw");
+  const msg=document.getElementById("auth-msg");
+  document.getElementById("auth-switch").onclick=()=>{ authMode = signup?"login":"signup"; render(); };
+  document.getElementById("auth-guest").onclick=()=>{ guestMode=true; S.screen="home"; render(); };
+  document.getElementById("auth-go").onclick=async ()=>{
+    if(authBusy) return;
+    const email=(emailEl.value||"").trim(), pw=pwEl.value||"";
+    if(!email || !pw){ msg.style.color="var(--gold)"; msg.textContent="メールアドレスとパスワードを入力してください。"; return; }
+    if(!window.Auth){ msg.style.color="var(--bad)"; msg.textContent="認証の準備中です。少し待って再度お試しください。"; return; }
+    authBusy=true; msg.style.color="var(--muted)"; msg.textContent="処理中…";
+    try{
+      if(signup) await window.Auth.signup(email,pw);
+      else await window.Auth.login(email,pw);
+      // 成功すると onAuthStateChanged が発火し、自動でホームへ切り替わります
+    }catch(e){
+      msg.style.color="var(--bad)"; msg.textContent=authErrorMsg(e);
+    }finally{ authBusy=false; }
+  };
+  window.scrollTo(0,0);
+}
+
+async function logout(){
+  try{ if(window.Auth) await window.Auth.logout(); }catch(e){}
+  // 別の人のデータが残らないよう、全資格のローカルデータを消去（クラウドには残っています）
+  try{
+    CERTS.forEach(c=>{
+      localStorage.removeItem("cert_"+c.id+"_bp");
+      localStorage.removeItem("cert_"+c.id+"_wrong");
+      localStorage.removeItem("cert_"+c.id+"_history");
+    });
+    localStorage.removeItem("profile_name");
+    localStorage.removeItem("coins");
+    MISSIONS.forEach(mn=>localStorage.removeItem("portal_done_"+mn.id));
+  }catch(e){}
+  cloudData=null; currentUser=null; currentUserId=null; profileChecked=false; S.coins=0;
+  S.clearedMissions=[]; S.infra={vnet:false,vnetPrefix:"",subnets:[],lb:false};
+  S.cert=null; S.screen="select"; authMode="login"; render();
+}
+
+// 退会：認証アカウントと個人データを削除し、ローカルを消去してログイン画面へ
+async function deleteAccount(password){
+  if(!window.Account) { const e=new Error("not-ready"); e.code="not-ready"; throw e; }
+  await window.Account.delete(password);   // 再認証→個人データ削除→認証削除（失敗時は例外）
+  // この端末のローカルデータを消去（集計qstatsはサーバー側で保持）
+  try{
+    CERTS.forEach(c=>{
+      localStorage.removeItem("cert_"+c.id+"_bp");
+      localStorage.removeItem("cert_"+c.id+"_wrong");
+      localStorage.removeItem("cert_"+c.id+"_history");
+    });
+    localStorage.removeItem("profile_name");
+    localStorage.removeItem("coins");
+    MISSIONS.forEach(mn=>localStorage.removeItem("portal_done_"+mn.id));
+  }catch(e){}
+  // 認証削除で onAuthStateChanged(null) が発火しログイン画面へ遷移するが、保険で状態も初期化
+  cloudData=null; currentUser=null; currentUserId=null; profileChecked=false; guestMode=false; S.coins=0;
+  S.clearedMissions=[]; S.infra={vnet:false,vnetPrefix:"",subnets:[],lb:false};
+  S.cert=null; S.screen="select"; authMode="login"; render();
+}
+
+// 退会の確認モーダル（パスワード再入力＋最終確認）
+function openDeleteModal(){
+  if(guestMode || !currentUser) return;
+  const ov=document.createElement("div");
+  ov.className="modal-ov";
+  ov.innerHTML=`
+    <div class="modal">
+      <div class="modal-title">⚠️ アカウントを削除（退会）</div>
+      <div class="modal-body">本当に削除しますか？<b>この操作は取り消せません。</b><br>アカウント情報・スコア・履歴・ランキング登録がすべて削除されます。<br><br>確認のため、パスワードを入力してください。</div>
+      <input type="password" id="del-pw" class="auth-input" placeholder="パスワード" autocomplete="current-password">
+      <div id="del-msg" class="auth-msg"></div>
+      <button class="cta danger-solid" id="del-go">削除を実行する</button>
+      <button class="ghost" id="del-cancel" style="margin-top:8px">キャンセル</button>
+    </div>`;
+  document.body.appendChild(ov);
+  const close=()=>{ try{ ov.remove(); }catch(e){} };
+  const msg=ov.querySelector("#del-msg");
+  ov.querySelector("#del-cancel").onclick=close;
+  ov.addEventListener("click",(e)=>{ if(e.target===ov) close(); });
+  ov.querySelector("#del-go").onclick=async ()=>{
+    const pw=(ov.querySelector("#del-pw").value||"");
+    if(!pw){ msg.style.color="var(--gold)"; msg.textContent="パスワードを入力してください。"; return; }
+    msg.style.color="var(--muted)"; msg.textContent="削除処理中…";
+    ov.querySelector("#del-go").disabled=true;
+    try{
+      await deleteAccount(pw);
+      close();   // 成功後はログイン画面へ遷移済み
+    }catch(e){
+      const code=(e&&e.code)||"";
+      let t="削除に失敗しました。時間をおいて再度お試しください。";
+      if(code.indexOf("wrong-password")>=0 || code.indexOf("invalid-credential")>=0) t="パスワードが正しくありません。";
+      else if(code.indexOf("too-many-requests")>=0) t="試行回数が多すぎます。しばらくしてから再度お試しください。";
+      else if(code.indexOf("network")>=0) t="通信エラーです。接続を確認してください。";
+      else if(code==="no-user") t="ログイン状態を確認できません。再ログインしてからお試しください。";
+      msg.style.color="var(--bad)"; msg.textContent=t;
+      ov.querySelector("#del-go").disabled=false;
+    }
+  };
+}
+
+// アカウント作成直後など、ユーザー名が未設定のときに表示（空欄不可・重複不可）
+function renderUsername(){
+  app.innerHTML = `
+    <div class="auth-wrap">
+      <div class="auth-title">ユーザー名を設定</div>
+      <div class="auth-sub">ランキングに表示される名前です。他の人と重複しない名前を入力してください（後からプロフィールで変更できます）。</div>
+      <input id="un-name" class="auth-input" maxlength="16" placeholder="例：くらうど太郎" autocomplete="off">
+      <div id="un-msg" class="auth-msg"></div>
+      <button class="cta" id="un-go">この名前で決定</button>
+    </div>
+  `;
+  const nameEl=document.getElementById("un-name");
+  const msg=document.getElementById("un-msg");
+  document.getElementById("un-go").onclick=async ()=>{
+    const v=(nameEl.value||"").trim();
+    if(!v){ msg.style.color="var(--gold)"; msg.textContent="ユーザー名を入力してください（空にはできません）。"; return; }
+    if(!window.LB){ msg.style.color="var(--bad)"; msg.textContent="準備中です。少し待って再度お試しください。"; return; }
+    msg.style.color="var(--muted)"; msg.textContent="重複を確認中…";
+    try{
+      const taken = await window.LB.nameTaken(v);
+      if(taken){ msg.style.color="var(--bad)"; msg.textContent="その名前はすでに使われています。別の名前にしてください。"; return; }
+      setProfileName(v);
+      publishLeaderboard();        // ユーザー名でランキングへ登録
+      S.screen="select"; render(); // ユーザー名設定後、資格選択へ
+    }catch(e){
+      msg.style.color="var(--bad)"; msg.textContent="確認に失敗しました。通信環境を確認して再度お試しください。";
+    }
+  };
+  window.scrollTo(0,0);
+}
+
+function renderHome(){
+  const h=loadHist(), best=h.reduce((m,x)=>Math.max(m,x.score),0);
+  const c=certById(S.cert)||{};
+  const ov=overallStat();
+  app.innerHTML = `
+    <div class="q-head" style="margin-bottom:14px">
+      <button class="quit" data-go="select">← 資格選択</button>
+      <span class="q-count" style="color:${c.accent||'var(--accent)'}">${esc(c.code||"")}</span>
+    </div>
+    ${homeScene()}
+    <div class="stats">
+      <div class="stat"><div class="stat-num">${h.length}</div><div class="stat-lab">受験回数</div></div>
+      <div class="stat"><div class="stat-num stat-best">${best}</div><div class="stat-lab">最高スコア</div></div>
+    </div>
+    <div class="start-hero">
+      <div class="big">出題プール</div>
+      <div class="pool">${Q.length}<em> 問</em></div>
+      <div class="note">ランダムに ${Math.min(DRAW,Q.length)} 問を出題 ・ 重要度で重み付け ・ 複数選択あり ・ 1000点満点</div>
+    </div>
+    ${practicePick ? `
+    <div class="pcount-wrap">
+      <div class="pcount-lab">📝 演習モード・問題数を選択</div>
+      <div class="pcount">
+        <button class="pcount-btn" data-pc="5">5問</button>
+        <button class="pcount-btn" data-pc="10">10問</button>
+        <button class="pcount-btn" data-pc="15">15問</button>
+      </div>
+      <button class="link" data-pcancel>キャンセル</button>
+    </div>` : `
+    <button class="cta" data-practice>📝 演習モード</button>
+    <div class="mode-note">問題数（5/10/15）を選んで練習・配点の合計がそのままスコア</div>`}
+    <button class="cta cta-exam" data-mode="exam" style="margin-top:12px">🎯 試験モード</button>
+    <div class="mode-note">${DRAW}問・1000点満点換算・700点以上でボーナスEXP（×1.25〜×2.0）</div>
+    ${(loadWrong().length)?`<button class="ghost rev-btn" data-review style="margin-top:12px">🔁 復習モード（間違えた ${loadWrong().length} 問）</button>`:`<div class="x-hint" style="margin-top:12px;text-align:center">復習モード：間違えた問題がここに溜まり、再挑戦できます</div>`}
+    <button class="ghost" data-go="dict" style="margin-top:10px">📖 用語辞典</button>
+    <button class="ghost" data-go="dc" style="margin-top:10px">🏗️ データセンター育成</button>
+    <button class="ghost" data-go="portal" style="margin-top:10px">🧪 Azure デモ環境（コインで構築）</button>
+    <button class="ghost" data-go="transfer" style="margin-top:10px">💾 データ引き継ぎ（保存・復元）</button>
+    ${h.length?`<button class="link" data-go="history">スコア履歴を見る（${h.length}件）</button>`:
+      `<div class="install">ヒント：ブラウザの共有メニューから「ホーム画面に追加」すると、アプリのように起動できます。</div>`}
+    ${currentUser
+      ? `<div class="acct-bar">👤 ${esc(currentUser.email||"ログイン中")}<button class="link2" data-logout>ログアウト</button></div>`
+      : (guestMode ? `<div class="acct-bar">ゲストモード（この端末のみ・同期なし）<button class="link2" data-login>ログイン / 新規登録</button></div>` : "")}
+  `;
+  app.querySelectorAll("[data-mode]").forEach(b=>b.onclick=()=>start(b.dataset.mode));
+  const prn=app.querySelector("[data-practice]"); if(prn)prn.onclick=()=>{ practicePick=true; render(); };
+  const pcn=app.querySelector("[data-pcancel]"); if(pcn)pcn.onclick=()=>{ practicePick=false; render(); };
+  app.querySelectorAll("[data-pc]").forEach(b=>b.onclick=()=>start("practice", +b.dataset.pc));
+  const rv=app.querySelector("[data-review]"); if(rv)rv.onclick=()=>startReview();
+  app.querySelectorAll("[data-go]").forEach(b=>b.onclick=()=>go(b.dataset.go));
+  const lo=app.querySelector("[data-logout]"); if(lo)lo.onclick=()=>logout();
+  const li=app.querySelector("[data-login]"); if(li)li.onclick=()=>{ guestMode=false; authMode="login"; render(); };
+}
+
+function renderQuiz(){
+  const q=S.deck[S.idx], pct=(S.idx/S.deck.length)*100, multi=isMulti(q);
+  app.innerHTML = `
+    <div class="q-head">
+      <button class="quit" data-go="home">✕ 中断</button>
+      <span class="q-count">${S.review?'<span class="rev-tag-q">🔁 復習</span> ':(S.mode==="practice"?'<span class="mode-tag practice">📝 演習</span> ':'<span class="mode-tag exam">🎯 試験</span> ')}${S.idx+1} <em>/ ${S.deck.length}</em></span>
+    </div>
+    <div class="progress"><div class="progress-fill" style="width:${pct}%"></div></div>
+    <div class="q-badge"><span class="stars">${stars(q.imp)}</span><span>重要度 ${q.imp}</span><span class="pts">${pts(q)} 点</span>${multi?`<span class="multi">複数選択（${q.c.length}つ）</span>`:""}</div>
+    <p class="q-text">${esc(q.q)}</p>
+    <div class="opts">
+      ${q.o.map((opt,i)=>{
+        const picked=S.sel.indexOf(i)>=0;
+        return `<button class="opt${picked?" picked":""}" data-pick="${i}">
+          <span class="opt-key${multi?" box":""}">${L[i]}</span><span class="opt-label">${esc(opt)}</span></button>`;
+      }).join("")}
+    </div>
+    <button class="cta" data-commit ${S.sel.length===0?"disabled":""}>${S.idx+1<S.deck.length?"次の問題へ":"採点する"}</button>
+  `;
+  app.querySelectorAll("[data-pick]").forEach(b=>b.onclick=()=>pick(+b.dataset.pick));
+  app.querySelectorAll("[data-go]").forEach(b=>b.onclick=()=>go(b.dataset.go));
+  const cm=app.querySelector("[data-commit]"); if(cm)cm.onclick=commit;
+}
+
+function renderResult(){
+  const e=S.last;
+  const max = e.scoreMax || 1000;
+  const ratio = max ? Math.min(1, e.score/max) : 0;
+  const R=80, C=2*Math.PI*R, off=C*(1-ratio);
+  const isExam = (e.mode==="exam");
+  const isPractice = (e.mode==="practice");
+  const passed = isExam ? (e.score>=PASS) : (ratio>=0.7);
+  const t={high:[0,0],mid:[0,0],low:[0,0]};
+  S.deck.forEach((q,i)=>{ const k=q.imp>=4?"high":(q.imp===3?"mid":"low"); t[k][1]++; if(grade(q,S.picks[i]).full)t[k][0]++; });
+  const TLAB={high:"重要度 高 (4-5)", mid:"重要度 中 (3)", low:"重要度 低 (1-2)"};
+  const gain = (e.bpGain!=null) ? e.bpGain : e.score;
+  let expLine, verdictTxt, verdictPass, subLine;
+  if(isPractice){
+    expLine = "演習モード：獲得した配点合計がそのまま EXP";
+    verdictTxt = "演習完了"; verdictPass = ratio>=0.7;
+    subLine = `獲得 ${e.score} / ${max} 点（実際の配点合計・部分点込み・小数切り上げ）`;
+  } else if(e.mode==="review"){
+    expLine = "復習：点数がそのまま EXP";
+    verdictTxt = "復習完了"; verdictPass = e.score>=PASS;
+    subLine = `獲得 ${e.earned} / ${e.totalPts} 点 → 1000点換算で ${e.score} 点`;
+  } else { // 試験モード（1000点満点換算・従来どおり）
+    expLine = gain>0 ? `試験モード：${e.score}点 × ${e.mult} = ${gain} EXP` : "試験モード：700点未満のため EXP 獲得なし";
+    verdictPass = passed; verdictTxt = passed ? "合格！ボーナス EXP 獲得" : "不合格（700点未満）・EXP なし";
+    subLine = `獲得 ${e.earned} / ${e.totalPts} 点（重み付け・部分点込み）→ 1000点換算で ${e.score} 点`;
+  }
+  app.innerHTML = `
+    <div class="gauge-wrap">
+      <svg viewBox="0 0 200 200" class="gauge">
+        <circle cx="100" cy="100" r="${R}" class="gauge-bg"></circle>
+        <circle cx="100" cy="100" r="${R}" class="gauge-fg ${verdictPass?"pass":"fail"}"
+          stroke-dasharray="${C}" stroke-dashoffset="${C}" transform="rotate(-90 100 100)"></circle>
+      </svg>
+      <div class="gauge-mid"><div class="gauge-score">${e.score}</div><div class="gauge-max">/ ${max}</div></div>
+    </div>
+    <div class="verdict ${verdictPass?"pass":"fail"}">${verdictTxt}</div>
+    <div class="result-meta">完全正解 ${e.correct} / ${e.total} 問</div>
+    <div class="result-sub">${subLine}</div>
+    <div class="breakdown">
+      ${Object.keys(t).filter(k=>t[k][1]>0).map(k=>`
+        <div class="bd-row"><span class="bd-lab" style="width:96px">${TLAB[k]}</span>
+        <div class="bd-bar"><div class="bd-fill" style="width:${t[k][0]/t[k][1]*100}%"></div></div>
+        <span class="bd-num">${t[k][0]}/${t[k][1]}</span></div>`).join("")}
+    </div>
+    <div class="bp-card">
+      <div class="bp-row"><span>⚡ 獲得EXP</span><span class="bp-gain">+${gain} EXP</span></div>
+      <div class="bp-exp-line">${esc(expLine)}</div>
+      <div class="bp-total">資格内＆全体レベルに加算 ・ 累計 ${(e.bpTotal||getBP()).toLocaleString()} BP</div>
+      ${(e.unlocked&&e.unlocked.length)?`<div class="bp-unlock">🎉 新たに稼働：${e.unlocked.map(esc).join("、")}</div>`:""}
+      <button class="bp-link" data-go="dc">データセンターを見る →</button>
+    </div>
+    <div class="coin-card">
+      <div class="coin-row"><span class="coin-ic">💰</span><span class="coin-gain">+${(e.coinGain!=null?e.coinGain:0)} AC 獲得！</span></div>
+      <div class="coin-total">現在の総所持：${(e.coinTotal!=null?e.coinTotal:(S.coins||0)).toLocaleString()} AC</div>
+    </div>
+    <div class="actions">
+      <button class="cta" data-go="review">解答・解説を確認</button>
+      <button class="ghost" data-retry>もう一度挑戦</button>
+      <button class="ghost" data-go="home">🏠 ホームへ戻る</button>
+    </div>
+  `;
+  requestAnimationFrame(()=>{ const c=app.querySelector(".gauge-fg"); if(c)c.style.strokeDashoffset=off; });
+  app.querySelector("[data-retry]").onclick=()=>{ if(S.review){ if(loadWrong().length) startReview(); else go("home"); } else start(S.mode); };
+  app.querySelectorAll("[data-go]").forEach(b=>b.onclick=()=>go(b.dataset.go));
+}
+
+function renderReview(){
+  const rows = S.deck.map((q,i)=>{
+    const sel=S.picks[i]||[], cor=correctSet(q), g=grade(q,sel), W=pts(q), multi=isMulti(q);
+    let kind,label;
+    if(g.full){ kind="ok"; label="正解"; }
+    else if(g.earned>0){ kind="partial"; label="一部正解"; }
+    else { kind="ng"; label="不正解"; }
+    const opts = q.o.map((opt,j)=>{
+      const isCor=cor.indexOf(j)>=0, picked=sel.indexOf(j)>=0;
+      let cls="opt"; let mark="";
+      if(isCor){ cls+=" correct"; mark='<span class="opt-mark">✓</span>'; }
+      else if(picked){ cls+=" wrong"; mark='<span class="opt-mark">✕</span>'; }
+      else cls+=" dim";
+      return `<div class="${cls}"><span class="opt-key${multi?" box":""}">${L[j]}</span><span class="opt-label">${esc(opt)}</span>${mark}</div>`;
+    }).join("");
+    const earnTxt = `獲得 ${Math.round(g.earned*10)/10} / ${W} 点`;
+    return `<div class="review-q">
+      <div class="review-num"><span>第 ${i+1} 問 ・ 重要度 ${q.imp}${multi?" ・ 複数選択":""}</span><span class="rv-tag ${kind}">${label}・${earnTxt}</span></div>
+      <p class="q-text">${esc(q.q)}</p>
+      <div class="opts">${opts}</div>
+      <div class="expl ${kind}"><strong>解説</strong><span>${esc(q.e)}</span></div>
+      <div class="qstat" id="qstat-${q.id}">📊 全体正答率：<span class="qstat-v">—</span></div>
+    </div>`;
+  }).join("");
+  app.innerHTML = `
+    <div class="q-head"><button class="quit" data-go="result">← 結果へ</button><span class="q-count">解答・解説</span></div>
+    ${rows}
+    <button class="ghost" data-go="home">🏠 ホームへ戻る</button>
+  `;
+  app.querySelectorAll("[data-go]").forEach(b=>b.onclick=()=>go(b.dataset.go));
+  loadReviewStats();
+  window.scrollTo(0,0);
+}
+
+// 正答率（%）：correct/attempts×100 を小数第1位（第2位四捨五入）で。データ無しはnull
+function qRate(st){ if(!st || !st.attempts) return null; return Math.round((st.correct/st.attempts)*1000)/10; }
+// 解説画面の各問に全体正答率を非同期で流し込む
+async function loadReviewStats(){
+  if(!window.QStats || !S.cert || !S.deck) return;
+  const qids = S.deck.map(q=>q.id);
+  let map={};
+  try{ map = await window.QStats.getMany(S.cert, qids); }catch(e){ return; }
+  S.deck.forEach(q=>{
+    const box=document.getElementById("qstat-"+q.id); if(!box) return;
+    const v=box.querySelector(".qstat-v");
+    const st=map[q.id], rate=qRate(st);
+    if(rate===null){ v.textContent="データなし（まだ集計がありません）"; }
+    else { v.textContent = rate + "%"; v.title = (st.correct||0)+" / "+(st.attempts||0)+" 回正解"; box.insertAdjacentHTML("beforeend", `<span class="qstat-n">（${st.correct}/${st.attempts}）</span>`); }
+  });
+}
+
+function renderHistory(){
+  const h=loadHist();
+  if(!h.length){
+    app.innerHTML=`<div class="q-head"><button class="quit" data-go="home">🏠 ホーム</button><span class="q-count">履歴</span></div>
+      <div class="empty">まだ記録がありません。<br>問題を解くとここにスコアが残ります。</div>`;
+    app.querySelector("[data-go]").onclick=()=>go("home"); return;
+  }
+  const recent=h.slice(0,12).reverse();
+  const rOf = x => { const mx=x.scoreMax||1000; return mx? Math.min(1, x.score/mx) : 0; };
+  app.innerHTML = `
+    <div class="q-head"><button class="quit" data-go="home">🏠 ホーム</button><span class="q-count">履歴</span></div>
+    <div class="chart">
+      ${recent.map(x=>`<div class="chart-col">
+        <div class="chart-bar-track"><div class="chart-bar ${rOf(x)>=0.7?"pass":"fail"}" style="height:${rOf(x)*100}%"></div></div>
+        <span class="chart-val">${x.score}</span></div>`).join("")}
+      <div class="chart-passline" style="bottom:70%"><span>70%</span></div>
+    </div>
+    <div class="hist-list">
+      ${h.map(x=>`<div class="hist-row">
+        <div class="hist-left"><span class="hist-mode">${x.modeLabel||"ランダム"}</span><span class="hist-date">${fmt(x.date)}</span></div>
+        <div class="hist-right"><span class="hist-score ${rOf(x)>=0.7?"pass":"fail"}">${x.score}<small>/${x.scoreMax||1000}</small></span><span class="hist-correct">${x.correct}/${x.total}</span></div>
+      </div>`).join("")}
+    </div>
+  `;
+  app.querySelectorAll("[data-go]").forEach(b=>b.onclick=()=>go("home"));
+}
+
+
+/* ======================= 用語辞典のデータ ======================= */
+/* 各用語: t=用語, m=説明（定義）, k=重要ポイント */
+const AZ900_CONCEPTS = [
+ {t:"IaaS（サービスとしてのインフラストラクチャ）",k:[{l:"インフラをプロバイダーが提供",s:["インフラ","仮想マシン","ストレージ","ネットワーク"]},{l:"OS以降はユーザーが管理",s:["os","オペレーティング","ユーザーが管理","顧客が管理"]},{l:"最も柔軟・制御範囲が広い",s:["柔軟","制御","コントロール"]}],m:"IaaSは、仮想マシン・ストレージ・ネットワークなどの物理インフラをクラウドが提供し、OSやアプリは利用者が管理するモデル。制御範囲が最も広く柔軟で、既存環境の移行に向く。"},
+ {t:"PaaS（サービスとしてのプラットフォーム）",k:[{l:"開発・実行環境を提供",s:["プラットフォーム","開発環境","実行環境","ミドルウェア"]},{l:"OS等の管理が不要",s:["os","管理不要","管理しない"]},{l:"アプリ開発に集中できる",s:["アプリ開発","開発に集中","開発に専念"]}],m:"PaaSは、OSやミドルウェア・開発基盤までクラウドが管理し、利用者はアプリ開発に専念できるモデル。インフラ管理の手間を省ける。"},
+ {t:"SaaS（サービスとしてのソフトウェア）",k:[{l:"完成済みのアプリを利用",s:["完成","アプリケーション","ソフトウェア"]},{l:"インストール不要",s:["インストール不要","インストールせず","ブラウザ"]},{l:"例：メール等",s:["メール","電子メール","office","メッセージ"]}],m:"SaaSは、メールやOffice等の完成したアプリをインターネット経由で利用するモデル。インストール不要で、利用者の管理範囲は最も小さい。"},
+ {t:"リージョン",k:[{l:"地理的な領域",s:["地理","地域","エリア"]},{l:"1つ以上のデータセンター",s:["データセンター","データーセンター"]}],m:"リージョンは、1つ以上のデータセンターを含む地理的な領域。利用者はリソースを配置するリージョンを選べる。"},
+ {t:"可用性ゾーン",k:[{l:"リージョン内の分離された場所",s:["リージョン内","ゾーン"]},{l:"独立した電源・冷却・ネットワーク",s:["電源","冷却","独立"]},{l:"データセンター障害から保護",s:["障害","保護","回復性","耐障害"]}],m:"可用性ゾーンは、リージョン内で電源・冷却・ネットワークが独立した物理的に分離されたデータセンター。ゾーン障害からアプリを保護でき、対応リージョンには最低3つある。"},
+ {t:"リソースグループ",k:[{l:"リソースの論理コンテナ",s:["論理","コンテナ","まとめ","入れ物","グループ化"]},{l:"まとめて管理・削除",s:["まとめて","一括","削除"]}],m:"リソースグループは、関連するリソースをまとめる論理的な入れ物。ライフサイクルを共有し、まとめて管理・削除・権限付与ができる。"},
+ {t:"サブスクリプション",k:[{l:"課金・請求の単位",s:["課金","請求","支払い"]},{l:"アクセス制御の境界",s:["アクセス","境界","制御"]}],m:"サブスクリプションは、Azureの課金単位であり、アクセス制御やリソースの上限を区切る境界としても機能する。"},
+ {t:"管理グループ",k:[{l:"サブスクリプションの上位階層",s:["サブスクリプション","上位","階層"]},{l:"ポリシーや権限を一括適用",s:["ポリシー","一括","ガバナンス","まとめて"]}],m:"管理グループは複数のサブスクリプションをまとめる上位階層で、ポリシーやアクセス制御を横断的に一括適用できる。"},
+ {t:"共有責任モデル",k:[{l:"プロバイダーと顧客で責任分担",s:["責任","分担","プロバイダー","顧客"]},{l:"モデルにより範囲が変わる",s:["iaas","paas","saas","範囲","変わる"]},{l:"物理層は常にプロバイダー",s:["物理","データセンター"]}],m:"共有責任モデルは、セキュリティ責任をクラウド事業者と顧客で分担する考え方。物理層は常に事業者、IDやデータは顧客寄りで、IaaS/PaaS/SaaSにより分担範囲が変わる。"},
+ {t:"従量課金制（OpEx）",k:[{l:"使った分だけ支払う",s:["使った分","従量","使用量"]},{l:"運用支出（OpEx）",s:["opex","運用支出","運用コスト"]}],m:"従量課金制は、使ったリソースの分だけ継続的に支払うモデル。会計上は運用支出(OpEx)に分類され、初期投資(CapEx)を抑えられる。"},
+ {t:"資本支出（CapEx）",k:[{l:"事前のまとまった設備投資",s:["事前","初期","設備投資","購入"]},{l:"資本支出",s:["capex","資本支出"]}],m:"CapExは、サーバー購入など事前にまとまった資金を投じる設備投資。オンプレミスに典型的で、クラウドはこれをOpExに置き換える。"},
+ {t:"スケーラビリティ",k:[{l:"需要に応じてリソースを増減",s:["需要","増減","増やし","拡張"]},{l:"水平/垂直スケール",s:["水平","垂直","スケールアウト","スケールアップ","台数を増やす","数を増やす","サーバーを増やす","性能を上げる"]}],m:"スケーラビリティは、需要に応じてリソースを増減できる能力。台数を増減する水平スケールと、1台の性能を増減する垂直スケールがある。"},
+ {t:"弾力性（Elasticity）",k:[{l:"需要に応じ自動で増減",s:["自動","需要","増減"]},{l:"無駄なくコスト最適化",s:["無駄","コスト","最適化"]}],m:"弾力性は、需要の変化に応じてリソースを自動的に増減させ、過不足なくコストを最適化する特性。"},
+ {t:"多要素認証（MFA）",k:[{l:"パスワード＋追加要素",s:["パスワード","追加","要素","2つ以上"]},{l:"所持・生体など",s:["所持","スマホ","生体","指紋","アプリ"]}],m:"MFAは、パスワード(知識)に加えてスマホ(所持)や生体など別要素を要求する認証。要素を重ねることで不正アクセスを大幅に防ぐ。"},
+ {t:"条件付きアクセス",k:[{l:"シグナルに基づき判断",s:["シグナル","場所","デバイス","リスク"]},{l:"許可/拒否/MFA要求",s:["許可","拒否","mfa","要求"]}],m:"条件付きアクセスは、ユーザーの場所やデバイス状態などのシグナルを評価し、if-thenのロジックでアクセスの許可・拒否・MFA要求を判断する機能。"},
+ {t:"Microsoft Entra ID",k:[{l:"クラウドのID管理",s:["id","アイデンティティ","認証"]},{l:"サインイン・アクセス管理",s:["サインイン","アクセス管理","ログイン"]}],m:"Microsoft Entra ID(旧Azure AD)は、クラウドベースのID・アクセス管理サービス。サインインや認証、SSOやMFAの基盤となる。"},
+ {t:"ロールベースのアクセス制御（RBAC）",k:[{l:"ロールで権限を割り当て",s:["ロール","役割","権限"]},{l:"スコープを指定",s:["スコープ","範囲","リソースグループ"]},{l:"許可モデル（加算）",s:["許可","加算","合算"]}],m:"Azure RBACは、誰が・どのスコープで・何をできるかをロールで割り当てる仕組み。許可モデルのため複数ロールの権限は加算される。"},
+ {t:"ゼロトラスト",k:[{l:"明示的に検証",s:["明示的","検証","確認"]},{l:"最小限の特権",s:["最小","特権","権限"]},{l:"侵害を想定",s:["侵害","想定","前提"]}],m:"ゼロトラストは「決して信頼せず常に検証する」考え方。明示的に検証し、最小限の特権を与え、侵害を前提に被害範囲を限定する。"},
+ {t:"多層防御（Defense in Depth）",k:[{l:"複数の層で防御",s:["複数","層","レイヤー"]},{l:"単一の防御に依存しない",s:["単一","依存","一つ"]}],m:"多層防御は、物理・ネットワーク・アプリ・データなど複数の層に防御を重ね、一つの層が破られても全体は守られるようにする戦略。"},
+ {t:"リソースロック",k:[{l:"誤削除・誤変更を防止",s:["削除","変更","防止","誤って"]},{l:"RBACに関係なく適用",s:["rbac","権限に関係","関係なく"]}],m:"リソースロックは、重要なリソースの誤削除や誤変更を防ぐ機能。読み取り専用や削除禁止を設定でき、RBACの権限に関わらず作用する。"},
+ {t:"Azure Policy",k:[{l:"ルールを適用・監査",s:["ルール","適用","監査","強制"]},{l:"コンプライアンス準拠",s:["コンプライアンス","準拠","標準"]}],m:"Azure Policyは、タグ必須化やリージョン制限などの組織ルールを適用・監査し、コンプライアンス準拠を強制する。非準拠リソースの自動修復も可能。"},
+ {t:"タグ",k:[{l:"名前と値のペア",s:["名前と値","ペア","メタデータ"]},{l:"請求・運用の整理",s:["請求","整理","運用","分類"]}],m:"タグは、リソースに付与する名前と値のペア(メタデータ)。請求の整理や運用管理に使う。既定では継承されない点に注意。"},
+ {t:"Azure Key Vault",k:[{l:"シークレット・キー・証明書",s:["シークレット","キー","証明書","パスワード"]},{l:"安全に一元管理",s:["一元","集中","安全に保管","ハードコー"]}],m:"Azure Key Vaultは、パスワードや暗号化キー、証明書を安全に一元管理するサービス。コードへのハードコーディングを避けられる。"},
+ {t:"Microsoft Defender for Cloud",k:[{l:"セキュリティ態勢の評価(CSPM)",s:["態勢","cspm","評価","スコア"]},{l:"脅威からの保護",s:["脅威","保護","防御"]}],m:"Defender for Cloudは、クラウドやマルチクラウドのセキュリティ態勢を継続評価(CSPM)し、セキュリティスコアと推奨、脅威保護を提供する。"},
+ {t:"Azure Monitor",k:[{l:"ログ・メトリックを収集",s:["ログ","メトリック","収集"]},{l:"分析・アラート",s:["分析","アラート","可視化","監視"]}],m:"Azure Monitorは、各層からログとメトリックを収集し、分析・可視化・アラートを一元的に行う監視プラットフォーム。"},
+ {t:"Azure Advisor",k:[{l:"ベストプラクティスを推奨",s:["ベストプラクティス","推奨","おすすめ","提案"]},{l:"5つのカテゴリ",s:["コスト","セキュリティ","信頼性","パフォーマンス"]}],m:"Azure Advisorは、信頼性・セキュリティ・パフォーマンス・コスト・オペレーショナルエクセレンスの観点で、個別の改善推奨を提示する。"},
+ {t:"Azure Service Health",k:[{l:"障害・正常性の情報",s:["障害","正常性","稼働","ヘルス"]},{l:"3つのビュー",s:["3つ","ビュー","resource health","service health"]}],m:"Service Healthは、Azureの障害やメンテ情報を提供する。Azure Status・Service Health・Resource Healthの3つのビューがある。"},
+ {t:"Azure Blob Storage",k:[{l:"非構造化データ向け",s:["非構造化","アンストラクチャ","構造化されていない","整理されていない","形式が決まっていない","ばらばら","雑多"]},{l:"オブジェクトストレージ",s:["オブジェクト","ストレージ","保存する場所","入れ物"]},{l:"例：画像・動画",s:["画像","動画","ファイル","ログ"]}],m:"Blob Storageは、画像・動画・ログなどの非構造化データを大量に保存するオブジェクトストレージ。アクセス層でコストを最適化できる。"},
+ {t:"ストレージ冗長性（LRS/ZRS/GRS/GZRS）",k:[{l:"複製でデータを保護",s:["複製","レプリ","冗長","コピー"]},{l:"ローカル/ゾーン/geo",s:["lrs","zrs","grs","ゾーン","geo","リージョン"]}],m:"ストレージ冗長性は、データを複製して保護する仕組み。LRSは同一施設内、ZRSは複数ゾーン、GRS/GZRSは別リージョンへ複製し地域災害に備える。"},
+ {t:"リージョンペア",k:[{l:"少なくとも300マイル離れる",s:["300","マイル","離れ"]},{l:"地域災害への備え",s:["災害","リージョン","ペア","バックアップ"]}],m:"リージョンペアは、同一地域内で少なくとも300マイル離れたリージョン同士の組み合わせ。地域規模の災害に備えた冗長構成に使う。"},
+ {t:"Azure ExpressRoute",k:[{l:"専用のプライベート接続",s:["専用","プライベート","専用線"]},{l:"インターネットを経由しない",s:["インターネット","経由しない","バイパス"]}],m:"ExpressRouteは、専用線を介してオンプレミスとAzureをパブリックインターネットを経由せず接続するサービス。高速で安定したプライベート接続を実現する。"},
+ {t:"VPN ゲートウェイ",k:[{l:"暗号化トンネルで接続",s:["暗号化","トンネル","ipsec"]},{l:"サイト間/ポイント対サイト",s:["サイト間","ポイント対サイト","拠点"]}],m:"VPNゲートウェイは、インターネット上に暗号化トンネルを張ってオンプレミスとAzureを接続する。拠点全体のサイト間や、個別端末のポイント対サイトがある。"},
+ {t:"ARM テンプレート",k:[{l:"JSON形式",s:["json"]},{l:"宣言的にデプロイ（IaC）",s:["宣言","iac","コードとして","インフラ"]}],m:"ARMテンプレートは、AzureリソースをJSONで宣言的に定義してデプロイする、コードとしてのインフラ(IaC)の仕組み。デプロイ前に検証される。"},
+ {t:"Bicep",k:[{l:"ARMより簡潔な構文",s:["簡潔","シンプル","arm"]},{l:"宣言的IaC",s:["宣言","iac","コードとして"]}],m:"Bicepは、ARMテンプレート(JSON)より簡潔な構文でAzureリソースを宣言的にデプロイできるMicrosoft独自の言語。最終的にARMに変換される。"},
+ {t:"予約（Reservations）",k:[{l:"1年/3年コミット",s:["1年","3年","コミット","契約"]},{l:"大幅な割引",s:["割引","安く","削減"]}],m:"予約は、特定のリソースを1年または3年使うとコミットすることで、従量課金より大幅な割引を受けられるコスト最適化オプション。"},
+ {t:"スポット仮想マシン（Spot VM）",k:[{l:"未使用容量を割引利用",s:["未使用","余剰","割引","安い"]},{l:"中断される可能性",s:["中断","削除","退避"]}],m:"スポットVMは、Azureの未使用容量を大幅割引で使える代わりに、容量が必要になると中断され得るVM。中断可能なバッチ処理などに向く。"},
+ {t:"Azure 節約プラン",k:[{l:"1時間あたりの支出をコミット",s:["1時間","時間あたり","支出","コミット"]},{l:"VMファミリに縛られず柔軟",s:["柔軟","縛られず","ファミリ"]}],m:"コンピューティングのAzure節約プランは、1時間あたりの支出額を1年/3年コミットすることで、特定のVMに縛られず柔軟に割引を適用するモデル。"},
+ {t:"Azure 料金計算ツール",k:[{l:"デプロイ前の見積もり",s:["見積","事前","プロビジョニング前","前に"]},{l:"月額コストを試算",s:["月額","コスト","価格","料金"]}],m:"Azure料金計算ツールは、リソースをデプロイする前に、リージョンや構成に応じた月額コストを見積もるためのツール。"},
+ {t:"Microsoft Cost Management",k:[{l:"支出の分析・監視",s:["分析","監視","支出","コスト"]},{l:"予算の設定",s:["予算","バジェット","アラート"]}],m:"Cost Managementは、実際に発生したクラウド支出を分析・監視し、予算を設定してアラートを出すための統合ツール。"},
+ {t:"Azure Arc",k:[{l:"オンプレ/他社クラウドを統合管理",s:["オンプレ","aws","gcp","他社","マルチクラウド"]},{l:"Azureに投影して一元管理",s:["投影","一元","azureで管理","コントロールプレーン"]}],m:"Azure Arcは、オンプレミスや他社クラウドのサーバー・KubernetesをAzureのコントロールプレーンに投影し、Azure上で一元管理できるようにするサービス。"},
+ {t:"可用性セット",k:[{l:"更新ドメインと障害ドメイン",s:["更新ドメイン","障害ドメイン","ドメイン"]},{l:"VMのダウンタイムを最小化",s:["ダウンタイム","可用性","再起動","最小"]}],m:"可用性セットは、VMを更新ドメインと障害ドメインに分散配置し、計画メンテや物理障害によるダウンタイムを最小化する仕組み。"},
+ {t:"仮想マシン スケール セット",k:[{l:"同一構成のVM群",s:["同一","同じ構成","グループ","複数"]},{l:"自動でスケール",s:["自動","スケール","負荷分散","増減"]}],m:"仮想マシンスケールセットは、同一構成のVM群を作って負荷分散し、需要に応じて自動でスケールアウト/インできるサービス。"},
+ {t:"SLA（サービスレベルアグリーメント）",k:[{l:"稼働率などの保証",s:["稼働","保証","可用性","99"]},{l:"事業者と利用者の合意",s:["合意","契約","アグリーメント"]}],m:"SLAは、サービスの稼働率などの品質を事業者が保証する合意。構成によって保証値が変わり、満たされない場合はクレジット返還などの対象になる。"},
+ {t:"Azure App Service",k:[{l:"WebアプリやAPIをホスト",s:["web","api","アプリ","ホスト"]},{l:"インフラ管理不要・自動スケール",s:["インフラ管理","マネージド","自動スケール","高可用性"]}],m:"Azure App Serviceは、インフラ管理不要でWebアプリやREST APIをホストできるフルマネージドサービス。自動スケールと高可用性を備える。"},
+ {t:"Azure Functions",k:[{l:"サーバーレス",s:["サーバーレス","serverless"]},{l:"イベントで関数を実行",s:["イベント","トリガー","関数","コード実行"]}],m:"Azure Functionsは、インフラを意識せずイベントをトリガーにコードを実行できるサーバーレスサービス。使った分だけ課金される。"},
+];
+
+let dictSort = "theme"; // theme | aiueo
+
+function renderDict(){
+  const items = CONCEPTS.map((c,i)=>({c,i}));
+  if(dictSort==="aiueo") items.sort((a,b)=>a.c.t.localeCompare(b.c.t,"ja"));
+  app.innerHTML = `
+    <div class="q-head"><button class="quit" data-go="home">🏠 ホーム</button><span class="q-count">用語辞典</span></div>
+    <input id="dict-search" class="dict-search" placeholder="用語を検索（例：RBAC、冗長、ゼロトラスト）" autocomplete="off">
+    <div class="dict-bar">
+      <span id="dict-count">${CONCEPTS.length} 語</span>
+      <button id="dict-sort" class="dict-sortbtn">${dictSort==="theme"?"並び：テーマ順":"並び：あいうえお順"}</button>
+    </div>
+    <div id="dict-list">
+      ${items.map(({c})=>`
+        <div class="dict-card" data-text="${esc((c.t+' '+c.m+' '+c.k.map(k=>k.l).join(' ')).toLowerCase())}">
+          <div class="dict-term">${esc(c.t)}</div>
+          <div class="dict-def">${esc(c.m)}</div>
+          ${c.k.length?`<div class="dict-points">${c.k.map(k=>`<span class="dict-pt">${esc(k.l)}</span>`).join("")}</div>`:""}
+        </div>`).join("")}
+    </div>
+  `;
+  app.querySelectorAll("[data-go]").forEach(b=>b.onclick=()=>go(b.dataset.go));
+  const sb=document.getElementById("dict-search");
+  const list=document.getElementById("dict-list");
+  const cnt=document.getElementById("dict-count");
+  if(sb) sb.oninput=()=>{
+    const q=sb.value.trim().toLowerCase(); let n=0;
+    list.querySelectorAll(".dict-card").forEach(card=>{
+      const show=!q || card.dataset.text.indexOf(q)>=0;
+      card.style.display=show?"":"none"; if(show)n++;
+    });
+    cnt.textContent = q ? (n+" 語 ヒット") : (CONCEPTS.length+" 語");
+  };
+  const srt=document.getElementById("dict-sort");
+  if(srt) srt.onclick=()=>{ dictSort = dictSort==="theme"?"aiueo":"theme"; render(); };
+  window.scrollTo(0,0);
+}
+
+/* ======================= データセンター育成 ======================= */
+function getBP(){ const v=parseInt(localStorage.getItem(ckey("bp"))||"0",10); return isNaN(v)?0:v; }
+function setBP(v){ try{ localStorage.setItem(ckey("bp"), String(v)); }catch(e){} }
+let dcConfirm=false;
+function askResetBP(){ dcConfirm=true; render(); }
+function cancelResetBP(){ dcConfirm=false; render(); }
+function doResetBP(){
+  dcConfirm=false;
+  setBP(0);
+  saveToCloud(0, loadWrong(), loadHist());   // クラウドにも反映
+  render();
+}
+
+const AZ900_TIERS = [
+ {bp:0,     icon:"📦", name:"リソースグループ", desc:"インフラの土台"},
+ {bp:450,   icon:"🔗", name:"仮想ネットワーク", desc:"VNetを構成"},
+ {bp:1100,  icon:"🖥️", name:"仮想マシン",       desc:"最初のVMが起動"},
+ {bp:2100,  icon:"🗄️", name:"ストレージ",       desc:"Blobでデータ保存"},
+ {bp:3400,  icon:"⚖️", name:"ロードバランサー", desc:"負荷を分散"},
+ {bp:5100,  icon:"🛢️", name:"SQL Database",     desc:"マネージドDB"},
+ {bp:7400,  icon:"🏢", name:"可用性ゾーン",     desc:"3ゾーンで高可用性"},
+ {bp:10100, icon:"🐳", name:"コンテナ (AKS)",   desc:"Kubernetes"},
+ {bp:13500, icon:"🔐", name:"Key Vault",        desc:"鍵を保護"},
+ {bp:17600, icon:"📊", name:"Azure Monitor",    desc:"監視とアラート"},
+ {bp:22500, icon:"🌍", name:"geo冗長",          desc:"ペアリージョンへ複製"},
+ {bp:28500, icon:"🚀", name:"グローバルCDN",    desc:"世界へ高速配信"},
+];
+function dcCount(bp){ return TIERS.filter(t=>bp>=t.bp).length; }
+function dcTitle(n){
+  if(n>=TIERS.length) return "グローバル インフラ完成 🎉";
+  if(n>=10) return "マルチリージョン運用";
+  if(n>=7)  return "高可用性アーキテクチャ";
+  if(n>=4)  return "サービス拡張フェーズ";
+  if(n>=2)  return "インフラ構築フェーズ";
+  return "リージョン開設";
+}
+
+/* ---- データセンターの「時代（フェーズ）」とビジュアル進化 ----
+   資格レベル(n=稼働リソース数)で背景の世界観が変わる。
+   グローバル期になると背景が世界地図になり、各拠点が点灯する。 */
+const DC_PHASES = [
+  { min:0,  band:"b1", name:"ガレージ期",     note:"プレハブにラックを設置" },
+  { min:4,  band:"b2", name:"オンプレ脱却期", note:"空調と配線の整った建物へ" },
+  { min:7,  band:"b3", name:"リージョン期",   note:"複数棟のキャンパスに拡張" },
+  { min:10, band:"b4", name:"グローバル期",   note:"世界中に拠点が点灯", worldmap:true },
+];
+function dcPhase(n){ return DC_PHASES.filter(p=>n>=p.min).pop() || DC_PHASES[0]; }
+
+/* Azureリージョン（座標は地図SVG viewBox 320×130 上の位置）。lv=点灯に必要なレベル */
+const REGIONS = [
+  { name:"東京",        x:270, y:52, lv:10 },
+  { name:"シンガポール", x:248, y:80, lv:10 },
+  { name:"バージニア",   x:78,  y:50, lv:11 },
+  { name:"西ヨーロッパ", x:160, y:40, lv:11 },
+  { name:"カリフォルニア", x:38, y:52, lv:12 },
+  { name:"シドニー",     x:292, y:106, lv:12 },
+  { name:"ブラジル",     x:96,  y:90, lv:12 },
+];
+function worldMapSVG(n){
+  const dots = REGIONS.map(r=>{
+    const on = n>=r.lv;
+    return `<g class="rg ${on?'on':'off'}">
+      ${on?`<circle class="rg-glow" cx="${r.x}" cy="${r.y}" r="7"/>`:''}
+      <circle class="rg-dot" cx="${r.x}" cy="${r.y}" r="${on?3:2}"/>
+      ${on?`<text class="rg-nm" x="${r.x}" y="${r.y-8}">${esc(r.name)}</text>`:''}
+    </g>`;
+  }).join("");
+  const grat = [26,52,78,104].map(y=>`<line x1="0" y1="${y}" x2="320" y2="${y}"/>`).join("")
+             + [64,128,192,256].map(x=>`<line x1="${x}" y1="0" x2="${x}" y2="130"/>`).join("");
+  return `<svg class="scene-map" viewBox="0 0 320 130" preserveAspectRatio="xMidYMid slice">
+    <g class="grat">${grat}</g>
+    <g class="land">
+      <path d="M30,30 L70,26 L88,46 L80,72 L96,96 L86,116 L66,112 L58,84 L40,66 L34,46 Z"/>
+      <path d="M150,26 L182,30 L188,52 L172,74 L176,96 L160,104 L150,82 L156,58 L146,42 Z"/>
+      <path d="M205,28 L280,24 L300,44 L282,58 L250,62 L232,52 L210,50 Z"/>
+      <path d="M276,96 L302,98 L300,114 L280,112 Z"/>
+    </g>
+    ${dots}
+  </svg>`;
+}
+
+function homeScene(){
+  const bp=getBP(), n=dcCount(bp), ph=dcPhase(n);
+  const band=ph.band;
+  const starN = band==="b4"?16:(band==="b3"?9:0);
+  let stars="";
+  for(let i=0;i<starN;i++){ stars+=`<span class="scene-star" style="left:${(i*37%92)+3}%;top:${(i*29%48)+6}%;animation-delay:${(i%5)*0.4}s"></span>`; }
+  let body;
+  if(ph.worldmap){
+    body = worldMapSVG(n);
+  } else {
+    const ons=TIERS.filter(t=>bp>=t.bp);
+    const sizes=[26,31,24,33,28,35,25,30,23,34,27,32];
+    const builds = ons.map((t,i)=>`<span class="scene-b" style="font-size:${sizes[i%sizes.length]}px">${t.icon}</span>`).join("");
+    const next=TIERS.find(t=>t.bp>bp);
+    const tail = next?`<span class="scene-ghost">🏗️</span>`:"";
+    body = `<div class="scene-ground">${builds}${tail}</div>`;
+  }
+  return `<div class="home-scene ${band}">
+    ${stars}
+    <div class="scene-info"><span class="scene-lvl">Lv.${n} ${esc(ph.name)}</span><span class="scene-bp">${bp.toLocaleString()} BP</span></div>
+    ${body}
+  </div>`;
+}
+
+function renderDC(){
+  const bp=getBP(), n=dcCount(bp), next=TIERS.find(t=>t.bp>bp), ph=dcPhase(n);
+  let prog, nextTxt;
+  if(next){
+    const prevBp = n>0 ? TIERS[n-1].bp : 0;
+    prog = Math.round((bp-prevBp)/(next.bp-prevBp)*100);
+    nextTxt = `次の「${next.icon} ${next.name}」まであと ${(next.bp-bp).toLocaleString()} BP`;
+  } else { prog=100; nextTxt="すべてのリソースが稼働中！"; }
+  const nextPhase = DC_PHASES.find(p=>p.min>n);
+  const phaseTxt = nextPhase ? `次は Lv.${nextPhase.min}「${nextPhase.name}」へ` : "最終フェーズに到達！";
+  app.innerHTML = `
+    <div class="q-head"><button class="quit" data-go="home">🏠 ホーム</button><span class="q-count">データセンター</span></div>
+    <div class="dc-hero">
+      <div class="dc-lvl">レベル ${n} / ${TIERS.length}</div>
+      <div class="dc-title">${dcTitle(n)}</div>
+      <div class="dc-phase"><span class="dc-phase-tag">${esc(ph.name)}</span>${esc(ph.note)}</div>
+      <div class="dc-bp">累計 ${bp.toLocaleString()} BP ・ 稼働リソース ${n}種</div>
+      <div class="dc-prog"><div class="dc-prog-f" style="width:${prog}%"></div></div>
+      <div class="dc-next">${nextTxt}</div>
+    </div>
+    ${ph.worldmap?`<div class="home-scene b4" style="height:150px;margin-bottom:16px">${worldMapSVG(n)}<div class="scene-info"><span class="scene-lvl">🌍 グローバル拠点 ${REGIONS.filter(r=>n>=r.lv).length}/${REGIONS.length}</span></div></div>`
+      :`<div class="dc-phasebar"><span>🏗️ ${esc(ph.name)}</span><span>${esc(phaseTxt)}</span></div>`}
+    <div class="dc-sub">あなたのデータセンター</div>
+    <div class="dc-grid">
+      ${TIERS.map(t=>{
+        const on=bp>=t.bp, isNext=next&&t.name===next.name;
+        return `<div class="dc-tile ${on?"on":(isNext?"next lock":"lock")}">
+          ${on?'<span class="dc-on-badge">稼働中</span>':""}
+          <div class="dc-ic">${on?t.icon:"🔒"}</div>
+          <div class="dc-nm">${esc(t.name)}</div>
+          <div class="dc-rq">${on?esc(t.desc):t.bp.toLocaleString()+" BP"}</div>
+        </div>`;
+      }).join("")}
+    </div>
+    <div class="x-hint" style="margin-top:16px">クイズで稼いだスコアがそのままBPになり、データセンターが発展します。</div>
+    <button class="cta" data-go="home" style="margin-top:14px">クイズで増築する</button>
+    ${dcConfirm?`
+      <div style="margin-top:18px;border:1px solid var(--bad);border-radius:13px;padding:16px;background:rgba(248,114,114,.08)">
+        <div style="font-size:14px;line-height:1.7;color:var(--text);margin-bottom:12px">本当にBP（ビルドポイント）をリセットしますか？<br>データセンターがLv0に戻ります。この操作は元に戻せません。</div>
+        <button class="cta" data-do-reset style="margin-top:0;background:linear-gradient(90deg,var(--bad),#ff9b9b);color:#3a0d0d">はい、リセットする</button>
+        <button class="ghost" data-cancel-reset>キャンセル</button>
+      </div>`:`
+      <button class="ghost danger" data-reset-bp>BPをリセットする</button>`}
+  `;
+  app.querySelectorAll("[data-go]").forEach(b=>b.onclick=()=>go(b.dataset.go));
+  const rb=app.querySelector("[data-reset-bp]"); if(rb)rb.onclick=askResetBP;
+  const dr=app.querySelector("[data-do-reset]"); if(dr)dr.onclick=doResetBP;
+  const cr=app.querySelector("[data-cancel-reset]"); if(cr)cr.onclick=cancelResetBP;
+  window.scrollTo(0,0);
+}
+
+/* ======================= データ引き継ぎ（保存・復元） ======================= */
+function b64e(str){ return btoa(unescape(encodeURIComponent(str))); }
+function b64d(b64){ return decodeURIComponent(escape(atob(b64))); }
+function hash36(s){ let h=5381; for(let i=0;i<s.length;i++){ h=((h*33)^s.charCodeAt(i))>>>0; } return h.toString(36); }
+
+function exportCode(){
+  const payload={v:1, bp:getBP(), wrong:loadWrong(), hist:loadHist()};
+  const base=JSON.stringify(payload);
+  payload.sig=hash36(base);
+  return "AZ9-"+b64e(JSON.stringify(payload));
+}
+function importCode(code){
+  code=(code||"").trim().replace(/\s/g,"");
+  if(code.indexOf("AZ9-")===0) code=code.slice(4);
+  if(!code) throw new Error("コードが空です");
+  let obj;
+  try{ obj=JSON.parse(b64d(code)); }catch(e){ throw new Error("コードを読み取れませんでした"); }
+  if(!obj || obj.v!==1) throw new Error("対応していないコード形式です");
+  const sig=obj.sig; delete obj.sig;
+  if(hash36(JSON.stringify(obj))!==sig) throw new Error("コードが壊れているか、入力ミスがあります");
+  if(typeof obj.bp==="number" && obj.bp>=0) setBP(obj.bp);
+  if(Array.isArray(obj.wrong)) saveWrong(obj.wrong);
+  if(Array.isArray(obj.hist)) saveHist(obj.hist);
+  return obj;
+}
+
+function renderTransfer(){
+  const code=exportCode();
+  const h=loadHist();
+  app.innerHTML = `
+    <div class="q-head"><button class="quit" data-go="home">🏠 ホーム</button><span class="q-count">データ引き継ぎ</span></div>
+    <p class="x-hint" style="margin-top:0;margin-bottom:14px">スコア履歴・ビルドポイント・復習リストを1本のコードにまとめて保存／復元できます。アカウント登録は不要です。</p>
+
+    <div class="x-sub" style="margin-top:0">① 引き継ぎコードを書き出す</div>
+    <p class="x-hint" style="margin-top:0;margin-bottom:8px">下のコードをメモ帳などにコピーして保管してください（履歴 ${h.length}件・${getBP().toLocaleString()} BP）。</p>
+    <textarea id="tf-out" class="x-area" readonly style="min-height:96px;font-size:12px">${esc(code)}</textarea>
+    <button class="cta" id="tf-copy" style="margin-top:10px">コードをコピー</button>
+
+    <div class="dc-sub">② コードから復元する</div>
+    <p class="x-hint" style="margin-top:0;margin-bottom:8px">控えておいたコードを貼り付けて復元します。<b style="color:var(--gold)">この端末の現在のデータは上書き</b>されます。</p>
+    <textarea id="tf-in" class="x-area" placeholder="AZ9-... を貼り付け" style="min-height:96px;font-size:12px"></textarea>
+    <button class="ghost" id="tf-load" style="margin-top:10px">このコードで復元する</button>
+    <div id="tf-msg" class="x-hint" style="margin-top:12px"></div>
+  `;
+  app.querySelectorAll("[data-go]").forEach(b=>b.onclick=()=>go(b.dataset.go));
+  const msg=document.getElementById("tf-msg");
+  const setMsg=(t,c)=>{ msg.innerHTML=t; msg.style.color=c||"var(--muted)"; };
+
+  document.getElementById("tf-copy").onclick=()=>{
+    const ta=document.getElementById("tf-out");
+    ta.focus(); ta.select(); ta.setSelectionRange(0,99999);
+    let ok=false;
+    try{ ok=document.execCommand("copy"); }catch(e){}
+    if(navigator.clipboard){ navigator.clipboard.writeText(ta.value).then(()=>{},()=>{}); ok=true; }
+    setMsg(ok?"✓ コピーしました。メモ帳やメールに貼り付けて保管してください。":"自動コピーできませんでした。コードを長押しで選択してコピーしてください。", ok?"var(--good)":"var(--gold)");
+  };
+
+  document.getElementById("tf-load").onclick=()=>{
+    const v=document.getElementById("tf-in").value;
+    if(!v.trim()){ setMsg("コードを貼り付けてください。","var(--gold)"); return; }
+    if(!confirm("この端末の現在のデータ（履歴・BP・復習リスト）を、入力したコードの内容で上書きします。よろしいですか？")) return;
+    try{
+      const obj=importCode(v);
+      setMsg("✓ 復元しました（履歴 "+( (obj.hist||[]).length )+"件・"+(obj.bp||0).toLocaleString()+" BP）。ホームに戻ります。","var(--good)");
+      setTimeout(()=>go("home"), 900);
+    }catch(e){
+      setMsg("⚠ "+esc(String(e.message||e))+"。コードをもう一度確認してください。","var(--bad)");
+    }
+  };
+  window.scrollTo(0,0);
+}
+
+/* ======================= 複数資格対応 ======================= */
+/* 資格レジストリ。資格を増やすときはここに1要素足すだけ。
+   status:"ready" … 学習可能 / "coming" … 近日公開（ロック表示）          */
+/* ======================= SC-300 のデータ ======================= */
+/* SC-300: Microsoft Identity and Access Administrator（IDとアクセスの管理）*/
+const SC300_Q = [
+ {id:1,imp:2,q:"Microsoft Entra ID（旧 Azure AD）が主に提供する機能はどれですか？",o:["仮想マシンのホスティング","クラウドベースのIDおよびアクセス管理（IAM）","リレーショナルデータベースの実行","オンプレミスのファイル共有"],a:1,e:"Entra IDは、ユーザーの認証・認可を担うクラウドベースのIDおよびアクセス管理サービスです。"},
+ {id:2,imp:2,q:"「Azure Active Directory（Azure AD）」の現在の名称はどれですか？",o:["Microsoft Entra ID","Microsoft Defender","Microsoft Purview","Microsoft Intune"],a:0,e:"Azure ADは Microsoft Entra ID に名称変更されました。機能はIDとアクセスの管理です。"},
+ {id:3,imp:3,q:"多要素認証（MFA）における「所持情報（持っているもの）」の要素に該当するのはどれですか？",o:["パスワード","セキュリティの質問の答え","Microsoft Authenticator アプリの通知承認","ユーザー名"],a:2,e:"MFAは『知識・所持・生体』の要素を組み合わせます。Authenticatorアプリ（スマホ）は所持情報に当たります。"},
+ {id:4,imp:4,c:[0,2],q:"条件付きアクセス（Conditional Access）ポリシーの『割り当て（条件・シグナル）』として使えるものを2つ選択してください。",o:["ユーザーとグループ","仮想マシンのサイズ","場所（IPアドレス／国）","ストレージのアクセス層"],e:"条件付きアクセスはユーザー／グループ、場所、デバイス、アプリ、リスクなどのシグナルを条件に使えます。VMサイズやストレージ層は無関係です。"},
+ {id:5,imp:4,q:"条件付きアクセスの説明として最も適切なものはどれですか？",o:["すべてのユーザーのパスワードを一括変更する機能","サインインのシグナルを評価し、アクセスの許可・ブロック・追加制御を行う機能","オンプレミスADを廃止する機能","ストレージを暗号化する機能"],a:1,e:"条件付きアクセスは『If（条件）→Then（制御）』で、サインインのコンテキストに応じてMFA要求やブロックなどを行います。"},
+ {id:6,imp:3,q:"セルフサービスパスワードリセット（SSPR）の主な利点はどれですか？",o:["管理者だけがパスワードを変更できる","ユーザー自身が安全にパスワードを再設定でき、ヘルプデスク負荷を減らせる","パスワードを不要にする","すべてのアプリのSSOを実現する"],a:1,e:"SSPRは、本人確認の上でユーザー自身がパスワードを再設定できる仕組みで、管理コストを下げます。"},
+ {id:7,imp:4,q:"Privileged Identity Management（PIM）の『対象（eligible）』割り当ての利点はどれですか？",o:["常に管理者権限が有効になる","必要なときだけジャストインタイムで権限をアクティブ化できる","パスワードが不要になる","ゲストを自動招待できる"],a:1,e:"PIMの対象割り当ては、普段は権限を持たず、必要時に承認やMFAを経て一時的に昇格（アクティブ化）する『最小権限』の考え方です。"},
+ {id:8,imp:3,q:"次のうち『パスワードレス認証』の方法はどれですか？",o:["SMSによるワンタイムコード","FIDO2 セキュリティキー","セキュリティの質問","共有パスワード"],a:1,e:"FIDO2セキュリティキー、Windows Hello for Business、Microsoft Authenticator（パスワードレス）などがパスワードレス認証です。"},
+ {id:9,imp:4,q:"Microsoft Entra ID Protection が主に検出するものはどれですか？",o:["ストレージの空き容量","リスクのあるサインインやユーザー（漏洩した資格情報・あり得ない移動など）","仮想マシンのCPU使用率","請求金額の超過"],a:1,e:"Identity Protectionは、サインインリスクとユーザーリスクを検出し、リスクベースの条件付きアクセスと連携できます。"},
+ {id:10,imp:3,q:"B2B コラボレーション（ゲストユーザー）の用途として正しいものはどれですか？",o:["社内ユーザーのパスワードを再設定する","外部組織のユーザーを招待し、自社リソースを共有する","オンプレADを同期する","アプリのソースコードを管理する"],a:1,e:"B2Bは、外部ユーザーをゲストとして招待し、相手の資格情報を使って自社リソースへ安全にアクセスさせる仕組みです。"},
+ {id:11,imp:4,c:[0,1],q:"ハイブリッドID（Microsoft Entra Connect）でオンプレミスのIDをクラウドで認証させる方式を2つ選択してください。",o:["パスワードハッシュ同期（PHS）","パススルー認証（PTA）","仮想ネットワークピアリング","ExpressRoute"],e:"ハイブリッドIDの認証方式はPHS・PTA・フェデレーション（AD FS）です。ピアリングやExpressRouteはネットワーク接続であり認証方式ではありません。"},
+ {id:12,imp:2,q:"PIM や Identity Protection を利用するために必要な Microsoft Entra ID のエディションはどれですか？",o:["Free","Office 365 アプリ","Microsoft Entra ID P1","Microsoft Entra ID P2"],a:3,e:"PIMとIdentity ProtectionはMicrosoft Entra ID P2に含まれます。条件付きアクセスはP1から利用できます。"},
+ {id:13,imp:3,q:"アクセスレビュー（Access Reviews）の目的として正しいものはどれですか？",o:["新しいユーザーを作成する","付与済みのアクセス権を定期的に見直し、不要な権限を除去する","パスワードポリシーを設定する","アプリを公開する"],a:1,e:"アクセスレビューは、グループ・アプリ・ロールへのアクセスが今も必要かを定期的に確認・是正し、過剰な権限を防ぎます。"},
+ {id:14,imp:4,q:"エンタイトルメント管理の『アクセスパッケージ』の説明として正しいものはどれですか？",o:["1つのアプリのみを割り当てる","複数のリソースへのアクセスをまとめて申請・承認・期限管理できる","パスワードを保管する","ネットワークを暗号化する"],a:1,e:"アクセスパッケージは、グループ・アプリ・SharePointなど複数リソースへのアクセスを束ね、申請・承認・自動失効まで管理します。"},
+ {id:15,imp:3,c:[0,1],q:"エンタープライズアプリケーションのシングルサインオン（SSO）で使われるプロトコルを2つ選択してください。",o:["SAML","OpenID Connect (OIDC)","SMTP","RDP"],e:"クラウドアプリのSSOには主にSAMLとOpenID Connect（OAuth 2.0ベース）が使われます。SMTPはメール、RDPはリモートデスクトップ用です。"},
+ {id:16,imp:3,q:"動的メンバーシップ グループ（Dynamic Group）の特徴はどれですか？",o:["メンバーを手動でのみ追加する","ユーザー属性（部署・国など）のルールに基づき自動でメンバーを管理する","ゲストを招待できない","パスワードを共有する"],a:1,e:"動的グループは、属性ルールに一致するユーザー／デバイスを自動的にメンバーへ追加・削除します。"},
+];
+
+const SC300_CONCEPTS = [
+ {t:"Microsoft Entra ID（旧 Azure AD）",k:[{l:"クラウドのID基盤",s:["id","認証","ディレクトリ","entra","azure ad"]},{l:"認証と認可を提供",s:["認証","認可","サインイン","アクセス"]}],m:"Microsoft Entra ID（旧Azure AD）は、ユーザーやアプリの認証・認可を担うクラウドベースのID／アクセス管理サービス。SSOやMFA、条件付きアクセスの基盤になる。"},
+ {t:"条件付きアクセス（Conditional Access）",k:[{l:"シグナルに基づく制御",s:["シグナル","条件","場所","デバイス","リスク"]},{l:"許可・ブロック・MFA要求",s:["許可","ブロック","mfa","制御"]}],m:"条件付きアクセスは、ユーザー・場所・デバイス・リスクなどのシグナルを評価し、アクセスの許可／ブロックやMFA要求などの制御を自動で適用する仕組み（If→Then）。"},
+ {t:"多要素認証（MFA）",k:[{l:"複数の要素で本人確認",s:["要素","知識","所持","生体","二段階"]},{l:"パスワード漏洩に強い",s:["漏洩","セキュリティ","保護"]}],m:"MFAは『知識（パスワード）・所持（スマホ等）・生体（指紋等）』のうち複数を組み合わせて本人確認を強化する認証方式。"},
+ {t:"PIM（特権ID管理）",k:[{l:"ジャストインタイム昇格",s:["特権","ジャストインタイム","昇格","アクティブ化","eligible","対象"]},{l:"最小権限の実現",s:["最小権限","承認","期限"]}],m:"Privileged Identity Management（PIM）は、特権ロールを普段は無効にし、必要時のみ承認やMFAを経て一時的に有効化する（最小権限・ジャストインタイム）仕組み。Entra ID P2が必要。"},
+ {t:"Microsoft Entra ID Protection",k:[{l:"リスク検出",s:["リスク","サインインリスク","ユーザーリスク","漏洩"]},{l:"リスクベースの自動対応",s:["自動","ポリシー","ブロック","mfa"]}],m:"Identity Protectionは、サインインリスクやユーザーリスク（漏洩資格情報・あり得ない移動など）を検出し、リスクベースの条件付きアクセスで自動対応する機能。"},
+ {t:"アクセスレビュー（Access Reviews）",k:[{l:"定期的な権限の見直し",s:["定期","見直し","レビュー","棚卸し"]},{l:"不要な権限を除去",s:["除去","是正","最小権限"]}],m:"アクセスレビューは、グループ・アプリ・ロールへのアクセスが今も必要かを定期的に確認し、不要な権限を自動的に除去できる仕組み。"},
+ {t:"エンタイトルメント管理／アクセスパッケージ",k:[{l:"複数リソースを束ねて付与",s:["アクセスパッケージ","まとめ","束ね","カタログ"]},{l:"申請・承認・自動失効",s:["申請","承認","期限","失効"]}],m:"エンタイトルメント管理は、複数リソースへのアクセスを『アクセスパッケージ』として束ね、申請・承認・有効期限（自動失効）まで一元管理する仕組み。"},
+ {t:"B2B コラボレーション（ゲスト）",k:[{l:"外部ユーザーを招待",s:["外部","招待","ゲスト","b2b","コラボ"]},{l:"相手の資格情報で認証",s:["資格情報","共有","アクセス"]}],m:"B2Bコラボレーションは、外部組織のユーザーをゲストとして招待し、相手の既存資格情報を使って自社リソースへ安全にアクセスさせる仕組み。"},
+ {t:"ハイブリッドID（Entra Connect）",k:[{l:"オンプレADと同期",s:["オンプレ","同期","connect","ハイブリッド"]},{l:"PHS／PTA／フェデレーション",s:["phs","pta","パスワードハッシュ","パススルー","フェデレーション"]}],m:"ハイブリッドIDは、Entra Connectでオンプレミスのユーザーをクラウドへ同期し、PHS・PTA・フェデレーションのいずれかで認証する構成。"},
+ {t:"パスワードレス認証",k:[{l:"パスワードを使わない",s:["パスワードレス","fido2","windows hello","セキュリティキー"]},{l:"フィッシングに強い",s:["フィッシング","安全","生体"]}],m:"パスワードレス認証は、FIDO2セキュリティキー・Windows Hello for Business・Microsoft Authenticator（パスワードレス）などで、パスワードを使わず安全にサインインする方式。"},
+ {t:"SSPR（セルフサービスパスワードリセット）",k:[{l:"ユーザー自身で再設定",s:["sspr","自分","リセット","再設定"]},{l:"ヘルプデスク負荷を軽減",s:["ヘルプデスク","負荷","コスト"]}],m:"SSPRは、本人確認（MFAなど）を経てユーザー自身がパスワードを再設定できる仕組みで、管理者の負荷を減らす。"},
+];
+
+const SC300_TIERS = [
+ {bp:0,     icon:"📁", name:"Entra テナント",     desc:"IDの土台"},
+ {bp:450,   icon:"👤", name:"ユーザー",           desc:"最初のIDを作成"},
+ {bp:1100,  icon:"👥", name:"グループ",           desc:"まとめて権限管理"},
+ {bp:2100,  icon:"🔑", name:"多要素認証 (MFA)",   desc:"サインインを強化"},
+ {bp:3400,  icon:"🔓", name:"SSPR",               desc:"自分でパスワード再設定"},
+ {bp:5100,  icon:"🛡️", name:"条件付きアクセス",   desc:"シグナルで制御"},
+ {bp:7400,  icon:"🤝", name:"B2B ゲスト",         desc:"外部と安全に共有"},
+ {bp:10100, icon:"🔗", name:"ハイブリッドID",     desc:"オンプレと同期"},
+ {bp:13500, icon:"🧭", name:"PIM",                desc:"特権をジャストインタイム"},
+ {bp:17600, icon:"📋", name:"アクセスレビュー",   desc:"権限を定期見直し"},
+ {bp:22500, icon:"📦", name:"エンタイトルメント", desc:"アクセスを束ねて付与"},
+ {bp:28500, icon:"🚨", name:"Identity Protection",desc:"リスクを自動防御"},
+];
+
+const CERTS = [
+  { id:"az900", code:"AZ-900", name:"Azure 基礎", sub:"Microsoft Azure Fundamentals",
+    accent:"#38a3ff", draw:45, pass:700, status:"ready",
+    Q:AZ900_Q, CONCEPTS:AZ900_CONCEPTS, TIERS:AZ900_TIERS },
+  { id:"sc300", code:"SC-300", name:"セキュリティ中級", sub:"Microsoft Identity and Access Administrator",
+    accent:"#38a3ff", draw:45, pass:700, status:"ready",
+    Q:SC300_Q, CONCEPTS:SC300_CONCEPTS, TIERS:SC300_TIERS },
+  { id:"sc900", code:"SC-900", name:"セキュリティ基礎", sub:"Security, Compliance, and Identity Fundamentals",
+    accent:"#36d399", draw:45, pass:700, status:"coming" },
+  // 例）追加するときの雛形：
+  // { id:"ai900", code:"AI-900", name:"AI 基礎", sub:"Azure AI Fundamentals",
+  //   accent:"#c084fc", draw:45, pass:700, status:"ready", Q:AI900_Q, CONCEPTS:AI900_CONCEPTS, TIERS:AI900_TIERS },
+];
+function certById(id){ return CERTS.find(c=>c.id===id) || null; }
+
+// 選択中の資格データを現在の変数へ読み込む
+function loadCert(id){
+  const c = certById(id); if(!c) return;
+  S.cert = c.id;
+  Q = c.Q || []; CONCEPTS = c.CONCEPTS || []; TIERS = c.TIERS || [];
+  DRAW = c.draw || 45; PASS = c.pass || 700;
+}
+function selectCert(id){
+  const c = certById(id); if(!c || c.status!=="ready") return;
+  loadCert(id);
+  applyCloud(id);          // ログイン中ならクラウドの該当データを取り込む
+  S.screen = "home"; render();
+}
+
+// クラウド(cloudData)の該当資格データを、この端末のローカルへ反映
+function applyCloud(certId){
+  if(!cloudData) return;
+  const d = cloudData[certId]; if(!d) return;
+  try{
+    if(d.bp !== undefined) localStorage.setItem("cert_"+certId+"_bp", String(d.bp));
+    if(d.wrong !== undefined) localStorage.setItem("cert_"+certId+"_wrong", JSON.stringify([...new Set(d.wrong||[])]));
+    if(d.history !== undefined) localStorage.setItem("cert_"+certId+"_history", JSON.stringify(d.history));
+  }catch(e){}
+}
+
+// 新規アカウント時：この端末にあるローカルの各資格データをクラウドへ初期投入
+function seedCloudFromLocal(){
+  if(!db || !currentUserId || !window.FirebaseSync) return;
+  const patch = {};
+  CERTS.forEach(c=>{
+    const bp = localStorage.getItem("cert_"+c.id+"_bp");
+    const wrong = localStorage.getItem("cert_"+c.id+"_wrong");
+    const hist = localStorage.getItem("cert_"+c.id+"_history");
+    if(bp || wrong || hist){
+      patch[c.id] = {
+        bp: bp ? (parseInt(bp,10)||0) : 0,
+        wrong: wrong ? (JSON.parse(wrong)||[]) : [],
+        history: hist ? (JSON.parse(hist)||[]) : []
+      };
+    }
+  });
+  if(Object.keys(patch).length || loadCoins()){
+    try{
+      window.FirebaseSync.setDoc(window.FirebaseSync.doc(db,"users",currentUserId),
+        { certs: patch, coins: loadCoins(), updatedAt:new Date().toISOString() }, { merge:true });
+    }catch(e){}
+  }
+}
+
+// 旧バージョン（資格未対応）のローカルデータを cert_az900_* へ引き継ぎ
+function migrateOldData(){
+  const map = [["az900_bp","cert_az900_bp"],["az900_wrong","cert_az900_wrong"],["az900_history_v1","cert_az900_history"]];
+  map.forEach(([o,n])=>{
+    try{ const v=localStorage.getItem(o); if(v!==null && localStorage.getItem(n)===null) localStorage.setItem(n,v); }catch(e){}
+  });
+}
+
+// 資格カード1枚分のステータス（ローカル保存から算出）
+function certStat(c){
+  const bp = parseInt(localStorage.getItem("cert_"+c.id+"_bp")||"0",10)||0;
+  let hist=[]; try{ hist=JSON.parse(localStorage.getItem("cert_"+c.id+"_history")||"[]")||[]; }catch(e){}
+  const best = hist.reduce((m,x)=>Math.max(m,x.score),0);
+  const tiers = c.TIERS||[];
+  const lvl = tiers.filter(t=>bp>=t.bp).length;
+  return { bp, best, plays:hist.length, lvl, tiers:tiers.length };
+}
+
+/* ---- 総合エンジニアレベル（全資格の合計BPから連続的に算出）----
+   資格レベルが TIERS の段数なのに対し、総合は「合計BPの数式」で出す。
+   資格が増えても合計BPが増えて自然にレベルが上がるだけなので破綻しない。 */
+const OVERALL_STEP = 300;
+function totalBP(){ return CERTS.reduce((s,c)=>s + (parseInt(localStorage.getItem("cert_"+c.id+"_bp")||"0",10)||0), 0); }
+function overallLevel(tbp){ return Math.floor((Math.sqrt(1 + 8*tbp/OVERALL_STEP) - 1) / 2); }
+function bpForLevel(L){ return OVERALL_STEP * L * (L+1) / 2; }   // レベルLの開始に必要な合計BP
+function overallTitle(lv){
+  if(lv>=40) return "クラウドアーキテクト";
+  if(lv>=30) return "シニアエンジニア";
+  if(lv>=20) return "クラウドエンジニア";
+  if(lv>=12) return "アソシエイト";
+  if(lv>=6)  return "ジュニアエンジニア";
+  if(lv>=1)  return "見習いエンジニア";
+  return "ビギナー";
+}
+function overallStat(){
+  const tbp = totalBP();
+  const lv = overallLevel(tbp);
+  const start = bpForLevel(lv), next = bpForLevel(lv+1);
+  const pct = next>start ? Math.round((tbp-start)/(next-start)*100) : 100;
+  const remain = Math.max(0, next - tbp);
+  const active = CERTS.filter(c=>c.status==="ready" && (parseInt(localStorage.getItem("cert_"+c.id+"_bp")||"0",10)||0)>0).length;
+  return { tbp, lv, pct, remain, active, title:overallTitle(lv) };
+}
+
+function renderSelect(){
+  const ov = overallStat();
+  const cards = CERTS.map(c=>{
+    if(c.status!=="ready"){
+      return `<div class="cert-card locked">
+        <div class="cert-top"><span class="cert-code">${esc(c.code)}</span><span class="cert-soon">🔒 近日公開</span></div>
+        <div class="cert-name">${esc(c.name)}</div>
+        <div class="cert-sub">${esc(c.sub||"")}</div>
+      </div>`;
+    }
+    const st = certStat(c);
+    const started = st.plays>0;
+    return `<button class="cert-card" data-cert="${c.id}" style="--ca:${c.accent}">
+      <div class="cert-top"><span class="cert-code">${esc(c.code)}</span><span class="cert-go">${started?"学習を続ける":"はじめる"} →</span></div>
+      <div class="cert-name">${esc(c.name)}</div>
+      <div class="cert-sub">${esc(c.sub||"")}</div>
+      <div class="cert-stats">
+        <span>Lv.${st.lvl}<small>/${st.tiers}</small></span>
+        <span>最高 ${st.best}</span>
+        <span>${st.plays} 回</span>
+      </div>
+    </button>`;
+  }).join("");
+  app.innerHTML = `
+    <div class="me-hero">
+      <div class="me-top">
+        <div>
+          <div class="me-lab">総合エンジニアレベル</div>
+          <div class="me-lvrow"><span class="me-lv">Lv.${ov.lv}</span><span class="me-title">${esc(ov.title)}</span></div>
+        </div>
+        <div class="me-bp">${ov.tbp.toLocaleString()} BP</div>
+      </div>
+      <div class="me-prog"><div class="me-prog-f" style="width:${ov.pct}%"></div></div>
+      <div class="me-next">次のレベルまで ${ov.remain.toLocaleString()} BP ・ 学習中 ${ov.active} 資格 ・ 💰 ${(S.coins||0).toLocaleString()} AC</div>
+    </div>
+    <div class="me-actions">
+      <button class="me-btn" data-go="ranking">🏆 ランキング</button>
+      <button class="me-btn" data-go="profile">👤 プロフィール</button>
+    </div>
+    <div class="sel-head">
+      <span class="eyebrow">MICROSOFT 認定対策</span>
+      <h2 class="sel-title">資格を選ぶ</h2>
+      <p class="sel-sub">学習したい資格を選んでください。資格ごとにスコア・BP・復習データは別々に保存されます。</p>
+    </div>
+    <div class="cert-list">${cards}</div>
+    ${currentUser
+      ? `<div class="acct-bar">👤 ${esc(currentUser.email||"ログイン中")}<button class="link2" data-logout>ログアウト</button></div>`
+      : (guestMode ? `<div class="acct-bar">ゲストモード（この端末のみ・同期なし）<button class="link2" data-login>ログイン / 新規登録</button></div>` : "")}
+  `;
+  app.querySelectorAll("[data-cert]").forEach(b=>b.onclick=()=>selectCert(b.dataset.cert));
+  app.querySelectorAll("[data-go]").forEach(b=>b.onclick=()=>go(b.dataset.go));
+  const lo=app.querySelector("[data-logout]"); if(lo)lo.onclick=()=>logout();
+  const li=app.querySelector("[data-login]"); if(li)li.onclick=()=>{ guestMode=false; authMode="login"; render(); };
+  window.scrollTo(0,0);
+}
+
+/* ======================= プロフィール／ランキング ======================= */
+function getProfileName(){ return localStorage.getItem("profile_name") || ""; }
+function setProfileName(n){ try{ localStorage.setItem("profile_name", n); }catch(e){} }
+
+// 表示名が未設定の場合のデフォルト名（メールは公開せず、ID由来の匿名名）
+function defaultName(){ return "エンジニア" + (currentUserId ? currentUserId.slice(-4).toUpperCase() : "0000"); }
+
+// 公開用の要約データ（個人の問題履歴などは含めない）
+function buildPublic(){
+  const certLevels={};
+  CERTS.forEach(c=>{
+    if(c.status==="ready"){
+      const bp=parseInt(localStorage.getItem("cert_"+c.id+"_bp")||"0",10)||0;
+      certLevels[c.id]=(c.TIERS||[]).filter(t=>bp>=t.bp).length;
+    }
+  });
+  const ov=overallStat();
+  return { displayName:getProfileName()||defaultName(), totalBP:ov.tbp, overallLevel:ov.lv,
+           title:ov.title, certLevels, updatedAt:new Date().toISOString() };
+}
+// ランキングへ自動公開・更新（ログイン中なら表示名の有無に関わらず自動で反映）
+function publishLeaderboard(){
+  if(!window.LB || !currentUserId || guestMode) return;
+  try{ window.LB.publish(buildPublic()); }catch(e){}
+}
+
+function renderProfile(){
+  const ov=overallStat();
+  const name=getProfileName();
+  const certRows = CERTS.filter(c=>c.status==="ready").map(c=>{
+    const st=certStat(c);
+    return `<div class="pf-cert"><span style="color:${c.accent}">${esc(c.code)}</span><span class="pf-cn">${esc(c.name)}</span><span class="pf-cl">Lv.${st.lvl} ・ 最高 ${st.best}</span></div>`;
+  }).join("");
+  app.innerHTML = `
+    <div class="q-head"><button class="quit" data-go="select">← 資格選択</button><span class="q-count">プロフィール</span></div>
+    <div class="me-hero">
+      <div class="me-lab">総合エンジニアレベル</div>
+      <div class="me-lvrow"><span class="me-lv">Lv.${ov.lv}</span><span class="me-title">${esc(ov.title)}</span></div>
+      <div class="me-next" style="margin-top:6px">${ov.tbp.toLocaleString()} BP ・ 学習中 ${ov.active} 資格</div>
+    </div>
+    <div class="dc-sub">ユーザー名</div>
+    <input id="pf-name" class="auth-input" maxlength="16" placeholder="例：くらうど太郎" value="${esc(name)}">
+    <div id="pf-msg" class="auth-msg"></div>
+    <button class="cta" id="pf-save">${guestMode?"※ ログインするとランキングに参加できます":"ユーザー名を保存"}</button>
+    <div class="x-hint" style="margin-top:8px">ランキングはログイン中、クイズを解くたびに<b style="color:var(--good)">自動で更新</b>されます。ユーザー名は空にできず、他の人と重複しない名前にしてください。</div>
+    <div class="dc-sub">資格別レベル</div>
+    <div class="pf-list">${certRows}</div>
+    <button class="ghost" data-go="ranking" style="margin-top:14px">🏆 ランキングを見る</button>
+    ${(!guestMode && currentUser) ? `
+    <div class="danger-zone">
+      <div class="dz-title">アカウント削除</div>
+      <div class="dz-note">退会するとアカウント情報・スコア・履歴がすべて削除され、元に戻せません。</div>
+      <button class="ghost danger" id="pf-del">アカウントを削除する（退会）</button>
+    </div>` : ""}
+  `;
+  app.querySelectorAll("[data-go]").forEach(b=>b.onclick=()=>go(b.dataset.go));
+  const pd=document.getElementById("pf-del"); if(pd)pd.onclick=openDeleteModal;
+  const msg=document.getElementById("pf-msg");
+  document.getElementById("pf-save").onclick=async ()=>{
+    if(guestMode || !currentUser){ msg.style.color="var(--gold)"; msg.textContent="ランキングに参加するにはログインが必要です。"; return; }
+    const v=(document.getElementById("pf-name").value||"").trim();
+    if(!v){ msg.style.color="var(--gold)"; msg.textContent="ユーザー名を入力してください（空にはできません）。"; return; }
+    if(v===getProfileName()){ msg.style.color="var(--muted)"; msg.textContent="現在のユーザー名と同じです。"; return; }
+    if(!window.LB){ msg.style.color="var(--bad)"; msg.textContent="準備中です。少し待って再度お試しください。"; return; }
+    msg.style.color="var(--muted)"; msg.textContent="重複を確認中…";
+    try{
+      const taken=await window.LB.nameTaken(v);
+      if(taken){ msg.style.color="var(--bad)"; msg.textContent="その名前はすでに使われています。別の名前にしてください。"; return; }
+      setProfileName(v);
+      publishLeaderboard();
+      msg.style.color="var(--good)"; msg.textContent="✓ ユーザー名を保存し、ランキングに反映しました。";
+    }catch(e){
+      msg.style.color="var(--bad)"; msg.textContent="確認に失敗しました。通信環境を確認してください。";
+    }
+  };
+  window.scrollTo(0,0);
+}
+
+function renderRanking(){
+  app.innerHTML = `
+    <div class="q-head"><button class="quit" data-go="select">← 資格選択</button><span class="q-count">ランキング</span></div>
+    <div id="lb-body"><div class="loading">読み込み中…</div></div>
+  `;
+  app.querySelectorAll("[data-go]").forEach(b=>b.onclick=()=>go(b.dataset.go));
+  loadRanking();
+  window.scrollTo(0,0);
+}
+async function loadRanking(){
+  const body=document.getElementById("lb-body"); if(!body) return;
+  if(guestMode || !window.LB || !currentUser){
+    body.innerHTML=`<div class="empty">ランキングを見るにはログインが必要です。<br>ログインして、プロフィールで表示名を設定すると参加できます。</div>`;
+    return;
+  }
+  try{
+    const rows = await window.LB.top(50);
+    const ov = overallStat();
+    let myRank=null; try{ myRank = await window.LB.myRank(ov.tbp); }catch(e){}
+    if(!rows.length){
+      body.innerHTML=`<div class="empty">まだ誰もランキングに登録していません。<br>プロフィールで表示名を設定すると一番乗りで参加できます。</div>`;
+      return;
+    }
+    const myUid=currentUserId;
+    const mine = rows.find(r=>r.uid===myUid);
+    body.innerHTML = `
+      ${(myRank && !mine || myRank)?`<div class="lb-me">あなた：${myRank?("<b>"+myRank+"位</b>"):"未公開"} ・ 総合Lv.${ov.lv} ・ ${ov.tbp.toLocaleString()} BP${getProfileName()?"":' <button class="link2" data-go="profile">表示名を変更</button>'}</div>`:""}
+      <div class="lb-list">
+        ${rows.map((r,i)=>`
+          <div class="lb-row ${r.uid===myUid?'me':''}">
+            <span class="lb-rank ${i<3?'top':''}">${i+1}</span>
+            <div class="lb-info">
+              <span class="lb-name">${esc(r.displayName||"名無し")}${r.uid===myUid?' <small>(あなた)</small>':''}</span>
+              <span class="lb-cert">総合Lv.${r.overallLevel||0}${r.title?" ・ "+esc(r.title):""}</span>
+            </div>
+            <span class="lb-bp">${(r.totalBP||0).toLocaleString()}<small> BP</small></span>
+          </div>`).join("")}
+      </div>
+      <div class="x-hint" style="margin-top:14px">${getProfileName()?"":'表示名は未設定でも自動で参加中です。<button class="link2" data-go="profile">表示名を変更</button>'}</div>
+    `;
+    app.querySelectorAll("[data-go]").forEach(b=>b.onclick=()=>go(b.dataset.go));
+  }catch(e){
+    body.innerHTML=`<div class="empty">読み込みに失敗しました。<br>${esc(String(e.message||e))}</div>`;
+  }
+}
+
+/* ===== やさしいタップ音（音声ファイル不要・Web Audio） ===== */
+let _tapCtx = null;
+function playTap(){
+  try{
+    const AC = window.AudioContext || window.webkitAudioContext;
+    if(!AC) return;
+    _tapCtx = _tapCtx || new AC();
+    if(_tapCtx.state === "suspended") _tapCtx.resume();   // iOSはタップ内で解錠
+    const t = _tapCtx.currentTime;
+    const o = _tapCtx.createOscillator();
+    const g = _tapCtx.createGain();
+    o.type = "sine";
+    o.frequency.setValueAtTime(660, t);
+    o.frequency.exponentialRampToValueAtTime(880, t + 0.05);
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.exponentialRampToValueAtTime(0.10, t + 0.012);  // 控えめな音量
+    g.gain.exponentialRampToValueAtTime(0.0001, t + 0.16); // すっと消える
+    o.connect(g); g.connect(_tapCtx.destination);
+    o.start(t); o.stop(t + 0.18);
+  }catch(e){}
+}
+const TAP_SEL = "button, .cert-card, .link, .link2, .bp-link, [data-go], [data-pick], [data-mission], [data-pc], [data-mode], [data-practice], [data-review]";
+document.addEventListener("click", (e)=>{
+  const el = e.target && e.target.closest ? e.target.closest(TAP_SEL) : null;
+  if(el && !el.disabled && !el.classList.contains("locked")) playTap();
+}, true);
+
+migrateOldData();
+S.coins = loadCoins();
+render();
+
+// 安全装置：8秒待ってもFirebaseの準備が終わらない（通信が遅い/失敗）場合は
+// 固まらないようログイン画面へ進める。ゲスト利用への導線もそこにあります。
+setTimeout(function(){
+  if(!authReady && !guestMode){ authReady = true; render(); }
+}, 8000);
+</script>
+  <script type="module">
+  import { initializeApp } from "https://www.gstatic.com/firebasejs/10.0.0/firebase-app.js";
+  import { getFirestore, doc, setDoc, getDoc, deleteDoc, onSnapshot, collection, query, where, orderBy, limit, getDocs, getCountFromServer, writeBatch, increment } from "https://www.gstatic.com/firebasejs/10.0.0/firebase-firestore.js";
+  import { getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword, signOut, onAuthStateChanged, deleteUser, reauthenticateWithCredential, EmailAuthProvider } from "https://www.gstatic.com/firebasejs/10.0.0/firebase-auth.js";
+
+  const firebaseConfig = {
+    apiKey: "AIzaSyCg3zD2xkq_3e5MclG9YK_uVqVzWulO9Ws",
+    authDomain: "my-az900-app.firebaseapp.com",
+    projectId: "my-az900-app",
+    storageBucket: "my-az900-app.firebasestorage.app",
+    messagingSenderId: "989248012630",
+    appId: "1:989248012630:web:1801a2033c56887320d6f7",
+    measurementId: "G-4E16HLF386"
+  };
+
+  window.FirebaseSync = { doc, setDoc };
+  try {
+    const fbApp = initializeApp(firebaseConfig);
+    db = getFirestore(fbApp);
+    const auth = getAuth(fbApp);
+
+    // 画面側（通常スクリプト）から呼び出せる認証API
+    window.Auth = {
+      signup: (email, pw) => createUserWithEmailAndPassword(auth, email, pw),
+      login:  (email, pw) => signInWithEmailAndPassword(auth, email, pw),
+      logout: () => signOut(auth)
+    };
+
+    // 画面側から呼び出せるランキングAPI（公開コレクション leaderboard）
+    window.LB = {
+      publish: async (data) => {
+        if (!currentUserId) return;
+        await setDoc(doc(db, "leaderboard", currentUserId), data, { merge: true });
+      },
+      top: async (n) => {
+        const q = query(collection(db, "leaderboard"), orderBy("totalBP", "desc"), limit(n || 50));
+        const snap = await getDocs(q);
+        const rows = []; snap.forEach(d => rows.push(Object.assign({ uid: d.id }, d.data())));
+        return rows;
+      },
+      myRank: async (myBP) => {
+        try {
+          const c = await getCountFromServer(query(collection(db, "leaderboard"), where("totalBP", ">", myBP)));
+          return c.data().count + 1;
+        } catch (e) { return null; }
+      },
+      me: async () => {
+        if (!currentUserId) return null;
+        try { const d = await getDoc(doc(db, "leaderboard", currentUserId)); return d.exists() ? d.data() : null; }
+        catch (e) { return null; }
+      },
+      // 表示名が既に他ユーザーに使われているか（自分自身は除外）
+      nameTaken: async (name) => {
+        const snap = await getDocs(query(collection(db, "leaderboard"), where("displayName", "==", name)));
+        let taken = false;
+        snap.forEach(d => { if (d.id !== currentUserId) taken = true; });
+        return taken;
+      }
+    };
+
+    // 問題ごとの正答率を集計する公開API（qstats/{certId}_{qid} に増分で蓄積）
+    window.QStats = {
+      // results: [{qid, correct:true/false}, ...] を一括加算
+      record: async (certId, results) => {
+        if (!db || !currentUserId || !Array.isArray(results) || !results.length) return;
+        try {
+          const batch = writeBatch(db);
+          results.forEach(r => {
+            const ref = doc(db, "qstats", certId + "_" + r.qid);
+            batch.set(ref, {
+              cert: certId, qid: r.qid,
+              attempts: increment(1),
+              correct: increment(r.correct ? 1 : 0)
+            }, { merge: true });
+          });
+          await batch.commit();
+        } catch (e) { console.error("qstats record failed:", e); }
+      },
+      // 1問の集計を取得 → {attempts, correct} | null
+      get: async (certId, qid) => {
+        try { const d = await getDoc(doc(db, "qstats", certId + "_" + qid)); return d.exists() ? d.data() : null; }
+        catch (e) { return null; }
+      },
+      // 複数問をまとめて取得 → { qid: {attempts, correct}, ... }
+      getMany: async (certId, qids) => {
+        const out = {};
+        await Promise.all((qids || []).map(async id => {
+          try { const d = await getDoc(doc(db, "qstats", certId + "_" + id)); if (d.exists()) out[id] = d.data(); }
+          catch (e) {}
+        }));
+        return out;
+      }
+    };
+
+    // アカウント削除（退会）API
+    window.Account = {
+      // password で再認証 → 個人データ削除 → 認証アカウント削除（qstats集計は保持）
+      delete: async (password) => {
+        const user = auth.currentUser;
+        if (!user) { const e = new Error("no-user"); e.code = "no-user"; throw e; }
+        // 1) 再認証（パスワード検証＋recent-login確保）。失敗時はここで中断し、何も削除されない
+        await reauthenticateWithCredential(user, EmailAuthProvider.credential(user.email, password));
+        // 2) 個人データ・公開要約を削除（集計 qstats は触らない＝他ユーザーの正答率は不変）
+        try { await deleteDoc(doc(db, "leaderboard", user.uid)); } catch (e) { console.error("del leaderboard:", e); }
+        try { await deleteDoc(doc(db, "users", user.uid)); } catch (e) { console.error("del user doc:", e); }
+        // 3) 認証アカウント本体を削除（これでセッションも破棄され onAuthStateChanged(null) が発火）
+        await deleteUser(user);
+      }
+    };
+
+    let unsub = null;
+    let lbAutoDone = false;   // ログインごとに1回、最新の成績をランキングへ自動反映
+
+    // ログイン状態の監視。ログイン中はそのアカウントのデータをリアルタイム同期
+    onAuthStateChanged(auth, (user) => {
+      authReady = true;
+      if (user) {
+        currentUser = user;
+        currentUserId = user.uid;
+        profileChecked = false;   // このアカウントのユーザー名を確認するまでゲート
+        // 公開プロフィール（表示名）をこの端末へ取り込む（機種をまたいで名前が引き継がれる）
+        if (window.LB) {
+          window.LB.me().then(d => {
+            if (d && d.displayName) localStorage.setItem("profile_name", d.displayName);
+          }).catch(() => {}).finally(() => { profileChecked = true; render(); });
+        } else {
+          profileChecked = true;
+        }
+        if (unsub) { unsub(); unsub = null; }
+        lbAutoDone = false;
+        unsub = onSnapshot(doc(db, "users", currentUserId), (docSnap) => {
+          if (docSnap.exists()) {
+            const data = docSnap.data();
+            // アカウント共通のコイン残高をこの端末へ反映
+            if (typeof data.coins === "number") { S.coins = data.coins; saveCoins(data.coins); }
+            // 旧形式（資格未対応の {bp,wrong,history}）→ certs.az900 へ一度だけ移行
+            if (!data.certs && data.bp !== undefined) {
+              setDoc(doc(db, "users", currentUserId), {
+                certs: { az900: { bp: data.bp, wrong: data.wrong || [], history: data.history || [] } }
+              }, { merge: true });
+              return; // 次のsnapshotで certs 形式として処理されます
+            }
+            if (data.certs) {
+              cloudData = data.certs;            // クラウドの全資格データを保持
+              if (S.cert) applyCloud(S.cert);    // 選択中の資格をこの端末へ反映
+              if (S.screen==="home" || S.screen==="dc" || S.screen==="history" || S.screen==="select") { render(); }
+              if (!lbAutoDone) { lbAutoDone = true; try{ publishLeaderboard(); }catch(e){} }  // ログイン時に自動でランキング反映
+            } else {
+              seedCloudFromLocal();              // 中身が空 → ローカルから初期投入
+            }
+          } else {
+            seedCloudFromLocal();                // ドキュメント未作成 → ローカルから初期投入
+          }
+        });
+      } else {
+        currentUser = null;
+        currentUserId = null;
+        if (unsub) { unsub(); unsub = null; }
+      }
+      render();
+    });
+  } catch (e) {
+    console.error("Firebase init failed:", e);
+    // 初期化に失敗しても画面が固まらないようにゲートを解除
+    authReady = true;
+    render();
+  }
+</script>
+
 </body>
 </html>
