@@ -549,10 +549,8 @@ export function renderHome(){
       </div>
       <button class="link" data-pcancel>キャンセル</button>
     </div>` : `
-    <button class="cta" data-practice>📝 演習モード</button>
-    <div class="mode-note">問題数（5/10/15）を選んで練習・配点の合計がそのままスコア</div>`}
+    <button class="cta" data-practice>📝 演習モード</button>`}
     <button class="cta cta-exam" data-mode="exam" style="margin-top:12px">🎯 試験モード</button>
-    <div class="mode-note">${DRAW}問・1000点満点換算・700点以上でボーナスEXP（×1.25〜×2.0）</div>
     ${(loadWrong().length)?`<button class="ghost rev-btn" data-review style="margin-top:12px">🔁 復習モード（間違えた ${loadWrong().length} 問）</button>`:`<div class="x-hint" style="margin-top:12px;text-align:center">復習モード：間違えた問題がここに溜まり、再挑戦できます</div>`}
     <button class="ghost" data-go="dict" style="margin-top:10px">📖 用語辞典</button>
     <button class="ghost" data-go="analytics" style="margin-top:10px">📊 統計パネル </button>
