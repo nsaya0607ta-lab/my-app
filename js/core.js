@@ -83,11 +83,14 @@ export function grade(q, sel){
   const cor = q.c, per = W/cor.length;
   let cs=0, ws=0;
   (sel||[]).forEach(i=>{ if(cor.indexOf(i)>=0) cs++; else ws++; });
-  const earned = Math.max(0, (cs-ws)*per);
+  
+  // 💡 【修正部分】 ws（誤答数）による減点をなくし、cs（正解数）だけで計算する
+  const earned = cs * per; 
+  
   const full = (cs===cor.length && ws===0);
   return {earned, full};
 }
-
+　
 export function start(mode, count){
   state.practicePick=false;
   S.review=false;
