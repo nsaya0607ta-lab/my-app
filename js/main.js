@@ -1,6 +1,6 @@
 import './db.js';
 import { loadCoins, migrateOldData } from './core.js';
-import { render, renderSettings } from './render.js';
+import { render, renderSettings, renderSkinShop } from './render.js';
 import { S, state } from './state.js';
 
 /* ===== やさしいタップ音（音声ファイル不要・Web Audio） ===== */
