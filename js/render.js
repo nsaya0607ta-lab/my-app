@@ -82,6 +82,29 @@ export function resetInfra(){
   renderSandbox();
   renderStatusBar();
 }
+// 目次画面：ミッションカードのみを表示。タップで構築シミュレーターへ
+
+export function renderPortal(){
+  S.infra || (S.infra={vnet:false,vnetPrefix:"",subnets:[],lb:false});
+  const cards = MISSIONS.map(mn=>{
+    const cleared = missionCleared(mn.id);
+    return `<button class="pt-mission pt-mission-btn" data-mission="${mn.id}">
+      <div class="pt-m-top"><span class="pt-m-tag">MISSION</span><span class="pt-m-stars" title="難易度 ${mn.stars} / 5">${missionStars(mn.stars)}</span></div>
+      <div class="pt-m-title">${esc(mn.title)}${cleared?' <span class="pt-cleared">✓ クリア済み</span>':''}</div>
+      <div class="pt-m-desc">${esc(mn.desc)}</div>
+      <div class="pt-m-foot"><span class="pt-m-reward">クリア報酬：⚡ ${missionBP(mn.stars).toLocaleString()} BP</span><span class="pt-m-go">挑戦する →</span></div>
+    </button>`;
+  }).join("");
+  app.innerHTML = `
+    <div class="q-head"><button class="quit" data-go="home">🏠 ホーム</button><span class="q-count">Azure デモ環境</span></div>
+    <div class="pt-coinbar pt-coinbar-info">🧪 配置は無料で何度でも試せます。<b>クリアでBP獲得！</b></div>
+    <div class="pt-mlist-lab">ミッション一覧</div>
+    <div class="pt-mlist">${cards}</div>
+  `;
+  app.querySelectorAll("[data-go]").forEach(x=>x.onclick=()=>go(x.dataset.go));
+  app.querySelectorAll("[data-mission]").forEach(x=>x.onclick=()=>openMission(x.dataset.mission));
+  window.scrollTo(0,0);
+}
 
 export function missionCleared(id){ return !!localStorage.getItem("portal_done_"+id) || (S.clearedMissions||[]).includes(id); }
 
@@ -322,10 +345,6 @@ export function render(){
   if(S.screen==="ranking") return renderRanking();
   if(S.screen==="profile") return renderProfile();
   if(S.screen==="settings") return renderSettings();
-  if(S.screen==="profile") return renderProfile();
-  if(S.screen==="settings") return renderSettings();
-  if(S.screen==="skinshop") return renderSkinShop(); 
-  if(S.screen==="analytics") return renderAnalytics();
   if(S.screen==="analytics") return renderAnalytics();
   // 大元：資格選択画面
   if(S.screen==="select" || !S.cert) return renderSelect();
@@ -336,6 +355,7 @@ export function render(){
   if(S.screen==="dict") return renderDict();
   if(S.screen==="transfer") return renderTransfer();
   if(S.screen==="history") return renderHistory();
+  if(S.screen==="portal") return renderPortal();
   if(S.screen==="sandbox") return renderSandbox();
 }
 
@@ -1075,16 +1095,11 @@ export async function loadRanking(){
     body.innerHTML=`<div class="empty">読み込みに失敗しました。<br>${esc(String(e.message||e))}</div>`;
   }
 }
-// =========================================================================
-// 🎨 独立した背景スキンショップ画面
-// =========================================================================
-
-// =========================================================================
-// 🎨 独立した背景スキンショップ画面
-// =========================================================================
+/* =========================================================================
+   🎨 背景スキンショップ＆無限マップパン移動制御エンジン
+   ========================================================================= */
 import { saveCoins } from './core.js';
 
-// スキンデータ定義
 const SKIN_DATA = [
   { key:"default", icon:"🌐", name:"標準グリッド",       sub:"初期テーマ",                cost:0 },
   { key:"space",   icon:"🌌", name:"宇宙空間",           sub:"星空＆ネビュラ",            cost:300 },
@@ -1092,34 +1107,15 @@ const SKIN_DATA = [
   { key:"retro",   icon:"👾", name:"レトロドット絵",     sub:"ファミコン風ドット",        cost:400 },
 ];
 
-// ① ショップ画面のHTMLを描画する独立した関数
-export function renderSkinShop() {
-  app.innerHTML = `
-    <div class="q-head" style="margin-bottom:20px">
-      <button class="quit" data-go="settings">← 設定に戻る</button>
-      <span class="q-count" style="color:var(--accent)">🎨 背景スキンショップ</span>
-    </div>
+let sbPanX = -1050, sbPanY = -1100; // 初期表示座標
 
-    <div class="shop-welcome" style="margin-bottom:20px; padding:12px; background:rgba(0,0,0,0.02); border-radius:8px; text-align:center;">
-      <div style="font-weight:800; font-size:14px; color:var(--text);">お好みの背景スキンを選択・購入できます</div>
-      <div style="font-size:12px; color:var(--muted); margin-top:4px;">購入したスキンはアプリ全体の背景に適用されます</div>
-    </div>
-
-    <div id="sb-skin-list" style="display:flex; flex-direction:column; gap:14px;"></div>
-    
-    <div id="sb-toast-skin"></div>
-  `;
-
-  // 戻るボタンなどのイベント紐付け
-  app.querySelectorAll("[data-go]").forEach(x => x.onclick = () => go(x.dataset.go));
-  
-  // ロジックの起動
-  initSkinShopLogic();
-  window.scrollTo(0,0);
-}
-
-// ② ショップの購入・適用ロジック
 function initSkinShopLogic() {
+  const viewport = document.getElementById("sb-viewport");
+  const board    = document.getElementById("sb-board");
+  const cxEl     = document.getElementById("sb-cx");
+  const cyEl     = document.getElementById("sb-cy");
+  const shop     = document.getElementById("sb-shop");
+  const shopBd   = document.getElementById("sb-shop-bd");
   const listEl   = document.getElementById("sb-skin-list");
   const toastEl  = document.getElementById("sb-toast-skin");
 
@@ -1129,168 +1125,70 @@ function initSkinShopLogic() {
     setTimeout(() => { if(toastEl) toastEl.classList.remove("sb-show"); }, 2000);
   }
 
+  function applyPan() {
+    if(!board) return;
+    board.style.transform = "translate3d(" + sbPanX + "px," + sbPanY + "px,0)";
+    if(cxEl && cyEl) { cxEl.textContent = Math.round(-sbPanX); cyEl.textContent = Math.round(-sbPanY); }
+  }
+
   function renderSkinShopList() {
     if(!listEl) return;
     listEl.innerHTML = "";
-    
     SKIN_DATA.forEach(sk => {
       const isOwned = S.ownedSkins.includes(sk.key);
       const isApplied = S.currentSkin === sk.key;
       
       const card = document.createElement("div");
       card.className = "sb-skin-card" + (isApplied ? " sb-applied" : "");
-      card.style.cssText = "display:flex; align-items:center; justify-content:space-between; padding:14px; border:1px solid var(--line); border-radius:12px; background:var(--bg);";
-      
       card.innerHTML = `
-        <div class="sb-skin-meta" style="flex:1;">
-          <div class="sb-skin-nm" style="font-weight:800; font-size:15px;">${sk.icon} ${sk.name}</div>
-          <div class="sb-skin-sub" style="font-size:12px; color:var(--muted); margin-top:2px;">${sk.sub}${sk.cost > 0 ? ' (' + sk.cost + ' AC)' : ' (無料)'}</div>
+        <div class="sb-skin-prev sb-theme-${sk.key}"></div>
+        <div class="sb-skin-meta">
+          <div class="sb-skin-nm">${sk.icon} ${sk.name}</div>
+          <div class="sb-skin-sub">${sk.sub}${sk.cost > 0 ? ' (' + sk.cost + ' AC)' : ' (無料)'}</div>
         </div>
       `;
       
       const btn = document.createElement("button");
       btn.className = "sb-skin-btn";
-      btn.style.cssText = "padding:8px 14px; font-weight:800; border-radius:8px; cursor:pointer;";
       
       if (isOwned) {
         if (isApplied) {
-          btn.style.background = "var(--line)";
-          btn.style.color = "var(--muted)";
-          btn.textContent = "適用中";
-          btn.disabled = true;
+          btn.classList.add("sb-applied-btn"); btn.textContent = "適用中"; btn.disabled = true;
         } else {
-          btn.style.background = "var(--accent)";
-          btn.style.color = "#fff";
           btn.textContent = "適用する";
           btn.onclick = () => { 
             S.currentSkin = sk.key; 
-            document.body.className = (sk.key && sk.key !== "default") ? ("sb-theme-" + sk.key) : "";
-            saveSkins();
+            board.className = "sb-theme-" + sk.key; 
+            saveSkins();                                   // 端末へ永続化
             renderSkinShopList(); 
-            render();
-            try { saveToCloud(getBP(), loadWrong(), loadHist()); } catch(e){}
+            render(); // 🏠 ホーム画面の背景も即時同期するために全体再描画を呼ぶ
+            try { saveToCloud(getBP(), loadWrong(), loadHist()); } catch(e){} // ☁️ 適用状態もクラウドへ同期
           };
         }
       } else {
         if ((S.coins || 0) >= sk.cost) {
-          btn.style.background = "#22c55e";
-          btn.style.color = "#fff";
-          btn.textContent = `購入 (${sk.cost}AC)`;
+          btn.classList.add("sb-buy"); btn.textContent = `購入 (${sk.cost}AC)`;
           btn.onclick = () => {
             S.coins -= sk.cost;
             S.ownedSkins.push(sk.key);
             S.currentSkin = sk.key;
-            document.body.className = (sk.key && sk.key !== "default") ? ("sb-theme-" + sk.key) : "";
+            board.className = "sb-theme-" + sk.key;
             saveCoins(S.coins);
-            saveSkins();
+            saveSkins();                                   // 端末へ永続化
             renderStatusBar();
             renderSkinShopList();
-            render();
+            render(); // 所持金減額と背景をホームに即反映
             toast(`「${sk.name}」を購入・適用しました！`);
-            try { saveToCloud(getBP(), loadWrong(), loadHist()); } catch(e){}
+            try { saveToCloud(getBP(), loadWrong(), loadHist()); } catch(e){} // ☁️ Firebase/Cloudへのバックアップ
           };
         } else {
-          btn.style.background = "var(--line)";
-          btn.style.color = "var(--muted)";
-          btn.textContent = "🔒 不足";
-          btn.disabled = true;
+          btn.classList.add("sb-locked"); btn.textContent = "🔒 不足"; btn.disabled = true;
         }
       }
       card.appendChild(btn);
       listEl.appendChild(card);
     });
   }
-
-  // 初回描画
-  renderSkinShopList();
-}
-// ② ショップの購入・適用ロジック
-function initSkinShopLogic() {
-  const listEl   = document.getElementById("sb-skin-list");
-  const toastEl  = document.getElementById("sb-toast-skin");
-
-  function toast(msg) {
-    if(!toastEl) return;
-    toastEl.textContent = msg; toastEl.classList.add("sb-show");
-    setTimeout(() => { if(toastEl) toastEl.classList.remove("sb-show"); }, 2000);
-  }
-
-  function renderSkinShopList() {
-    if(!listEl) return;
-    listEl.innerHTML = "";
-    
-    SKIN_DATA.forEach(sk => {
-      const isOwned = S.ownedSkins.includes(sk.key);
-      const isApplied = S.currentSkin === sk.key;
-      
-      const card = document.createElement("div");
-      card.className = "sb-skin-card" + (isApplied ? " sb-applied" : "");
-      card.style.cssText = "display:flex; align-items:center; justify-content:between; padding:14px; border:1px solid var(--line); border-radius:12px; background:var(--bg);";
-      
-      card.innerHTML = `
-        <div class="sb-skin-meta" style="flex:1;">
-          <div class="sb-skin-nm" style="font-weight:800; font-size:15px;">${sk.icon} ${sk.name}</div>
-          <div class="sb-skin-sub" style="font-size:12px; color:var(--muted); margin-top:2px;">${sk.sub}${sk.cost > 0 ? ' (' + sk.cost + ' AC)' : ' (無料)'}</div>
-        </div>
-      `;
-      
-      const btn = document.createElement("button");
-      btn.className = "sb-skin-btn";
-      btn.style.cssText = "padding:8px 14px; font-weight:800; border-radius:8px; cursor:pointer;";
-      
-      if (isOwned) {
-        if (isApplied) {
-          btn.style.background = "var(--line)";
-          btn.style.color = "var(--muted)";
-          btn.textContent = "適用中";
-          btn.disabled = true;
-        } else {
-          btn.style.background = "var(--accent)";
-          btn.style.color = "#fff";
-          btn.textContent = "適用する";
-          btn.onclick = () => { 
-            S.currentSkin = sk.key; 
-            // bodyのクラスを切り替えて背景を変更
-            document.body.className = (sk.key && sk.key !== "default") ? ("sb-theme-" + sk.key) : "";
-            saveSkins();
-            renderSkinShopList(); 
-            render();
-            try { saveToCloud(getBP(), loadWrong(), loadHist()); } catch(e){}
-          };
-        }
-      } else {
-        if ((S.coins || 0) >= sk.cost) {
-          btn.style.background = "#22c55e";
-          btn.style.color = "#fff";
-          btn.textContent = `購入 (${sk.cost}AC)`;
-          btn.onclick = () => {
-            S.coins -= sk.cost;
-            S.ownedSkins.push(sk.key);
-            S.currentSkin = sk.key;
-            document.body.className = (sk.key && sk.key !== "default") ? ("sb-theme-" + sk.key) : "";
-            saveCoins(S.coins);
-            saveSkins();
-            renderStatusBar();
-            renderSkinShopList();
-            render();
-            toast(`「${sk.name}」を購入・適用しました！`);
-            try { saveToCloud(getBP(), loadWrong(), loadHist()); } catch(e){}
-          };
-        } else {
-          btn.style.background = "var(--line)";
-          btn.style.color = "var(--muted)";
-          btn.textContent = "🔒 不足";
-          btn.disabled = true;
-        }
-      }
-      card.appendChild(btn);
-      listEl.appendChild(card);
-    });
-  }
-
-  // 初回描画
-  renderSkinShopList();
-}
 
   document.getElementById("sb-skin-fab").onclick = () => { shop.classList.add("sb-open"); shopBd.classList.add("sb-open"); renderSkinShopList(); };
   const closeShop = () => { shop.classList.remove("sb-open"); shopBd.classList.remove("sb-open"); };
@@ -1318,7 +1216,7 @@ function initSkinShopLogic() {
   viewport.onpointercancel = endPan;
 
   applyPan();
-
+}
 
 export function renderSettings() {
   app.innerHTML = `
@@ -1328,8 +1226,11 @@ export function renderSettings() {
     </div>
 
     <div class="settings-list" style="display:flex; flex-direction:column; gap:12px;">
-      <button class="ghost" data-go="skinshop" style="text-align:left; padding:16px;">🎨 背景変更（スキン購入）</button>
-    </div>
+      <button class="ghost" data-go="portal" style="text-align:left; padding:16px;">🎨 背景変更 (スキン購入)</button>
+      
+      </div>
   `;
+
+  // ボタンのイベント紐付け
   app.querySelectorAll("[data-go]").forEach(b => b.onclick = () => go(b.dataset.go));
 }
