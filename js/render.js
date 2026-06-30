@@ -554,9 +554,8 @@ export function renderHome(){
     <div class="mode-note">${DRAW}問・1000点満点換算・700点以上でボーナスEXP（×1.25〜×2.0）</div>
     ${(loadWrong().length)?`<button class="ghost rev-btn" data-review style="margin-top:12px">🔁 復習モード（間違えた ${loadWrong().length} 問）</button>`:`<div class="x-hint" style="margin-top:12px;text-align:center">復習モード：間違えた問題がここに溜まり、再挑戦できます</div>`}
     <button class="ghost" data-go="dict" style="margin-top:10px">📖 用語辞典</button>
-    <button class="ghost" data-go="analytics" style="margin-top:10px">📊 統計パネル（全ユーザー傾向）</button>
-    <button class="ghost" data-go="portal" style="margin-top:10px">🧪 Azure デモ環境（コインで構築）</button>
-    <button class="ghost" data-go="transfer" style="margin-top:10px">💾 データ引き継ぎ（保存・復元）</button>
+    <button class="ghost" data-go="analytics" style="margin-top:10px">📊 統計パネル </button>
+    <button class="ghost" data-go="portal" style="margin-top:10px">🧪 Azure デモ環境 </button>
     ${h.length?`<button class="link" data-go="history">スコア履歴を見る（${h.length}件）</button>`:
       `<div class="install">ヒント：ブラウザの共有メニューから「ホーム画面に追加」すると、アプリのように起動できます。</div>`}
     ${state.currentUser
