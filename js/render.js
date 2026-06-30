@@ -537,16 +537,7 @@ export function renderHome(){
       <button class="quit" data-go="select">← 資格選択</button>
       <span class="q-count" style="color:${c.accent||'var(--accent)'}">${esc(c.code||"")}</span>
     </div>
-    ${homeScene()}
-    <div class="stats">
-      <div class="stat"><div class="stat-num">${h.length}</div><div class="stat-lab">受験回数</div></div>
-      <div class="stat"><div class="stat-num stat-best">${best}</div><div class="stat-lab">最高スコア</div></div>
-    </div>
-    <div class="start-hero">
-      <div class="big">出題プール</div>
-      <div class="pool">${Q.length}<em> 問</em></div>
-      <div class="note">ランダムに ${Math.min(DRAW,Q.length)} 問を出題 ・ 重要度で重み付け ・ 複数選択あり ・ 1000点満点</div>
-    </div>
+
     ${state.practicePick ? `
     <div class="pcount-wrap">
       <div class="pcount-lab">📝 演習モード・問題数を選択</div>
