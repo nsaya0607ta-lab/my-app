@@ -344,6 +344,7 @@ export function render(){
   // 資格選択なしでも開ける画面
   if(S.screen==="ranking") return renderRanking();
   if(S.screen==="profile") return renderProfile();
+  if(S.screen==="settings") return renderSettings();
   if(S.screen==="analytics") return renderAnalytics();
   // 大元：資格選択画面
   if(S.screen==="select" || !S.cert) return renderSelect();
@@ -556,6 +557,7 @@ export function renderHome(){
     <button class="ghost" data-go="dict" style="margin-top:10px">📖 用語辞典</button>
     <button class="ghost" data-go="analytics" style="margin-top:10px">📊 統計パネル </button>
     <button class="ghost" data-go="portal" style="margin-top:10px">🧪 Azure デモ環境 </button>
+    <button class="ghost" data-go="settings" style="margin-top:10px">⚙️ 設定</button>
     ${h.length?`<button class="link" data-go="history">スコア履歴を見る（${h.length}件）</button>`:
       `<div class="install">ヒント：ブラウザの共有メニューから「ホーム画面に追加」すると、アプリのように起動できます。</div>`}
     ${state.currentUser
@@ -1216,3 +1218,19 @@ function initSkinShopLogic() {
   applyPan();
 }
 
+export function renderSettings() {
+  app.innerHTML = `
+    <div class="q-head" style="margin-bottom:20px">
+      <button class="quit" data-go="home">← ホーム</button>
+      <span class="q-count" style="color:var(--accent)">⚙️ 設定</span>
+    </div>
+
+    <div class="settings-list" style="display:flex; flex-direction:column; gap:12px;">
+      <button class="ghost" data-go="portal" style="text-align:left; padding:16px;">🎨 背景変更 (スキン購入)</button>
+      
+      </div>
+  `;
+
+  // ボタンのイベント紐付け
+  app.querySelectorAll("[data-go]").forEach(b => b.onclick = () => go(b.dataset.go));
+}
