@@ -892,9 +892,11 @@ async function loadNewsCard(){
 /* =========================================================================
    株価カード（STOCKS）：ニュースカードと同じデザインシステムを流用した
    ダッシュボード風ウィジェット＋模擬投資（ペーパートレード）機能。
-   起動直後はサンプル株価で表示し、Yahoo Financeの株価APIをCORSプロキシ
-   経由で取得できた場合は実際の株価に置き換える（失敗時は擬似的な値動きで
-   フォールバックし、表示が固まったままにならないようにする）。
+   起動直後はサンプル株価で表示し、Finnhubの株価APIから実際の株価を取得
+   できた場合はそちらに置き換える。取得に失敗した場合、一度も実データを
+   取得できていなければ引き続きサンプル値を、既に実データを取得済みの
+   銘柄であれば最後に取得できた値（最終参照値）をそのまま据え置いて表示する
+   （実データのように見える擬似変動はさせない）。
    ========================================================================= */
 
 // series: 分足（Intraday）の {t: 時刻(ms), close: 終値} 配列。X軸=時間(hh:mm)・
@@ -916,11 +918,11 @@ function mockIntradaySeries(start, end, points=90, stepMinutes=5){
 }
 
 const STOCKS = [
-  { ticker:"MSFT", name:"Microsoft", price:435.12, previousClose:429.91, session:"regular", sessionLabel:"サンプル", isLive:false, chartIsLive:false,
+  { ticker:"MSFT", name:"Microsoft", price:435.12, previousClose:429.91, session:"regular", sessionLabel:"サンプル", isLive:false, chartIsLive:false, everLive:false,
     series: mockIntradaySeries(429.91, 435.12) },
-  { ticker:"AMZN", name:"Amazon", price:189.50, previousClose:190.45, session:"regular", sessionLabel:"サンプル", isLive:false, chartIsLive:false,
+  { ticker:"AMZN", name:"Amazon", price:189.50, previousClose:190.45, session:"regular", sessionLabel:"サンプル", isLive:false, chartIsLive:false, everLive:false,
     series: mockIntradaySeries(190.45, 189.50) },
-  { ticker:"GOOGL", name:"Alphabet", price:199.80, previousClose:200.80, session:"regular", sessionLabel:"サンプル", isLive:false, chartIsLive:false,
+  { ticker:"GOOGL", name:"Alphabet", price:199.80, previousClose:200.80, session:"regular", sessionLabel:"サンプル", isLive:false, chartIsLive:false, everLive:false,
     series: mockIntradaySeries(200.80, 199.80) },
 ];
 // change(%)は常に previousClose（前日終値）を基準に計算する＝日足ベース。
@@ -1001,7 +1003,7 @@ function renderStockChart(){
   const periodEl = document.getElementById("stock-chart-period");
   const s = STOCKS[stockIndex];
   if(periodEl){
-    periodEl.textContent = s.chartIsLive ? "分足 (Intraday)" : "分足 (Intraday・サンプル)";
+    periodEl.textContent = s.chartIsLive ? "分足 (Intraday)" : (s.everLive ? "分足 (Intraday・最終参照)" : "分足 (Intraday・サンプル)");
   }
   const canvas = document.getElementById("stock-chart-canvas");
   if(!canvas || typeof window.Chart === "undefined") return;
@@ -1079,6 +1081,7 @@ function applyLiveStocks(liveItems){
     s.session = live.session;
     s.sessionLabel = live.sessionLabel; // 時間外のPre-market/After-hours、通常時間はnull
     s.isLive = true;
+    s.everLive = true; // 一度でも実データを取得できたことを記録（以後の取得失敗時に擬似変動ではなく最終参照値を出すために使う）
     if(live.series){
       // チャート（分足）も取得できた場合のみ実データに置き換える
       s.series = live.series;
@@ -1093,19 +1096,27 @@ function applyLiveStocks(liveItems){
   });
 }
 
-// 実データが取得できなかった銘柄の擬似的な値動き（限定的な範囲でランダムに上下）。
-// 「サンプル」ラベルを必ず出し、実データと誤認されないようにする。
+// 実データが取得できなかった銘柄のフォールバック処理。
+// 一度でも実データを取得できたことがある銘柄（everLive）は、ランダムな擬似変動は
+// させず、最後に取得できた実際の値をそのまま据え置いて表示する（「最終参照」）。
+// まだ一度も実データを取得できていない起動直後のみ、デモ表示用に擬似的な値動きを見せる
+// （この場合のみ「サンプル」ラベルを出し、実データと誤認されないようにする）。
 // 日足の本数は増やさず、直近（今日）の終値ポイントだけを動かして表示を維持する。
 const STOCK_MOCK_SERIES_MAX = 180; // 擬似変動時に series が際限なく伸びないよう上限を設ける
 
 function simulateStockTick(s){
+  s.isLive = false;
+  s.chartIsLive = false;
+  if(s.everLive){
+    // 実データ取得済みの銘柄：価格・変化率は動かさず、最後に取得できた値のまま据え置く
+    s.sessionLabel = "最終参照";
+    return;
+  }
   const delta = (Math.random() - 0.5) * STOCK_TICK_PCT;
   s.price = Math.max(0.01, round2(s.price * (1 + delta)));
   s.change = ((s.price - s.previousClose) / s.previousClose) * 100;
   s.session = "regular";
   s.sessionLabel = "サンプル";
-  s.isLive = false;
-  s.chartIsLive = false;
   // 分足チャートらしく、実際に新しい時刻のポイントを追加していく（古い分は切り捨て）
   s.series.push({ t: Date.now(), close: s.price });
   if(s.series.length > STOCK_MOCK_SERIES_MAX) s.series.shift();
