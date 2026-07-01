@@ -1,8 +1,9 @@
 /* =========================================================================
    外部ニュース取得（資格一覧画面 上部のニューステロップ用）
    ブラウザから直接 RSS を fetch すると CORS エラーになるため、
-   無料の allorigins プロキシ経由で取得する。
-   取得に失敗した場合は FALLBACK_NEWS を表示する。
+   無料のCORSプロキシ経由で取得する。1つのプロキシはダウン・レート制限が
+   起きやすいため、複数のプロキシを順番に試し、全滅した場合のみ
+   FALLBACK_NEWS を表示する。
    ========================================================================= */
 
 // Yahoo!ニュース トピックス RSS（IT・科学カテゴリ）
@@ -11,12 +12,16 @@ const RSS_FEEDS = [
   "https://news.yahoo.co.jp/rss/topics/science.xml",
 ];
 
-// CORSを回避するための無料プロキシ（allorigins）。第三者サービス経由のため、
+// CORSを回避するための無料プロキシ（上から順に試す）。第三者サービス経由のため、
 // 取得内容は必ず esc() でエスケープしてから表示すること。
-const CORS_PROXY = "https://api.allorigins.win/raw?url=";
+const CORS_PROXIES = [
+  url => "https://api.allorigins.win/raw?url=" + encodeURIComponent(url),
+  url => "https://corsproxy.io/?url=" + encodeURIComponent(url),
+  url => "https://api.codetabs.com/v1/proxy?quest=" + encodeURIComponent(url),
+];
 
 const MAX_ITEMS = 8;
-const FETCH_TIMEOUT_MS = 6000;
+const FETCH_TIMEOUT_MS = 8000;
 const CACHE_KEY = "news_cache_v1";
 const CACHE_TTL_MS = 10 * 60 * 1000; // 10分キャッシュ（プロキシ・取得先への負荷軽減）
 
@@ -34,16 +39,31 @@ function withTimeout(promise, ms) {
   ]);
 }
 
-async function fetchFeed(feedUrl) {
-  const res = await withTimeout(fetch(CORS_PROXY + encodeURIComponent(feedUrl)), FETCH_TIMEOUT_MS);
-  if (!res.ok) throw new Error("HTTP " + res.status);
-  const xmlText = await res.text();
+function parseFeedXml(xmlText) {
   const doc = new DOMParser().parseFromString(xmlText, "application/xml");
   if (doc.querySelector("parsererror")) throw new Error("RSSの解析に失敗しました");
   return [...doc.querySelectorAll("item")].map(item => ({
     title: (item.querySelector("title")?.textContent || "").trim(),
     link: (item.querySelector("link")?.textContent || "").trim() || null,
   })).filter(n => n.title);
+}
+
+// 1つのプロキシがダウン・レート制限中でも他が使えるよう、順番に試す
+async function fetchFeed(feedUrl) {
+  let lastErr = new Error("no proxy available");
+  for (const buildProxyUrl of CORS_PROXIES) {
+    try {
+      const res = await withTimeout(fetch(buildProxyUrl(feedUrl)), FETCH_TIMEOUT_MS);
+      if (!res.ok) throw new Error("HTTP " + res.status);
+      const xmlText = await res.text();
+      const items = parseFeedXml(xmlText);
+      if (items.length) return items;
+      throw new Error("0件でした");
+    } catch (e) {
+      lastErr = e;
+    }
+  }
+  throw lastErr;
 }
 
 function loadCache() {
