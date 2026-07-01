@@ -1,5 +1,6 @@
 import { CERTS } from './data/certs.js';
 import { DC_PHASES, IMP_POINTS, L, OVERALL_STEP } from './data/constants.js';
+import { SKIN_DATA } from './data/skins.js';
 import { go, render } from './render.js';
 import { S, state } from './state.js';
 
@@ -183,6 +184,32 @@ export function loadSkins(){
     if(Array.isArray(own) && own.length) S.ownedSkins = own;
     if(!S.ownedSkins.includes("default")) S.ownedSkins.unshift("default");
   }catch(e){}
+}
+
+export function skinByKey(key){ return SKIN_DATA.find(s=>s.key===key) || null; }
+
+// スキン購入：所持済み／コイン不足をここで検証してから減算・所持登録・適用を行う
+export function purchaseSkin(key){
+  const sk = skinByKey(key);
+  if(!sk) return { ok:false, msg:"不明なスキンです。" };
+  if(S.ownedSkins.includes(key)) return { ok:false, msg:"このスキンは既に所持しています。" };
+  if((S.coins||0) < sk.cost) return { ok:false, msg:"コインが不足しています。" };
+  S.coins -= sk.cost;
+  S.ownedSkins.push(key);
+  S.currentSkin = key;
+  saveCoins(S.coins);
+  saveSkins();
+  try{ saveToCloud(getBP(), loadWrong(), loadHist()); }catch(e){}
+  return { ok:true, skin:sk };
+}
+
+// スキン適用：所持済みスキンのみ現在の背景として設定できる
+export function applySkin(key){
+  if(!S.ownedSkins.includes(key)) return { ok:false, msg:"未所持のスキンです。先に購入してください。" };
+  S.currentSkin = key;
+  saveSkins();
+  try{ saveToCloud(getBP(), loadWrong(), loadHist()); }catch(e){}
+  return { ok:true };
 }
 // 獲得コイン：試験はスコア帯で固定、演習・復習は「正解数×3」
 

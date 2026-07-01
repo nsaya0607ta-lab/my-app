@@ -1,7 +1,8 @@
 import { CERTS } from './data/certs.js';
 import { DC_PHASES, L, REGIONS } from './data/constants.js';
-import { CONCEPTS, DRAW, PASS, Q, TIERS, certById, certStat, commit, correctSet, dcCount, dcPhase, dcTitle, esc, exportCode, fmt, getBP, getProfileName, grade, importCode, isMulti, loadHist, loadReviewStats, loadWrong, overallLevel, overallStat, pick, pts, publishLeaderboard, saveSkins, saveToCloud, selectCert, setBP, setProfileName, stars, start, startReview, totalBP } from './core.js';
+import { CONCEPTS, DRAW, PASS, Q, TIERS, applySkin, certById, certStat, commit, correctSet, dcCount, dcPhase, dcTitle, esc, exportCode, fmt, getBP, getProfileName, grade, importCode, isMulti, loadHist, loadReviewStats, loadWrong, overallLevel, overallStat, pick, pts, publishLeaderboard, purchaseSkin, saveToCloud, selectCert, setBP, setProfileName, stars, start, startReview, totalBP } from './core.js';
 import { MISSIONS, PT_SHOP } from './data/missions.js';
+import { SKIN_DATA } from './data/skins.js';
 import { S, state } from './state.js';
 
 export const app = document.getElementById("app");
@@ -345,6 +346,7 @@ export function render(){
   if(S.screen==="ranking") return renderRanking();
   if(S.screen==="profile") return renderProfile();
   if(S.screen==="settings") return renderSettings();
+  if(S.screen==="skins") return renderSkinShop();
   if(S.screen==="analytics") return renderAnalytics();
   // 大元：資格選択画面
   if(S.screen==="select" || !S.cert) return renderSelect();
@@ -1163,14 +1165,6 @@ export async function loadRanking(){
 /* =========================================================================
    🎨 背景スキンショップ＆無限マップパン移動制御エンジン
    ========================================================================= */
-import { saveCoins } from './core.js';
-
-const SKIN_DATA = [
-  { key:"default", icon:"🌐", name:"標準グリッド",       sub:"初期テーマ",                cost:0 },
-  { key:"space",   icon:"🌌", name:"宇宙空間",           sub:"星空＆ネビュラ",            cost:300 },
-  { key:"magma",   icon:"🌋", name:"マグマ冷却基地",     sub:"赤黒サイバー・脈動グロー",  cost:300 },
-  { key:"retro",   icon:"👾", name:"レトロドット絵",     sub:"ファミコン風ドット",        cost:400 },
-];
 
 let sbPanX = -1050, sbPanY = -1100; // 初期表示座標
 
@@ -1221,30 +1215,24 @@ function initSkinShopLogic() {
           btn.classList.add("sb-applied-btn"); btn.textContent = "適用中"; btn.disabled = true;
         } else {
           btn.textContent = "適用する";
-          btn.onclick = () => { 
-            S.currentSkin = sk.key; 
-            board.className = "sb-theme-" + sk.key; 
-            saveSkins();                                   // 端末へ永続化
-            renderSkinShopList(); 
+          btn.onclick = () => {
+            applySkin(sk.key);
+            board.className = "sb-theme-" + sk.key;
+            renderSkinShopList();
             render(); // 🏠 ホーム画面の背景も即時同期するために全体再描画を呼ぶ
-            try { saveToCloud(getBP(), loadWrong(), loadHist()); } catch(e){} // ☁️ 適用状態もクラウドへ同期
           };
         }
       } else {
         if ((S.coins || 0) >= sk.cost) {
           btn.classList.add("sb-buy"); btn.textContent = `購入 (${sk.cost}AC)`;
           btn.onclick = () => {
-            S.coins -= sk.cost;
-            S.ownedSkins.push(sk.key);
-            S.currentSkin = sk.key;
+            const res = purchaseSkin(sk.key);
+            if(!res.ok) return;
             board.className = "sb-theme-" + sk.key;
-            saveCoins(S.coins);
-            saveSkins();                                   // 端末へ永続化
             renderStatusBar();
             renderSkinShopList();
             render(); // 所持金減額と背景をホームに即反映
             toast(`「${sk.name}」を購入・適用しました！`);
-            try { saveToCloud(getBP(), loadWrong(), loadHist()); } catch(e){} // ☁️ Firebase/Cloudへのバックアップ
           };
         } else {
           btn.classList.add("sb-locked"); btn.textContent = "🔒 不足"; btn.disabled = true;
@@ -1291,11 +1279,63 @@ export function renderSettings() {
     </div>
 
     <div class="settings-list" style="display:flex; flex-direction:column; gap:12px;">
-      <button class="ghost" data-go="portal" style="text-align:left; padding:16px;">🎨 背景変更 (スキン購入)</button>
-      
+      <button class="ghost" data-go="skins" style="text-align:left; padding:16px;">🎨 背景変更 (スキン購入)</button>
+
       </div>
   `;
 
   // ボタンのイベント紐付け
   app.querySelectorAll("[data-go]").forEach(b => b.onclick = () => go(b.dataset.go));
+}
+
+/* 設定＞背景変更：スキン一覧・購入・適用（フルページ版。無限マップの外からも単独で開ける） */
+
+export function renderSkinShop() {
+  const cards = SKIN_DATA.map(sk=>{
+    const isOwned = S.ownedSkins.includes(sk.key);
+    const isApplied = S.currentSkin === sk.key;
+    const canBuy = (S.coins||0) >= sk.cost;
+    let btnHTML;
+    if(isApplied) btnHTML = `<button class="sb-skin-btn sb-applied-btn" disabled>適用中</button>`;
+    else if(isOwned) btnHTML = `<button class="sb-skin-btn" data-apply="${sk.key}">適用する</button>`;
+    else if(canBuy) btnHTML = `<button class="sb-skin-btn sb-buy" data-buy="${sk.key}">購入 (${sk.cost}AC)</button>`;
+    else btnHTML = `<button class="sb-skin-btn sb-locked" disabled>🔒 AC不足</button>`;
+    return `<div class="sb-skin-card${isApplied?" sb-applied":""}">
+      <div class="sb-skin-prev sb-theme-${sk.key}"></div>
+      <div class="sb-skin-meta">
+        <div class="sb-skin-nm">${sk.icon} ${esc(sk.name)}</div>
+        <div class="sb-skin-sub">${esc(sk.sub)}${sk.cost>0?` (${sk.cost} AC)`:" (無料)"}</div>
+      </div>
+      ${btnHTML}
+    </div>`;
+  }).join("");
+
+  app.innerHTML = `
+    <div class="q-head" style="margin-bottom:14px">
+      <button class="quit" data-go="settings">← 設定</button>
+      <span class="q-count" style="color:var(--accent)">🎨 背景変更</span>
+    </div>
+    <div class="x-hint" style="margin-top:0;margin-bottom:14px">好きなスキンを選んで購入・適用できます。所持金：💰 <b>${(S.coins||0).toLocaleString()} AC</b></div>
+    <div id="skin-shop-msg" class="x-hint" style="margin-top:0;min-height:1.4em"></div>
+    <div id="skin-shop-list">${cards}</div>
+  `;
+  app.querySelectorAll("[data-go]").forEach(b=>b.onclick=()=>go(b.dataset.go));
+
+  app.querySelectorAll("[data-buy]").forEach(b=>b.onclick=()=>{
+    const res = purchaseSkin(b.dataset.buy);
+    render(); // 所持金・所持スキン・背景色を画面全体（ステータスバー含む）へ即時反映
+    const m = document.getElementById("skin-shop-msg");
+    if(!m) return;
+    m.style.color = res.ok ? "var(--good)" : "var(--bad)";
+    m.textContent = res.ok ? `✓ 「${res.skin.name}」を購入し、背景に適用しました！` : res.msg;
+  });
+  app.querySelectorAll("[data-apply]").forEach(b=>b.onclick=()=>{
+    const res = applySkin(b.dataset.apply);
+    render();
+    const m = document.getElementById("skin-shop-msg");
+    if(!m) return;
+    m.style.color = res.ok ? "var(--good)" : "var(--bad)";
+    m.textContent = res.ok ? "✓ 背景を適用しました。" : res.msg;
+  });
+  window.scrollTo(0,0);
 }
