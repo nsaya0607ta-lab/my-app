@@ -1271,3 +1271,54 @@ export function renderSettings() {
   // ボタンのイベント紐付け
   app.querySelectorAll("[data-go]").forEach(b => b.onclick = () => go(b.dataset.go));
 }
+
+export function renderQuiz(){
+  const q=S.deck[S.idx], pct=(S.idx/S.deck.length)*100, multi=isMulti(q);
+  
+  app.innerHTML = `
+    <div class="q-head">
+      <button class="quit" data-go="home">✕ 中断</button>
+      <span class="q-count">${S.review?'<span class="rev-tag-q">🔁 復習</span> ':(S.mode==="practice"?'<span class="mode-tag practice">📝 演習</span> ':'<span class="mode-tag exam">🎯 試験</span> ')}${S.idx+1} <em>/ ${S.deck.length}</em></span>
+    </div>
+    <div class="progress"><div class="progress-fill" style="width:${pct}%"></div></div>
+    <div class="q-badge"><span class="stars">${stars(q.imp)}</span><span>重要度 ${q.imp}</span><span class="pts">${pts(q)} 点</span>${multi?`<span class="multi">複数選択（${q.c.length}つ）</span>`:""}</div>
+    <p class="q-text">${esc(q.q)}</p>
+    
+    <div class="opts">
+      ${q.o.map((opt,i)=>{
+        const picked=S.sel.indexOf(i)>=0;
+        return `<button class="opt${picked?" picked":""}" data-pick="${i}">
+          <span class="opt-key${multi?" box":""}">${L[i]}</span><span class="opt-label">${esc(opt)}</span></button>`;
+      }).join("")}
+    </div>
+
+    <div style="display:flex; gap:10px; margin-top:20px;">
+      ${S.idx > 0 ? `
+        <button class="ghost" id="quiz-prev" style="flex:1; margin-top:0; padding:16px;">← 戻る</button>
+      ` : ""}
+      <button class="cta" data-commit ${S.sel.length===0?"disabled":""} style="flex:2; margin-top:0;">
+        ${S.idx+1<S.deck.length?"次の問題へ ➔":"採点する 🎉"}
+      </button>
+    </div>
+  `;
+
+  // 選択肢をタップした時の処理（元のロジックを完全維持）
+  app.querySelectorAll("[data-pick]").forEach(b=>b.onclick=()=>pick(+b.dataset.pick));
+  
+  // 中断ボタンなどの遷移処理
+  app.querySelectorAll("[data-go]").forEach(b=>b.onclick=()=>go(b.dataset.go));
+  
+  // 次へ進む（コミット）処理
+  const cm=app.querySelector("[data-commit]"); if(cm) cm.onclick=commit;
+
+  // 💡 【新設】戻るボタンが画面にある場合のみ、クリックイベントを紐付ける
+  const prevBtn = document.getElementById("quiz-prev");
+  if(prevBtn) {
+    prevBtn.onclick = () => {
+      // core.js から prevQuestion を動的に読み込んで実行
+      import('./core.js').then(core => {
+        core.prevQuestion();
+      });
+    };
+  }
+}
