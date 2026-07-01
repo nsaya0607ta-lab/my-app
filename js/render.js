@@ -612,28 +612,91 @@ export function renderHome(){
 }
 
 export function renderQuiz(){
-  const q=S.deck[S.idx], pct=(S.idx/S.deck.length)*100, multi=isMulti(q);
+  const q = S.deck[S.idx];
+  if(!q) return;
+  const h = loadHist();
+  const c = certById(S.cert)||{};
+
+  // 複数選択かどうかの判定
+  const multi = isMulti(q);
+
   app.innerHTML = `
     <div class="q-head">
-      <button class="quit" data-go="home">✕ 中断</button>
-      <span class="q-count">${S.review?'<span class="rev-tag-q">🔁 復習</span> ':(S.mode==="practice"?'<span class="mode-tag practice">📝 演習</span> ':'<span class="mode-tag exam">🎯 試験</span> ')}${S.idx+1} <em>/ ${S.deck.length}</em></span>
+      <button class="quit" data-quit>×</button>
+      ${S.idx > 0 ? `<button class="quit" data-prev style="margin-left: 8px; padding: 4px 10px; font-size: 12px;">← 戻る</button>` : ''}
+      <span class="q-count">${S.idx+1} / ${S.deck.length}</span>
     </div>
-    <div class="progress"><div class="progress-fill" style="width:${pct}%"></div></div>
-    <div class="q-badge"><span class="stars">${stars(q.imp)}</span><span>重要度 ${q.imp}</span><span class="pts">${pts(q)} 点</span>${multi?`<span class="multi">複数選択（${q.c.length}つ）</span>`:""}</div>
-    <p class="q-text">${esc(q.q)}</p>
-    <div class="opts">
-      ${q.o.map((opt,i)=>{
-        const picked=S.sel.indexOf(i)>=0;
-        return `<button class="opt${picked?" picked":""}" data-pick="${i}">
-          <span class="opt-key${multi?" box":""}">${L[i]}</span><span class="opt-label">${esc(opt)}</span></button>`;
-      }).join("")}
+
+    <div class="q-body">
+      <div class="q-text">${esc(q.q)}</div>
+      ${q.context ? `<pre class="q-context">${esc(q.context)}</pre>` : ''}
+      
+      <div class="opts">
+        ${q.o.map((o,i)=>{
+          const sel = S.sel.indexOf(i)>=0;
+          return `
+            <div class="opt-card ${sel?'selected':''}" data-opt="${i}">
+              <div class="opt-chk">${multi ? (sel?'☑':'☐') : (sel?'🔵':'⚪')}</div>
+              <div class="opt-txt">${esc(o)}</div>
+            </div>
+          `;
+        }).join('')}
+      </div>
     </div>
-    <button class="cta" data-commit ${S.sel.length===0?"disabled":""}>${S.idx+1<S.deck.length?"次の問題へ":"採点する"}</button>
+
+    <div style="display: flex; gap: 10px; margin-top: 16px;">
+      ${S.idx > 0 ? `
+        <button class="ghost" data-prev style="flex: 1; margin-top: 0; padding: 14px;">← 前の問題</button>
+      ` : ''}
+      <button class="cta" data-next style="flex: 2; margin-top: 0;">
+        ${S.idx === S.deck.length - 1 ? '🎉 終了して採点' : (multi ? '選択して次へ ➔' : '次へ ➔')}
+      </button>
+    </div>
   `;
-  app.querySelectorAll("[data-pick]").forEach(b=>b.onclick=()=>pick(+b.dataset.pick));
-  app.querySelectorAll("[data-go]").forEach(b=>b.onclick=()=>go(b.dataset.go));
-  const cm=app.querySelector("[data-commit]"); if(cm)cm.onclick=commit;
+
+  // イベントリスナーの登録
+  app.querySelector("[data-quit]").onclick = () => {
+    if(confirm("中断してホームに戻りますか？（スコアは保存されません）")) go("home");
+  };
+
+  // 💡 上部と下部のすべての「戻る」ボタンにイベントを割り当て
+  app.querySelectorAll("[data-prev]").forEach(b => {
+    b.onclick = () => {
+      // core.js から新しくインポートした prevQuestion を呼び出す
+      const { prevQuestion } = require('./core.js'); 
+      // ※ もしファイルの先頭で import している場合は、単に prevQuestion(); でOKです。
+      // 通常は先頭の import 文に加えるのが綺麗です（下述）。
+    };
+  });
+
+  app.querySelectorAll("[data-opt]").forEach(card => {
+    card.onclick = () => {
+      const idx = +card.dataset.opt;
+      if(multi) {
+        const exist = S.sel.indexOf(idx);
+        if(exist >= 0) S.sel.splice(exist, 1);
+        else S.sel.push(idx);
+      } else {
+        S.sel = [idx];
+        // 単一選択の場合は、親切のために少し待って自動で次へ進めるか、手動で「次へ」を押させることができます。
+        // ここでは既存の挙動（自動で次へ）を維持、または「次へ」ボタンに任せます。
+      }
+      render();
+    };
+  });
+
+  app.querySelector("[data-next]").onclick = () => {
+    // 単一選択で何も選んでいない場合の防御
+    if (S.sel.length === 0) {
+      alert("選択肢を1つ以上選んでください。");
+      return;
+    }
+    // core.js の next() を呼ぶ
+    const { next } = require('./core.js'); // 先頭でimportしていれば不要
+    next();
+  };
 }
+
 
 export function renderResult(){
   const e=S.last;
