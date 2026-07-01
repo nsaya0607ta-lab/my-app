@@ -3,9 +3,15 @@
    Yahoo Finance の公開APIをCORSプロキシ経由で取得する。
    - v7/finance/quote  : 現在値・前日終値・プレ/アフターマーケット価格・
                           市場の状態（PRE/REGULAR/POST/CLOSED）
-   - v8/finance/chart  : 日足（1日間隔）の時系列データ（チャート用）
+   - v8/finance/chart  : 分足（1分間隔・プレ/アフターマーケット込み）の
+                          Intraday時系列データ（チャート用）
    取得できない場合は null を返し、呼び出し側（render.js）が
    保持しているサンプル株価・擬似変動で動作を継続する。
+
+   ※ Alpha VantageのTIME_SERIES_INTRADAYも候補だったが、無料枠が
+   1日25リクエストと非常に少なく、45秒間隔での定期更新には不向きなため、
+   APIキー不要でプレ/アフターマーケットも1本のデータで返してくれる
+   Yahoo Financeの分足チャートAPIを採用している。
    ========================================================================= */
 
 import { fetchViaProxies } from './cors-proxy.js';
@@ -14,7 +20,7 @@ export const STOCK_TICKERS = ["MSFT", "AMZN", "GOOGL"];
 const STOCK_NAMES = { MSFT: "Microsoft", AMZN: "Amazon", GOOGL: "Alphabet" };
 
 const FETCH_TIMEOUT_MS = 8000;
-const CACHE_KEY = "stocks_cache_v2";
+const CACHE_KEY = "stocks_cache_v3";
 const CACHE_TTL_MS = 45 * 1000; // 45秒キャッシュ（相場は動くのでニュースより短め）
 
 async function fetchSnapshot(ticker) {
@@ -26,9 +32,10 @@ async function fetchSnapshot(ticker) {
   return q;
 }
 
-// 日足（週足・月足ではない）の時系列データ。チャートのX軸（時間）にそのまま使う
-async function fetchDailySeries(ticker) {
-  const url = `https://query1.finance.yahoo.com/v8/finance/chart/${ticker}?range=1mo&interval=1d`;
+// 分足（1分間隔）のIntraday時系列データ。includePrePost=true で
+// プレマーケット～アフターマーケットまでを1本の連続した配列として取得する
+async function fetchIntradaySeries(ticker) {
+  const url = `https://query1.finance.yahoo.com/v8/finance/chart/${ticker}?range=1d&interval=1m&includePrePost=true`;
   const res = await fetchViaProxies(url, { timeoutMs: FETCH_TIMEOUT_MS });
   const json = await res.json();
   const result = json?.chart?.result?.[0];
@@ -53,7 +60,7 @@ function pickSessionPrice(q) {
 }
 
 async function fetchQuote(ticker) {
-  const [q, series] = await Promise.all([fetchSnapshot(ticker), fetchDailySeries(ticker)]);
+  const [q, series] = await Promise.all([fetchSnapshot(ticker), fetchIntradaySeries(ticker)]);
   const previousClose = q.regularMarketPreviousClose;
   if (typeof previousClose !== "number") throw new Error("invalid previousClose for " + ticker);
 
