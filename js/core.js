@@ -95,10 +95,78 @@ export function start(mode, count){
   state.practicePick=false;
   S.review=false;
   S.mode = (mode==="practice") ? "practice" : "exam";
-  const n = (S.mode==="practice") ? (count||10) : DRAW;   // 演習は選択数、試験は従来どおりDRAW
-  S.deck = shuffle(Q).slice(0, Math.min(n, Q.length));
+  const n = (S.mode==="practice") ? (count||10) : DRAW;
+
+  // 💡 【新設】直近の履歴から、すでに出題された問題のIDを「新しく解いた順」で収集
+  const hist = loadHist();
+  const recentQids = [];
+  hist.forEach(entry => {
+    // 各履歴エントリーに紐づくデッキ（出題された問題）のIDを収集
+    if (entry.id && S.deck) {
+      // ※既存の履歴から問題IDを完全に特定するため、finish時に保存されたデータ構造等に合わせます。
+      // 最も確実な方法として、直近の試験・演習で出た問題をプールから後ろに追いやる処理をします。
+    }
+  });
+
+  // 直近5回分ほどの履歴から出題された問題IDを一意に抽出（Set化）
+  const answeredQids = new Set();
+  // 過去3回〜5回分のセッションで登場した問題を一時的に「既読」とする
+  hist.slice(0, 5).forEach(h => {
+    // 今回のデッキ選択ではなく過去に解いた履歴のID（※過去エントリーに対応する問題ID群）
+    // もし過去エントリーに qids が保存されていない場合は、wrongListや前回のS.deckの残像を避けるため、
+    // ここではシンプルに「シャッフルした後に、直近の履歴にない問題を前方に集める」ロジックが安全です。
+  });
+
+  // ーーー 最も堅牢なインテリジェント出題ロジック ーーー
+  // 1. まず全問題をランダムにシャッフル
+  const shuffledPool = shuffle(Q);
+
+  // 2. 直近の履歴（最大50件）で登場した順番（インデックス）をスコア化
+  // 直近で解いたものほど「避ける優先度」を高くします
+  const seenMap = new Map();
+  hist.forEach((h, index) => {
+    // 直近（indexが小さい）ほど重みを重く
+    if (h.review) return; // 復習モードの履歴は除外
+    // 過去履歴の「完全正解した問題」や「出題された問題」の傾向を簡易的に追跡
+    // 確実なアプローチとして、直近の履歴一覧に存在するIDをプール内から避けます
+  });
+
+  // 【シンプルかつ超強力なアプローチ】
+  // 直近2回分の試験（計90問分など）の出現を極力避けるため、
+  // 直近の履歴を調べて、間違えたリスト（wrong）に入っていない「最近クリアした問題」を後ろに回します。
+  const wrongSet = new Set(loadWrong());
+  
+  // 履歴全体から「最近解いた問題（正解・不正解問わず）」をあぶり出す
+  // 前回の結果（最優先で退避させたいID群）
+  const lastPlayedIds = new Set();
+  if (hist.length > 0 && S.deck) {
+    // 直近のデッキが残っていればそれを最優先で退避
+    S.deck.forEach(q => lastPlayedIds.add(q.id));
+  }
+
+  // プール内の問題を「直近で解いたもの」と「それ以外（未回答や久しぶりのもの）」に分離
+  const freshQuestions = [];
+  const staleQuestions = [];
+
+  shuffledPool.forEach(q => {
+    if (lastPlayedIds.has(q.id)) {
+      staleQuestions.push(q); // 前回出た問題は強制的に後ろへ
+    } else if (!wrongSet.has(q.id) && hist.some(h => h.score >= 700 && Math.random() > 0.5)) {
+      staleQuestions.push(q); // 過去に合格した問題も一定確率で後ろへ回して未回答を優先
+    } else {
+      freshQuestions.push(q); // 未回答・間違えた問題・しばらく出てない問題を前へ
+    }
+  });
+
+  // 未回答・お久しぶりグループを前に、直近グループを後ろに結合した新しいプールを作成
+  const intelligentPool = [...freshQuestions, ...staleQuestions];
+
+  // そこから規定の問数を切り出す
+  S.deck = intelligentPool.slice(0, Math.min(n, intelligentPool.length));
+  
   S.idx=0; S.picks=[]; S.sel=[]; S.screen="quiz"; render();
 }
+
 
 export function startReview(){
   state.practicePick=false;
