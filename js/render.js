@@ -932,7 +932,6 @@ STOCKS.forEach(s => { s.change = ((s.price - s.previousClose) / s.previousClose)
 
 let stockIndex = 0;
 let stockRefreshTimer = null;
-let stockChart = null; // Chart.js インスタンス（銘柄切り替え時はdataだけ更新して使い回す）
 const STOCK_REFRESH_MS = 45000; // 実株価の再取得・擬似変動の更新間隔
 const STOCK_TICK_PCT = 0.006;   // 実データが使えない場合の1回あたりの変動幅（±0.3%程度）
 
@@ -960,9 +959,8 @@ function stocksCardHTML(){
         <button type="button" class="stock-trade-btn sell" id="stock-sell">売却</button>
       </div>
       <div class="stock-orders" id="stock-orders"></div>
-      <div class="stock-chart-wrap">
-        <canvas id="stock-chart-canvas" class="stock-chart-canvas"></canvas>
-      </div>
+      <div class="stock-chart-wrap" id="stock-chart-wrap"></div>
+      <div class="stock-chart-xaxis" id="stock-chart-xaxis"></div>
       <div class="stock-period" id="stock-chart-period">分足 (Intraday)</div>
     </div>`;
 }
@@ -990,8 +988,6 @@ function renderStockRow(){
   });
 }
 
-// Chart.js（CDN読み込み・index.html参照）でX軸=時間／Y軸=株価の日足チャートを描画。
-// ライブラリが読み込めなかった場合は静かに諦め、カードの他の部分は通常通り動作させる。
 // 前日終値比が上昇なら緑、下降なら赤（Yahoo!ファイナンス風の動的な配色）
 function stockTrendColors(up){
   return up
@@ -999,52 +995,88 @@ function stockTrendColors(up){
     : { line: "#dc2626", fillTop: "rgba(220,38,38,.22)" };
 }
 
+// 分足（Intraday）チャートを外部CDNに頼らず純粋なSVGで自前描画する。
+// Chart.js（CDN経由）は実機のネットワーク環境によって読み込みに失敗し、
+// チャートが永久に空白のままになる不具合があったため、外部依存のない
+// この方式に置き換えた。X軸=時間(hh:mm)／Y軸=株価、タップ/ドラッグで
+// 該当時点の時刻・価格をツールチップ表示する。
 function renderStockChart(){
   const periodEl = document.getElementById("stock-chart-period");
   const s = STOCKS[stockIndex];
   if(periodEl){
     periodEl.textContent = s.chartIsLive ? "分足 (Intraday)" : (s.everLive ? "分足 (Intraday・最終参照)" : "分足 (Intraday・サンプル)");
   }
-  const canvas = document.getElementById("stock-chart-canvas");
-  if(!canvas || typeof window.Chart === "undefined") return;
-  const labels = s.series.map(p => formatChartTime(p.t));
-  const data = s.series.map(p => p.close);
-  const ctx = canvas.getContext("2d");
-  const h = canvas.clientHeight || 80;
-  const { line, fillTop } = stockTrendColors(s.change >= 0);
-  const gradient = ctx.createLinearGradient(0, 0, 0, h);
-  gradient.addColorStop(0, fillTop);
-  gradient.addColorStop(1, "rgba(255,255,255,0)");
+  const wrap = document.getElementById("stock-chart-wrap");
+  const xAxisEl = document.getElementById("stock-chart-xaxis");
+  if(!wrap) return;
+  const series = s.series;
+  const n = series.length;
+  if(!n){ wrap.innerHTML = ""; if(xAxisEl) xAxisEl.innerHTML = ""; return; }
 
-  if(stockChart){
-    stockChart.data.labels = labels;
-    stockChart.data.datasets[0].data = data;
-    stockChart.data.datasets[0].backgroundColor = gradient;
-    stockChart.data.datasets[0].borderColor = line;
-    stockChart.update("none");
-    return;
+  const W = 300, H = 84;
+  const closes = series.map(p => p.close);
+  const min = Math.min(...closes), max = Math.max(...closes);
+  const pad = (max - min) * 0.1 || Math.max(min * 0.01, 0.5);
+  const lo = min - pad, hi = max + pad;
+  const mid = (lo + hi) / 2;
+  const xAt = i => n<=1 ? W/2 : (i/(n-1)) * W;
+  const yAt = v => H - ((v - lo) / ((hi - lo) || 1)) * H;
+  const pts = series.map((p,i) => `${xAt(i).toFixed(1)},${yAt(p.close).toFixed(1)}`);
+  const linePath = "M" + pts.join(" L");
+  const areaPath = `M${xAt(0).toFixed(1)},${H} L${pts.join(" L")} L${xAt(n-1).toFixed(1)},${H} Z`;
+  const { line, fillTop } = stockTrendColors(s.change >= 0);
+  const gid = "stock-grad-" + stockIndex;
+
+  wrap.innerHTML = `
+    <div class="stock-chart-yaxis">
+      <span>$${hi.toFixed(2)}</span>
+      <span>$${mid.toFixed(2)}</span>
+      <span>$${lo.toFixed(2)}</span>
+    </div>
+    <svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" class="stock-chart-svg" id="stock-chart-svg">
+      <defs>
+        <linearGradient id="${gid}" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stop-color="${fillTop}"></stop>
+          <stop offset="100%" stop-color="rgba(255,255,255,0)"></stop>
+        </linearGradient>
+      </defs>
+      <line x1="0" y1="${(H/2).toFixed(1)}" x2="${W}" y2="${(H/2).toFixed(1)}" class="stock-chart-gridline"></line>
+      <path d="${areaPath}" fill="url(#${gid})" stroke="none"></path>
+      <path d="${linePath}" fill="none" stroke="${line}" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"></path>
+      <circle id="stock-chart-dot" cx="0" cy="0" r="3" fill="${line}" style="display:none"></circle>
+    </svg>
+    <div class="stock-chart-tip" id="stock-chart-tip" style="display:none"></div>
+  `;
+
+  if(xAxisEl){
+    const idxs = n>=3 ? [0, Math.floor((n-1)/2), n-1] : series.map((_,i)=>i);
+    xAxisEl.innerHTML = idxs.map(i => `<span>${formatChartTime(series[i].t)}</span>`).join("");
   }
 
-  stockChart = new window.Chart(ctx, {
-    type: "line",
-    data: { labels, datasets: [{
-      data, borderColor: line, backgroundColor: gradient, fill: true,
-      tension: .3, borderWidth: 2, pointRadius: 0, pointHoverRadius: 4, pointHitRadius: 14,
-    }] },
-    options: {
-      responsive: true, maintainAspectRatio: false,
-      animation: { duration: 250 },
-      interaction: { mode: "index", intersect: false },
-      plugins: {
-        legend: { display: false },
-        tooltip: { displayColors: false, callbacks: { label: (item) => `$${item.parsed.y.toFixed(2)}` } },
-      },
-      scales: {
-        x: { grid: { display: false }, ticks: { color: "#94a3b8", font: { size: 9 }, maxTicksLimit: 5, maxRotation: 0 } },
-        y: { position: "right", grid: { color: "rgba(148,163,184,.15)" }, ticks: { color: "#94a3b8", font: { size: 9 }, callback: v => "$"+v, maxTicksLimit: 4 } },
-      },
-    },
-  });
+  const svg = document.getElementById("stock-chart-svg");
+  const dot = document.getElementById("stock-chart-dot");
+  const tip = document.getElementById("stock-chart-tip");
+  if(!svg || !dot || !tip) return;
+
+  function showAt(clientX){
+    const rect = svg.getBoundingClientRect();
+    if(rect.width <= 0) return;
+    const frac = Math.min(1, Math.max(0, (clientX - rect.left) / rect.width));
+    const idx = Math.round(frac * (n - 1));
+    const p = series[idx];
+    dot.setAttribute("cx", xAt(idx).toFixed(1));
+    dot.setAttribute("cy", yAt(p.close).toFixed(1));
+    dot.style.display = "";
+    tip.style.display = "";
+    tip.textContent = `${formatChartTime(p.t)}  $${p.close.toFixed(2)}`;
+    tip.style.left = Math.min(78, Math.max(0, frac * 100)) + "%";
+  }
+  function hide(){ dot.style.display = "none"; tip.style.display = "none"; }
+
+  svg.onpointerdown = (e) => showAt(e.clientX);
+  svg.onpointermove = (e) => showAt(e.clientX);
+  svg.onpointerup = hide;
+  svg.onpointerleave = hide;
 }
 
 // 保有株数・平均取得単価・評価損益と、その銘柄の指値予約注文を表示
@@ -1231,8 +1263,6 @@ function initStocksCard(){
   const card = document.getElementById("stocks-card");
   if(!card) return;
   loadPortfolio();
-  // 画面を再描画するたびcanvasも作り直されるため、古いChart.jsインスタンスを破棄しておく
-  if(stockChart){ try{ stockChart.destroy(); }catch(e){} stockChart = null; }
   const prev = document.getElementById("stock-prev");
   const next = document.getElementById("stock-next");
   if(prev) prev.onclick = () => { stockIndex = (stockIndex - 1 + STOCKS.length) % STOCKS.length; renderStockRow(); renderStockChart(); renderStockPosition(); };
