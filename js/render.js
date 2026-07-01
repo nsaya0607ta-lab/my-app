@@ -1,7 +1,6 @@
 import { CERTS } from './data/certs.js';
 import { DC_PHASES, L, REGIONS } from './data/constants.js';
 import { CONCEPTS, DRAW, PASS, Q, TIERS, applySkin, certById, certStat, commit, correctSet, dcCount, dcPhase, dcTitle, esc, exportCode, fmt, getBP, getProfileName, grade, importCode, isMulti, loadHist, loadReviewStats, loadWrong, overallLevel, overallStat, pick, pts, publishLeaderboard, purchaseSkin, saveToCloud, selectCert, setBP, setProfileName, stars, start, startReview, totalBP } from './core.js';
-import { MISSIONS, PT_SHOP } from './data/missions.js';
 import { SKIN_DATA } from './data/skins.js';
 import { S, state } from './state.js';
 
@@ -55,280 +54,6 @@ export function renderStatusBar(){
   el.classList.add("show");
 }
 
-/* ======================= 仮想Azureデモ環境（ポータル） ======================= */
-/* ドックのリソース（配置は無料。コインは消費しない） */
-
-export function missionBP(stars){ return ({1:500,2:1000,3:1500,4:2000,5:3000})[stars] || stars*500; }
-
-/* ====== ミッション（お題）レジストリ ======
-   stars: 難易度(1-5) / hints: ❓で表示する設計ヒント / check(inf): true でクリア。
-   新しいお題はここに足すだけで目次に並ぶ。 */
-
-export let currentMission = MISSIONS[0];   // デフォルトのお題
-
-export function missionStars(n){
-  let s=""; for(let i=0;i<5;i++) s += `<span class="pt-star ${i<n?'on':''}">★</span>`; return s;
-}
-
-export function ptValidZones(key){
-  if(key==="vnet")   return ["canvas"];
-  if(key==="subnet") return ["vnetbody","subnet"];
-  if(key==="vm")     return ["subnet"];
-  if(key==="lb")     return ["lb"];
-  return [];
-}
-
-export function resetInfra(){
-  S.infra = { vnet:false, vnetPrefix:"", subnets:[], lb:false };
-  renderSandbox();
-  renderStatusBar();
-}
-// 目次画面：ミッションカードのみを表示。タップで構築シミュレーターへ
-
-export function renderPortal(){
-  S.infra || (S.infra={vnet:false,vnetPrefix:"",subnets:[],lb:false});
-  const cards = MISSIONS.map(mn=>{
-    const cleared = missionCleared(mn.id);
-    return `<button class="pt-mission pt-mission-btn" data-mission="${mn.id}">
-      <div class="pt-m-top"><span class="pt-m-tag">MISSION</span><span class="pt-m-stars" title="難易度 ${mn.stars} / 5">${missionStars(mn.stars)}</span></div>
-      <div class="pt-m-title">${esc(mn.title)}${cleared?' <span class="pt-cleared">✓ クリア済み</span>':''}</div>
-      <div class="pt-m-desc">${esc(mn.desc)}</div>
-      <div class="pt-m-foot"><span class="pt-m-reward">クリア報酬：⚡ ${missionBP(mn.stars).toLocaleString()} BP</span><span class="pt-m-go">挑戦する →</span></div>
-    </button>`;
-  }).join("");
-  app.innerHTML = `
-    <div class="q-head"><button class="quit" data-go="home">🏠 ホーム</button><span class="q-count">Azure デモ環境</span></div>
-    <div class="pt-coinbar pt-coinbar-info">🧪 配置は無料で何度でも試せます。<b>クリアでBP獲得！</b></div>
-    <div class="pt-mlist-lab">ミッション一覧</div>
-    <div class="pt-mlist">${cards}</div>
-  `;
-  app.querySelectorAll("[data-go]").forEach(x=>x.onclick=()=>go(x.dataset.go));
-  app.querySelectorAll("[data-mission]").forEach(x=>x.onclick=()=>openMission(x.dataset.mission));
-  window.scrollTo(0,0);
-}
-
-export function missionCleared(id){ return !!localStorage.getItem("portal_done_"+id) || (S.clearedMissions||[]).includes(id); }
-
-export function openMission(id){
-  const mn = MISSIONS.find(m=>m.id===id); if(!mn) return;
-  currentMission = mn;
-  S.screen = "sandbox"; render();
-}
-
-// 構築シミュレーター画面：ボード・採点・リセット・ドック・アドレス入力・❓ヒント
-
-// 構築シミュレーター画面（無限キャンバス・背景スキンショップ対応完全版）
-export function renderSandbox(){
-  const inf = S.infra || (S.infra={vnet:false,vnetPrefix:"",subnets:[],lb:false});
-  const currentSkin = S.currentSkin || "default"; // 現在のスキンを読み込む
-
-  const subnetHTML = (sn,i)=>`
-    <div class="pt-drop pt-subnet" data-zone="subnet" data-idx="${i}">
-      <div class="pt-sn-lab">サブネット${i+1} <span class="pt-addr">10.0.${i+1}.0/<input class="pt-ip-in" data-sn-prefix="${i}" value="${esc(sn.prefix||"")}" placeholder="24" inputmode="numeric" maxlength="2"></span></div>
-      <div class="pt-sn-items">${sn.vms.length
-        ? sn.vms.map((vm,j)=>`<span class="pt-chip">🖥️ 10.0.${i+1}.<input class="pt-ip-in pt-ip-oct" data-vm-octet="${i}-${j}" value="${esc(vm.octet||"")}" placeholder="4" inputmode="numeric" maxlength="3"></span>`).join("")
-        : '<span class="pt-empty">VMをここへドラッグ</span>'}</div>
-    </div>`;
-  const sandbox = !inf.vnet ? `
-      <div class="pt-drop pt-canvas" data-zone="canvas">
-        <div class="pt-canvas-lab">VNet 未デプロイ</div>
-        <div class="pt-canvas-sub">下のドックから「🌐 VNet」をここへドラッグ</div>
-      </div>`
-    : `
-      <div class="pt-vnet">
-        <div class="pt-vnet-head">
-          <span class="pt-vnet-lab">VNet 10.0.0.0/<input class="pt-ip-in" id="vnet-prefix" value="${esc(inf.vnetPrefix||"")}" placeholder="16" inputmode="numeric" maxlength="2"></span>
-          <span class="pt-drop pt-lbslot ${inf.lb?'filled':''}" data-zone="lb">${inf.lb?'⚖️ LB':'＋ LB'}</span>
-        </div>
-        <div class="pt-drop pt-vnetbody" data-zone="vnetbody">
-          ${inf.subnets.length ? inf.subnets.map((sn,i)=>subnetHTML(sn,i)).join("") : '<div class="pt-vnet-empty">🗂️ サブネットをここへドラッグ</div>'}
-        </div>
-      </div>`;
-  const dock = PT_SHOP.map(it=>`<div class="pt-item" data-key="${it.key}">
-      <span class="pt-ic">${it.icon}</span><span class="pt-nm">${it.name}</span>
-    </div>`).join("");
-    
-  // 🔥 無限ビューポートとスキンショップボトムシートを組み込んだレイアウト構造
-  app.innerHTML = `
-    <div class="q-head"><button class="quit" data-go="portal">← ミッション一覧</button><span class="q-count">構築シミュレーター</span></div>
-    <div class="pt-mission-strip"><span class="pt-m-stars">${missionStars(currentMission.stars)}</span><span class="pt-strip-title">${esc(currentMission.title)}</span><button class="pt-help" id="pt-help" title="ヒントを見る">❓</button></div>
-    
-    <div id="sb-viewport">
-      <div id="sb-board" class="sb-theme-${currentSkin}">
-        <div id="sb-mark">SANDBOX</div>
-        <div style="position:absolute; left:1300px; top:1350px; width:400px; padding:10px;">
-          ${sandbox}
-        </div>
-      </div>
-      <div id="sb-coord">X: <b id="sb-cx">0</b>　Y: <b id="sb-cy">0</b></div>
-      <div id="sb-skin-fab">🎨 スキン</div>
-      <div id="sb-toast-skin"></div>
-      
-      <div id="sb-shop-bd"></div>
-      <div id="sb-shop">
-        <div class="sb-shop-hd">
-          <div class="sb-shop-ttl">背景スキン<small>見た目をカスタマイズ</small></div>
-          <div class="sb-shop-x" id="sb-shop-x">✕</div>
-        </div>
-        <div id="sb-skin-list"></div>
-      </div>
-    </div>
-
-    <div id="pt-result" class="pt-result"></div>
-    <button class="cta" id="pt-test">構成をテスト・採点する</button>
-    <div class="pt-btnrow"><button class="ghost" id="pt-reset">リセット</button></div>
-    <div class="pt-dock-lab">ドック（指で上にドラッグして配置・無料）</div>
-    <div class="pt-dock">${dock}</div>
-  `;
-  app.querySelectorAll("[data-go]").forEach(x=>x.onclick=()=>go(x.dataset.go));
-  document.getElementById("pt-test").onclick=testInfra;
-  document.getElementById("pt-help").onclick=openHintModal;
-  document.getElementById("pt-reset").onclick=()=>{ if(confirm("構築した構成をリセットしますか？")) resetInfra(); };
-  
-  const vp=document.getElementById("vnet-prefix"); if(vp) vp.oninput=(e)=>{ inf.vnetPrefix = e.target.value; };
-  app.querySelectorAll("[data-sn-prefix]").forEach(el=>el.oninput=(e)=>{ const i=+el.dataset.snPrefix; if(inf.subnets[i]) inf.subnets[i].prefix=e.target.value; });
-  app.querySelectorAll("[data-vm-octet]").forEach(el=>el.oninput=(e)=>{ const [i,j]=el.dataset.vmOctet.split("-").map(Number); if(inf.subnets[i]&&inf.subnets[i].vms[j]) inf.subnets[i].vms[j].octet=e.target.value; });
-  app.querySelectorAll(".pt-item").forEach(elem=>ptAttachDrag(elem));
-  
-  // 🔥 【追加】次に追記するショップ開閉・スワイプの制御エンジンを起動
-  initSkinShopLogic();
-  window.scrollTo(0,0);
-}
-
-// ドラッグ＆ドロップ（タッチ＆マウス両対応・無料）。サブネット等の動的パーツにも対応
-
-export function ptAttachDrag(elem){
-  const key = elem.dataset.key;
-  const onStart = (e)=>{
-    e.preventDefault();
-    const it = PT_SHOP.find(s=>s.key===key);
-    const ghost = document.createElement("div");
-    ghost.className="pt-ghost"; ghost.textContent=it.icon;
-    document.body.appendChild(ghost);
-    const valid = ptValidZones(key);
-    const move=(ev)=>{
-      const p = ev.touches ? ev.touches[0] : ev;
-      ghost.style.left = p.clientX+"px"; ghost.style.top = p.clientY+"px";
-      ptHighlight(p.clientX, p.clientY, valid);
-    };
-    const end=(ev)=>{
-      const p = ev.changedTouches ? ev.changedTouches[0] : ev;
-      const zi = ptZoneAt(p.clientX, p.clientY);
-      ghost.remove();
-      ptClearHighlight();
-      document.removeEventListener("touchmove",move,{passive:false});
-      document.removeEventListener("touchend",end);
-      document.removeEventListener("mousemove",move);
-      document.removeEventListener("mouseup",end);
-      ptDeploy(key, zi);
-    };
-    move(e);
-    document.addEventListener("touchmove",move,{passive:false});
-    document.addEventListener("touchend",end);
-    document.addEventListener("mousemove",move);
-    document.addEventListener("mouseup",end);
-  };
-  elem.addEventListener("touchstart", onStart, {passive:false});
-  elem.addEventListener("mousedown", onStart);
-}
-
-export function ptZoneEl(x,y){
-  const el = document.elementFromPoint(x,y);
-  return el && el.closest ? el.closest("[data-zone]") : null;
-}
-
-export function ptZoneAt(x,y){
-  const z = ptZoneEl(x,y);
-  if(!z) return null;
-  return { zone:z.dataset.zone, idx: (z.dataset.idx!=null ? parseInt(z.dataset.idx,10) : null) };
-}
-
-export function ptHighlight(x,y,valid){
-  ptClearHighlight();
-  const z = ptZoneEl(x,y);
-  if(z && valid.indexOf(z.dataset.zone)>=0) z.classList.add("pt-over");
-}
-
-export function ptClearHighlight(){ document.querySelectorAll(".pt-over").forEach(e=>e.classList.remove("pt-over")); }
-
-export function ptMsg(txt, ok){
-  const r=document.getElementById("pt-result"); if(!r) return;
-  r.className = "pt-result " + (ok===true?"ok":(ok===false?"ng":""));
-  r.innerHTML = txt;
-}
-// 配置（無料・データ追加のみ）。無効なドロップは黙って無視（自動ヒントは出さない）
-
-export function ptDeploy(key, zi){
-  const inf = S.infra;
-  const valid = ptValidZones(key);
-  if(!zi || valid.indexOf(zi.zone)<0) return;
-  if(key==="vnet"){
-    if(inf.vnet) return;
-    inf.vnet = true;
-  } else if(key==="subnet"){
-    if(!inf.vnet) return;
-    inf.subnets.push({ prefix:"", vms:[] });
-  } else if(key==="vm"){
-    if(!inf.vnet) return;
-    const i = zi.idx;
-    if(i==null || !inf.subnets[i]) return;
-    inf.subnets[i].vms.push({ octet:"" });
-  } else if(key==="lb"){
-    if(!inf.vnet || inf.lb) return;
-    inf.lb = true;
-  }
-  renderSandbox();   // 入力値は S.infra に保存済みなので再描画で復元される
-}
-// ❓ヒント：ユーザーが押した時だけ設計ヒントをモーダル表示（自動表示はしない）
-
-export function openHintModal(){
-  const mn = currentMission;
-  const ov = document.createElement("div"); ov.className="modal-ov";
-  ov.innerHTML = `
-    <div class="modal">
-      <div class="modal-title">❓ ヒント</div>
-      <div class="pt-hint-head">${missionStars(mn.stars)} <span>${esc(mn.title)}</span></div>
-      <ul class="pt-hint-list">${(mn.hints||["このミッションのヒントは準備中です。"]).map(h=>`<li>${esc(h)}</li>`).join("")}</ul>
-      <button class="cta" id="pt-hint-close">閉じる</button>
-    </div>`;
-  document.body.appendChild(ov);
-  const close=()=>{ try{ ov.remove(); }catch(e){} };
-  ov.querySelector("#pt-hint-close").onclick=close;
-  ov.addEventListener("click",(e)=>{ if(e.target===ov) close(); });
-}
-// 採点：現在のミッションのクリア条件で判定。失敗時は具体ヒントを自動表示しない
-// 採点：現在のミッションのクリア条件で判定。ビット演算による詳細フィードバック版
-
-export function testInfra(){
-  const res = currentMission.check(S.infra);
-  
-  // 判定が失敗（res.okがfalse、または真偽値でfalseが返った場合）
-  if(!res || res.ok === false || res === false){
-    const errMsg = res.msg || "❌ まだ構成が完成していません。右上の「❓」でヒントを確認しながら見直しましょう。";
-    ptMsg(errMsg, false);
-    return;
-  }
-  
-  const id = currentMission.id;
-  const already = missionCleared(id);
-  let msg = `${"⭐".repeat(currentMission.stars)} ミッション達成！<br>「${esc(currentMission.title)}」をクリアしました。`;
-  if(!already){
-    const bp = missionBP(currentMission.stars);
-    setBP(getBP() + bp);                         // 資格BPに加算 → レベル/ステータスバーへ反映
-    if(!S.clearedMissions) S.clearedMissions=[];
-    S.clearedMissions.push(id);
-    try{ localStorage.setItem("portal_done_"+id, "1"); }catch(e){}
-    msg += `<br>🎉 初クリア報酬 <b>+${bp.toLocaleString()} BP</b> 獲得！レベルに反映されました。`;
-    try{ publishLeaderboard(); }catch(e){}        // ランキングも更新
-    try{ saveToCloud(getBP(), loadWrong(), loadHist()); }catch(e){}  // クラウド同期
-  } else {
-    msg += "<br>（このミッションの報酬は獲得済みです）";
-  }
-  renderSandbox();
-  renderStatusBar();   // 最上部のBPバー・レベルに即反映
-  ptMsg(msg, true);
-}
-
 export function render(){
   renderStatusBar();   // 画面が変わっても常に最新の Lv/BP/AC を反映
   // 🎨 アプリ全体の背景スキンを body に適用（default のときは元の背景のまま）
@@ -357,8 +82,6 @@ export function render(){
   if(S.screen==="dict") return renderDict();
   if(S.screen==="transfer") return renderTransfer();
   if(S.screen==="history") return renderHistory();
-  if(S.screen==="portal") return renderPortal();
-  if(S.screen==="sandbox") return renderSandbox();
 }
 
 export function renderLoading(){
@@ -429,10 +152,8 @@ export async function logout(){
     });
     localStorage.removeItem("profile_name");
     localStorage.removeItem("coins");
-    MISSIONS.forEach(mn=>localStorage.removeItem("portal_done_"+mn.id));
   }catch(e){}
   state.cloudData=null; state.currentUser=null; state.currentUserId=null; state.profileChecked=false; S.coins=0;
-  S.clearedMissions=[]; S.infra={vnet:false,vnetPrefix:"",subnets:[],lb:false};
   S.cert=null; S.screen="select"; state.authMode="login"; render();
 }
 
@@ -450,11 +171,9 @@ export async function deleteAccount(password){
     });
     localStorage.removeItem("profile_name");
     localStorage.removeItem("coins");
-    MISSIONS.forEach(mn=>localStorage.removeItem("portal_done_"+mn.id));
   }catch(e){}
   // 認証削除で onAuthStateChanged(null) が発火しログイン画面へ遷移するが、保険で状態も初期化
   state.cloudData=null; state.currentUser=null; state.currentUserId=null; state.profileChecked=false; state.guestMode=false; S.coins=0;
-  S.clearedMissions=[]; S.infra={vnet:false,vnetPrefix:"",subnets:[],lb:false};
   S.cert=null; S.screen="select"; state.authMode="login"; render();
 }
 
@@ -595,7 +314,6 @@ export function renderHome(){
     ${(loadWrong().length)?`<button class="ghost rev-btn" data-review style="margin-top:12px">🔁 復習モード（間違えた ${loadWrong().length} 問）</button>`:`<div class="x-hint" style="margin-top:12px;text-align:center">復習モード：間違えた問題がここに溜まり、再挑戦できます</div>`}
     <button class="ghost" data-go="dict" style="margin-top:10px">📖 用語辞典</button>
     <button class="ghost" data-go="analytics" style="margin-top:10px">📊 統計パネル </button>
-    <button class="ghost" data-go="portal" style="margin-top:10px">🧪 Azure デモ環境 </button>
     <button class="ghost" data-go="settings" style="margin-top:10px">⚙️ 設定</button>
     ${h.length?`<button class="link" data-go="history">スコア履歴を見る（${h.length}件）</button>`:
       `<div class="install">ヒント：ブラウザの共有メニューから「ホーム画面に追加」すると、アプリのように起動できます。</div>`}
@@ -1162,114 +880,6 @@ export async function loadRanking(){
     body.innerHTML=`<div class="empty">読み込みに失敗しました。<br>${esc(String(e.message||e))}</div>`;
   }
 }
-/* =========================================================================
-   🎨 背景スキンショップ＆無限マップパン移動制御エンジン
-   ========================================================================= */
-
-let sbPanX = -1050, sbPanY = -1100; // 初期表示座標
-
-function initSkinShopLogic() {
-  const viewport = document.getElementById("sb-viewport");
-  const board    = document.getElementById("sb-board");
-  const cxEl     = document.getElementById("sb-cx");
-  const cyEl     = document.getElementById("sb-cy");
-  const shop     = document.getElementById("sb-shop");
-  const shopBd   = document.getElementById("sb-shop-bd");
-  const listEl   = document.getElementById("sb-skin-list");
-  const toastEl  = document.getElementById("sb-toast-skin");
-
-  function toast(msg) {
-    if(!toastEl) return;
-    toastEl.textContent = msg; toastEl.classList.add("sb-show");
-    setTimeout(() => { if(toastEl) toastEl.classList.remove("sb-show"); }, 2000);
-  }
-
-  function applyPan() {
-    if(!board) return;
-    board.style.transform = "translate3d(" + sbPanX + "px," + sbPanY + "px,0)";
-    if(cxEl && cyEl) { cxEl.textContent = Math.round(-sbPanX); cyEl.textContent = Math.round(-sbPanY); }
-  }
-
-  function renderSkinShopList() {
-    if(!listEl) return;
-    listEl.innerHTML = "";
-    SKIN_DATA.forEach(sk => {
-      const isOwned = S.ownedSkins.includes(sk.key);
-      const isApplied = S.currentSkin === sk.key;
-      
-      const card = document.createElement("div");
-      card.className = "sb-skin-card" + (isApplied ? " sb-applied" : "");
-      card.innerHTML = `
-        <div class="sb-skin-prev sb-theme-${sk.key}"></div>
-        <div class="sb-skin-meta">
-          <div class="sb-skin-nm">${sk.icon} ${sk.name}</div>
-          <div class="sb-skin-sub">${sk.sub}${sk.cost > 0 ? ' (' + sk.cost + ' AC)' : ' (無料)'}</div>
-        </div>
-      `;
-      
-      const btn = document.createElement("button");
-      btn.className = "sb-skin-btn";
-      
-      if (isOwned) {
-        if (isApplied) {
-          btn.classList.add("sb-applied-btn"); btn.textContent = "適用中"; btn.disabled = true;
-        } else {
-          btn.textContent = "適用する";
-          btn.onclick = () => {
-            applySkin(sk.key);
-            board.className = "sb-theme-" + sk.key;
-            renderSkinShopList();
-            render(); // 🏠 ホーム画面の背景も即時同期するために全体再描画を呼ぶ
-          };
-        }
-      } else {
-        if ((S.coins || 0) >= sk.cost) {
-          btn.classList.add("sb-buy"); btn.textContent = `購入 (${sk.cost}AC)`;
-          btn.onclick = () => {
-            const res = purchaseSkin(sk.key);
-            if(!res.ok) return;
-            board.className = "sb-theme-" + sk.key;
-            renderStatusBar();
-            renderSkinShopList();
-            render(); // 所持金減額と背景をホームに即反映
-            toast(`「${sk.name}」を購入・適用しました！`);
-          };
-        } else {
-          btn.classList.add("sb-locked"); btn.textContent = "🔒 不足"; btn.disabled = true;
-        }
-      }
-      card.appendChild(btn);
-      listEl.appendChild(card);
-    });
-  }
-
-  document.getElementById("sb-skin-fab").onclick = () => { shop.classList.add("sb-open"); shopBd.classList.add("sb-open"); renderSkinShopList(); };
-  const closeShop = () => { shop.classList.remove("sb-open"); shopBd.classList.remove("sb-open"); };
-  document.getElementById("sb-shop-x").onclick = closeShop;
-  shopBd.onclick = closeShop;
-
-  // マップパン（ドラッグ移動）制御
-  let isPanning = false, startX = 0, startY = 0, origX = 0, origY = 0;
-  viewport.onpointerdown = (e) => {
-    if (e.target.closest("input") || e.target.closest("button") || e.target.closest(".pt-item") || e.target.closest(".pt-chip")) return;
-    isPanning = true; startX = e.clientX; startY = e.clientY; origX = sbPanX; origY = sbPanY;
-    viewport.classList.add("sb-grabbing");
-    try { viewport.setPointerCapture(e.pointerId); } catch(_) {}
-  };
-  viewport.onpointermove = (e) => {
-    if (!isPanning) return;
-    sbPanX = origX + (e.clientX - startX);
-    sbPanY = origY + (e.clientY - startY);
-    sbPanX = Math.min(0, Math.max(viewport.clientWidth - 3000, sbPanX));
-    sbPanY = Math.min(0, Math.max(viewport.clientHeight - 3000, sbPanY));
-    applyPan();
-  };
-  const endPan = () => { isPanning = false; viewport.classList.remove("sb-grabbing"); };
-  viewport.onpointerup = endPan;
-  viewport.onpointercancel = endPan;
-
-  applyPan();
-}
 
 export function renderSettings() {
   app.innerHTML = `
@@ -1288,7 +898,7 @@ export function renderSettings() {
   app.querySelectorAll("[data-go]").forEach(b => b.onclick = () => go(b.dataset.go));
 }
 
-/* 設定＞背景変更：スキン一覧・購入・適用（フルページ版。無限マップの外からも単独で開ける） */
+/* 設定＞背景変更：スキン一覧・購入・適用 */
 
 export function renderSkinShop() {
   const cards = SKIN_DATA.map(sk=>{
