@@ -3,8 +3,6 @@ export const S = {
   screen:"select", cert:null, mode:"exam", coins:0,
   currentSkin:"default",       // 現在適用中のスキン
   ownedSkins:["default"],      // 購入済みスキンのリスト
-  infra:{ vnet:false, vnetPrefix:"", subnets:[], lb:false },
-  clearedMissions:[],
   deck:[], idx:0, picks:[], sel:[], revealed:false, last:null
 };
 
