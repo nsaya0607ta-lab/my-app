@@ -1,6 +1,6 @@
 import './db.js';
 import { loadCoins, migrateOldData } from './core.js';
-import { render, renderSettings } from './render.js';
+import { go, render, renderSettings } from './render.js';
 import { S, state } from './state.js';
 
 /* ===== やさしいタップ音（音声ファイル不要・Web Audio） ===== */
@@ -29,6 +29,9 @@ document.addEventListener("click", (e)=>{
   const el = e.target && e.target.closest ? e.target.closest(TAP_SEL) : null;
   if(el && !el.disabled && !el.classList.contains("locked")) playTap();
 }, true);
+
+// ヘッダー右上のランキング／プロフィールへの丸型ショートカット（#app外の静的要素なので一度だけ紐付ける）
+document.querySelectorAll(".top-nav [data-go]").forEach(b => b.addEventListener("click", () => go(b.dataset.go)));
 
 migrateOldData();
 S.coins = loadCoins();
