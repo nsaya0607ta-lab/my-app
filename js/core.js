@@ -458,3 +458,13 @@ export function publishLeaderboard(){
   if(!window.LB || !state.currentUserId || state.guestMode) return;
   try{ window.LB.publish(buildPublic()); }catch(e){}
 }
+
+// js/core.js の一番最後に追加
+export function prevQuestion() {
+  if (S.idx > 0) {
+    S.idx--;
+    // 過去にこの問題で選んでいた選択肢を現在の選択状態（S.sel）に復元
+    S.sel = S.picks[S.idx] || [];
+    render();
+  }
+}
