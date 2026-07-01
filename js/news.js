@@ -1,60 +1,37 @@
 /* =========================================================================
    関連ニュース取得（ホーム画面のニュースダッシュボード用）
    株価カード（STOCKS）で表示している銘柄（MSFT/AMZN/GOOGL）に関連する
-   ニュースを、Finnhubの会社別ニュース(/company-news)から取得する。
-   APIキー・銘柄一覧は finnhub-config.js で株価カードと共有している。
+   ニュースを、NewsAPI（https://newsapi.org）の /v2/everything から取得する。
+   language=ja を指定し、日本語の記事のみを対象にする。
 
-   Finnhubは元々ブラウザからの直接呼び出しを想定してCORSを許可しているため、
+   【重要】NewsAPIの利用には無料のAPIキーが必要です。
+   1. https://newsapi.org/register で無料アカウントを作成
+   2. ダッシュボードに表示される API Key をコピー
+   3. 下の NEWSAPI_KEY にそのまま貼り付ける
+   キー未設定の間は常にサンプルデータ（FALLBACK_NEWS）が表示されます。
+
+   NewsAPIはブラウザから直接呼び出すとブロックされる場合があるため、
    まず直接fetchし、失敗した場合のみ無料CORSプロキシ経由にフォールバックする。
    全銘柄で取得できなかった場合のみ FALLBACK_NEWS（ダミーの関連ニュース）を表示する。
-
-   Finnhubのニュースは英語のため、無料の翻訳API（MyMemory）でタイトル・要約を
-   日本語に自動翻訳してから表示する。翻訳に失敗した場合は原文（英語）のまま
-   表示し、ニュース自体が表示できなくなることは避ける。
    ========================================================================= */
 
 import { fetchDirectOrProxied } from './cors-proxy.js';
-import { FINNHUB_API_KEY, STOCK_TICKERS } from './finnhub-config.js';
+import { STOCK_NAMES, STOCK_TICKERS } from './finnhub-config.js';
+
+// ここに https://newsapi.org/register で取得した無料APIキーを貼り付けてください
+const NEWSAPI_KEY = "YOUR_NEWSAPI_KEY";
 
 const MAX_ITEMS = 5; // ニュースダッシュボードは5件を保持・巡回表示する
+const PAGE_SIZE_PER_TICKER = 10; // 銘柄ごとに多めに取得し、全銘柄まとめてから新しい順に5件へ絞り込む
 const SUMMARY_MAX_LEN = 90; // 要約の最大文字数（カード内で2行程度に収まる目安）
-// Finnhubのsummaryが空で要約が取得できない場合の案内文。
+// NewsAPIのdescriptionが空で要約が取得できない場合の案内文。
 // タイトルをそのまま繰り返すと誤解を招く（未確認の内容を捏造して表示するのも
 // 不適切な）ため、事実を断定しない案内文のみを表示する。
 const NO_SUMMARY_TEXT = "詳しい内容は下の「続きを読む」から元記事でご確認ください。";
 const FETCH_TIMEOUT_MS = 8000;
-const CACHE_KEY = "news_cache_v6"; // 日本語訳の追加に伴いバージョンを上げ、英語のままの古いキャッシュを無効化
-const CACHE_TTL_MS = 10 * 60 * 1000; // 10分キャッシュ（プロキシ・翻訳API・取得先への負荷軽減）
-const NEWS_LOOKBACK_DAYS = 7; // 直近7日分の関連ニュースを対象にする
-
-// 無料の翻訳API（MyMemory Translation API）。APIキー不要・CORS許可済みで
-// ブラウザから直接呼び出せる（1日あたりのリクエスト数に上限があるため、
-// 失敗した場合は原文をそのまま返し、ニュース表示自体は止めない）。
-async function translateToJapanese(text) {
-  if (!text) return text;
-  try {
-    const url = `https://api.mymemory.translated.net/get?q=${encodeURIComponent(text)}&langpair=en|ja`;
-    const res = await fetchDirectOrProxied(url, { timeoutMs: FETCH_TIMEOUT_MS });
-    const data = await res.json();
-    const translated = data?.responseData?.translatedText;
-    // クォータ超過時は "MYMEMORY WARNING: ..." のような文字列が返るため除外する
-    if (typeof translated === "string" && translated.trim() && !translated.startsWith("MYMEMORY WARNING")) {
-      return translated;
-    }
-    return text;
-  } catch (e) {
-    console.warn("[news] 翻訳に失敗しました。原文のまま表示します:", e.message);
-    return text;
-  }
-}
-
-async function translateItem(item) {
-  const [title, summary] = await Promise.all([
-    translateToJapanese(item.title),
-    translateToJapanese(item.summary),
-  ]);
-  return { ...item, title, summary };
-}
+const CACHE_KEY = "news_cache_v7"; // 取得元をFinnhub→NewsAPIに変更したためバージョンを上げる
+const CACHE_TTL_MS = 10 * 60 * 1000; // 10分キャッシュ（プロキシ・取得先への負荷軽減）
+const NEWS_LOOKBACK_DAYS = 7; // 直近7日分の関連ニュースを対象にする（NewsAPI無料プランは直近1か月まで検索可）
 
 // 通信エラー・APIキー未設定などで1件も取得できなかった場合に表示する、
 // ダミーの関連ニュース（実在の記事ではないため link はダミーURL）
@@ -86,7 +63,7 @@ export const FALLBACK_NEWS = [
   },
 ];
 
-// Finnhubのsummaryは装飾を含まないプレーンテキストだが、念のため整形する
+// NewsAPIのdescriptionは装飾を含まないプレーンテキストだが、念のため整形する
 function cleanSummary(raw) {
   const text = (raw || "").replace(/\s+/g, " ").trim();
   if (!text) return NO_SUMMARY_TEXT; // 要約が空の場合にタイトルを繰り返すと重複表示になるため案内文を表示
@@ -94,25 +71,38 @@ function cleanSummary(raw) {
 }
 
 function isoDate(d) {
-  return d.toISOString().slice(0, 10); // YYYY-MM-DD（Finnhubのfrom/toが要求する形式）
+  return d.toISOString().slice(0, 10); // YYYY-MM-DD（NewsAPIのfrom/toが受け付ける形式）
 }
 
-// 指定銘柄の直近ニュースを取得する。無料プランでは取得できる期間・件数に
-// 制限がある場合があり、その場合は呼び出し側で他の銘柄にフォールバックする
+// 指定銘柄（の企業名）に関連する直近の日本語ニュースを取得する。
+// 無料プランでは検索できる期間・件数に制限があり、その場合は呼び出し側で
+// 他の銘柄にフォールバックする
 async function fetchCompanyNews(ticker) {
+  const name = STOCK_NAMES[ticker] || ticker;
   const to = new Date();
   const from = new Date(to.getTime() - NEWS_LOOKBACK_DAYS * 24 * 60 * 60 * 1000);
-  const url = `https://finnhub.io/api/v1/company-news?symbol=${ticker}&from=${isoDate(from)}&to=${isoDate(to)}&token=${FINNHUB_API_KEY}`;
+  const params = new URLSearchParams({
+    q: name,
+    language: "ja", // 日本語の記事のみを対象にする
+    sortBy: "publishedAt",
+    pageSize: String(PAGE_SIZE_PER_TICKER),
+    from: isoDate(from),
+    to: isoDate(to),
+    apiKey: NEWSAPI_KEY,
+  });
+  const url = `https://newsapi.org/v2/everything?${params.toString()}`;
   const res = await fetchDirectOrProxied(url, { timeoutMs: FETCH_TIMEOUT_MS });
   const data = await res.json();
-  if (!Array.isArray(data)) throw new Error("invalid company-news response");
-  return data
-    .filter(n => n.headline)
-    .map(n => ({
-      title: n.headline.trim(),
-      summary: cleanSummary(n.summary),
-      link: n.url || null,
-      datetime: (n.datetime || 0) * 1000,
+  if (data.status !== "ok" || !Array.isArray(data.articles)) {
+    throw new Error("invalid NewsAPI response: " + (data.message || data.status));
+  }
+  return data.articles
+    .filter(a => a.title && a.title !== "[Removed]")
+    .map(a => ({
+      title: a.title.trim(),
+      summary: cleanSummary(a.description),
+      link: a.url || null,
+      datetime: a.publishedAt ? Date.parse(a.publishedAt) : 0,
     }));
 }
 
@@ -130,11 +120,11 @@ function saveCache(items) {
   try { localStorage.setItem(CACHE_KEY, JSON.stringify({ savedAt: Date.now(), items })); } catch (e) {}
 }
 
-// 株価カードの銘柄（MSFT/AMZN/GOOGL）に関連するニュースを取得し、新しい順に
+// 株価カードの銘柄（MSFT/AMZN/GOOGL）に関連する日本語ニュースを取得し、新しい順に
 // 整形して返す。銘柄ごとに成否を判定し、1銘柄でも取得できればそれを使う。
 // APIキー未設定・全銘柄で取得失敗の場合のみ FALLBACK_NEWS を返す。
 export async function getNews() {
-  if (!FINNHUB_API_KEY || FINNHUB_API_KEY === "YOUR_FINNHUB_API_KEY") return FALLBACK_NEWS;
+  if (!NEWSAPI_KEY || NEWSAPI_KEY === "YOUR_NEWSAPI_KEY") return FALLBACK_NEWS;
 
   const cached = loadCache();
   if (cached) return cached;
@@ -148,17 +138,13 @@ export async function getNews() {
   });
   if (!items.length) return FALLBACK_NEWS;
 
-  // 新しい順に並べ、同一見出しの重複を除いた上位件数だけを翻訳・表示に使う
+  // 新しい順に並べ、同一見出しの重複を除いた上位件数だけを表示に使う
   const seen = new Set();
-  const picked = items
+  const result = items
     .sort((a, b) => b.datetime - a.datetime)
     .filter(n => (seen.has(n.title) ? false : (seen.add(n.title), true)))
     .slice(0, MAX_ITEMS)
     .map(({ title, summary, link }) => ({ title, summary, link }));
-
-  // Finnhubのニュースは英語のため、表示前に日本語へ翻訳する
-  // （1件ずつ独立して翻訳するため、一部の翻訳に失敗しても他の記事は表示できる）
-  const result = await Promise.all(picked.map(translateItem));
 
   saveCache(result);
   return result;
