@@ -2,8 +2,10 @@ import { CERTS } from './data/certs.js';
 import { DC_PHASES, L, REGIONS } from './data/constants.js';
 import { CONCEPTS, DRAW, PASS, Q, TIERS, applySkin, certById, certStat, commit, correctSet, dcCount, dcPhase, dcTitle, esc, exportCode, fmt, getBP, getProfileName, grade, importCode, isMulti, loadHist, loadReviewStats, loadWrong, overallLevel, overallStat, pick, pts, publishLeaderboard, purchaseSkin, saveToCloud, selectCert, setBP, setProfileName, stars, start, startReview, totalBP } from './core.js';
 import { getNews } from './news.js';
+import { getLiveStocks } from './stocks.js';
 import { SKIN_DATA } from './data/skins.js';
 import { S, state } from './state.js';
+import { FEE_RATE, calcFee, cancelOrder, checkLimitOrders, executeMarketOrder, getPosition, loadPortfolio, ordersFor, placeLimitOrder, unrealizedPL } from './trading.js';
 
 export const app = document.getElementById("app");
 
@@ -887,9 +889,368 @@ async function loadNewsCard(){
   restartNewsTimer();
 }
 
+/* =========================================================================
+   株価カード（STOCKS）：ニュースカードと同じデザインシステムを流用した
+   ダッシュボード風ウィジェット＋模擬投資（ペーパートレード）機能。
+   起動直後はサンプル株価で表示し、Finnhubの株価APIから実際の株価を取得
+   できた場合はそちらに置き換える。取得に失敗した場合、一度も実データを
+   取得できていなければ引き続きサンプル値を、既に実データを取得済みの
+   銘柄であれば最後に取得できた値（最終参照値）をそのまま据え置いて表示する
+   （実データのように見える擬似変動はさせない）。
+   ========================================================================= */
+
+// series: 分足（Intraday）の {t: 時刻(ms), close: 終値} 配列。X軸=時間(hh:mm)・
+// Y軸=株価としてチャートにそのまま使う。モックは start→end へゆるやかに
+// ランダムウォークする擬似的な当日値動きを、5分間隔で90ポイント生成する。
+function mockIntradaySeries(start, end, points=90, stepMinutes=5){
+  const now = Date.now();
+  const stepMs = stepMinutes*60*1000;
+  const swing = Math.abs(end-start) * 0.05 || 0.3;
+  const series = [];
+  let v = start;
+  for(let i=0;i<points;i++){
+    const target = start + (end-start) * (i/(points-1));
+    v += (target - v) * 0.25 + (Math.random()-0.5) * swing;
+    series.push({ t: now - (points-1-i)*stepMs, close: round2(v) });
+  }
+  series[series.length-1].close = end; // 最新値は現在値と必ず一致させる
+  return series;
+}
+
+const STOCKS = [
+  { ticker:"MSFT", name:"Microsoft", price:435.12, previousClose:429.91, session:"regular", sessionLabel:"サンプル", isLive:false, chartIsLive:false, everLive:false,
+    series: mockIntradaySeries(429.91, 435.12) },
+  { ticker:"AMZN", name:"Amazon", price:189.50, previousClose:190.45, session:"regular", sessionLabel:"サンプル", isLive:false, chartIsLive:false, everLive:false,
+    series: mockIntradaySeries(190.45, 189.50) },
+  { ticker:"GOOGL", name:"Alphabet", price:199.80, previousClose:200.80, session:"regular", sessionLabel:"サンプル", isLive:false, chartIsLive:false, everLive:false,
+    series: mockIntradaySeries(200.80, 199.80) },
+];
+// change(%)は常に previousClose（前日終値）を基準に計算する＝日足ベース。
+// 実データ取得時・擬似変動時ともにこの基準値を更新して整合性を保つ。
+STOCKS.forEach(s => { s.change = ((s.price - s.previousClose) / s.previousClose) * 100; });
+// 起動直後は実データ取得前なので、必ず「サンプル」表示から始める（実データと誤認させない）
+
+let stockIndex = 0;
+let stockRefreshTimer = null;
+let stockChart = null; // Chart.js インスタンス（銘柄切り替え時はdataだけ更新して使い回す）
+const STOCK_REFRESH_MS = 45000; // 実株価の再取得・擬似変動の更新間隔
+const STOCK_TICK_PCT = 0.006;   // 実データが使えない場合の1回あたりの変動幅（±0.3%程度）
+
+function round2(n){ return Math.round(n*100)/100; }
+
+function formatChartTime(ms){
+  const d = new Date(ms);
+  return `${String(d.getHours()).padStart(2,"0")}:${String(d.getMinutes()).padStart(2,"0")}`;
+}
+
+function stocksCardHTML(){
+  return `
+    <div class="news-card stocks-card" id="stocks-card">
+      <div class="news-card-head">
+        <span class="news-badge stock-badge">📊 株価 (STOCKS)</span>
+        <div class="news-nav">
+          <button type="button" class="news-arrow" id="stock-prev" aria-label="前の銘柄">‹</button>
+          <button type="button" class="news-arrow" id="stock-next" aria-label="次の銘柄">›</button>
+        </div>
+      </div>
+      <div class="stock-row" id="stock-row"></div>
+      <div class="stock-position" id="stock-position"></div>
+      <div class="stock-trade-btns">
+        <button type="button" class="stock-trade-btn buy" id="stock-buy">購入</button>
+        <button type="button" class="stock-trade-btn sell" id="stock-sell">売却</button>
+      </div>
+      <div class="stock-orders" id="stock-orders"></div>
+      <div class="stock-chart-wrap">
+        <canvas id="stock-chart-canvas" class="stock-chart-canvas"></canvas>
+      </div>
+      <div class="stock-period" id="stock-chart-period">分足 (Intraday)</div>
+    </div>`;
+}
+
+function renderStockRow(){
+  const rowEl = document.getElementById("stock-row");
+  if(!rowEl) return;
+  rowEl.innerHTML = STOCKS.map((s,i) => {
+    const up = s.change >= 0;
+    return `<button type="button" class="stock-item${i===stockIndex?" active":""}" data-idx="${i}">
+      <div class="stock-ticker">${esc(s.ticker)}</div>
+      ${s.sessionLabel?`<div class="stock-session">${esc(s.sessionLabel)}</div>`:""}
+      <div class="stock-name">(${esc(s.name)})</div>
+      <div class="stock-priceline">
+        <span class="stock-price">$${s.price.toFixed(2)}</span>
+        <span class="stock-change ${up?"up":"down"}">${up?"▲":"▼"} ${up?"+":""}${s.change.toFixed(1)}%</span>
+      </div>
+    </button>`;
+  }).join("");
+  rowEl.querySelectorAll("[data-idx]").forEach(b => b.onclick = () => {
+    stockIndex = +b.dataset.idx;
+    renderStockRow();
+    renderStockChart();
+    renderStockPosition();
+  });
+}
+
+// Chart.js（CDN読み込み・index.html参照）でX軸=時間／Y軸=株価の日足チャートを描画。
+// ライブラリが読み込めなかった場合は静かに諦め、カードの他の部分は通常通り動作させる。
+// 前日終値比が上昇なら緑、下降なら赤（Yahoo!ファイナンス風の動的な配色）
+function stockTrendColors(up){
+  return up
+    ? { line: "#16a34a", fillTop: "rgba(22,163,74,.28)" }
+    : { line: "#dc2626", fillTop: "rgba(220,38,38,.22)" };
+}
+
+function renderStockChart(){
+  const periodEl = document.getElementById("stock-chart-period");
+  const s = STOCKS[stockIndex];
+  if(periodEl){
+    periodEl.textContent = s.chartIsLive ? "分足 (Intraday)" : (s.everLive ? "分足 (Intraday・最終参照)" : "分足 (Intraday・サンプル)");
+  }
+  const canvas = document.getElementById("stock-chart-canvas");
+  if(!canvas || typeof window.Chart === "undefined") return;
+  const labels = s.series.map(p => formatChartTime(p.t));
+  const data = s.series.map(p => p.close);
+  const ctx = canvas.getContext("2d");
+  const h = canvas.clientHeight || 80;
+  const { line, fillTop } = stockTrendColors(s.change >= 0);
+  const gradient = ctx.createLinearGradient(0, 0, 0, h);
+  gradient.addColorStop(0, fillTop);
+  gradient.addColorStop(1, "rgba(255,255,255,0)");
+
+  if(stockChart){
+    stockChart.data.labels = labels;
+    stockChart.data.datasets[0].data = data;
+    stockChart.data.datasets[0].backgroundColor = gradient;
+    stockChart.data.datasets[0].borderColor = line;
+    stockChart.update("none");
+    return;
+  }
+
+  stockChart = new window.Chart(ctx, {
+    type: "line",
+    data: { labels, datasets: [{
+      data, borderColor: line, backgroundColor: gradient, fill: true,
+      tension: .3, borderWidth: 2, pointRadius: 0, pointHoverRadius: 4, pointHitRadius: 14,
+    }] },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      animation: { duration: 250 },
+      interaction: { mode: "index", intersect: false },
+      plugins: {
+        legend: { display: false },
+        tooltip: { displayColors: false, callbacks: { label: (item) => `$${item.parsed.y.toFixed(2)}` } },
+      },
+      scales: {
+        x: { grid: { display: false }, ticks: { color: "#94a3b8", font: { size: 9 }, maxTicksLimit: 5, maxRotation: 0 } },
+        y: { position: "right", grid: { color: "rgba(148,163,184,.15)" }, ticks: { color: "#94a3b8", font: { size: 9 }, callback: v => "$"+v, maxTicksLimit: 4 } },
+      },
+    },
+  });
+}
+
+// 保有株数・平均取得単価・評価損益と、その銘柄の指値予約注文を表示
+function renderStockPosition(){
+  const posEl = document.getElementById("stock-position");
+  const ordersEl = document.getElementById("stock-orders");
+  if(!posEl) return;
+  const s = STOCKS[stockIndex];
+  const pl = unrealizedPL(s.ticker, s.price);
+  posEl.innerHTML = pl.shares
+    ? `保有 <b>${pl.shares}株</b>　平均取得 $${pl.avgCost.toFixed(2)}　評価損益 <span class="${pl.amount>=0?"up":"down"}">${pl.amount>=0?"+":""}${pl.amount.toFixed(2)} AC（${pl.amount>=0?"+":""}${pl.pct.toFixed(1)}%）</span>`
+    : `この銘柄は保有していません`;
+  if(!ordersEl) return;
+  const list = ordersFor(s.ticker);
+  ordersEl.innerHTML = list.map(o => `
+    <div class="stock-order-row">
+      <span>${o.side==="buy"?"買":"売"}指値 ${o.qty}株 @ $${o.limitPrice.toFixed(2)}</span>
+      <button type="button" class="stock-order-cancel" data-oid="${o.id}">取消</button>
+    </div>`).join("");
+  ordersEl.querySelectorAll("[data-oid]").forEach(b => b.onclick = () => { cancelOrder(b.dataset.oid); renderStockPosition(); });
+}
+
+// 実株価取得の結果をSTOCKSへ反映する（銘柄ごと。取得できなかった銘柄だけ
+// フォールバックに回す＝一部失敗しても他の銘柄は実データを表示できる）
+function applyLiveStocks(liveItems){
+  if(!liveItems) return;
+  liveItems.forEach(live => {
+    if(!live) return; // その銘柄は取得失敗（nullが入る）→ 後段の擬似変動に任せる
+    const s = STOCKS.find(x => x.ticker === live.ticker);
+    if(!s) return;
+    s.price = live.price;
+    s.previousClose = live.previousClose;
+    s.change = live.change;
+    s.session = live.session;
+    s.sessionLabel = live.sessionLabel; // 時間外のPre-market/After-hours、通常時間はnull
+    s.isLive = true;
+    s.everLive = true; // 一度でも実データを取得できたことを記録（以後の取得失敗時に擬似変動ではなく最終参照値を出すために使う）
+    if(live.series){
+      // チャート（分足）も取得できた場合のみ実データに置き換える
+      s.series = live.series;
+      s.chartIsLive = true;
+    } else {
+      // 価格は実データだがチャート(candle)だけ取得できなかった場合：
+      // 既存のサンプル系列を使い続けつつ、末尾だけ実際の現在値に合わせておく
+      const last = s.series[s.series.length - 1];
+      if(last) last.close = s.price;
+      s.chartIsLive = false;
+    }
+  });
+}
+
+// 実データが取得できなかった銘柄のフォールバック処理。
+// 一度でも実データを取得できたことがある銘柄（everLive）は、ランダムな擬似変動は
+// させず、最後に取得できた実際の値をそのまま据え置いて表示する（「最終参照」）。
+// まだ一度も実データを取得できていない起動直後のみ、デモ表示用に擬似的な値動きを見せる
+// （この場合のみ「サンプル」ラベルを出し、実データと誤認されないようにする）。
+// 日足の本数は増やさず、直近（今日）の終値ポイントだけを動かして表示を維持する。
+const STOCK_MOCK_SERIES_MAX = 180; // 擬似変動時に series が際限なく伸びないよう上限を設ける
+
+function simulateStockTick(s){
+  s.isLive = false;
+  s.chartIsLive = false;
+  if(s.everLive){
+    // 実データ取得済みの銘柄：価格・変化率は動かさず、最後に取得できた値のまま据え置く
+    s.sessionLabel = "最終参照";
+    return;
+  }
+  const delta = (Math.random() - 0.5) * STOCK_TICK_PCT;
+  s.price = Math.max(0.01, round2(s.price * (1 + delta)));
+  s.change = ((s.price - s.previousClose) / s.previousClose) * 100;
+  s.session = "regular";
+  s.sessionLabel = "サンプル";
+  // 分足チャートらしく、実際に新しい時刻のポイントを追加していく（古い分は切り捨て）
+  s.series.push({ t: Date.now(), close: s.price });
+  if(s.series.length > STOCK_MOCK_SERIES_MAX) s.series.shift();
+}
+
+async function refreshStockPrices(){
+  const live = await getLiveStocks();
+  STOCKS.forEach(s => { s.isLive = false; }); // 今回の取得結果で改めて判定し直す
+  applyLiveStocks(live);
+  STOCKS.forEach(s => { if(!s.isLive) simulateStockTick(s); });
+  renderStockRow();
+  renderStockChart();
+  renderStockPosition();
+  const executed = checkLimitOrders(ticker => STOCKS.find(s => s.ticker === ticker)?.price ?? null);
+  if(executed.length){
+    renderStockRow();
+    renderStockPosition();
+    renderStatusBar();
+  }
+}
+
+function startStockRefresh(){
+  if(stockRefreshTimer){ clearInterval(stockRefreshTimer); stockRefreshTimer = null; }
+  refreshStockPrices();
+  stockRefreshTimer = setInterval(() => {
+    if(!document.getElementById("stocks-card")){ clearInterval(stockRefreshTimer); stockRefreshTimer = null; return; }
+    refreshStockPrices();
+  }, STOCK_REFRESH_MS);
+}
+
+// 購入・売却モーダル：成行／指値の切り替え、数量・指値価格入力、手数料込みの概算表示
+function openTradeModal(side){
+  const s = STOCKS[stockIndex];
+  const pos = getPosition(s.ticker);
+  const ov = document.createElement("div");
+  ov.className = "modal-ov";
+  ov.innerHTML = `
+    <div class="modal trade-modal">
+      <div class="modal-title trade-modal-title">${side==="buy"?"購入":"売却"}：${esc(s.ticker)}（${esc(s.name)}）</div>
+      <div class="modal-body">現在値 <b>$${s.price.toFixed(2)}</b>　保有 ${pos.shares}株</div>
+      <div class="trade-type-toggle">
+        <button type="button" class="trade-type-btn active" data-type="market">成行</button>
+        <button type="button" class="trade-type-btn" data-type="limit">指値</button>
+      </div>
+      <div class="trade-field">
+        <label>数量（株）</label>
+        <input type="number" id="trade-qty" class="auth-input" min="1" step="1" value="1" inputmode="numeric">
+      </div>
+      <div class="trade-field" id="trade-limit-field" style="display:none">
+        <label>指値価格（$）</label>
+        <input type="number" id="trade-limit-price" class="auth-input" min="0.01" step="0.01" value="${s.price.toFixed(2)}" inputmode="decimal">
+      </div>
+      <div class="trade-preview" id="trade-preview"></div>
+      <div id="trade-msg" class="auth-msg"></div>
+      <button class="cta" id="trade-confirm" style="margin-top:0">${side==="buy"?"購入する":"売却する"}</button>
+      <button class="ghost" id="trade-cancel" style="margin-top:8px">キャンセル</button>
+    </div>`;
+  document.body.appendChild(ov);
+  const close = () => { try{ ov.remove(); }catch(e){} };
+  ov.addEventListener("click", (e) => { if(e.target === ov) close(); });
+  ov.querySelector("#trade-cancel").onclick = close;
+
+  const qtyEl = ov.querySelector("#trade-qty");
+  const limitFieldEl = ov.querySelector("#trade-limit-field");
+  const limitPriceEl = ov.querySelector("#trade-limit-price");
+  const previewEl = ov.querySelector("#trade-preview");
+  const msgEl = ov.querySelector("#trade-msg");
+  const typeBtns = ov.querySelectorAll(".trade-type-btn");
+
+  function currentType(){ return ov.querySelector(".trade-type-btn.active").dataset.type; }
+
+  function updatePreview(){
+    const qty = Math.max(1, parseInt(qtyEl.value, 10) || 1);
+    const type = currentType();
+    const refPrice = type === "market" ? s.price : (parseFloat(limitPriceEl.value) || s.price);
+    const amount = refPrice * qty;
+    const fee = calcFee(amount);
+    previewEl.innerHTML = side === "buy"
+      ? `概算金額 ${amount.toFixed(2)} AC ＋ 手数料(${(FEE_RATE*100).toFixed(1)}%) ${fee.toFixed(2)} AC = <b>合計 ${(amount+fee).toFixed(2)} AC</b>`
+      : `概算受取 ${amount.toFixed(2)} AC － 手数料(${(FEE_RATE*100).toFixed(1)}%) ${fee.toFixed(2)} AC = <b>手取り ${(amount-fee).toFixed(2)} AC</b>`;
+  }
+
+  typeBtns.forEach(b => b.onclick = () => {
+    typeBtns.forEach(x => x.classList.remove("active"));
+    b.classList.add("active");
+    limitFieldEl.style.display = b.dataset.type === "limit" ? "" : "none";
+    updatePreview();
+  });
+  qtyEl.oninput = updatePreview;
+  limitPriceEl.oninput = updatePreview;
+  updatePreview();
+
+  ov.querySelector("#trade-confirm").onclick = () => {
+    const qty = Math.max(1, parseInt(qtyEl.value, 10) || 1);
+    const type = currentType();
+    let res;
+    if(type === "market"){
+      res = executeMarketOrder(s.ticker, side, qty, s.price);
+    } else {
+      const limitPrice = parseFloat(limitPriceEl.value);
+      res = placeLimitOrder(s.ticker, side, qty, limitPrice);
+    }
+    if(!res.ok){ msgEl.style.color = "var(--bad)"; msgEl.textContent = res.msg; return; }
+    close();
+    renderStockRow();
+    renderStockPosition();
+    renderStatusBar(); // AC残高を即時反映
+  };
+}
+
+function initStocksCard(){
+  const card = document.getElementById("stocks-card");
+  if(!card) return;
+  loadPortfolio();
+  // 画面を再描画するたびcanvasも作り直されるため、古いChart.jsインスタンスを破棄しておく
+  if(stockChart){ try{ stockChart.destroy(); }catch(e){} stockChart = null; }
+  const prev = document.getElementById("stock-prev");
+  const next = document.getElementById("stock-next");
+  if(prev) prev.onclick = () => { stockIndex = (stockIndex - 1 + STOCKS.length) % STOCKS.length; renderStockRow(); renderStockChart(); renderStockPosition(); };
+  if(next) next.onclick = () => { stockIndex = (stockIndex + 1) % STOCKS.length; renderStockRow(); renderStockChart(); renderStockPosition(); };
+  const buyBtn = document.getElementById("stock-buy");
+  const sellBtn = document.getElementById("stock-sell");
+  if(buyBtn) buyBtn.onclick = () => openTradeModal("buy");
+  if(sellBtn) sellBtn.onclick = () => openTradeModal("sell");
+  renderStockRow();
+  renderStockChart();
+  renderStockPosition();
+  startStockRefresh();
+}
+
 export function renderSelect(){
   app.innerHTML = `
     ${newsCardHTML()}
+    ${stocksCardHTML()}
     <button class="cta cta-jump" id="cta-goto-certs">🎓 資格を選ぶ →</button>
     ${state.currentUser
       ? `<div class="acct-bar">👤 ${esc(state.currentUser.email||"ログイン中")}<button class="link2" data-logout>ログアウト</button></div>`
@@ -901,6 +1262,7 @@ export function renderSelect(){
   const jump=document.getElementById("cta-goto-certs");
   if(jump) jump.onclick=()=>go("certs");
   loadNewsCard();
+  initStocksCard();
   window.scrollTo(0,0);
 }
 
