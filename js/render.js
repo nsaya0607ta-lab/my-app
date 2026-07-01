@@ -64,9 +64,19 @@ function updateHeaderNav(show){
   if(nav) nav.style.display = show ? "" : "none";
 }
 
+// ヘッダーのメインタイトルを状態に応じて動的に切り替える：
+// 資格を選択中はその資格コード（AZ-900 など）、未選択なら「ホーム」
+function updateHeaderTitle(){
+  const titleEl = document.querySelector("h1.title");
+  if(!titleEl) return;
+  const c = S.cert ? certById(S.cert) : null;
+  titleEl.textContent = c ? c.code : "ホーム";
+}
+
 export function render(){
   renderStatusBar();   // 画面が変わっても常に最新の Lv/BP/AC を反映
   updateHeaderNav(false); // デフォルトは非表示。表示すべき画面側で個別に true にする
+  updateHeaderTitle();
   // 🎨 アプリ全体の背景スキンを body に適用（default のときは元の背景のまま）
   const sk = S.currentSkin || "default";
   document.body.className = (sk && sk!=="default") ? ("sb-theme-"+sk) : "";
@@ -280,7 +290,7 @@ export function renderHome(){
 
   app.innerHTML = `
     <div class="q-head" style="margin-bottom:14px">
-      <button class="quit" data-go="select">← 資格選択</button>
+      <button class="quit" data-go="certs">← 資格選択</button>
       <span class="q-count" style="color:${c.accent||'var(--accent)'}">${esc(c.code||"")}</span>
     </div>
 
@@ -961,7 +971,7 @@ export function renderProfile(){
     return `<div class="pf-cert"><span style="color:${c.accent}">${esc(c.code)}</span><span class="pf-cn">${esc(c.name)}</span><span class="pf-cl">Lv.${st.lvl} ・ 最高 ${st.best}</span></div>`;
   }).join("");
   app.innerHTML = `
-    <div class="q-head"><button class="quit" data-go="select">← 資格選択</button><span class="q-count">プロフィール</span></div>
+    <div class="q-head"><button class="quit" data-go="certs">← 資格選択</button><span class="q-count">プロフィール</span></div>
     <div class="me-hero">
       <div class="me-lab">総合エンジニアレベル</div>
       <div class="me-lvrow"><span class="me-lv">Lv.${ov.lv}</span><span class="me-title">${esc(ov.title)}</span></div>
@@ -1007,7 +1017,7 @@ export function renderProfile(){
 
 export function renderRanking(){
   app.innerHTML = `
-    <div class="q-head"><button class="quit" data-go="select">← 資格選択</button><span class="q-count">ランキング</span></div>
+    <div class="q-head"><button class="quit" data-go="certs">← 資格選択</button><span class="q-count">ランキング</span></div>
     <div id="lb-body"><div class="loading">読み込み中…</div></div>
   `;
   app.querySelectorAll("[data-go]").forEach(b=>b.onclick=()=>go(b.dataset.go));
