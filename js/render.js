@@ -897,38 +897,37 @@ async function loadNewsCard(){
    フォールバックし、表示が固まったままにならないようにする）。
    ========================================================================= */
 
+// series: 日足（1日間隔）の {t: 時刻(ms), close: 終値} 配列。X軸=時間・Y軸=株価として
+// チャートにそのまま使う。モックのタイムスタンプは直近の営業日ベースで生成する。
+function mockDailySeries(closes){
+  const now = Date.now();
+  const dayMs = 24*60*60*1000;
+  return closes.map((close, i) => ({ t: now - (closes.length-1-i)*dayMs, close }));
+}
+
 const STOCKS = [
-  { ticker:"MSFT", name:"Microsoft", price:435.12, change:1.2,
-    trend:[58,55,57,53,50,52,49,51,47,49,45,47,50,54,58,55,60,64,61,66,70,75] },
-  { ticker:"AMZN", name:"Amazon", price:189.50, change:-0.5,
-    trend:[70,68,65,67,62,64,60,58,55,57,53,50,52,48,50,46,48,44,46,42,44,40] },
-  { ticker:"GOOGL", name:"Alphabet", price:199.80, change:-0.5,
-    trend:[50,52,49,53,51,55,52,56,53,57,54,58,55,59,56,60,57,61,58,62,59,63] },
+  { ticker:"MSFT", name:"Microsoft", price:435.12, previousClose:429.91, session:"regular", sessionLabel:null,
+    series: mockDailySeries([408,405,407,403,400,402,399,401,397,399,395,397,400,404,408,405,410,414,411,416,420,435.12]) },
+  { ticker:"AMZN", name:"Amazon", price:189.50, previousClose:190.45, session:"regular", sessionLabel:null,
+    series: mockDailySeries([206,204,201,203,198,200,196,194,191,193,189,188,189,187,188,186,187,185,186,184,185,189.50]) },
+  { ticker:"GOOGL", name:"Alphabet", price:199.80, previousClose:200.80, session:"regular", sessionLabel:null,
+    series: mockDailySeries([184,186,183,187,185,189,186,190,187,191,188,192,189,193,190,194,191,195,192,196,193,199.80]) },
 ];
-// change(%)は常に prevClose を基準に計算する。実データ取得時・擬似変動時ともに
-// この基準値を更新することで、表示される前日比の整合性を保つ。
-STOCKS.forEach(s => { s.prevClose = s.price / (1 + s.change/100); });
+// change(%)は常に previousClose（前日終値）を基準に計算する＝日足ベース。
+// 実データ取得時・擬似変動時ともにこの基準値を更新して整合性を保つ。
+STOCKS.forEach(s => { s.change = ((s.price - s.previousClose) / s.previousClose) * 100; });
 
 let stockIndex = 0;
 let stockRefreshTimer = null;
+let stockChart = null; // Chart.js インスタンス（銘柄切り替え時はdataだけ更新して使い回す）
 const STOCK_REFRESH_MS = 45000; // 実株価の再取得・擬似変動の更新間隔
 const STOCK_TICK_PCT = 0.006;   // 実データが使えない場合の1回あたりの変動幅（±0.3%程度）
 
 function round2(n){ return Math.round(n*100)/100; }
 
-function stockChartPaths(trend, w, h){
-  const n = trend.length;
-  const max = Math.max(...trend), min = Math.min(...trend);
-  const range = (max - min) || 1;
-  const pad = 4;
-  const pts = trend.map((v,i) => {
-    const x = (i/(n-1)) * w;
-    const y = h - pad - ((v - min)/range) * (h - pad*2);
-    return `${x.toFixed(1)},${y.toFixed(1)}`;
-  });
-  const line = "M" + pts.join(" L");
-  const fill = `${line} L${w},${h} L0,${h} Z`;
-  return { line, fill };
+function formatChartDate(ms){
+  const d = new Date(ms);
+  return `${d.getMonth()+1}/${d.getDate()}`;
 }
 
 function stocksCardHTML(){
@@ -949,18 +948,9 @@ function stocksCardHTML(){
       </div>
       <div class="stock-orders" id="stock-orders"></div>
       <div class="stock-chart-wrap">
-        <svg viewBox="0 0 300 70" class="stock-chart-svg" preserveAspectRatio="none">
-          <defs>
-            <linearGradient id="stockGrad" x1="0" y1="0" x2="0" y2="1">
-              <stop offset="0%" stop-color="#0284c7" stop-opacity="0.25"/>
-              <stop offset="100%" stop-color="#0284c7" stop-opacity="0"/>
-            </linearGradient>
-          </defs>
-          <path id="stock-chart-fill" fill="url(#stockGrad)" stroke="none"/>
-          <path id="stock-chart-line" class="stock-chart-line" fill="none"/>
-        </svg>
+        <canvas id="stock-chart-canvas" class="stock-chart-canvas"></canvas>
       </div>
-      <div class="stock-period">週足 (Weekly)</div>
+      <div class="stock-period">日足 (Daily)</div>
     </div>`;
 }
 
@@ -970,7 +960,7 @@ function renderStockRow(){
   rowEl.innerHTML = STOCKS.map((s,i) => {
     const up = s.change >= 0;
     return `<button type="button" class="stock-item${i===stockIndex?" active":""}" data-idx="${i}">
-      <div class="stock-ticker">${esc(s.ticker)}</div>
+      <div class="stock-ticker">${esc(s.ticker)}${s.sessionLabel?`<span class="stock-session">${esc(s.sessionLabel)}</span>`:""}</div>
       <div class="stock-name">(${esc(s.name)})</div>
       <div class="stock-priceline">
         <span class="stock-price">$${s.price.toFixed(2)}</span>
@@ -986,13 +976,48 @@ function renderStockRow(){
   });
 }
 
+// Chart.js（CDN読み込み・index.html参照）でX軸=時間／Y軸=株価の日足チャートを描画。
+// ライブラリが読み込めなかった場合は静かに諦め、カードの他の部分は通常通り動作させる。
 function renderStockChart(){
-  const lineEl = document.getElementById("stock-chart-line");
-  const fillEl = document.getElementById("stock-chart-fill");
-  if(!lineEl || !fillEl) return;
-  const { line, fill } = stockChartPaths(STOCKS[stockIndex].trend, 300, 70);
-  lineEl.setAttribute("d", line);
-  fillEl.setAttribute("d", fill);
+  const canvas = document.getElementById("stock-chart-canvas");
+  if(!canvas || typeof window.Chart === "undefined") return;
+  const s = STOCKS[stockIndex];
+  const labels = s.series.map(p => formatChartDate(p.t));
+  const data = s.series.map(p => p.close);
+  const ctx = canvas.getContext("2d");
+  const h = canvas.clientHeight || 80;
+  const gradient = ctx.createLinearGradient(0, 0, 0, h);
+  gradient.addColorStop(0, "rgba(2,132,199,.25)");
+  gradient.addColorStop(1, "rgba(2,132,199,0)");
+
+  if(stockChart){
+    stockChart.data.labels = labels;
+    stockChart.data.datasets[0].data = data;
+    stockChart.data.datasets[0].backgroundColor = gradient;
+    stockChart.update("none");
+    return;
+  }
+
+  stockChart = new window.Chart(ctx, {
+    type: "line",
+    data: { labels, datasets: [{
+      data, borderColor: "#0284c7", backgroundColor: gradient, fill: true,
+      tension: .3, borderWidth: 2, pointRadius: 0, pointHoverRadius: 4, pointHitRadius: 14,
+    }] },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      animation: { duration: 250 },
+      interaction: { mode: "index", intersect: false },
+      plugins: {
+        legend: { display: false },
+        tooltip: { displayColors: false, callbacks: { label: (item) => `$${item.parsed.y.toFixed(2)}` } },
+      },
+      scales: {
+        x: { grid: { display: false }, ticks: { color: "#94a3b8", font: { size: 9 }, maxTicksLimit: 5, maxRotation: 0 } },
+        y: { position: "right", grid: { color: "rgba(148,163,184,.15)" }, ticks: { color: "#94a3b8", font: { size: 9 }, callback: v => "$"+v, maxTicksLimit: 4 } },
+      },
+    },
+  });
 }
 
 // 保有株数・平均取得単価・評価損益と、その銘柄の指値予約注文を表示
@@ -1023,19 +1048,26 @@ function applyLiveStocks(liveItems){
     const s = STOCKS.find(x => x.ticker === live.ticker);
     if(!s) return;
     s.price = live.price;
+    s.previousClose = live.previousClose;
     s.change = live.change;
-    s.trend = live.trend;
-    s.prevClose = live.price / (1 + live.change/100);
+    s.session = live.session;
+    s.sessionLabel = live.sessionLabel;
+    s.series = live.series;
   });
   return true;
 }
 
-// 実データが使えない場合の擬似的な値動き（限定的な範囲でランダムに上下させる）
+// 実データが使えない場合の擬似的な値動き（限定的な範囲でランダムに上下させる）。
+// 日足の本数は増やさず、直近（今日）の終値ポイントだけを動かして表示を維持する。
 function simulateStockTick(){
   STOCKS.forEach(s => {
     const delta = (Math.random() - 0.5) * STOCK_TICK_PCT;
     s.price = Math.max(0.01, round2(s.price * (1 + delta)));
-    s.change = ((s.price - s.prevClose) / s.prevClose) * 100;
+    s.change = ((s.price - s.previousClose) / s.previousClose) * 100;
+    s.session = "regular";
+    s.sessionLabel = null;
+    const last = s.series[s.series.length - 1];
+    if(last) last.close = s.price;
   });
 }
 
@@ -1146,6 +1178,8 @@ function initStocksCard(){
   const card = document.getElementById("stocks-card");
   if(!card) return;
   loadPortfolio();
+  // 画面を再描画するたびcanvasも作り直されるため、古いChart.jsインスタンスを破棄しておく
+  if(stockChart){ try{ stockChart.destroy(); }catch(e){} stockChart = null; }
   const prev = document.getElementById("stock-prev");
   const next = document.getElementById("stock-next");
   if(prev) prev.onclick = () => { stockIndex = (stockIndex - 1 + STOCKS.length) % STOCKS.length; renderStockRow(); renderStockChart(); renderStockPosition(); };

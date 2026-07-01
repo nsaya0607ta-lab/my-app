@@ -1,8 +1,11 @@
 /* =========================================================================
    株価カード（STOCKS）用の実株価取得。
-   Yahoo Finance の公開チャートAPIをCORSプロキシ経由で取得する。
+   Yahoo Finance の公開APIをCORSプロキシ経由で取得する。
+   - v7/finance/quote  : 現在値・前日終値・プレ/アフターマーケット価格・
+                          市場の状態（PRE/REGULAR/POST/CLOSED）
+   - v8/finance/chart  : 日足（1日間隔）の時系列データ（チャート用）
    取得できない場合は null を返し、呼び出し側（render.js）が
-   保持しているサンプル株価で動作を継続する。
+   保持しているサンプル株価・擬似変動で動作を継続する。
    ========================================================================= */
 
 import { fetchViaProxies } from './cors-proxy.js';
@@ -11,30 +14,63 @@ export const STOCK_TICKERS = ["MSFT", "AMZN", "GOOGL"];
 const STOCK_NAMES = { MSFT: "Microsoft", AMZN: "Amazon", GOOGL: "Alphabet" };
 
 const FETCH_TIMEOUT_MS = 8000;
-const CACHE_KEY = "stocks_cache_v1";
+const CACHE_KEY = "stocks_cache_v2";
 const CACHE_TTL_MS = 45 * 1000; // 45秒キャッシュ（相場は動くのでニュースより短め）
 
-async function fetchQuote(ticker) {
+async function fetchSnapshot(ticker) {
+  const url = `https://query1.finance.yahoo.com/v7/finance/quote?symbols=${ticker}`;
+  const res = await fetchViaProxies(url, { timeoutMs: FETCH_TIMEOUT_MS });
+  const json = await res.json();
+  const q = json?.quoteResponse?.result?.[0];
+  if (!q) throw new Error("no quote for " + ticker);
+  return q;
+}
+
+// 日足（週足・月足ではない）の時系列データ。チャートのX軸（時間）にそのまま使う
+async function fetchDailySeries(ticker) {
   const url = `https://query1.finance.yahoo.com/v8/finance/chart/${ticker}?range=1mo&interval=1d`;
   const res = await fetchViaProxies(url, { timeoutMs: FETCH_TIMEOUT_MS });
   const json = await res.json();
   const result = json?.chart?.result?.[0];
-  if (!result) throw new Error("no data for " + ticker);
+  if (!result) throw new Error("no chart data for " + ticker);
+  const timestamps = result.timestamp || [];
+  const closes = result.indicators?.quote?.[0]?.close || [];
+  return timestamps
+    .map((t, i) => ({ t: t * 1000, close: closes[i] }))
+    .filter(p => typeof p.close === "number");
+}
 
-  const meta = result.meta || {};
-  const price = meta.regularMarketPrice;
-  const prevClose = meta.previousClose ?? meta.chartPreviousClose;
-  if (typeof price !== "number" || !prevClose) throw new Error("invalid quote for " + ticker);
+// 現在の市場状態（PRE/REGULAR/POST/CLOSED）から、表示すべき価格とラベルを判定
+function pickSessionPrice(q) {
+  const state = (q.marketState || "REGULAR").toUpperCase();
+  if (state === "PRE" && typeof q.preMarketPrice === "number") {
+    return { session: "pre", label: "Pre-market", price: q.preMarketPrice };
+  }
+  if ((state === "POST" || state === "POSTPOST") && typeof q.postMarketPrice === "number") {
+    return { session: "post", label: "After-hours", price: q.postMarketPrice };
+  }
+  return { session: "regular", label: null, price: q.regularMarketPrice };
+}
 
-  const closes = (result.indicators?.quote?.[0]?.close || []).filter(v => typeof v === "number");
-  const change = ((price - prevClose) / prevClose) * 100;
+async function fetchQuote(ticker) {
+  const [q, series] = await Promise.all([fetchSnapshot(ticker), fetchDailySeries(ticker)]);
+  const previousClose = q.regularMarketPreviousClose;
+  if (typeof previousClose !== "number") throw new Error("invalid previousClose for " + ticker);
+
+  const { session, label, price } = pickSessionPrice(q);
+  const displayPrice = typeof price === "number" ? price : q.regularMarketPrice;
+  // 増減率は常に「前日終値比」（日足ベース）で計算する。時間外価格でも基準は変えない
+  const change = ((displayPrice - previousClose) / previousClose) * 100;
 
   return {
     ticker,
     name: STOCK_NAMES[ticker] || ticker,
-    price,
+    price: displayPrice,
+    previousClose,
     change,
-    trend: closes.length ? closes : [prevClose, price],
+    session,
+    sessionLabel: label,
+    series: series.length ? series : [{ t: Date.now(), close: displayPrice }],
   };
 }
 
