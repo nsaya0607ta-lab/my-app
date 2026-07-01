@@ -526,3 +526,13 @@ export function publishLeaderboard(){
   if(!window.LB || !state.currentUserId || state.guestMode) return;
   try{ window.LB.publish(buildPublic()); }catch(e){}
 }
+
+// js/core.js の末尾に追加
+export function prevQuestion() {
+  if (S.idx > 0) {
+    S.idx--;
+    // すでに選択していた回答（もしあれば）を現在の選択状態に戻す
+    S.sel = S.picks[S.idx] || [];
+    render();
+  }
+}
