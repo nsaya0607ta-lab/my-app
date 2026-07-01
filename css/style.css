@@ -392,7 +392,7 @@ h1.title{font-size:34px;line-height:1.05;font-weight:800;margin:8px 0 0;letter-s
 .news-headline{font-size:13.5px;font-weight:800;color:var(--text);line-height:1.4;opacity:0;
   display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;line-clamp:2;overflow:hidden;}
 .news-summary{margin-top:4px;font-size:11.5px;font-weight:500;color:var(--muted);line-height:1.6;opacity:0;
-  display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:3;line-clamp:3;overflow:hidden;}
+  display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;line-clamp:2;overflow:hidden;}
 .news-fade-in{animation:newsFadeIn .35s ease forwards;}
 @keyframes newsFadeIn{from{opacity:0;transform:translateY(4px);}to{opacity:1;transform:translateY(0);}}
 .news-readmore{display:inline-block;margin-top:7px;font-size:11px;font-weight:800;color:var(--accent);text-decoration:none;}

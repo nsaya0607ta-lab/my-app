@@ -21,9 +21,13 @@ const CORS_PROXIES = [
 ];
 
 const MAX_ITEMS = 5; // ニュースダッシュボードは5件を保持・巡回表示する
-const SUMMARY_MAX_LEN = 130; // 要約の最大文字数（カード内で3行程度に収まる目安）
+const SUMMARY_MAX_LEN = 90; // 要約の最大文字数（カード内で2行程度に収まる目安）
+// RSSのdescriptionが空で要約が取得できない場合の案内文。
+// タイトルをそのまま繰り返すと誤解を招く（未確認の内容を捏造して表示するのも
+// 不適切な）ため、事実を断定しない案内文のみを表示する。
+const NO_SUMMARY_TEXT = "詳しい内容は下の「続きを読む」から元記事でご確認ください。";
 const FETCH_TIMEOUT_MS = 8000;
-const CACHE_KEY = "news_cache_v3";
+const CACHE_KEY = "news_cache_v4"; // 要約重複バグ修正に伴いバージョンを上げ、古いキャッシュを無効化
 const CACHE_TTL_MS = 10 * 60 * 1000; // 10分キャッシュ（プロキシ・取得先への負荷軽減）
 
 // 通信エラー・API制限などで1件も取得できなかった場合に表示する、
@@ -64,9 +68,9 @@ function withTimeout(promise, ms) {
 }
 
 // RSSのdescriptionは装飾タグを含むことがあるため、テキストのみ抽出して整形する
-function cleanSummary(raw, fallbackTitle) {
+function cleanSummary(raw) {
   const text = (raw || "").replace(/\s+/g, " ").trim();
-  if (!text) return fallbackTitle; // 要約が空の場合はタイトルを代用し、欄を空白にしない
+  if (!text) return NO_SUMMARY_TEXT; // 要約が空の場合にタイトルを繰り返すと重複表示になるため案内文を表示
   return text.length > SUMMARY_MAX_LEN ? text.slice(0, SUMMARY_MAX_LEN) + "…" : text;
 }
 
@@ -77,7 +81,7 @@ function parseFeedXml(xmlText) {
     const title = (item.querySelector("title")?.textContent || "").trim();
     return {
       title,
-      summary: cleanSummary(item.querySelector("description")?.textContent, title),
+      summary: cleanSummary(item.querySelector("description")?.textContent),
       link: (item.querySelector("link")?.textContent || "").trim() || null,
     };
   }).filter(n => n.title);
