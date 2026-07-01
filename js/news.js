@@ -1,85 +1,86 @@
 /* =========================================================================
-   外部ニュース取得（資格一覧画面 上部のニュースダッシュボード用）
-   ブラウザから直接 RSS を fetch すると CORS エラーになるため、
-   無料のCORSプロキシ経由で取得する。1つのプロキシはダウン・レート制限が
-   起きやすいため、複数のプロキシを順番に試し、全滅した場合のみ
-   FALLBACK_NEWS（ダミーのIT系ニュース）を表示する。
+   関連ニュース取得（ホーム画面のニュースダッシュボード用）
+   株価カード（STOCKS）で表示している銘柄（MSFT/AMZN/GOOGL）に関連する
+   ニュースを、Finnhubの会社別ニュース(/company-news)から取得する。
+   APIキー・銘柄一覧は finnhub-config.js で株価カードと共有している。
+
+   Finnhubは元々ブラウザからの直接呼び出しを想定してCORSを許可しているため、
+   まず直接fetchし、失敗した場合のみ無料CORSプロキシ経由にフォールバックする。
+   全銘柄で取得できなかった場合のみ FALLBACK_NEWS（ダミーの関連ニュース）を表示する。
    ========================================================================= */
 
-import { fetchViaProxies } from './cors-proxy.js';
-
-// Yahoo!ニュース トピックス RSS（IT・科学カテゴリ）
-const RSS_FEEDS = [
-  "https://news.yahoo.co.jp/rss/topics/it.xml",
-  "https://news.yahoo.co.jp/rss/topics/science.xml",
-];
+import { fetchDirectOrProxied } from './cors-proxy.js';
+import { FINNHUB_API_KEY, STOCK_TICKERS } from './finnhub-config.js';
 
 const MAX_ITEMS = 5; // ニュースダッシュボードは5件を保持・巡回表示する
 const SUMMARY_MAX_LEN = 90; // 要約の最大文字数（カード内で2行程度に収まる目安）
-// RSSのdescriptionが空で要約が取得できない場合の案内文。
+// Finnhubのsummaryが空で要約が取得できない場合の案内文。
 // タイトルをそのまま繰り返すと誤解を招く（未確認の内容を捏造して表示するのも
 // 不適切な）ため、事実を断定しない案内文のみを表示する。
 const NO_SUMMARY_TEXT = "詳しい内容は下の「続きを読む」から元記事でご確認ください。";
 const FETCH_TIMEOUT_MS = 8000;
-const CACHE_KEY = "news_cache_v4"; // 要約重複バグ修正に伴いバージョンを上げ、古いキャッシュを無効化
+const CACHE_KEY = "news_cache_v5"; // 取得元をYahoo RSS→Finnhub関連ニュースに変更したためバージョンを上げる
 const CACHE_TTL_MS = 10 * 60 * 1000; // 10分キャッシュ（プロキシ・取得先への負荷軽減）
+const NEWS_LOOKBACK_DAYS = 7; // 直近7日分の関連ニュースを対象にする
 
-// 通信エラー・API制限などで1件も取得できなかった場合に表示する、
-// ダミーのIT/Azure系ニュース（実在の記事ではないため link はダミーURL・遷移させない想定）
+// 通信エラー・APIキー未設定などで1件も取得できなかった場合に表示する、
+// ダミーの関連ニュース（実在の記事ではないため link はダミーURL）
 export const FALLBACK_NEWS = [
   {
-    title: "生成AIの業務活用が加速、国内企業の8割が導入を検討",
-    summary: "国内主要企業を対象にした最新調査によると、8割以上が生成AIの業務活用を検討または既に導入していると回答。特に資料作成や問い合わせ対応での活用が進んでいる。",
+    title: "Microsoft、Azure向け新AIサービスを発表",
+    summary: "マイクロソフトはAzure上で利用できる新たなAIサービスを発表。企業の生成AI活用をさらに後押しする狙いがあるという。",
+    link: "https://www.microsoft.com/",
+  },
+  {
+    title: "Amazon、クラウド部門AWSの増収を発表",
+    summary: "アマゾンは決算発表でクラウド部門AWSの増収を報告。企業のクラウド移行需要が引き続き堅調であることを示した。",
+    link: "https://aws.amazon.com/",
+  },
+  {
+    title: "Alphabet、AI検索機能を主要市場で拡大へ",
+    summary: "グーグルの持株会社アルファベットは、AIを活用した検索機能の提供地域を拡大すると発表。競合との差別化を図る。",
+    link: "https://abc.xyz/",
+  },
+  {
+    title: "IT大手3社、データセンター投資を積み増しへ",
+    summary: "主要IT企業がAI需要の拡大を受け、データセンターへの設備投資を積み増す方針を相次いで表明している。",
     link: "https://news.yahoo.co.jp/",
   },
   {
-    title: "Azure新リージョン開設、国内クラウド需要に対応",
-    summary: "マイクロソフトはクラウド需要の高まりを受け、Azureの新リージョンを開設したと発表。データの国内保持ニーズに応え、金融・公共分野での採用が期待されている。",
-    link: "https://azure.microsoft.com/",
-  },
-  {
-    title: "次世代半導体の国内生産、大手メーカーが新工場を稼働へ",
-    summary: "半導体大手が国内に新工場を稼働開始したと発表。次世代プロセスの量産体制を整え、AI需要の急拡大に伴う供給不足の解消を目指すとしている。",
-    link: "https://news.yahoo.co.jp/",
-  },
-  {
-    title: "量子コンピュータ研究で新たな成果、誤り訂正技術が前進",
-    summary: "研究チームが量子ビットの誤り訂正に関する新手法を発表。実用的な量子コンピュータの実現に向けた課題とされてきた精度の課題解決に前進したという。",
-    link: "https://news.yahoo.co.jp/",
-  },
-  {
-    title: "クラウドセキュリティ人材の需要が急増、資格取得者にニーズ",
-    summary: "クラウド移行の加速に伴い、セキュリティ人材の需要が急増していると各社が報告。関連資格の取得者は転職市場でも高く評価される傾向にあるという。",
+    title: "クラウド資格取得者の需要が拡大、企業の採用ニーズ高まる",
+    summary: "クラウド移行の加速に伴い、関連資格の取得者に対する企業の採用ニーズが拡大していると各社が報告している。",
     link: "https://news.yahoo.co.jp/",
   },
 ];
 
-// RSSのdescriptionは装飾タグを含むことがあるため、テキストのみ抽出して整形する
+// Finnhubのsummaryは装飾を含まないプレーンテキストだが、念のため整形する
 function cleanSummary(raw) {
   const text = (raw || "").replace(/\s+/g, " ").trim();
   if (!text) return NO_SUMMARY_TEXT; // 要約が空の場合にタイトルを繰り返すと重複表示になるため案内文を表示
   return text.length > SUMMARY_MAX_LEN ? text.slice(0, SUMMARY_MAX_LEN) + "…" : text;
 }
 
-function parseFeedXml(xmlText) {
-  const doc = new DOMParser().parseFromString(xmlText, "application/xml");
-  if (doc.querySelector("parsererror")) throw new Error("RSSの解析に失敗しました");
-  return [...doc.querySelectorAll("item")].map(item => {
-    const title = (item.querySelector("title")?.textContent || "").trim();
-    return {
-      title,
-      summary: cleanSummary(item.querySelector("description")?.textContent),
-      link: (item.querySelector("link")?.textContent || "").trim() || null,
-    };
-  }).filter(n => n.title);
+function isoDate(d) {
+  return d.toISOString().slice(0, 10); // YYYY-MM-DD（Finnhubのfrom/toが要求する形式）
 }
 
-async function fetchFeed(feedUrl) {
-  const res = await fetchViaProxies(feedUrl, { timeoutMs: FETCH_TIMEOUT_MS });
-  const xmlText = await res.text();
-  const items = parseFeedXml(xmlText);
-  if (!items.length) throw new Error("0件でした");
-  return items;
+// 指定銘柄の直近ニュースを取得する。無料プランでは取得できる期間・件数に
+// 制限がある場合があり、その場合は呼び出し側で他の銘柄にフォールバックする
+async function fetchCompanyNews(ticker) {
+  const to = new Date();
+  const from = new Date(to.getTime() - NEWS_LOOKBACK_DAYS * 24 * 60 * 60 * 1000);
+  const url = `https://finnhub.io/api/v1/company-news?symbol=${ticker}&from=${isoDate(from)}&to=${isoDate(to)}&token=${FINNHUB_API_KEY}`;
+  const res = await fetchDirectOrProxied(url, { timeoutMs: FETCH_TIMEOUT_MS });
+  const data = await res.json();
+  if (!Array.isArray(data)) throw new Error("invalid company-news response");
+  return data
+    .filter(n => n.headline)
+    .map(n => ({
+      title: n.headline.trim(),
+      summary: cleanSummary(n.summary),
+      link: n.url || null,
+      datetime: (n.datetime || 0) * 1000,
+    }));
 }
 
 function loadCache() {
@@ -96,21 +97,32 @@ function saveCache(items) {
   try { localStorage.setItem(CACHE_KEY, JSON.stringify({ savedAt: Date.now(), items })); } catch (e) {}
 }
 
-// 複数フィードから最新ニュースを取得（5件に整形）。失敗時はフォールバックを返す
+// 株価カードの銘柄（MSFT/AMZN/GOOGL）に関連するニュースを取得し、新しい順に
+// 整形して返す。銘柄ごとに成否を判定し、1銘柄でも取得できればそれを使う。
+// APIキー未設定・全銘柄で取得失敗の場合のみ FALLBACK_NEWS を返す。
 export async function getNews() {
+  if (!FINNHUB_API_KEY || FINNHUB_API_KEY === "YOUR_FINNHUB_API_KEY") return FALLBACK_NEWS;
+
   const cached = loadCache();
   if (cached) return cached;
 
-  try {
-    const results = await Promise.allSettled(RSS_FEEDS.map(fetchFeed));
-    const items = results
-      .filter(r => r.status === "fulfilled")
-      .flatMap(r => r.value)
-      .slice(0, MAX_ITEMS);
-    if (!items.length) throw new Error("ニュースを取得できませんでした");
-    saveCache(items);
-    return items;
-  } catch (e) {
-    return FALLBACK_NEWS;
-  }
+  const settled = await Promise.allSettled(STOCK_TICKERS.map(fetchCompanyNews));
+  const items = settled
+    .filter(r => r.status === "fulfilled")
+    .flatMap(r => r.value);
+  settled.forEach((r, i) => {
+    if (r.status === "rejected") console.warn(`[news] ${STOCK_TICKERS[i]} の関連ニュース取得に失敗しました:`, r.reason?.message || r.reason);
+  });
+  if (!items.length) return FALLBACK_NEWS;
+
+  // 新しい順に並べ、同一見出しの重複を除いた上位件数だけを表示に使う
+  const seen = new Set();
+  const result = items
+    .sort((a, b) => b.datetime - a.datetime)
+    .filter(n => (seen.has(n.title) ? false : (seen.add(n.title), true)))
+    .slice(0, MAX_ITEMS)
+    .map(({ title, summary, link }) => ({ title, summary, link }));
+
+  saveCache(result);
+  return result;
 }

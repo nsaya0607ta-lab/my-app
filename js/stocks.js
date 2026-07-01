@@ -4,24 +4,17 @@
    - /quote : 現在値・前日終値のみを取得する（チャートは表示しないため
      日足candleの取得は行わない）
 
-   【重要】Finnhubの利用には無料のAPIキーが必要です。
-   1. https://finnhub.io/register で無料アカウントを作成
-   2. ダッシュボードに表示される API Key をコピー
-   3. 下の FINNHUB_API_KEY にそのまま貼り付ける
-   キー未設定の間は常にサンプルデータ（render.js側のフォールバック）が
-   表示されます。
+   APIキー・銘柄一覧は finnhub-config.js に集約（news.js の関連ニュース
+   取得とも共有している）。
 
    Finnhubは元々ブラウザからの直接呼び出しを想定してCORSを許可しているため、
    まず直接fetchし、失敗した場合のみ無料CORSプロキシ経由にフォールバックする。
    ========================================================================= */
 
 import { fetchDirectOrProxied } from './cors-proxy.js';
+import { FINNHUB_API_KEY, STOCK_TICKERS, STOCK_NAMES } from './finnhub-config.js';
 
-// ここに https://finnhub.io/register で取得した無料APIキーを貼り付けてください
-const FINNHUB_API_KEY = "d92jlgpr01qs541v5g60d92jlgpr01qs541v5g6g";
-
-export const STOCK_TICKERS = ["MSFT", "AMZN", "GOOGL"];
-const STOCK_NAMES = { MSFT: "Microsoft", AMZN: "Amazon", GOOGL: "Alphabet" };
+export { STOCK_TICKERS };
 
 const FETCH_TIMEOUT_MS = 8000;
 const CACHE_KEY = "stocks_cache_v6"; // チャート廃止（現在値のみ）への変更に伴いキーを更新（旧キャッシュを無効化）
