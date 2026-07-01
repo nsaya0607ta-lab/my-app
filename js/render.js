@@ -803,7 +803,15 @@ function newsCardHTML(){
         <div class="news-content">
           <div class="news-headline" id="news-headline">読み込み中…</div>
           <div class="news-summary" id="news-summary"></div>
-          <a class="news-readmore" id="news-readmore" target="_blank" rel="noopener noreferrer" style="visibility:hidden">続きを読む →</a>
+          <div class="news-footer">
+            <a class="news-readmore" id="news-readmore" target="_blank" rel="noopener noreferrer" style="visibility:hidden">続きを読む →</a>
+            <button type="button" class="news-refresh-btn" id="news-refresh-btn" aria-label="ニュースを更新" title="ニュースを更新">
+              <svg viewBox="0 0 24 24" class="news-refresh-icon" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M21 12a9 9 0 1 1-2.64-6.36"/>
+                <polyline points="21 3 21 9 15 9"/>
+              </svg>
+            </button>
+          </div>
         </div>
       </div>
       <div class="news-dots" id="news-dots"></div>
@@ -876,13 +884,14 @@ function startClock(){
 
 // ニュースを取得してカードを再描画する。ホーム画面から離れて news-card が
 // DOM上から消えている場合は、取得結果を無駄に描画せず自動更新タイマーも止める
-// （画面遷移時のクリーンアップ）。
-async function refreshNewsCard(){
+// （画面遷移時のクリーンアップ）。force=true の場合は10分キャッシュを無視して
+// 必ずAPIへ再フェッチする（手動更新ボタン用）。
+async function refreshNewsCard(force){
   if(!document.getElementById("news-card")){
     if(newsRefreshTimer){ clearInterval(newsRefreshTimer); newsRefreshTimer = null; }
     return;
   }
-  newsItems = await getNews();
+  newsItems = await getNews(force);
   newsIndex = 0;
   renderNewsSlide();
   restartNewsTimer();
@@ -893,7 +902,24 @@ async function refreshNewsCard(){
 // タイマーが重複して積み上がることはない。
 function startNewsRefresh(){
   if(newsRefreshTimer){ clearInterval(newsRefreshTimer); newsRefreshTimer = null; }
-  newsRefreshTimer = setInterval(refreshNewsCard, NEWS_REFRESH_MS);
+  newsRefreshTimer = setInterval(() => refreshNewsCard(false), NEWS_REFRESH_MS);
+}
+
+// ニュースカード右下の更新アイコンをタップした際のハンドラ。10分の待機タイマーを
+// 待たず即座に強制再フェッチし、完了するまでアイコンを回転させてローディング中
+// であることを伝える。連打による多重フェッチはボタンのdisabledで防ぐ。
+let newsManualRefreshBusy = false;
+async function handleNewsRefreshClick(){
+  if(newsManualRefreshBusy) return;
+  const btn = document.getElementById("news-refresh-btn");
+  newsManualRefreshBusy = true;
+  if(btn){ btn.classList.add("spinning"); btn.disabled = true; }
+  try{
+    await refreshNewsCard(true);
+  } finally {
+    newsManualRefreshBusy = false;
+    if(btn){ btn.classList.remove("spinning"); btn.disabled = false; }
+  }
 }
 
 async function loadNewsCard(){
@@ -901,13 +927,15 @@ async function loadNewsCard(){
   if(!card) return;
   const prev = document.getElementById("news-prev");
   const next = document.getElementById("news-next");
+  const refreshBtn = document.getElementById("news-refresh-btn");
   if(prev) prev.onclick = () => gotoNewsSlide(newsIndex - 1);
   if(next) next.onclick = () => gotoNewsSlide(newsIndex + 1);
+  if(refreshBtn) refreshBtn.onclick = handleNewsRefreshClick;
 
   startClock();
 
-  await refreshNewsCard(); // 画面を開いた瞬間の即時フェッチ
-  startNewsRefresh();      // 以後10分間隔でバックグラウンド自動更新
+  await refreshNewsCard(false); // 画面を開いた瞬間の即時フェッチ（10分キャッシュは尊重する）
+  startNewsRefresh();           // 以後10分間隔でバックグラウンド自動更新
 }
 
 /* =========================================================================

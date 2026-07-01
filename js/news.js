@@ -106,11 +106,15 @@ function saveCache(items) {
 
 // 日本の主要ニュースを取得して整形して返す。
 // APIキー未設定・取得失敗の場合のみ FALLBACK_NEWS を返す。
-export async function getNews() {
+// force=true の場合、10分キャッシュを無視して必ずAPIへ再フェッチしにいく
+// （手動更新ボタン用。取得できればキャッシュも上書きし、10分の有効期限をリセットする）。
+export async function getNews(force = false) {
   if (!NEWSAPI_KEY || NEWSAPI_KEY === "YOUR_NEWSAPI_KEY") return FALLBACK_NEWS;
 
-  const cached = loadCache();
-  if (cached) return cached;
+  if (!force) {
+    const cached = loadCache();
+    if (cached) return cached;
+  }
 
   try {
     const items = await fetchTopHeadlines();
