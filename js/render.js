@@ -916,11 +916,11 @@ function mockIntradaySeries(start, end, points=90, stepMinutes=5){
 }
 
 const STOCKS = [
-  { ticker:"MSFT", name:"Microsoft", price:435.12, previousClose:429.91, session:"regular", sessionLabel:"サンプル", isLive:false,
+  { ticker:"MSFT", name:"Microsoft", price:435.12, previousClose:429.91, session:"regular", sessionLabel:"サンプル", isLive:false, chartIsLive:false,
     series: mockIntradaySeries(429.91, 435.12) },
-  { ticker:"AMZN", name:"Amazon", price:189.50, previousClose:190.45, session:"regular", sessionLabel:"サンプル", isLive:false,
+  { ticker:"AMZN", name:"Amazon", price:189.50, previousClose:190.45, session:"regular", sessionLabel:"サンプル", isLive:false, chartIsLive:false,
     series: mockIntradaySeries(190.45, 189.50) },
-  { ticker:"GOOGL", name:"Alphabet", price:199.80, previousClose:200.80, session:"regular", sessionLabel:"サンプル", isLive:false,
+  { ticker:"GOOGL", name:"Alphabet", price:199.80, previousClose:200.80, session:"regular", sessionLabel:"サンプル", isLive:false, chartIsLive:false,
     series: mockIntradaySeries(200.80, 199.80) },
 ];
 // change(%)は常に previousClose（前日終値）を基準に計算する＝日足ベース。
@@ -961,7 +961,7 @@ function stocksCardHTML(){
       <div class="stock-chart-wrap">
         <canvas id="stock-chart-canvas" class="stock-chart-canvas"></canvas>
       </div>
-      <div class="stock-period">分足 (Intraday)</div>
+      <div class="stock-period" id="stock-chart-period">分足 (Intraday)</div>
     </div>`;
 }
 
@@ -998,9 +998,13 @@ function stockTrendColors(up){
 }
 
 function renderStockChart(){
+  const periodEl = document.getElementById("stock-chart-period");
+  const s = STOCKS[stockIndex];
+  if(periodEl){
+    periodEl.textContent = s.chartIsLive ? "分足 (Intraday)" : "分足 (Intraday・サンプル)";
+  }
   const canvas = document.getElementById("stock-chart-canvas");
   if(!canvas || typeof window.Chart === "undefined") return;
-  const s = STOCKS[stockIndex];
   const labels = s.series.map(p => formatChartTime(p.t));
   const data = s.series.map(p => p.close);
   const ctx = canvas.getContext("2d");
@@ -1074,8 +1078,18 @@ function applyLiveStocks(liveItems){
     s.change = live.change;
     s.session = live.session;
     s.sessionLabel = live.sessionLabel; // 時間外のPre-market/After-hours、通常時間はnull
-    s.series = live.series;
     s.isLive = true;
+    if(live.series){
+      // チャート（分足）も取得できた場合のみ実データに置き換える
+      s.series = live.series;
+      s.chartIsLive = true;
+    } else {
+      // 価格は実データだがチャート(candle)だけ取得できなかった場合：
+      // 既存のサンプル系列を使い続けつつ、末尾だけ実際の現在値に合わせておく
+      const last = s.series[s.series.length - 1];
+      if(last) last.close = s.price;
+      s.chartIsLive = false;
+    }
   });
 }
 
@@ -1091,6 +1105,7 @@ function simulateStockTick(s){
   s.session = "regular";
   s.sessionLabel = "サンプル";
   s.isLive = false;
+  s.chartIsLive = false;
   // 分足チャートらしく、実際に新しい時刻のポイントを追加していく（古い分は切り捨て）
   s.series.push({ t: Date.now(), close: s.price });
   if(s.series.length > STOCK_MOCK_SERIES_MAX) s.series.shift();
