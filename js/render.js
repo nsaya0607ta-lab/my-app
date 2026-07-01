@@ -17,7 +17,9 @@ export function renderStatusBar(){
   const gated = (!state.guestMode && !state.authReady)
              || (!state.guestMode && !state.currentUser)
              || (!state.guestMode && state.currentUser && (!state.profileChecked || !getProfileName()));
-  if(gated){ el.classList.remove("show"); el.innerHTML=""; return; }
+  // ホーム画面（ニュースカードのある起動直後の画面）ではランクカードごと非表示にする
+  const hiddenOnScreen = (S.screen === "select");
+  if(gated || hiddenOnScreen){ el.classList.remove("show"); el.innerHTML=""; return; }
   const ov = overallStat();          // 上段：全資格合計から総合Lvと次Lvまでの進捗(%)
   const coins = (S.coins||0);
 
@@ -889,10 +891,6 @@ export function renderSelect(){
   app.innerHTML = `
     ${newsCardHTML()}
     <button class="cta cta-jump" id="cta-goto-certs">🎓 資格を選ぶ →</button>
-    <div class="me-actions">
-      <button class="me-btn" data-go="ranking">🏆 ランキング</button>
-      <button class="me-btn" data-go="profile">👤 プロフィール</button>
-    </div>
     ${state.currentUser
       ? `<div class="acct-bar">👤 ${esc(state.currentUser.email||"ログイン中")}<button class="link2" data-logout>ログアウト</button></div>`
       : (state.guestMode ? `<div class="acct-bar">ゲストモード（この端末のみ・同期なし）<button class="link2" data-login>ログイン / 新規登録</button></div>` : "")}
