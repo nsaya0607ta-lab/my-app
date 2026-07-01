@@ -402,48 +402,6 @@ h1.title{font-size:34px;line-height:1.05;font-weight:800;margin:8px 0 0;letter-s
 .news-dot{width:6px;height:6px;border-radius:50%;background:var(--line);cursor:pointer;transition:background .2s,transform .2s;}
 .news-dot.on{background:var(--accent);transform:scale(1.3);}
 
-/* ============ 追加：株価カード（STOCKS） ============
-   ニュースカードと同じ .news-card / .news-card-head / .news-badge / .news-nav /
-   .news-arrow を流用し、デザインシステムを完全に統一している */
-.stocks-card{margin-top:14px;}
-.stock-badge{color:var(--accent);background:rgba(2,132,199,.08);border-color:rgba(2,132,199,.22);}
-.stock-row{display:flex;gap:6px;margin-top:2px;}
-.stock-item{flex:1;min-width:0;text-align:left;background:none;border:1px solid transparent;border-radius:12px;padding:8px 8px;cursor:pointer;font-family:inherit;}
-.stock-item.active{border-color:var(--accent);background:rgba(2,132,199,.06);}
-.stock-ticker{font-size:14px;font-weight:800;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
-.stock-session{display:inline-block;margin-top:2px;font-size:8px;font-weight:700;color:var(--muted);background:var(--bg2);border-radius:6px;padding:1px 5px;letter-spacing:.02em;white-space:nowrap;}
-.stock-name{font-size:9.5px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin:1px 0 5px;}
-.stock-priceline{display:flex;flex-direction:column;gap:2px;}
-.stock-price{font-size:13.5px;font-weight:800;color:var(--text);font-variant-numeric:tabular-nums;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
-.stock-change{font-size:11px;font-weight:800;white-space:nowrap;}
-.stock-change.up{color:var(--good);}
-.stock-change.down{color:var(--bad);}
-.stock-chart-wrap{margin-top:10px;height:84px;position:relative;}
-.stock-chart-canvas{width:100%!important;height:100%!important;}
-.stock-period{margin-top:4px;font-size:10px;color:var(--muted);text-align:center;}
-
-/* ---- 模擬投資（ペーパートレード） ---- */
-.stock-position{margin-top:9px;font-size:11px;color:var(--muted);line-height:1.6;}
-.stock-position .up{color:var(--good);font-weight:800;}
-.stock-position .down{color:var(--bad);font-weight:800;}
-.stock-trade-btns{display:flex;gap:8px;margin-top:8px;}
-.stock-trade-btn{flex:1;padding:9px;border-radius:10px;border:none;font-size:12.5px;font-weight:800;cursor:pointer;color:#fff;}
-.stock-trade-btn.buy{background:linear-gradient(90deg,var(--good),#22c55e);}
-.stock-trade-btn.sell{background:linear-gradient(90deg,var(--bad),#ef4444);}
-.stock-trade-btn:active{transform:scale(.97);}
-.stock-orders{display:flex;flex-direction:column;gap:5px;margin-top:8px;}
-.stock-order-row{display:flex;align-items:center;justify-content:space-between;gap:8px;font-size:10.5px;color:var(--muted);background:var(--bg2);border-radius:8px;padding:5px 8px;}
-.stock-order-cancel{border:none;background:none;color:var(--bad);font-size:10.5px;font-weight:800;cursor:pointer;padding:2px 4px;}
-
-/* 購入・売却モーダル（.modal-ov/.modal を流用） */
-.trade-modal-title{color:var(--text);}
-.trade-type-toggle{display:flex;gap:8px;margin-bottom:12px;}
-.trade-type-btn{flex:1;padding:9px;border-radius:10px;border:1px solid var(--line);background:var(--surface);font-size:13px;font-weight:700;color:var(--muted);cursor:pointer;}
-.trade-type-btn.active{border-color:var(--accent);color:var(--accent);background:rgba(2,132,199,.06);}
-.trade-field{margin-bottom:10px;}
-.trade-field label{display:block;font-size:11.5px;color:var(--muted);margin-bottom:4px;font-weight:700;}
-.trade-preview{font-size:12.5px;color:var(--text);background:var(--bg2);border-radius:10px;padding:10px;margin-bottom:10px;line-height:1.6;}
-
 /* 資格カード */
 .cert-card{display:block;width:100%;text-align:left;cursor:pointer;color:var(--text);
   background:linear-gradient(160deg, rgba(2,132,199,.06) 12%, var(--surface));
