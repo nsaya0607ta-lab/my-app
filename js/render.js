@@ -74,6 +74,7 @@ export function render(){
   if(S.screen==="settings") return renderSettings();
   if(S.screen==="skins") return renderSkinShop();
   if(S.screen==="analytics") return renderAnalytics();
+  if(S.screen==="certs") return renderCertList();
   // 大元：資格選択画面
   if(S.screen==="select" || !S.cert) return renderSelect();
   if(S.screen==="home") return renderHome();
@@ -864,6 +865,29 @@ async function loadNewsCard(){
 }
 
 export function renderSelect(){
+  app.innerHTML = `
+    ${newsCardHTML()}
+    <button class="cta cta-jump" id="cta-goto-certs">🎓 資格を選ぶ →</button>
+    <div class="me-actions">
+      <button class="me-btn" data-go="ranking">🏆 ランキング</button>
+      <button class="me-btn" data-go="profile">👤 プロフィール</button>
+    </div>
+    ${state.currentUser
+      ? `<div class="acct-bar">👤 ${esc(state.currentUser.email||"ログイン中")}<button class="link2" data-logout>ログアウト</button></div>`
+      : (state.guestMode ? `<div class="acct-bar">ゲストモード（この端末のみ・同期なし）<button class="link2" data-login>ログイン / 新規登録</button></div>` : "")}
+  `;
+  app.querySelectorAll("[data-go]").forEach(b=>b.onclick=()=>go(b.dataset.go));
+  const lo=app.querySelector("[data-logout]"); if(lo)lo.onclick=()=>logout();
+  const li=app.querySelector("[data-login]"); if(li)li.onclick=()=>{ state.guestMode=false; state.authMode="login"; render(); };
+  const jump=document.getElementById("cta-goto-certs");
+  if(jump) jump.onclick=()=>go("certs");
+  loadNewsCard();
+  window.scrollTo(0,0);
+}
+
+/* 「資格を選ぶ」CTAボタンから遷移する専用画面：総合レベルと資格カード一覧 */
+
+export function renderCertList(){
   const ov = overallStat();
   const cards = CERTS.map(c=>{
     if(c.status!=="ready"){
@@ -888,13 +912,11 @@ export function renderSelect(){
     </button>`;
   }).join("");
   app.innerHTML = `
-    ${newsCardHTML()}
-    <button class="cta cta-jump" id="cta-goto-certs">🎓 資格を選ぶ →</button>
-    <div class="me-actions">
-      <button class="me-btn" data-go="ranking">🏆 ランキング</button>
-      <button class="me-btn" data-go="profile">👤 プロフィール</button>
+    <div class="q-head" style="margin-bottom:14px">
+      <button class="quit" data-go="select">← ホーム</button>
+      <span class="q-count" style="color:var(--accent)">資格を選ぶ</span>
     </div>
-    <div class="sel-head" id="cert-section">
+    <div class="sel-head">
       <span class="eyebrow">MICROSOFT 認定対策</span>
       <h2 class="sel-title">資格を選ぶ</h2>
       <p class="sel-sub">学習したい資格を選んでください。資格ごとにスコア・BP・復習データは別々に保存されます。</p>
@@ -911,17 +933,9 @@ export function renderSelect(){
       <div class="me-next">次のレベルまで ${ov.remain.toLocaleString()} BP ・ 学習中 ${ov.active} 資格 ・ 💰 ${(S.coins||0).toLocaleString()} AC</div>
     </div>
     <div class="cert-list">${cards}</div>
-    ${state.currentUser
-      ? `<div class="acct-bar">👤 ${esc(state.currentUser.email||"ログイン中")}<button class="link2" data-logout>ログアウト</button></div>`
-      : (state.guestMode ? `<div class="acct-bar">ゲストモード（この端末のみ・同期なし）<button class="link2" data-login>ログイン / 新規登録</button></div>` : "")}
   `;
   app.querySelectorAll("[data-cert]").forEach(b=>b.onclick=()=>selectCert(b.dataset.cert));
   app.querySelectorAll("[data-go]").forEach(b=>b.onclick=()=>go(b.dataset.go));
-  const lo=app.querySelector("[data-logout]"); if(lo)lo.onclick=()=>logout();
-  const li=app.querySelector("[data-login]"); if(li)li.onclick=()=>{ state.guestMode=false; state.authMode="login"; render(); };
-  const jump=document.getElementById("cta-goto-certs");
-  if(jump) jump.onclick=()=>{ document.getElementById("cert-section")?.scrollIntoView({behavior:"smooth", block:"start"}); };
-  loadNewsCard();
   window.scrollTo(0,0);
 }
 
