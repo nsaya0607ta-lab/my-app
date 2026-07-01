@@ -1,76 +1,104 @@
 /* =========================================================================
    株価カード（STOCKS）用の実株価取得。
-   Yahoo Finance の公開APIをCORSプロキシ経由で取得する。
-   - v7/finance/quote  : 現在値・前日終値・プレ/アフターマーケット価格・
-                          市場の状態（PRE/REGULAR/POST/CLOSED）
-   - v8/finance/chart  : 日足（1日間隔）の時系列データ（チャート用）
-   取得できない場合は null を返し、呼び出し側（render.js）が
-   保持しているサンプル株価・擬似変動で動作を継続する。
+   Finnhub（https://finnhub.io）の無料APIを使用する。
+   - /quote        : リアルタイムに近い現在値・前日終値
+   - /stock/candle : 分足（ローソク足）の時系列データ（チャート用）
+
+   【重要】Finnhubの利用には無料のAPIキーが必要です。
+   1. https://finnhub.io/register で無料アカウントを作成
+   2. ダッシュボードに表示される API Key をコピー
+   3. 下の FINNHUB_API_KEY にそのまま貼り付ける
+   キー未設定の間は常にサンプルデータ（render.js側のフォールバック）が
+   表示されます。また、Finnhubの無料プランは株式のローソク足(candle)取得が
+   制限されている場合があり、その場合は現在値のみ実データ・チャートは
+   サンプルのまま、という状態になることがあります（不具合ではありません）。
+
+   Finnhubは元々ブラウザからの直接呼び出しを想定してCORSを許可しているため、
+   まず直接fetchし、失敗した場合のみ無料CORSプロキシ経由にフォールバックする。
    ========================================================================= */
 
-import { fetchViaProxies } from './cors-proxy.js';
+import { fetchDirectOrProxied } from './cors-proxy.js';
+
+// ここに https://finnhub.io/register で取得した無料APIキーを貼り付けてください
+const FINNHUB_API_KEY = "d92jlgpr01qs541v5g60d92jlgpr01qs541v5g6g";
 
 export const STOCK_TICKERS = ["MSFT", "AMZN", "GOOGL"];
 const STOCK_NAMES = { MSFT: "Microsoft", AMZN: "Amazon", GOOGL: "Alphabet" };
 
 const FETCH_TIMEOUT_MS = 8000;
-const CACHE_KEY = "stocks_cache_v2";
-const CACHE_TTL_MS = 45 * 1000; // 45秒キャッシュ（相場は動くのでニュースより短め）
+const CACHE_KEY = "stocks_cache_v4";
+const CACHE_TTL_MS = 45 * 1000; // 45秒キャッシュ（Finnhub無料枠は60req/分なので十分余裕がある）
+const CANDLE_LOOKBACK_SEC = 6 * 60 * 60; // 直近6時間分の分足を取得
 
-async function fetchSnapshot(ticker) {
-  const url = `https://query1.finance.yahoo.com/v7/finance/quote?symbols=${ticker}`;
-  const res = await fetchViaProxies(url, { timeoutMs: FETCH_TIMEOUT_MS });
-  const json = await res.json();
-  const q = json?.quoteResponse?.result?.[0];
-  if (!q) throw new Error("no quote for " + ticker);
-  return q;
-}
-
-// 日足（週足・月足ではない）の時系列データ。チャートのX軸（時間）にそのまま使う
-async function fetchDailySeries(ticker) {
-  const url = `https://query1.finance.yahoo.com/v8/finance/chart/${ticker}?range=1mo&interval=1d`;
-  const res = await fetchViaProxies(url, { timeoutMs: FETCH_TIMEOUT_MS });
-  const json = await res.json();
-  const result = json?.chart?.result?.[0];
-  if (!result) throw new Error("no chart data for " + ticker);
-  const timestamps = result.timestamp || [];
-  const closes = result.indicators?.quote?.[0]?.close || [];
-  return timestamps
-    .map((t, i) => ({ t: t * 1000, close: closes[i] }))
-    .filter(p => typeof p.close === "number");
-}
-
-// 現在の市場状態（PRE/REGULAR/POST/CLOSED）から、表示すべき価格とラベルを判定
-function pickSessionPrice(q) {
-  const state = (q.marketState || "REGULAR").toUpperCase();
-  if (state === "PRE" && typeof q.preMarketPrice === "number") {
-    return { session: "pre", label: "Pre-market", price: q.preMarketPrice };
-  }
-  if ((state === "POST" || state === "POSTPOST") && typeof q.postMarketPrice === "number") {
-    return { session: "post", label: "After-hours", price: q.postMarketPrice };
-  }
-  return { session: "regular", label: null, price: q.regularMarketPrice };
+// 米国東部時間（ET）の現在時刻から、プレ/通常/アフター/クローズを判定する。
+// FinnhubのAPIレスポンス自体には市場状態のフィールドが無いため、クライアント側の
+// 時計だけで判定する（土日・夜間はclosed扱い＝ラベル無し）。
+function currentUSSession() {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: "America/New_York", hour12: false,
+    hour: "2-digit", minute: "2-digit", weekday: "short",
+  }).formatToParts(new Date());
+  const get = (type) => parts.find(p => p.type === type)?.value;
+  const weekday = get("weekday");
+  if (weekday === "Sat" || weekday === "Sun") return { session: "closed", label: null };
+  const mins = parseInt(get("hour"), 10) * 60 + parseInt(get("minute"), 10);
+  if (mins >= 4 * 60 && mins < 9 * 60 + 30) return { session: "pre", label: "Pre-market" };
+  if (mins >= 9 * 60 + 30 && mins < 16 * 60) return { session: "regular", label: null };
+  if (mins >= 16 * 60 && mins < 20 * 60) return { session: "post", label: "After-hours" };
+  return { session: "closed", label: null };
 }
 
 async function fetchQuote(ticker) {
-  const [q, series] = await Promise.all([fetchSnapshot(ticker), fetchDailySeries(ticker)]);
-  const previousClose = q.regularMarketPreviousClose;
-  if (typeof previousClose !== "number") throw new Error("invalid previousClose for " + ticker);
+  const url = `https://finnhub.io/api/v1/quote?symbol=${ticker}&token=${FINNHUB_API_KEY}`;
+  const res = await fetchDirectOrProxied(url, { timeoutMs: FETCH_TIMEOUT_MS });
+  const q = await res.json();
+  if (typeof q.c !== "number" || q.c === 0 || typeof q.pc !== "number") {
+    throw new Error("invalid quote (APIキー未設定または無効な可能性): " + JSON.stringify(q));
+  }
+  return q; // { c: 現在値, pc: 前日終値, d, dp, h, l, o, t }
+}
 
-  const { session, label, price } = pickSessionPrice(q);
-  const displayPrice = typeof price === "number" ? price : q.regularMarketPrice;
-  // 増減率は常に「前日終値比」（日足ベース）で計算する。時間外価格でも基準は変えない
-  const change = ((displayPrice - previousClose) / previousClose) * 100;
+// 分足（5分足）のIntraday時系列データ。Finnhubの無料プランでは株式のローソク足が
+// 使えない場合があり、その場合は s !== "ok" になるため呼び出し側でフォールバックする
+async function fetchCandles(ticker) {
+  const to = Math.floor(Date.now() / 1000);
+  const from = to - CANDLE_LOOKBACK_SEC;
+  const url = `https://finnhub.io/api/v1/stock/candle?symbol=${ticker}&resolution=5&from=${from}&to=${to}&token=${FINNHUB_API_KEY}`;
+  const res = await fetchDirectOrProxied(url, { timeoutMs: FETCH_TIMEOUT_MS });
+  const data = await res.json();
+  if (data.s !== "ok" || !Array.isArray(data.t) || !data.t.length) {
+    throw new Error(`candle取得不可(s=${data.s})。無料プランでは株式のローソク足が制限されている場合があります`);
+  }
+  return data.t
+    .map((t, i) => ({ t: t * 1000, close: data.c[i] }))
+    .filter(p => typeof p.close === "number");
+}
+
+async function fetchStockData(ticker) {
+  const q = await fetchQuote(ticker); // 現在値が取れなければこの銘柄は丸ごとサンプルへ
+  const previousClose = q.pc;
+  const price = q.c;
+  const change = ((price - previousClose) / previousClose) * 100; // 前日終値比（日足ベース）
+  const { session, label } = currentUSSession();
+
+  let series = null;
+  try {
+    series = await fetchCandles(ticker);
+  } catch (e) {
+    // チャートだけ取得できない場合。価格は実データのまま、チャートは
+    // 呼び出し側（render.js）が持っているサンプル系列を使い続ける
+    console.warn(`[stocks] ${ticker} のチャート取得に失敗しました（価格は実データを使用します）:`, e.message);
+  }
 
   return {
     ticker,
     name: STOCK_NAMES[ticker] || ticker,
-    price: displayPrice,
+    price,
     previousClose,
     change,
     session,
     sessionLabel: label,
-    series: series.length ? series : [{ t: Date.now(), close: displayPrice }],
+    series, // null の場合あり＝チャートはサンプルのまま
   };
 }
 
@@ -90,16 +118,16 @@ function saveCache(items) {
 
 // 実際の株価を取得（3銘柄）。銘柄ごとに成否を判定し、失敗した銘柄は配列内で
 // null を返す（呼び出し側はその銘柄だけフォールバックに回せる）。
-// 全銘柄が失敗した場合のみ null を返す。
+// APIキー未設定の間は通信を試みず、常にサンプル表示にする。
 export async function getLiveStocks() {
+  if (!FINNHUB_API_KEY || FINNHUB_API_KEY === "YOUR_FINNHUB_API_KEY") return null;
+
   const cached = loadCache();
   if (cached) return cached;
 
-  const settled = await Promise.allSettled(STOCK_TICKERS.map(fetchQuote));
+  const settled = await Promise.allSettled(STOCK_TICKERS.map(fetchStockData));
   const results = settled.map((r, i) => {
     if (r.status === "fulfilled") return r.value;
-    // デバッグ用：実機で取得に失敗する場合はここに理由が出る（CORSプロキシの
-    // ダウン・レート制限・Yahoo側のブロックなど）
     console.warn(`[stocks] ${STOCK_TICKERS[i]} の株価取得に失敗しました:`, r.reason?.message || r.reason);
     return null;
   });
