@@ -419,9 +419,11 @@ h1.title{font-size:34px;line-height:1.05;font-weight:800;margin:8px 0 0;letter-s
 .stock-change.up{color:var(--good);}
 .stock-change.down{color:var(--bad);}
 
-/* Microsoftロゴ風の丸型ボタン＋テキストリンク（株価カード直下・左寄せ） */
-.ms-cert-launcher{display:flex;flex-direction:column;align-items:flex-start;gap:5px;margin:14px 0 14px 2px;}
-.ms-logo-btn{width:44px;height:44px;border-radius:50%;border:1px solid var(--line);background:var(--surface);
+/* Microsoft認定試験カード：NEWS/STOCKSと同じ .news-card を土台にした独立カード。
+   丸型ロゴボタン＋テキストを縦横完全中央揃えで内包する */
+.ms-cert-card{margin-top:14px;min-height:104px;display:flex;align-items:center;justify-content:center;}
+.ms-cert-inner{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:7px;}
+.ms-logo-btn{flex:none;width:44px;height:44px;border-radius:50%;border:1px solid var(--line);background:var(--surface);
   display:flex;align-items:center;justify-content:center;padding:0;cursor:pointer;box-shadow:0 2px 6px rgba(15,23,42,.06);}
 .ms-logo-btn:active{transform:scale(.94);}
 .ms-logo-grid{display:grid;grid-template-columns:1fr 1fr;grid-template-rows:1fr 1fr;gap:2px;width:19px;height:19px;}
@@ -430,8 +432,19 @@ h1.title{font-size:34px;line-height:1.05;font-weight:800;margin:8px 0 0;letter-s
 .ms-logo-sq.g{background:#7fba00;}
 .ms-logo-sq.b{background:#00a4ef;}
 .ms-logo-sq.y{background:#ffb900;}
-.ms-cert-link{border:none;background:none;padding:0;font-size:11px;font-weight:700;color:var(--muted);cursor:pointer;font-family:inherit;}
-.ms-cert-link:active{color:var(--accent);}
+
+/* テキスト部分：9文字までは中央揃えで静止、超える場合は電光掲示板風に無限スライド */
+.ms-cert-link{border:none;background:none;padding:0;cursor:pointer;font-family:inherit;display:block;}
+.ms-cert-textwrap{display:block;width:100px;max-width:100%;overflow:hidden;white-space:nowrap;}
+.ms-cert-static{display:inline-block;width:100%;text-align:center;font-size:11px;font-weight:700;color:var(--muted);}
+.ms-cert-link:active .ms-cert-static,
+.ms-cert-link:active .ms-cert-marquee-item{color:var(--accent);}
+.ms-cert-marquee-track{display:inline-flex;animation:msCertMarquee 6s linear infinite;}
+.ms-cert-marquee-item{flex:none;padding-right:20px;font-size:11px;font-weight:700;color:var(--muted);white-space:nowrap;}
+@keyframes msCertMarquee{
+  from{transform:translateX(0);}
+  to{transform:translateX(-50%);}
+}
 
 /* 資格カード */
 .cert-card{display:block;width:100%;text-align:left;cursor:pointer;color:var(--text);

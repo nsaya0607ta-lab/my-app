@@ -1061,21 +1061,39 @@ function initStocksCard(){
 }
 
 
-// Microsoftロゴ（4色の田の字）をイメージした丸型ボタン＋その下のテキストリンク。
-// 株価カードの直下・左寄せに配置する。どちらをタップしても資格選択画面
+// Microsoftロゴ（4色の田の字）をイメージした丸型ボタン＋その下のテキストを、
+// ニュース・株価カードと同じ .news-card（白背景・角丸・薄いシャドウ）に内包した
+// 独立カードとして表示する。カード内で丸ボタン・テキストとも完全に中央揃え。
+// テキストは最大9文字までは静止表示、それを超える場合は電光掲示板風に
+// 右から左へ無限ループでスライドする。どちらをタップしても資格選択画面
 //（資格一覧）へ遷移する。
+const MS_CERT_LABEL = "Microsoft認定試験";
+const MS_CERT_LABEL_MAX_CHARS = 9;
+
 function msCertLauncherHTML(){
+  const chars = [...MS_CERT_LABEL]; // サロゲートペアも1文字として正しく数える
+  const needsMarquee = chars.length > MS_CERT_LABEL_MAX_CHARS;
+  const labelHTML = needsMarquee
+    ? `<span class="ms-cert-marquee-track">
+         <span class="ms-cert-marquee-item">${esc(MS_CERT_LABEL)}</span>
+         <span class="ms-cert-marquee-item" aria-hidden="true">${esc(MS_CERT_LABEL)}</span>
+       </span>`
+    : `<span class="ms-cert-static">${esc(MS_CERT_LABEL)}</span>`;
   return `
-    <div class="ms-cert-launcher">
-      <button type="button" class="ms-logo-btn" id="ms-cert-logo-btn" data-go="certs" aria-label="資格を選ぶ" title="資格を選ぶ">
-        <span class="ms-logo-grid">
-          <span class="ms-logo-sq r"></span>
-          <span class="ms-logo-sq g"></span>
-          <span class="ms-logo-sq b"></span>
-          <span class="ms-logo-sq y"></span>
-        </span>
-      </button>
-      <button type="button" class="ms-cert-link" id="ms-cert-text-link" data-go="certs">Microsoft認定試験</button>
+    <div class="news-card ms-cert-card" id="ms-cert-card">
+      <div class="ms-cert-inner">
+        <button type="button" class="ms-logo-btn" id="ms-cert-logo-btn" data-go="certs" aria-label="資格を選ぶ" title="資格を選ぶ">
+          <span class="ms-logo-grid">
+            <span class="ms-logo-sq r"></span>
+            <span class="ms-logo-sq g"></span>
+            <span class="ms-logo-sq b"></span>
+            <span class="ms-logo-sq y"></span>
+          </span>
+        </button>
+        <button type="button" class="ms-cert-link" id="ms-cert-text-link" data-go="certs" title="${esc(MS_CERT_LABEL)}">
+          <span class="ms-cert-textwrap">${labelHTML}</span>
+        </button>
+      </div>
     </div>`;
 }
 
