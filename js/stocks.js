@@ -1,8 +1,8 @@
 /* =========================================================================
    株価カード（STOCKS）用の実株価取得。
    Finnhub（https://finnhub.io）の無料APIを使用する。
-   - /quote        : 現在値・前日終値
-   - /stock/candle : 日足（Daily）の時系列データ（チャート用）
+   - /quote : 現在値・前日終値のみを取得する（チャートは表示しないため
+     日足candleの取得は行わない）
 
    【重要】Finnhubの利用には無料のAPIキーが必要です。
    1. https://finnhub.io/register で無料アカウントを作成
@@ -24,9 +24,8 @@ export const STOCK_TICKERS = ["MSFT", "AMZN", "GOOGL"];
 const STOCK_NAMES = { MSFT: "Microsoft", AMZN: "Amazon", GOOGL: "Alphabet" };
 
 const FETCH_TIMEOUT_MS = 8000;
-const CACHE_KEY = "stocks_cache_v5"; // 日足チャート仕様への変更に伴いキーを更新（旧キャッシュを無効化）
+const CACHE_KEY = "stocks_cache_v6"; // チャート廃止（現在値のみ）への変更に伴いキーを更新（旧キャッシュを無効化）
 const CACHE_TTL_MS = 60 * 1000; // 60秒キャッシュ（Finnhub無料枠は60req/分なので十分余裕がある）
-const DAILY_LOOKBACK_DAYS = 60; // 直近60日分の日足を取得
 
 async function fetchQuote(ticker) {
   const url = `https://finnhub.io/api/v1/quote?symbol=${ticker}&token=${FINNHUB_API_KEY}`;
@@ -38,35 +37,11 @@ async function fetchQuote(ticker) {
   return q; // { c: 現在値, pc: 前日終値, d, dp, h, l, o, t }
 }
 
-// 日足（Daily）の時系列データ
-async function fetchDailyCandles(ticker) {
-  const to = Math.floor(Date.now() / 1000);
-  const from = to - DAILY_LOOKBACK_DAYS * 24 * 60 * 60;
-  const url = `https://finnhub.io/api/v1/stock/candle?symbol=${ticker}&resolution=D&from=${from}&to=${to}&token=${FINNHUB_API_KEY}`;
-  const res = await fetchDirectOrProxied(url, { timeoutMs: FETCH_TIMEOUT_MS });
-  const data = await res.json();
-  if (data.s !== "ok" || !Array.isArray(data.t) || !data.t.length) {
-    throw new Error(`日足candle取得不可(s=${data.s})`);
-  }
-  return data.t
-    .map((t, i) => ({ t: t * 1000, close: data.c[i] }))
-    .filter(p => typeof p.close === "number");
-}
-
 async function fetchStockData(ticker) {
-  const q = await fetchQuote(ticker); // 現在値が取れなければこの銘柄は丸ごとサンプルへ
+  const q = await fetchQuote(ticker);
   const previousClose = q.pc;
   const price = q.c;
   const change = ((price - previousClose) / previousClose) * 100; // 前日終値比
-
-  let series = null;
-  try {
-    series = await fetchDailyCandles(ticker);
-  } catch (e) {
-    // チャートだけ取得できない場合。価格は実データのまま、チャートは
-    // 呼び出し側（render.js）が持っているサンプル系列を使い続ける
-    console.warn(`[stocks] ${ticker} の日足チャート取得に失敗しました（価格は実データを使用します）:`, e.message);
-  }
 
   return {
     ticker,
@@ -74,7 +49,6 @@ async function fetchStockData(ticker) {
     price,
     previousClose,
     change,
-    series, // null の場合あり＝チャートはサンプルのまま
   };
 }
 
