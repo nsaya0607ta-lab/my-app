@@ -55,8 +55,18 @@ export function renderStatusBar(){
   el.classList.add("show");
 }
 
+// ヘッダーのランキング／プロフィール丸型ボタンは「資格を選ぶ」画面と
+// 資格ごとのホーム画面でのみ表示する。S.screen の値だけでは実際に描画される
+// 画面と食い違うことがある（例：資格未選択だと screen="home" でも実際は
+// renderSelect が表示される）ため、各画面側で明示的に表示・非表示を指定する。
+function updateHeaderNav(show){
+  const nav = document.querySelector(".top-nav");
+  if(nav) nav.style.display = show ? "" : "none";
+}
+
 export function render(){
   renderStatusBar();   // 画面が変わっても常に最新の Lv/BP/AC を反映
+  updateHeaderNav(false); // デフォルトは非表示。表示すべき画面側で個別に true にする
   // 🎨 アプリ全体の背景スキンを body に適用（default のときは元の背景のまま）
   const sk = S.currentSkin || "default";
   document.body.className = (sk && sk!=="default") ? ("sb-theme-"+sk) : "";
@@ -253,6 +263,7 @@ export function renderUsername(){
 }
 
 export function renderHome(){
+  updateHeaderNav(true);
   const h=loadHist();
   const c=certById(S.cert)||{};
   const ov=overallStat();
@@ -888,6 +899,7 @@ export function renderSelect(){
 /* 「資格を選ぶ」CTAボタンから遷移する専用画面：総合レベルと資格カード一覧 */
 
 export function renderCertList(){
+  updateHeaderNav(true);
   const ov = overallStat();
   const cards = CERTS.map(c=>{
     if(c.status!=="ready"){
