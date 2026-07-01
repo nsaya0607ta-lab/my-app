@@ -724,14 +724,32 @@ export function renderTransfer(){
 /* ======================= SC-300 のデータ ======================= */
 /* SC-300: Microsoft Identity and Access Administrator（IDとアクセスの管理）*/
 
-/* ニュースカード：資格一覧画面の上部。3件のニュースをフェード切り替えで自動巡回し、
-   ドット・矢印で手動切り替えもできる。取得完了まで「読み込み中…」を表示し、
-   失敗時は news.js 側のフォールバック（ダミーのIT系ニュース）に自動で切り替わる。 */
+/* ニュースダッシュボード：資格一覧画面の上部。5件のニュース（タイトル＋要約）を
+   フェード切り替えで自動巡回し、ドット・矢印で手動切り替えもできる。
+   左側には現在時刻を示すアナログ時計（SVG）を常時表示する。
+   取得完了まで「読み込み中…」を表示し、失敗時は news.js 側のフォールバック
+   （ダミーのIT/Azure系ニュース）に自動で切り替わる。 */
 
 let newsItems = [];
 let newsIndex = 0;
 let newsTimer = null;
-const NEWS_ROTATE_MS = 4500;
+let clockTimer = null;
+const NEWS_ROTATE_MS = 5500;
+
+// 時計の文字盤の目盛り（12個）を三角関数で一度だけ組み立てる静的SVG片
+function buildClockTicksSVG(){
+  let ticks = "";
+  for(let i=0;i<12;i++){
+    const angle = (i*30) * Math.PI/180;
+    const major = i % 3 === 0; // 12・3・6・9 は長め・太めの目盛り
+    const outerR = 44, innerR = major ? 36 : 40;
+    const x1 = (50 + outerR*Math.sin(angle)).toFixed(2), y1 = (50 - outerR*Math.cos(angle)).toFixed(2);
+    const x2 = (50 + innerR*Math.sin(angle)).toFixed(2), y2 = (50 - innerR*Math.cos(angle)).toFixed(2);
+    ticks += `<line class="clock-tick${major?" major":""}" x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}"/>`;
+  }
+  return ticks;
+}
+const CLOCK_TICKS_SVG = buildClockTicksSVG();
 
 function newsCardHTML(){
   return `
@@ -743,24 +761,45 @@ function newsCardHTML(){
           <button type="button" class="news-arrow" id="news-next" aria-label="次のニュース">›</button>
         </div>
       </div>
-      <div class="news-slot"><span class="news-headline" id="news-headline">読み込み中…</span></div>
+      <div class="news-body">
+        <div class="news-clock">
+          <svg viewBox="0 0 100 100" class="news-clock-svg">
+            <circle class="clock-face" cx="50" cy="50" r="46"/>
+            ${CLOCK_TICKS_SVG}
+            <line class="clock-hand hour" id="clock-hour" x1="50" y1="50" x2="50" y2="29"/>
+            <line class="clock-hand minute" id="clock-minute" x1="50" y1="50" x2="50" y2="19"/>
+            <line class="clock-hand second" id="clock-second" x1="50" y1="50" x2="50" y2="15"/>
+            <circle class="clock-center" cx="50" cy="50" r="3"/>
+          </svg>
+          <div class="news-clock-date" id="news-clock-date"></div>
+        </div>
+        <div class="news-content">
+          <div class="news-headline" id="news-headline">読み込み中…</div>
+          <div class="news-summary" id="news-summary"></div>
+          <a class="news-readmore" id="news-readmore" href="#" target="_blank" rel="noopener noreferrer" style="visibility:hidden">続きを読む →</a>
+        </div>
+      </div>
       <div class="news-dots" id="news-dots"></div>
     </div>`;
 }
 
 function renderNewsSlide(){
   const headline = document.getElementById("news-headline");
+  const summaryEl = document.getElementById("news-summary");
+  const readmore = document.getElementById("news-readmore");
   const dotsEl = document.getElementById("news-dots");
-  if(!headline || !dotsEl || !newsItems.length) return;
+  if(!headline || !summaryEl || !dotsEl || !newsItems.length) return;
   const n = newsItems[newsIndex];
   // クラスを一度外して再付与し、フェードインアニメーションを毎回やり直す
-  headline.classList.remove("news-fade-in");
-  void headline.offsetWidth;
-  headline.classList.add("news-fade-in");
+  [headline, summaryEl].forEach(el => { el.classList.remove("news-fade-in"); void el.offsetWidth; el.classList.add("news-fade-in"); });
   headline.textContent = n.title;
-  headline.title = n.title; // 三点リーダーで切れた分はホバーで全文確認できる
-  headline.classList.toggle("news-link", !!n.link);
-  headline.onclick = n.link ? () => window.open(n.link, "_blank", "noopener,noreferrer") : null;
+  headline.title = n.title; // 行数で切れた分はホバーで全文確認できる
+  summaryEl.textContent = n.summary || "";
+  summaryEl.title = n.summary || "";
+  if(readmore){
+    if(n.link){ readmore.href = n.link; readmore.style.visibility = "visible"; }
+    else { readmore.removeAttribute("href"); readmore.style.visibility = "hidden"; }
+  }
   dotsEl.innerHTML = newsItems.map((_, i) => `<span class="news-dot${i===newsIndex?" on":""}" data-idx="${i}"></span>`).join("");
   dotsEl.querySelectorAll("[data-idx]").forEach(d => d.onclick = () => gotoNewsSlide(+d.dataset.idx));
 }
@@ -775,8 +814,37 @@ function gotoNewsSlide(i){
 function restartNewsTimer(){
   if(newsTimer){ clearInterval(newsTimer); newsTimer = null; }
   if(newsItems.length > 1){
-    newsTimer = setInterval(() => { newsIndex = (newsIndex + 1) % newsItems.length; renderNewsSlide(); }, NEWS_ROTATE_MS);
+    newsTimer = setInterval(() => {
+      if(!document.getElementById("news-card")){ clearInterval(newsTimer); newsTimer = null; return; }
+      newsIndex = (newsIndex + 1) % newsItems.length;
+      renderNewsSlide();
+    }, NEWS_ROTATE_MS);
   }
+}
+
+const WEEKDAY_JA = ["日","月","火","水","木","金","土"];
+
+function updateClock(){
+  const hourHand = document.getElementById("clock-hour");
+  const minHand = document.getElementById("clock-minute");
+  const secHand = document.getElementById("clock-second");
+  const dateEl = document.getElementById("news-clock-date");
+  if(!hourHand || !minHand || !secHand){
+    if(clockTimer){ clearInterval(clockTimer); clockTimer = null; }
+    return;
+  }
+  const now = new Date();
+  const h = now.getHours() % 12, m = now.getMinutes(), s = now.getSeconds();
+  hourHand.setAttribute("transform", `rotate(${(h*30 + m*0.5).toFixed(2)} 50 50)`);
+  minHand.setAttribute("transform", `rotate(${(m*6 + s*0.1).toFixed(2)} 50 50)`);
+  secHand.setAttribute("transform", `rotate(${(s*6).toFixed(2)} 50 50)`);
+  if(dateEl) dateEl.textContent = `${now.getMonth()+1}/${now.getDate()}(${WEEKDAY_JA[now.getDay()]})`;
+}
+
+function startClock(){
+  if(clockTimer){ clearInterval(clockTimer); clockTimer = null; }
+  updateClock();
+  clockTimer = setInterval(updateClock, 1000);
 }
 
 async function loadNewsCard(){
@@ -786,6 +854,8 @@ async function loadNewsCard(){
   const next = document.getElementById("news-next");
   if(prev) prev.onclick = () => gotoNewsSlide(newsIndex - 1);
   if(next) next.onclick = () => gotoNewsSlide(newsIndex + 1);
+
+  startClock();
 
   newsItems = await getNews();
   newsIndex = 0;
