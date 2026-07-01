@@ -758,8 +758,10 @@ export function renderTransfer(){
 let newsItems = [];
 let newsIndex = 0;
 let newsTimer = null;
+let newsRefreshTimer = null;
 let clockTimer = null;
 const NEWS_ROTATE_MS = 5500;
+const NEWS_REFRESH_MS = 10 * 60 * 1000; // 10分ごとにニュースを自動で再フェッチする
 
 // 時計の文字盤の目盛り（12個）を三角関数で一度だけ組み立てる静的SVG片
 function buildClockTicksSVG(){
@@ -872,6 +874,28 @@ function startClock(){
   clockTimer = setInterval(updateClock, 1000);
 }
 
+// ニュースを取得してカードを再描画する。ホーム画面から離れて news-card が
+// DOM上から消えている場合は、取得結果を無駄に描画せず自動更新タイマーも止める
+// （画面遷移時のクリーンアップ）。
+async function refreshNewsCard(){
+  if(!document.getElementById("news-card")){
+    if(newsRefreshTimer){ clearInterval(newsRefreshTimer); newsRefreshTimer = null; }
+    return;
+  }
+  newsItems = await getNews();
+  newsIndex = 0;
+  renderNewsSlide();
+  restartNewsTimer();
+}
+
+// 10分（600秒）ごとにニュースをバックグラウンドで自動再フェッチするタイマーを開始する。
+// 呼び出し前に既存のタイマーを必ずクリアするため、ホーム画面を何度再訪しても
+// タイマーが重複して積み上がることはない。
+function startNewsRefresh(){
+  if(newsRefreshTimer){ clearInterval(newsRefreshTimer); newsRefreshTimer = null; }
+  newsRefreshTimer = setInterval(refreshNewsCard, NEWS_REFRESH_MS);
+}
+
 async function loadNewsCard(){
   const card = document.getElementById("news-card");
   if(!card) return;
@@ -882,10 +906,8 @@ async function loadNewsCard(){
 
   startClock();
 
-  newsItems = await getNews();
-  newsIndex = 0;
-  renderNewsSlide();
-  restartNewsTimer();
+  await refreshNewsCard(); // 画面を開いた瞬間の即時フェッチ
+  startNewsRefresh();      // 以後10分間隔でバックグラウンド自動更新
 }
 
 /* =========================================================================
