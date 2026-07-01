@@ -88,17 +88,22 @@ function saveCache(items) {
   try { localStorage.setItem(CACHE_KEY, JSON.stringify({ savedAt: Date.now(), items })); } catch (e) {}
 }
 
-// 実際の株価を取得（3銘柄）。1銘柄でも失敗すれば全体を失敗として null を返す
-// （一部だけ実データ・一部だけモックの混在は表示が不自然になるため避ける）
+// 実際の株価を取得（3銘柄）。銘柄ごとに成否を判定し、失敗した銘柄は配列内で
+// null を返す（呼び出し側はその銘柄だけフォールバックに回せる）。
+// 全銘柄が失敗した場合のみ null を返す。
 export async function getLiveStocks() {
   const cached = loadCache();
   if (cached) return cached;
 
-  try {
-    const results = await Promise.all(STOCK_TICKERS.map(fetchQuote));
-    saveCache(results);
-    return results;
-  } catch (e) {
+  const settled = await Promise.allSettled(STOCK_TICKERS.map(fetchQuote));
+  const results = settled.map((r, i) => {
+    if (r.status === "fulfilled") return r.value;
+    // デバッグ用：実機で取得に失敗する場合はここに理由が出る（CORSプロキシの
+    // ダウン・レート制限・Yahoo側のブロックなど）
+    console.warn(`[stocks] ${STOCK_TICKERS[i]} の株価取得に失敗しました:`, r.reason?.message || r.reason);
     return null;
-  }
+  });
+  if (results.every(r => r === null)) return null;
+  saveCache(results);
+  return results;
 }

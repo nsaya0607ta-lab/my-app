@@ -906,16 +906,17 @@ function mockDailySeries(closes){
 }
 
 const STOCKS = [
-  { ticker:"MSFT", name:"Microsoft", price:435.12, previousClose:429.91, session:"regular", sessionLabel:null,
+  { ticker:"MSFT", name:"Microsoft", price:435.12, previousClose:429.91, session:"regular", sessionLabel:"サンプル", isLive:false,
     series: mockDailySeries([408,405,407,403,400,402,399,401,397,399,395,397,400,404,408,405,410,414,411,416,420,435.12]) },
-  { ticker:"AMZN", name:"Amazon", price:189.50, previousClose:190.45, session:"regular", sessionLabel:null,
+  { ticker:"AMZN", name:"Amazon", price:189.50, previousClose:190.45, session:"regular", sessionLabel:"サンプル", isLive:false,
     series: mockDailySeries([206,204,201,203,198,200,196,194,191,193,189,188,189,187,188,186,187,185,186,184,185,189.50]) },
-  { ticker:"GOOGL", name:"Alphabet", price:199.80, previousClose:200.80, session:"regular", sessionLabel:null,
+  { ticker:"GOOGL", name:"Alphabet", price:199.80, previousClose:200.80, session:"regular", sessionLabel:"サンプル", isLive:false,
     series: mockDailySeries([184,186,183,187,185,189,186,190,187,191,188,192,189,193,190,194,191,195,192,196,193,199.80]) },
 ];
 // change(%)は常に previousClose（前日終値）を基準に計算する＝日足ベース。
 // 実データ取得時・擬似変動時ともにこの基準値を更新して整合性を保つ。
 STOCKS.forEach(s => { s.change = ((s.price - s.previousClose) / s.previousClose) * 100; });
+// 起動直後は実データ取得前なので、必ず「サンプル」表示から始める（実データと誤認させない）
 
 let stockIndex = 0;
 let stockRefreshTimer = null;
@@ -960,7 +961,8 @@ function renderStockRow(){
   rowEl.innerHTML = STOCKS.map((s,i) => {
     const up = s.change >= 0;
     return `<button type="button" class="stock-item${i===stockIndex?" active":""}" data-idx="${i}">
-      <div class="stock-ticker">${esc(s.ticker)}${s.sessionLabel?`<span class="stock-session">${esc(s.sessionLabel)}</span>`:""}</div>
+      <div class="stock-ticker">${esc(s.ticker)}</div>
+      ${s.sessionLabel?`<div class="stock-session">${esc(s.sessionLabel)}</div>`:""}
       <div class="stock-name">(${esc(s.name)})</div>
       <div class="stock-priceline">
         <span class="stock-price">$${s.price.toFixed(2)}</span>
@@ -1040,40 +1042,43 @@ function renderStockPosition(){
   ordersEl.querySelectorAll("[data-oid]").forEach(b => b.onclick = () => { cancelOrder(b.dataset.oid); renderStockPosition(); });
 }
 
-// 実株価取得の結果をSTOCKSへ反映。1銘柄でも取得失敗があれば何もしない
-// （実データとモックの混在は表示として不自然なため）
+// 実株価取得の結果をSTOCKSへ反映する（銘柄ごと。取得できなかった銘柄だけ
+// フォールバックに回す＝一部失敗しても他の銘柄は実データを表示できる）
 function applyLiveStocks(liveItems){
-  if(!liveItems || liveItems.length < STOCKS.length) return false;
+  if(!liveItems) return;
   liveItems.forEach(live => {
+    if(!live) return; // その銘柄は取得失敗（nullが入る）→ 後段の擬似変動に任せる
     const s = STOCKS.find(x => x.ticker === live.ticker);
     if(!s) return;
     s.price = live.price;
     s.previousClose = live.previousClose;
     s.change = live.change;
     s.session = live.session;
-    s.sessionLabel = live.sessionLabel;
+    s.sessionLabel = live.sessionLabel; // 時間外のPre-market/After-hours、通常時間はnull
     s.series = live.series;
+    s.isLive = true;
   });
-  return true;
 }
 
-// 実データが使えない場合の擬似的な値動き（限定的な範囲でランダムに上下させる）。
+// 実データが取得できなかった銘柄の擬似的な値動き（限定的な範囲でランダムに上下）。
+// 「サンプル」ラベルを必ず出し、実データと誤認されないようにする。
 // 日足の本数は増やさず、直近（今日）の終値ポイントだけを動かして表示を維持する。
-function simulateStockTick(){
-  STOCKS.forEach(s => {
-    const delta = (Math.random() - 0.5) * STOCK_TICK_PCT;
-    s.price = Math.max(0.01, round2(s.price * (1 + delta)));
-    s.change = ((s.price - s.previousClose) / s.previousClose) * 100;
-    s.session = "regular";
-    s.sessionLabel = null;
-    const last = s.series[s.series.length - 1];
-    if(last) last.close = s.price;
-  });
+function simulateStockTick(s){
+  const delta = (Math.random() - 0.5) * STOCK_TICK_PCT;
+  s.price = Math.max(0.01, round2(s.price * (1 + delta)));
+  s.change = ((s.price - s.previousClose) / s.previousClose) * 100;
+  s.session = "regular";
+  s.sessionLabel = "サンプル";
+  s.isLive = false;
+  const last = s.series[s.series.length - 1];
+  if(last) last.close = s.price;
 }
 
 async function refreshStockPrices(){
   const live = await getLiveStocks();
-  if(!applyLiveStocks(live)) simulateStockTick();
+  STOCKS.forEach(s => { s.isLive = false; }); // 今回の取得結果で改めて判定し直す
+  applyLiveStocks(live);
+  STOCKS.forEach(s => { if(!s.isLive) simulateStockTick(s); });
   renderStockRow();
   renderStockChart();
   renderStockPosition();

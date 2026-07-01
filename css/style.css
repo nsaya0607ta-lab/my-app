@@ -411,7 +411,7 @@ h1.title{font-size:34px;line-height:1.05;font-weight:800;margin:8px 0 0;letter-s
 .stock-item{flex:1;min-width:0;text-align:left;background:none;border:1px solid transparent;border-radius:12px;padding:8px 8px;cursor:pointer;font-family:inherit;}
 .stock-item.active{border-color:var(--accent);background:rgba(2,132,199,.06);}
 .stock-ticker{font-size:14px;font-weight:800;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
-.stock-session{margin-left:5px;font-size:8px;font-weight:700;color:var(--muted);background:var(--bg2);border-radius:6px;padding:1px 5px;letter-spacing:.02em;vertical-align:middle;}
+.stock-session{display:inline-block;margin-top:2px;font-size:8px;font-weight:700;color:var(--muted);background:var(--bg2);border-radius:6px;padding:1px 5px;letter-spacing:.02em;white-space:nowrap;}
 .stock-name{font-size:9.5px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin:1px 0 5px;}
 .stock-priceline{display:flex;flex-direction:column;gap:2px;}
 .stock-price{font-size:13.5px;font-weight:800;color:var(--text);font-variant-numeric:tabular-nums;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
