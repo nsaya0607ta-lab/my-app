@@ -7,6 +7,10 @@
    Finnhubは元々ブラウザからの直接呼び出しを想定してCORSを許可しているため、
    まず直接fetchし、失敗した場合のみ無料CORSプロキシ経由にフォールバックする。
    全銘柄で取得できなかった場合のみ FALLBACK_NEWS（ダミーの関連ニュース）を表示する。
+
+   Finnhubのニュースは英語のため、無料の翻訳API（MyMemory）でタイトル・要約を
+   日本語に自動翻訳してから表示する。翻訳に失敗した場合は原文（英語）のまま
+   表示し、ニュース自体が表示できなくなることは避ける。
    ========================================================================= */
 
 import { fetchDirectOrProxied } from './cors-proxy.js';
@@ -19,9 +23,38 @@ const SUMMARY_MAX_LEN = 90; // 要約の最大文字数（カード内で2行程
 // 不適切な）ため、事実を断定しない案内文のみを表示する。
 const NO_SUMMARY_TEXT = "詳しい内容は下の「続きを読む」から元記事でご確認ください。";
 const FETCH_TIMEOUT_MS = 8000;
-const CACHE_KEY = "news_cache_v5"; // 取得元をYahoo RSS→Finnhub関連ニュースに変更したためバージョンを上げる
-const CACHE_TTL_MS = 10 * 60 * 1000; // 10分キャッシュ（プロキシ・取得先への負荷軽減）
+const CACHE_KEY = "news_cache_v6"; // 日本語訳の追加に伴いバージョンを上げ、英語のままの古いキャッシュを無効化
+const CACHE_TTL_MS = 10 * 60 * 1000; // 10分キャッシュ（プロキシ・翻訳API・取得先への負荷軽減）
 const NEWS_LOOKBACK_DAYS = 7; // 直近7日分の関連ニュースを対象にする
+
+// 無料の翻訳API（MyMemory Translation API）。APIキー不要・CORS許可済みで
+// ブラウザから直接呼び出せる（1日あたりのリクエスト数に上限があるため、
+// 失敗した場合は原文をそのまま返し、ニュース表示自体は止めない）。
+async function translateToJapanese(text) {
+  if (!text) return text;
+  try {
+    const url = `https://api.mymemory.translated.net/get?q=${encodeURIComponent(text)}&langpair=en|ja`;
+    const res = await fetchDirectOrProxied(url, { timeoutMs: FETCH_TIMEOUT_MS });
+    const data = await res.json();
+    const translated = data?.responseData?.translatedText;
+    // クォータ超過時は "MYMEMORY WARNING: ..." のような文字列が返るため除外する
+    if (typeof translated === "string" && translated.trim() && !translated.startsWith("MYMEMORY WARNING")) {
+      return translated;
+    }
+    return text;
+  } catch (e) {
+    console.warn("[news] 翻訳に失敗しました。原文のまま表示します:", e.message);
+    return text;
+  }
+}
+
+async function translateItem(item) {
+  const [title, summary] = await Promise.all([
+    translateToJapanese(item.title),
+    translateToJapanese(item.summary),
+  ]);
+  return { ...item, title, summary };
+}
 
 // 通信エラー・APIキー未設定などで1件も取得できなかった場合に表示する、
 // ダミーの関連ニュース（実在の記事ではないため link はダミーURL）
@@ -115,13 +148,17 @@ export async function getNews() {
   });
   if (!items.length) return FALLBACK_NEWS;
 
-  // 新しい順に並べ、同一見出しの重複を除いた上位件数だけを表示に使う
+  // 新しい順に並べ、同一見出しの重複を除いた上位件数だけを翻訳・表示に使う
   const seen = new Set();
-  const result = items
+  const picked = items
     .sort((a, b) => b.datetime - a.datetime)
     .filter(n => (seen.has(n.title) ? false : (seen.add(n.title), true)))
     .slice(0, MAX_ITEMS)
     .map(({ title, summary, link }) => ({ title, summary, link }));
+
+  // Finnhubのニュースは英語のため、表示前に日本語へ翻訳する
+  // （1件ずつ独立して翻訳するため、一部の翻訳に失敗しても他の記事は表示できる）
+  const result = await Promise.all(picked.map(translateItem));
 
   saveCache(result);
   return result;
