@@ -20,7 +20,7 @@
 import { fetchDirectOrProxied } from './cors-proxy.js';
 
 // ここに https://finnhub.io/register で取得した無料APIキーを貼り付けてください
-const FINNHUB_API_KEY = "YOUR_FINNHUB_API_KEY";
+const FINNHUB_API_KEY = "d92jlgpr01qs541v5g60d92jlgpr01qs541v5g6g";
 
 export const STOCK_TICKERS = ["MSFT", "AMZN", "GOOGL"];
 const STOCK_NAMES = { MSFT: "Microsoft", AMZN: "Amazon", GOOGL: "Alphabet" };
