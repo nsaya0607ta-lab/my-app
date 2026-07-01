@@ -1,5 +1,5 @@
 /* =========================================================================
-   無料CORSプロキシ経由のfetchヘルパー（ニュース取得で利用）
+   無料CORSプロキシ経由のfetchヘルパー（ニュース・株価取得で共通利用）
    1つのプロキシがダウン・レート制限中でも他が使えるよう、順番に試す。
    ========================================================================= */
 
@@ -29,4 +29,17 @@ export async function fetchViaProxies(url, { timeoutMs = 8000 } = {}) {
     }
   }
   throw lastErr;
+}
+
+// 直接fetchできるAPI（Finnhubなど、ブラウザからの直接呼び出しを想定してCORSを
+// 許可しているサービス）向け。まず直接fetchを試し、失敗した場合のみ
+// CORSプロキシ経由にフォールバックする。
+export async function fetchDirectOrProxied(url, { timeoutMs = 8000 } = {}) {
+  try {
+    const res = await withTimeout(fetch(url), timeoutMs);
+    if (!res.ok) throw new Error("HTTP " + res.status);
+    return res;
+  } catch (e) {
+    return fetchViaProxies(url, { timeoutMs });
+  }
 }
