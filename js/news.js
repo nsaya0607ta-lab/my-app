@@ -1,5 +1,5 @@
 /* =========================================================================
-   外部ニュース取得（資格一覧画面 上部のニューステロップ用）
+   外部ニュース取得（資格一覧画面 上部のニュースカード用）
    ブラウザから直接 RSS を fetch すると CORS エラーになるため、
    無料のCORSプロキシ経由で取得する。1つのプロキシはダウン・レート制限が
    起きやすいため、複数のプロキシを順番に試し、全滅した場合のみ
@@ -20,16 +20,17 @@ const CORS_PROXIES = [
   url => "https://api.codetabs.com/v1/proxy?quest=" + encodeURIComponent(url),
 ];
 
-const MAX_ITEMS = 8;
+const MAX_ITEMS = 3; // ニュースカードは3件を巡回表示する
 const FETCH_TIMEOUT_MS = 8000;
-const CACHE_KEY = "news_cache_v1";
+const CACHE_KEY = "news_cache_v2";
 const CACHE_TTL_MS = 10 * 60 * 1000; // 10分キャッシュ（プロキシ・取得先への負荷軽減）
 
-// 通信エラー・API制限などで1件も取得できなかった場合に表示する固定のお知らせ
+// 通信エラー・API制限などで1件も取得できなかった場合に表示する、
+// ダミーのIT系ニュース見出し（実在の記事ではないため link は付けない）
 export const FALLBACK_NEWS = [
-  { title: "今日も学習を始めましょう！", link: null },
-  { title: "コツコツ続けることが合格への近道です。", link: null },
-  { title: "スキマ時間に1問だけでも解いてみましょう。", link: null },
+  { title: "生成AIの業務活用が加速、国内企業の8割が導入を検討", link: null },
+  { title: "次世代半導体の国内生産、大手メーカーが新工場を稼働へ", link: null },
+  { title: "量子コンピュータ研究で新たな成果、誤り訂正技術が前進", link: null },
 ];
 
 function withTimeout(promise, ms) {
@@ -80,7 +81,7 @@ function saveCache(items) {
   try { localStorage.setItem(CACHE_KEY, JSON.stringify({ savedAt: Date.now(), items })); } catch (e) {}
 }
 
-// 複数フィードから最新ニュースを取得（5〜10件程度に整形）。失敗時はフォールバックを返す
+// 複数フィードから最新ニュースを取得（3件に整形）。失敗時はフォールバックを返す
 export async function getNews() {
   const cached = loadCache();
   if (cached) return cached;

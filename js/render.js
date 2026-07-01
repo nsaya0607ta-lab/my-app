@@ -724,29 +724,73 @@ export function renderTransfer(){
 /* ======================= SC-300 のデータ ======================= */
 /* SC-300: Microsoft Identity and Access Administrator（IDとアクセスの管理）*/
 
-/* ニューステロップ：資格一覧画面の上部。読み込み中の表示を即時に出し、
-   取得完了後に非同期で書き換える（失敗時は news.js 側のフォールバックが入る） */
+/* ニュースカード：資格一覧画面の上部。3件のニュースをフェード切り替えで自動巡回し、
+   ドット・矢印で手動切り替えもできる。取得完了まで「読み込み中…」を表示し、
+   失敗時は news.js 側のフォールバック（ダミーのIT系ニュース）に自動で切り替わる。 */
 
-function newsTickerHTML(){
+let newsItems = [];
+let newsIndex = 0;
+let newsTimer = null;
+const NEWS_ROTATE_MS = 4500;
+
+function newsCardHTML(){
   return `
-    <div class="news-ticker">
-      <span class="news-ticker-tag">📰 NEWS</span>
-      <div class="news-ticker-viewport">
-        <div class="news-ticker-track" id="news-ticker-track">読み込み中…</div>
+    <div class="news-card" id="news-card">
+      <div class="news-card-head">
+        <span class="news-badge">📰 NEWS</span>
+        <div class="news-nav">
+          <button type="button" class="news-arrow" id="news-prev" aria-label="前のニュース">‹</button>
+          <button type="button" class="news-arrow" id="news-next" aria-label="次のニュース">›</button>
+        </div>
       </div>
+      <div class="news-slot"><span class="news-headline" id="news-headline">読み込み中…</span></div>
+      <div class="news-dots" id="news-dots"></div>
     </div>`;
 }
 
-async function loadNewsTicker(){
-  const track = document.getElementById("news-ticker-track");
-  if(!track) return;
-  const items = await getNews();
-  const line = items.map(n => n.link
-    ? `<a class="news-item" href="${esc(n.link)}" target="_blank" rel="noopener noreferrer">${esc(n.title)}</a>`
-    : `<span class="news-item">${esc(n.title)}</span>`
-  ).join('<span class="news-sep">・</span>');
-  // シームレスにループさせるため、同じ内容を2連結してアニメーションで半分だけ流す
-  track.innerHTML = line + '<span class="news-sep">・</span>' + line;
+function renderNewsSlide(){
+  const headline = document.getElementById("news-headline");
+  const dotsEl = document.getElementById("news-dots");
+  if(!headline || !dotsEl || !newsItems.length) return;
+  const n = newsItems[newsIndex];
+  // クラスを一度外して再付与し、フェードインアニメーションを毎回やり直す
+  headline.classList.remove("news-fade-in");
+  void headline.offsetWidth;
+  headline.classList.add("news-fade-in");
+  headline.textContent = n.title;
+  headline.title = n.title; // 三点リーダーで切れた分はホバーで全文確認できる
+  headline.classList.toggle("news-link", !!n.link);
+  headline.onclick = n.link ? () => window.open(n.link, "_blank", "noopener,noreferrer") : null;
+  dotsEl.innerHTML = newsItems.map((_, i) => `<span class="news-dot${i===newsIndex?" on":""}" data-idx="${i}"></span>`).join("");
+  dotsEl.querySelectorAll("[data-idx]").forEach(d => d.onclick = () => gotoNewsSlide(+d.dataset.idx));
+}
+
+function gotoNewsSlide(i){
+  if(!newsItems.length) return;
+  newsIndex = (i + newsItems.length) % newsItems.length;
+  renderNewsSlide();
+  restartNewsTimer();
+}
+
+function restartNewsTimer(){
+  if(newsTimer){ clearInterval(newsTimer); newsTimer = null; }
+  if(newsItems.length > 1){
+    newsTimer = setInterval(() => { newsIndex = (newsIndex + 1) % newsItems.length; renderNewsSlide(); }, NEWS_ROTATE_MS);
+  }
+}
+
+async function loadNewsCard(){
+  const card = document.getElementById("news-card");
+  if(!card) return;
+  const prev = document.getElementById("news-prev");
+  const next = document.getElementById("news-next");
+  if(prev) prev.onclick = () => gotoNewsSlide(newsIndex - 1);
+  if(next) next.onclick = () => gotoNewsSlide(newsIndex + 1);
+
+  newsItems = await getNews();
+  newsIndex = 0;
+  renderNewsSlide();
+  restartNewsTimer();
 }
 
 export function renderSelect(){
@@ -774,7 +818,7 @@ export function renderSelect(){
     </button>`;
   }).join("");
   app.innerHTML = `
-    ${newsTickerHTML()}
+    ${newsCardHTML()}
     <div class="me-hero">
       <div class="me-top">
         <div>
@@ -804,7 +848,7 @@ export function renderSelect(){
   app.querySelectorAll("[data-go]").forEach(b=>b.onclick=()=>go(b.dataset.go));
   const lo=app.querySelector("[data-logout]"); if(lo)lo.onclick=()=>logout();
   const li=app.querySelector("[data-login]"); if(li)li.onclick=()=>{ state.guestMode=false; state.authMode="login"; render(); };
-  loadNewsTicker();
+  loadNewsCard();
   window.scrollTo(0,0);
 }
 
