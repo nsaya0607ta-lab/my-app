@@ -889,6 +889,16 @@ export function renderSelect(){
   }).join("");
   app.innerHTML = `
     ${newsCardHTML()}
+    <button class="cta cta-jump" id="cta-goto-certs">🎓 資格を選ぶ →</button>
+    <div class="me-actions">
+      <button class="me-btn" data-go="ranking">🏆 ランキング</button>
+      <button class="me-btn" data-go="profile">👤 プロフィール</button>
+    </div>
+    <div class="sel-head" id="cert-section">
+      <span class="eyebrow">MICROSOFT 認定対策</span>
+      <h2 class="sel-title">資格を選ぶ</h2>
+      <p class="sel-sub">学習したい資格を選んでください。資格ごとにスコア・BP・復習データは別々に保存されます。</p>
+    </div>
     <div class="me-hero">
       <div class="me-top">
         <div>
@@ -900,15 +910,6 @@ export function renderSelect(){
       <div class="me-prog"><div class="me-prog-f" style="width:${ov.pct}%"></div></div>
       <div class="me-next">次のレベルまで ${ov.remain.toLocaleString()} BP ・ 学習中 ${ov.active} 資格 ・ 💰 ${(S.coins||0).toLocaleString()} AC</div>
     </div>
-    <div class="me-actions">
-      <button class="me-btn" data-go="ranking">🏆 ランキング</button>
-      <button class="me-btn" data-go="profile">👤 プロフィール</button>
-    </div>
-    <div class="sel-head">
-      <span class="eyebrow">MICROSOFT 認定対策</span>
-      <h2 class="sel-title">資格を選ぶ</h2>
-      <p class="sel-sub">学習したい資格を選んでください。資格ごとにスコア・BP・復習データは別々に保存されます。</p>
-    </div>
     <div class="cert-list">${cards}</div>
     ${state.currentUser
       ? `<div class="acct-bar">👤 ${esc(state.currentUser.email||"ログイン中")}<button class="link2" data-logout>ログアウト</button></div>`
@@ -918,6 +919,8 @@ export function renderSelect(){
   app.querySelectorAll("[data-go]").forEach(b=>b.onclick=()=>go(b.dataset.go));
   const lo=app.querySelector("[data-logout]"); if(lo)lo.onclick=()=>logout();
   const li=app.querySelector("[data-login]"); if(li)li.onclick=()=>{ state.guestMode=false; state.authMode="login"; render(); };
+  const jump=document.getElementById("cta-goto-certs");
+  if(jump) jump.onclick=()=>{ document.getElementById("cert-section")?.scrollIntoView({behavior:"smooth", block:"start"}); };
   loadNewsCard();
   window.scrollTo(0,0);
 }
