@@ -803,7 +803,7 @@ function newsCardHTML(){
         <div class="news-content">
           <div class="news-headline" id="news-headline">読み込み中…</div>
           <div class="news-summary" id="news-summary"></div>
-          <a class="news-readmore" id="news-readmore" href="#" target="_blank" rel="noopener noreferrer" style="visibility:hidden">続きを読む →</a>
+          <a class="news-readmore" id="news-readmore" target="_blank" rel="noopener noreferrer" style="visibility:hidden">続きを読む →</a>
         </div>
       </div>
       <div class="news-dots" id="news-dots"></div>
