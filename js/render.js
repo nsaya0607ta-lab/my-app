@@ -1,6 +1,7 @@
 import { CERTS } from './data/certs.js';
 import { DC_PHASES, L, REGIONS } from './data/constants.js';
 import { CONCEPTS, DRAW, PASS, Q, TIERS, applySkin, certById, certStat, commit, correctSet, dcCount, dcPhase, dcTitle, esc, exportCode, fmt, getBP, getProfileName, grade, importCode, isMulti, loadHist, loadReviewStats, loadWrong, overallLevel, overallStat, pick, pts, publishLeaderboard, purchaseSkin, saveToCloud, selectCert, setBP, setProfileName, stars, start, startReview, totalBP } from './core.js';
+import { getNews } from './news.js';
 import { SKIN_DATA } from './data/skins.js';
 import { S, state } from './state.js';
 
@@ -723,6 +724,31 @@ export function renderTransfer(){
 /* ======================= SC-300 のデータ ======================= */
 /* SC-300: Microsoft Identity and Access Administrator（IDとアクセスの管理）*/
 
+/* ニューステロップ：資格一覧画面の上部。読み込み中の表示を即時に出し、
+   取得完了後に非同期で書き換える（失敗時は news.js 側のフォールバックが入る） */
+
+function newsTickerHTML(){
+  return `
+    <div class="news-ticker">
+      <span class="news-ticker-tag">📰 NEWS</span>
+      <div class="news-ticker-viewport">
+        <div class="news-ticker-track" id="news-ticker-track">読み込み中…</div>
+      </div>
+    </div>`;
+}
+
+async function loadNewsTicker(){
+  const track = document.getElementById("news-ticker-track");
+  if(!track) return;
+  const items = await getNews();
+  const line = items.map(n => n.link
+    ? `<a class="news-item" href="${esc(n.link)}" target="_blank" rel="noopener noreferrer">${esc(n.title)}</a>`
+    : `<span class="news-item">${esc(n.title)}</span>`
+  ).join('<span class="news-sep">・</span>');
+  // シームレスにループさせるため、同じ内容を2連結してアニメーションで半分だけ流す
+  track.innerHTML = line + '<span class="news-sep">・</span>' + line;
+}
+
 export function renderSelect(){
   const ov = overallStat();
   const cards = CERTS.map(c=>{
@@ -748,6 +774,7 @@ export function renderSelect(){
     </button>`;
   }).join("");
   app.innerHTML = `
+    ${newsTickerHTML()}
     <div class="me-hero">
       <div class="me-top">
         <div>
@@ -777,6 +804,7 @@ export function renderSelect(){
   app.querySelectorAll("[data-go]").forEach(b=>b.onclick=()=>go(b.dataset.go));
   const lo=app.querySelector("[data-logout]"); if(lo)lo.onclick=()=>logout();
   const li=app.querySelector("[data-login]"); if(li)li.onclick=()=>{ state.guestMode=false; state.authMode="login"; render(); };
+  loadNewsTicker();
   window.scrollTo(0,0);
 }
 
