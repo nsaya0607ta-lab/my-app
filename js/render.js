@@ -911,16 +911,26 @@ STOCKS.forEach(s => { s.change = ((s.price - s.previousClose) / s.previousClose)
 
 let stockIndex = 0;
 let stockRefreshTimer = null;
+let stocksLastUpdatedAt = null; // Finnhubから実データを最後に取得できた日時(ms)。未取得の間はnull
 const STOCK_REFRESH_MS = 45000; // 実株価の再取得・擬似変動の更新間隔
 const STOCK_TICK_PCT = 0.006;   // 実データが使えない場合の1回あたりの変動幅（±0.3%程度）
 
 function round2(n){ return Math.round(n*100)/100; }
 
+// 「◯月◯日 ◯時◯分時点」形式に整形する（最終更新日時の表示用）
+function formatStocksUpdatedAt(ms){
+  const d = new Date(ms);
+  return `${d.getMonth()+1}月${d.getDate()}日 ${d.getHours()}時${String(d.getMinutes()).padStart(2,"0")}分時点`;
+}
+
 function stocksCardHTML(){
   return `
     <div class="news-card stocks-card" id="stocks-card">
       <div class="news-card-head">
-        <span class="news-badge stock-badge">📊 株価 (STOCKS)</span>
+        <div class="stock-head-left">
+          <span class="news-badge stock-badge">📊 株価 (STOCKS)</span>
+          <div class="stock-updated" id="stock-updated"></div>
+        </div>
         <div class="news-nav">
           <button type="button" class="news-arrow" id="stock-prev" aria-label="前の銘柄">‹</button>
           <button type="button" class="news-arrow" id="stock-next" aria-label="次の銘柄">›</button>
@@ -928,6 +938,14 @@ function stocksCardHTML(){
       </div>
       <div class="stock-row" id="stock-row"></div>
     </div>`;
+}
+
+// 株価カード左上の「◯月◯日 ◯時◯分時点」表示を更新する。
+// 一度も実データを取得できていない間（起動直後・通信失敗が続く間）は空欄のままにする。
+function renderStockUpdated(){
+  const el = document.getElementById("stock-updated");
+  if(!el) return;
+  el.textContent = stocksLastUpdatedAt ? formatStocksUpdatedAt(stocksLastUpdatedAt) : "";
 }
 
 function renderStockRow(){
@@ -955,6 +973,7 @@ function renderStockRow(){
 // フォールバックに回す＝一部失敗しても他の銘柄は実データを表示できる）
 function applyLiveStocks(liveItems){
   if(!liveItems) return;
+  let appliedAny = false;
   liveItems.forEach(live => {
     if(!live) return; // その銘柄は取得失敗（nullが入る）→ 後段の擬似変動に任せる
     const s = STOCKS.find(x => x.ticker === live.ticker);
@@ -965,7 +984,10 @@ function applyLiveStocks(liveItems){
     s.sessionLabel = null; // 実データ取得成功時はバッジ非表示
     s.isLive = true;
     s.everLive = true; // 一度でも実データを取得できたことを記録（以後の取得失敗時に擬似変動ではなく最終参照値を出すために使う）
+    appliedAny = true;
   });
+  // 1銘柄でも実データを反映できたら、その瞬間を「最終更新日時」として記録する
+  if(appliedAny) stocksLastUpdatedAt = Date.now();
 }
 
 // 実データが取得できなかった銘柄のフォールバック処理。
@@ -992,6 +1014,7 @@ async function refreshStockPrices(){
   applyLiveStocks(live);
   STOCKS.forEach(s => { if(!s.isLive) simulateStockTick(s); });
   renderStockRow();
+  renderStockUpdated();
 }
 
 function startStockRefresh(){
@@ -1011,6 +1034,7 @@ function initStocksCard(){
   if(prev) prev.onclick = () => { stockIndex = (stockIndex - 1 + STOCKS.length) % STOCKS.length; renderStockRow(); };
   if(next) next.onclick = () => { stockIndex = (stockIndex + 1) % STOCKS.length; renderStockRow(); };
   renderStockRow();
+  renderStockUpdated();
   startStockRefresh();
 }
 
