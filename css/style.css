@@ -393,8 +393,19 @@ h1.title{font-size:34px;line-height:1.05;font-weight:800;margin:8px 0 0;letter-s
   display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;line-clamp:2;overflow:hidden;}
 .news-fade-in{animation:newsFadeIn .35s ease forwards;}
 @keyframes newsFadeIn{from{opacity:0;transform:translateY(4px);}to{opacity:1;transform:translateY(0);}}
-.news-readmore{display:inline-block;margin-top:7px;font-size:11px;font-weight:800;color:var(--accent);text-decoration:none;}
+.news-readmore{display:inline-block;font-size:11px;font-weight:800;color:var(--accent);text-decoration:none;}
 .news-readmore:hover{text-decoration:underline;}
+
+.news-footer{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-top:7px;}
+.news-refresh-btn{flex:none;border:none;background:none;padding:4px;margin:0 -4px 0 0;cursor:pointer;
+  color:var(--muted);display:flex;align-items:center;justify-content:center;border-radius:50%;
+  transition:color .15s,background-color .15s;}
+.news-refresh-btn:hover{color:var(--accent);background:rgba(2,132,199,.08);}
+.news-refresh-btn:active{color:var(--accent);}
+.news-refresh-btn:disabled{cursor:default;}
+.news-refresh-icon{width:15px;height:15px;display:block;}
+.news-refresh-btn.spinning .news-refresh-icon{animation:newsRefreshSpin .8s linear infinite;}
+@keyframes newsRefreshSpin{from{transform:rotate(0deg);}to{transform:rotate(360deg);}}
 
 .news-dots{display:flex;gap:6px;justify-content:center;margin-top:10px;}
 .news-dot{width:6px;height:6px;border-radius:50%;background:var(--line);cursor:pointer;transition:background .2s,transform .2s;}
