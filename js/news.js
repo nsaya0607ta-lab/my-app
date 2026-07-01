@@ -6,18 +6,12 @@
    FALLBACK_NEWS（ダミーのIT系ニュース）を表示する。
    ========================================================================= */
 
+import { fetchViaProxies } from './cors-proxy.js';
+
 // Yahoo!ニュース トピックス RSS（IT・科学カテゴリ）
 const RSS_FEEDS = [
   "https://news.yahoo.co.jp/rss/topics/it.xml",
   "https://news.yahoo.co.jp/rss/topics/science.xml",
-];
-
-// CORSを回避するための無料プロキシ（上から順に試す）。第三者サービス経由のため、
-// 取得内容は必ず esc() でエスケープしてから表示すること。
-const CORS_PROXIES = [
-  url => "https://api.allorigins.win/raw?url=" + encodeURIComponent(url),
-  url => "https://corsproxy.io/?url=" + encodeURIComponent(url),
-  url => "https://api.codetabs.com/v1/proxy?quest=" + encodeURIComponent(url),
 ];
 
 const MAX_ITEMS = 5; // ニュースダッシュボードは5件を保持・巡回表示する
@@ -60,13 +54,6 @@ export const FALLBACK_NEWS = [
   },
 ];
 
-function withTimeout(promise, ms) {
-  return Promise.race([
-    promise,
-    new Promise((_, reject) => setTimeout(() => reject(new Error("timeout")), ms)),
-  ]);
-}
-
 // RSSのdescriptionは装飾タグを含むことがあるため、テキストのみ抽出して整形する
 function cleanSummary(raw) {
   const text = (raw || "").replace(/\s+/g, " ").trim();
@@ -87,22 +74,12 @@ function parseFeedXml(xmlText) {
   }).filter(n => n.title);
 }
 
-// 1つのプロキシがダウン・レート制限中でも他が使えるよう、順番に試す
 async function fetchFeed(feedUrl) {
-  let lastErr = new Error("no proxy available");
-  for (const buildProxyUrl of CORS_PROXIES) {
-    try {
-      const res = await withTimeout(fetch(buildProxyUrl(feedUrl)), FETCH_TIMEOUT_MS);
-      if (!res.ok) throw new Error("HTTP " + res.status);
-      const xmlText = await res.text();
-      const items = parseFeedXml(xmlText);
-      if (items.length) return items;
-      throw new Error("0件でした");
-    } catch (e) {
-      lastErr = e;
-    }
-  }
-  throw lastErr;
+  const res = await fetchViaProxies(feedUrl, { timeoutMs: FETCH_TIMEOUT_MS });
+  const xmlText = await res.text();
+  const items = parseFeedXml(xmlText);
+  if (!items.length) throw new Error("0件でした");
+  return items;
 }
 
 function loadCache() {

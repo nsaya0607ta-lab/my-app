@@ -2,8 +2,10 @@ import { CERTS } from './data/certs.js';
 import { DC_PHASES, L, REGIONS } from './data/constants.js';
 import { CONCEPTS, DRAW, PASS, Q, TIERS, applySkin, certById, certStat, commit, correctSet, dcCount, dcPhase, dcTitle, esc, exportCode, fmt, getBP, getProfileName, grade, importCode, isMulti, loadHist, loadReviewStats, loadWrong, overallLevel, overallStat, pick, pts, publishLeaderboard, purchaseSkin, saveToCloud, selectCert, setBP, setProfileName, stars, start, startReview, totalBP } from './core.js';
 import { getNews } from './news.js';
+import { getLiveStocks } from './stocks.js';
 import { SKIN_DATA } from './data/skins.js';
 import { S, state } from './state.js';
+import { FEE_RATE, calcFee, cancelOrder, checkLimitOrders, executeMarketOrder, getPosition, loadPortfolio, ordersFor, placeLimitOrder, unrealizedPL } from './trading.js';
 
 export const app = document.getElementById("app");
 
@@ -889,7 +891,10 @@ async function loadNewsCard(){
 
 /* =========================================================================
    株価カード（STOCKS）：ニュースカードと同じデザインシステムを流用した
-   ダッシュボード風ウィジェット。ライブAPI連携は行わず、サンプルデータのみ。
+   ダッシュボード風ウィジェット＋模擬投資（ペーパートレード）機能。
+   起動直後はサンプル株価で表示し、Yahoo Financeの株価APIをCORSプロキシ
+   経由で取得できた場合は実際の株価に置き換える（失敗時は擬似的な値動きで
+   フォールバックし、表示が固まったままにならないようにする）。
    ========================================================================= */
 
 const STOCKS = [
@@ -900,7 +905,16 @@ const STOCKS = [
   { ticker:"GOOGL", name:"Alphabet", price:199.80, change:-0.5,
     trend:[50,52,49,53,51,55,52,56,53,57,54,58,55,59,56,60,57,61,58,62,59,63] },
 ];
+// change(%)は常に prevClose を基準に計算する。実データ取得時・擬似変動時ともに
+// この基準値を更新することで、表示される前日比の整合性を保つ。
+STOCKS.forEach(s => { s.prevClose = s.price / (1 + s.change/100); });
+
 let stockIndex = 0;
+let stockRefreshTimer = null;
+const STOCK_REFRESH_MS = 45000; // 実株価の再取得・擬似変動の更新間隔
+const STOCK_TICK_PCT = 0.006;   // 実データが使えない場合の1回あたりの変動幅（±0.3%程度）
+
+function round2(n){ return Math.round(n*100)/100; }
 
 function stockChartPaths(trend, w, h){
   const n = trend.length;
@@ -928,6 +942,12 @@ function stocksCardHTML(){
         </div>
       </div>
       <div class="stock-row" id="stock-row"></div>
+      <div class="stock-position" id="stock-position"></div>
+      <div class="stock-trade-btns">
+        <button type="button" class="stock-trade-btn buy" id="stock-buy">購入</button>
+        <button type="button" class="stock-trade-btn sell" id="stock-sell">売却</button>
+      </div>
+      <div class="stock-orders" id="stock-orders"></div>
       <div class="stock-chart-wrap">
         <svg viewBox="0 0 300 70" class="stock-chart-svg" preserveAspectRatio="none">
           <defs>
@@ -962,6 +982,7 @@ function renderStockRow(){
     stockIndex = +b.dataset.idx;
     renderStockRow();
     renderStockChart();
+    renderStockPosition();
   });
 }
 
@@ -974,15 +995,169 @@ function renderStockChart(){
   fillEl.setAttribute("d", fill);
 }
 
+// 保有株数・平均取得単価・評価損益と、その銘柄の指値予約注文を表示
+function renderStockPosition(){
+  const posEl = document.getElementById("stock-position");
+  const ordersEl = document.getElementById("stock-orders");
+  if(!posEl) return;
+  const s = STOCKS[stockIndex];
+  const pl = unrealizedPL(s.ticker, s.price);
+  posEl.innerHTML = pl.shares
+    ? `保有 <b>${pl.shares}株</b>　平均取得 $${pl.avgCost.toFixed(2)}　評価損益 <span class="${pl.amount>=0?"up":"down"}">${pl.amount>=0?"+":""}${pl.amount.toFixed(2)} AC（${pl.amount>=0?"+":""}${pl.pct.toFixed(1)}%）</span>`
+    : `この銘柄は保有していません`;
+  if(!ordersEl) return;
+  const list = ordersFor(s.ticker);
+  ordersEl.innerHTML = list.map(o => `
+    <div class="stock-order-row">
+      <span>${o.side==="buy"?"買":"売"}指値 ${o.qty}株 @ $${o.limitPrice.toFixed(2)}</span>
+      <button type="button" class="stock-order-cancel" data-oid="${o.id}">取消</button>
+    </div>`).join("");
+  ordersEl.querySelectorAll("[data-oid]").forEach(b => b.onclick = () => { cancelOrder(b.dataset.oid); renderStockPosition(); });
+}
+
+// 実株価取得の結果をSTOCKSへ反映。1銘柄でも取得失敗があれば何もしない
+// （実データとモックの混在は表示として不自然なため）
+function applyLiveStocks(liveItems){
+  if(!liveItems || liveItems.length < STOCKS.length) return false;
+  liveItems.forEach(live => {
+    const s = STOCKS.find(x => x.ticker === live.ticker);
+    if(!s) return;
+    s.price = live.price;
+    s.change = live.change;
+    s.trend = live.trend;
+    s.prevClose = live.price / (1 + live.change/100);
+  });
+  return true;
+}
+
+// 実データが使えない場合の擬似的な値動き（限定的な範囲でランダムに上下させる）
+function simulateStockTick(){
+  STOCKS.forEach(s => {
+    const delta = (Math.random() - 0.5) * STOCK_TICK_PCT;
+    s.price = Math.max(0.01, round2(s.price * (1 + delta)));
+    s.change = ((s.price - s.prevClose) / s.prevClose) * 100;
+  });
+}
+
+async function refreshStockPrices(){
+  const live = await getLiveStocks();
+  if(!applyLiveStocks(live)) simulateStockTick();
+  renderStockRow();
+  renderStockChart();
+  renderStockPosition();
+  const executed = checkLimitOrders(ticker => STOCKS.find(s => s.ticker === ticker)?.price ?? null);
+  if(executed.length){
+    renderStockRow();
+    renderStockPosition();
+    renderStatusBar();
+  }
+}
+
+function startStockRefresh(){
+  if(stockRefreshTimer){ clearInterval(stockRefreshTimer); stockRefreshTimer = null; }
+  refreshStockPrices();
+  stockRefreshTimer = setInterval(() => {
+    if(!document.getElementById("stocks-card")){ clearInterval(stockRefreshTimer); stockRefreshTimer = null; return; }
+    refreshStockPrices();
+  }, STOCK_REFRESH_MS);
+}
+
+// 購入・売却モーダル：成行／指値の切り替え、数量・指値価格入力、手数料込みの概算表示
+function openTradeModal(side){
+  const s = STOCKS[stockIndex];
+  const pos = getPosition(s.ticker);
+  const ov = document.createElement("div");
+  ov.className = "modal-ov";
+  ov.innerHTML = `
+    <div class="modal trade-modal">
+      <div class="modal-title trade-modal-title">${side==="buy"?"購入":"売却"}：${esc(s.ticker)}（${esc(s.name)}）</div>
+      <div class="modal-body">現在値 <b>$${s.price.toFixed(2)}</b>　保有 ${pos.shares}株</div>
+      <div class="trade-type-toggle">
+        <button type="button" class="trade-type-btn active" data-type="market">成行</button>
+        <button type="button" class="trade-type-btn" data-type="limit">指値</button>
+      </div>
+      <div class="trade-field">
+        <label>数量（株）</label>
+        <input type="number" id="trade-qty" class="auth-input" min="1" step="1" value="1" inputmode="numeric">
+      </div>
+      <div class="trade-field" id="trade-limit-field" style="display:none">
+        <label>指値価格（$）</label>
+        <input type="number" id="trade-limit-price" class="auth-input" min="0.01" step="0.01" value="${s.price.toFixed(2)}" inputmode="decimal">
+      </div>
+      <div class="trade-preview" id="trade-preview"></div>
+      <div id="trade-msg" class="auth-msg"></div>
+      <button class="cta" id="trade-confirm" style="margin-top:0">${side==="buy"?"購入する":"売却する"}</button>
+      <button class="ghost" id="trade-cancel" style="margin-top:8px">キャンセル</button>
+    </div>`;
+  document.body.appendChild(ov);
+  const close = () => { try{ ov.remove(); }catch(e){} };
+  ov.addEventListener("click", (e) => { if(e.target === ov) close(); });
+  ov.querySelector("#trade-cancel").onclick = close;
+
+  const qtyEl = ov.querySelector("#trade-qty");
+  const limitFieldEl = ov.querySelector("#trade-limit-field");
+  const limitPriceEl = ov.querySelector("#trade-limit-price");
+  const previewEl = ov.querySelector("#trade-preview");
+  const msgEl = ov.querySelector("#trade-msg");
+  const typeBtns = ov.querySelectorAll(".trade-type-btn");
+
+  function currentType(){ return ov.querySelector(".trade-type-btn.active").dataset.type; }
+
+  function updatePreview(){
+    const qty = Math.max(1, parseInt(qtyEl.value, 10) || 1);
+    const type = currentType();
+    const refPrice = type === "market" ? s.price : (parseFloat(limitPriceEl.value) || s.price);
+    const amount = refPrice * qty;
+    const fee = calcFee(amount);
+    previewEl.innerHTML = side === "buy"
+      ? `概算金額 ${amount.toFixed(2)} AC ＋ 手数料(${(FEE_RATE*100).toFixed(1)}%) ${fee.toFixed(2)} AC = <b>合計 ${(amount+fee).toFixed(2)} AC</b>`
+      : `概算受取 ${amount.toFixed(2)} AC － 手数料(${(FEE_RATE*100).toFixed(1)}%) ${fee.toFixed(2)} AC = <b>手取り ${(amount-fee).toFixed(2)} AC</b>`;
+  }
+
+  typeBtns.forEach(b => b.onclick = () => {
+    typeBtns.forEach(x => x.classList.remove("active"));
+    b.classList.add("active");
+    limitFieldEl.style.display = b.dataset.type === "limit" ? "" : "none";
+    updatePreview();
+  });
+  qtyEl.oninput = updatePreview;
+  limitPriceEl.oninput = updatePreview;
+  updatePreview();
+
+  ov.querySelector("#trade-confirm").onclick = () => {
+    const qty = Math.max(1, parseInt(qtyEl.value, 10) || 1);
+    const type = currentType();
+    let res;
+    if(type === "market"){
+      res = executeMarketOrder(s.ticker, side, qty, s.price);
+    } else {
+      const limitPrice = parseFloat(limitPriceEl.value);
+      res = placeLimitOrder(s.ticker, side, qty, limitPrice);
+    }
+    if(!res.ok){ msgEl.style.color = "var(--bad)"; msgEl.textContent = res.msg; return; }
+    close();
+    renderStockRow();
+    renderStockPosition();
+    renderStatusBar(); // AC残高を即時反映
+  };
+}
+
 function initStocksCard(){
   const card = document.getElementById("stocks-card");
   if(!card) return;
+  loadPortfolio();
   const prev = document.getElementById("stock-prev");
   const next = document.getElementById("stock-next");
-  if(prev) prev.onclick = () => { stockIndex = (stockIndex - 1 + STOCKS.length) % STOCKS.length; renderStockRow(); renderStockChart(); };
-  if(next) next.onclick = () => { stockIndex = (stockIndex + 1) % STOCKS.length; renderStockRow(); renderStockChart(); };
+  if(prev) prev.onclick = () => { stockIndex = (stockIndex - 1 + STOCKS.length) % STOCKS.length; renderStockRow(); renderStockChart(); renderStockPosition(); };
+  if(next) next.onclick = () => { stockIndex = (stockIndex + 1) % STOCKS.length; renderStockRow(); renderStockChart(); renderStockPosition(); };
+  const buyBtn = document.getElementById("stock-buy");
+  const sellBtn = document.getElementById("stock-sell");
+  if(buyBtn) buyBtn.onclick = () => openTradeModal("buy");
+  if(sellBtn) sellBtn.onclick = () => openTradeModal("sell");
   renderStockRow();
   renderStockChart();
+  renderStockPosition();
+  startStockRefresh();
 }
 
 export function renderSelect(){
