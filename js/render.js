@@ -887,9 +887,108 @@ async function loadNewsCard(){
   restartNewsTimer();
 }
 
+/* =========================================================================
+   株価カード（STOCKS）：ニュースカードと同じデザインシステムを流用した
+   ダッシュボード風ウィジェット。ライブAPI連携は行わず、サンプルデータのみ。
+   ========================================================================= */
+
+const STOCKS = [
+  { ticker:"MSFT", name:"Microsoft", price:435.12, change:1.2,
+    trend:[58,55,57,53,50,52,49,51,47,49,45,47,50,54,58,55,60,64,61,66,70,75] },
+  { ticker:"AMZN", name:"Amazon", price:189.50, change:-0.5,
+    trend:[70,68,65,67,62,64,60,58,55,57,53,50,52,48,50,46,48,44,46,42,44,40] },
+  { ticker:"GOOGL", name:"Alphabet", price:199.80, change:-0.5,
+    trend:[50,52,49,53,51,55,52,56,53,57,54,58,55,59,56,60,57,61,58,62,59,63] },
+];
+let stockIndex = 0;
+
+function stockChartPaths(trend, w, h){
+  const n = trend.length;
+  const max = Math.max(...trend), min = Math.min(...trend);
+  const range = (max - min) || 1;
+  const pad = 4;
+  const pts = trend.map((v,i) => {
+    const x = (i/(n-1)) * w;
+    const y = h - pad - ((v - min)/range) * (h - pad*2);
+    return `${x.toFixed(1)},${y.toFixed(1)}`;
+  });
+  const line = "M" + pts.join(" L");
+  const fill = `${line} L${w},${h} L0,${h} Z`;
+  return { line, fill };
+}
+
+function stocksCardHTML(){
+  return `
+    <div class="news-card stocks-card" id="stocks-card">
+      <div class="news-card-head">
+        <span class="news-badge stock-badge">📊 株価 (STOCKS)</span>
+        <div class="news-nav">
+          <button type="button" class="news-arrow" id="stock-prev" aria-label="前の銘柄">‹</button>
+          <button type="button" class="news-arrow" id="stock-next" aria-label="次の銘柄">›</button>
+        </div>
+      </div>
+      <div class="stock-row" id="stock-row"></div>
+      <div class="stock-chart-wrap">
+        <svg viewBox="0 0 300 70" class="stock-chart-svg" preserveAspectRatio="none">
+          <defs>
+            <linearGradient id="stockGrad" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stop-color="#0284c7" stop-opacity="0.25"/>
+              <stop offset="100%" stop-color="#0284c7" stop-opacity="0"/>
+            </linearGradient>
+          </defs>
+          <path id="stock-chart-fill" fill="url(#stockGrad)" stroke="none"/>
+          <path id="stock-chart-line" class="stock-chart-line" fill="none"/>
+        </svg>
+      </div>
+      <div class="stock-period">週足 (Weekly)</div>
+    </div>`;
+}
+
+function renderStockRow(){
+  const rowEl = document.getElementById("stock-row");
+  if(!rowEl) return;
+  rowEl.innerHTML = STOCKS.map((s,i) => {
+    const up = s.change >= 0;
+    return `<button type="button" class="stock-item${i===stockIndex?" active":""}" data-idx="${i}">
+      <div class="stock-ticker">${esc(s.ticker)}</div>
+      <div class="stock-name">(${esc(s.name)})</div>
+      <div class="stock-priceline">
+        <span class="stock-price">$${s.price.toFixed(2)}</span>
+        <span class="stock-change ${up?"up":"down"}">${up?"▲":"▼"} ${up?"+":""}${s.change.toFixed(1)}%</span>
+      </div>
+    </button>`;
+  }).join("");
+  rowEl.querySelectorAll("[data-idx]").forEach(b => b.onclick = () => {
+    stockIndex = +b.dataset.idx;
+    renderStockRow();
+    renderStockChart();
+  });
+}
+
+function renderStockChart(){
+  const lineEl = document.getElementById("stock-chart-line");
+  const fillEl = document.getElementById("stock-chart-fill");
+  if(!lineEl || !fillEl) return;
+  const { line, fill } = stockChartPaths(STOCKS[stockIndex].trend, 300, 70);
+  lineEl.setAttribute("d", line);
+  fillEl.setAttribute("d", fill);
+}
+
+function initStocksCard(){
+  const card = document.getElementById("stocks-card");
+  if(!card) return;
+  const prev = document.getElementById("stock-prev");
+  const next = document.getElementById("stock-next");
+  if(prev) prev.onclick = () => { stockIndex = (stockIndex - 1 + STOCKS.length) % STOCKS.length; renderStockRow(); renderStockChart(); };
+  if(next) next.onclick = () => { stockIndex = (stockIndex + 1) % STOCKS.length; renderStockRow(); renderStockChart(); };
+  renderStockRow();
+  renderStockChart();
+}
+
 export function renderSelect(){
   app.innerHTML = `
     ${newsCardHTML()}
+    ${stocksCardHTML()}
     <button class="cta cta-jump" id="cta-goto-certs">🎓 資格を選ぶ →</button>
     ${state.currentUser
       ? `<div class="acct-bar">👤 ${esc(state.currentUser.email||"ログイン中")}<button class="link2" data-logout>ログアウト</button></div>`
@@ -901,6 +1000,7 @@ export function renderSelect(){
   const jump=document.getElementById("cta-goto-certs");
   if(jump) jump.onclick=()=>go("certs");
   loadNewsCard();
+  initStocksCard();
   window.scrollTo(0,0);
 }
 
