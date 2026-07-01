@@ -249,8 +249,6 @@ h1.title{font-size:34px;line-height:1.05;font-weight:800;margin:8px 0 0;letter-s
 .bp-total{font-size:12px;color:var(--muted);margin-top:3px;}
 .bp-exp-line{font-size:13px;color:var(--text);margin-top:6px;font-weight:600;}
 .cta-exam{background:linear-gradient(90deg,var(--gold),#fbbf24);color:#ffffff;box-shadow:0 4px 12px rgba(217,119,6,.2);}
-.cta-jump{margin-top:4px;margin-bottom:18px;letter-spacing:.02em;background:linear-gradient(120deg,var(--accent) 0%,#0ea5e9 55%,#38bdf8 100%);box-shadow:0 8px 20px rgba(2,132,199,.32);}
-.cta-jump:active{box-shadow:0 4px 10px rgba(2,132,199,.28);}
 .mode-note{font-size:11px;color:var(--muted);text-align:center;margin-top:6px;line-height:1.5;}
 .mode-tag{border-radius:99px;padding:1px 8px;font-size:11px;font-weight:700;}
 .mode-tag.practice{background:rgba(2,132,199,.1);color:var(--accent);}
@@ -426,27 +424,19 @@ h1.title{font-size:34px;line-height:1.05;font-weight:800;margin:8px 0 0;letter-s
 .stock-chart-xaxis{display:flex;justify-content:space-between;margin-top:3px;font-size:9px;color:var(--muted);}
 .stock-period{margin-top:4px;font-size:10px;color:var(--muted);text-align:center;}
 
-/* ---- 模擬投資（ペーパートレード） ---- */
-.stock-position{margin-top:9px;font-size:11px;color:var(--muted);line-height:1.6;}
-.stock-position .up{color:var(--good);font-weight:800;}
-.stock-position .down{color:var(--bad);font-weight:800;}
-.stock-trade-btns{display:flex;gap:8px;margin-top:8px;}
-.stock-trade-btn{flex:1;padding:9px;border-radius:10px;border:none;font-size:12.5px;font-weight:800;cursor:pointer;color:#fff;}
-.stock-trade-btn.buy{background:linear-gradient(90deg,var(--good),#22c55e);}
-.stock-trade-btn.sell{background:linear-gradient(90deg,var(--bad),#ef4444);}
-.stock-trade-btn:active{transform:scale(.97);}
-.stock-orders{display:flex;flex-direction:column;gap:5px;margin-top:8px;}
-.stock-order-row{display:flex;align-items:center;justify-content:space-between;gap:8px;font-size:10.5px;color:var(--muted);background:var(--bg2);border-radius:8px;padding:5px 8px;}
-.stock-order-cancel{border:none;background:none;color:var(--bad);font-size:10.5px;font-weight:800;cursor:pointer;padding:2px 4px;}
-
-/* 購入・売却モーダル（.modal-ov/.modal を流用） */
-.trade-modal-title{color:var(--text);}
-.trade-type-toggle{display:flex;gap:8px;margin-bottom:12px;}
-.trade-type-btn{flex:1;padding:9px;border-radius:10px;border:1px solid var(--line);background:var(--surface);font-size:13px;font-weight:700;color:var(--muted);cursor:pointer;}
-.trade-type-btn.active{border-color:var(--accent);color:var(--accent);background:rgba(2,132,199,.06);}
-.trade-field{margin-bottom:10px;}
-.trade-field label{display:block;font-size:11.5px;color:var(--muted);margin-bottom:4px;font-weight:700;}
-.trade-preview{font-size:12.5px;color:var(--text);background:var(--bg2);border-radius:10px;padding:10px;margin-bottom:10px;line-height:1.6;}
+/* Microsoftロゴ風の丸型ボタン＋テキストリンク（ニュースカード直下・左寄せ） */
+.ms-cert-launcher{display:flex;flex-direction:column;align-items:flex-start;gap:5px;margin:14px 0 14px 2px;}
+.ms-logo-btn{width:44px;height:44px;border-radius:50%;border:1px solid var(--line);background:var(--surface);
+  display:flex;align-items:center;justify-content:center;padding:0;cursor:pointer;box-shadow:0 2px 6px rgba(15,23,42,.06);}
+.ms-logo-btn:active{transform:scale(.94);}
+.ms-logo-grid{display:grid;grid-template-columns:1fr 1fr;grid-template-rows:1fr 1fr;gap:2px;width:19px;height:19px;}
+.ms-logo-sq{border-radius:1px;}
+.ms-logo-sq.r{background:#f25022;}
+.ms-logo-sq.g{background:#7fba00;}
+.ms-logo-sq.b{background:#00a4ef;}
+.ms-logo-sq.y{background:#ffb900;}
+.ms-cert-link{border:none;background:none;padding:0;font-size:11px;font-weight:700;color:var(--muted);cursor:pointer;font-family:inherit;}
+.ms-cert-link:active{color:var(--accent);}
 
 /* 資格カード */
 .cert-card{display:block;width:100%;text-align:left;cursor:pointer;color:var(--text);

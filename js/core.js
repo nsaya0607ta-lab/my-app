@@ -133,8 +133,7 @@ export function calcExp(score, mode){
 
 /* ===== コイン(AC) ===== アカウント共通のウォレット（資格横断） */
 
-// parseFloatを使用：株取引でACに小数（セント単位）が生じるため
-export function loadCoins(){ const v=parseFloat(localStorage.getItem("coins")||"0"); return isNaN(v)?0:v; }
+export function loadCoins(){ const v=parseInt(localStorage.getItem("coins")||"0",10); return isNaN(v)?0:v; }
 
 export function saveCoins(v){ try{ localStorage.setItem("coins", String(v||0)); }catch(e){} }
 
