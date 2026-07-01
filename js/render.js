@@ -737,6 +737,7 @@ let clockTimer = null;
 const NEWS_ROTATE_MS = 5500;
 
 // 時計の文字盤の目盛り（12個）を三角関数で一度だけ組み立てる静的SVG片
+// stroke は外部CSSが読み込めなかった場合の保険としてプレゼンテーション属性でも指定する
 function buildClockTicksSVG(){
   let ticks = "";
   for(let i=0;i<12;i++){
@@ -745,7 +746,8 @@ function buildClockTicksSVG(){
     const outerR = 44, innerR = major ? 36 : 40;
     const x1 = (50 + outerR*Math.sin(angle)).toFixed(2), y1 = (50 - outerR*Math.cos(angle)).toFixed(2);
     const x2 = (50 + innerR*Math.sin(angle)).toFixed(2), y2 = (50 - innerR*Math.cos(angle)).toFixed(2);
-    ticks += `<line class="clock-tick${major?" major":""}" x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}"/>`;
+    const stroke = major ? "#0284c7" : "#94a3b8";
+    ticks += `<line class="clock-tick${major?" major":""}" x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" stroke="${stroke}"/>`;
   }
   return ticks;
 }
@@ -763,13 +765,13 @@ function newsCardHTML(){
       </div>
       <div class="news-body">
         <div class="news-clock">
-          <svg viewBox="0 0 100 100" class="news-clock-svg">
-            <circle class="clock-face" cx="50" cy="50" r="46"/>
+          <svg viewBox="0 0 100 100" width="72" height="72" class="news-clock-svg">
+            <circle class="clock-face" cx="50" cy="50" r="46" fill="#ffffff" stroke="#cbd5e1" stroke-width="2"/>
             ${CLOCK_TICKS_SVG}
-            <line class="clock-hand hour" id="clock-hour" x1="50" y1="50" x2="50" y2="29"/>
-            <line class="clock-hand minute" id="clock-minute" x1="50" y1="50" x2="50" y2="19"/>
-            <line class="clock-hand second" id="clock-second" x1="50" y1="50" x2="50" y2="15"/>
-            <circle class="clock-center" cx="50" cy="50" r="3"/>
+            <line class="clock-hand hour" id="clock-hour" x1="50" y1="50" x2="50" y2="29" stroke="#0f172a" stroke-width="5" stroke-linecap="round"/>
+            <line class="clock-hand minute" id="clock-minute" x1="50" y1="50" x2="50" y2="19" stroke="#0f172a" stroke-width="3.4" stroke-linecap="round"/>
+            <line class="clock-hand second" id="clock-second" x1="50" y1="50" x2="50" y2="15" stroke="#0284c7" stroke-width="1.6" stroke-linecap="round"/>
+            <circle class="clock-center" cx="50" cy="50" r="3" fill="#0284c7"/>
           </svg>
           <div class="news-clock-date" id="news-clock-date"></div>
         </div>

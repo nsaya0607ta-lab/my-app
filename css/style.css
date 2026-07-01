@@ -361,7 +361,7 @@ h1.title{font-size:34px;line-height:1.05;font-weight:800;margin:8px 0 0;letter-s
 .news-body{display:flex;align-items:flex-start;gap:14px;}
 
 /* アナログ時計（SVG・画像不使用）。学習の妨げにならないミニマルなデザイン */
-.news-clock{flex:none;width:72px;display:flex;flex-direction:column;align-items:center;gap:5px;}
+.news-clock{flex:none;width:72px;min-width:0;display:flex;flex-direction:column;align-items:center;gap:5px;}
 .news-clock-svg{width:72px;height:72px;}
 .clock-face{fill:rgba(255,255,255,.9);stroke:var(--line);stroke-width:2;}
 .clock-tick{stroke:var(--muted);stroke-width:1.6;opacity:.55;}
