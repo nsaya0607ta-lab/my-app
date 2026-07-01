@@ -1,9 +1,9 @@
 /* =========================================================================
-   外部ニュース取得（資格一覧画面 上部のニュースカード用）
+   外部ニュース取得（資格一覧画面 上部のニュースダッシュボード用）
    ブラウザから直接 RSS を fetch すると CORS エラーになるため、
    無料のCORSプロキシ経由で取得する。1つのプロキシはダウン・レート制限が
    起きやすいため、複数のプロキシを順番に試し、全滅した場合のみ
-   FALLBACK_NEWS を表示する。
+   FALLBACK_NEWS（ダミーのIT系ニュース）を表示する。
    ========================================================================= */
 
 // Yahoo!ニュース トピックス RSS（IT・科学カテゴリ）
@@ -20,17 +20,40 @@ const CORS_PROXIES = [
   url => "https://api.codetabs.com/v1/proxy?quest=" + encodeURIComponent(url),
 ];
 
-const MAX_ITEMS = 3; // ニュースカードは3件を巡回表示する
+const MAX_ITEMS = 5; // ニュースダッシュボードは5件を保持・巡回表示する
+const SUMMARY_MAX_LEN = 130; // 要約の最大文字数（カード内で3行程度に収まる目安）
 const FETCH_TIMEOUT_MS = 8000;
-const CACHE_KEY = "news_cache_v2";
+const CACHE_KEY = "news_cache_v3";
 const CACHE_TTL_MS = 10 * 60 * 1000; // 10分キャッシュ（プロキシ・取得先への負荷軽減）
 
 // 通信エラー・API制限などで1件も取得できなかった場合に表示する、
-// ダミーのIT系ニュース見出し（実在の記事ではないため link は付けない）
+// ダミーのIT/Azure系ニュース（実在の記事ではないため link はダミーURL・遷移させない想定）
 export const FALLBACK_NEWS = [
-  { title: "生成AIの業務活用が加速、国内企業の8割が導入を検討", link: null },
-  { title: "次世代半導体の国内生産、大手メーカーが新工場を稼働へ", link: null },
-  { title: "量子コンピュータ研究で新たな成果、誤り訂正技術が前進", link: null },
+  {
+    title: "生成AIの業務活用が加速、国内企業の8割が導入を検討",
+    summary: "国内主要企業を対象にした最新調査によると、8割以上が生成AIの業務活用を検討または既に導入していると回答。特に資料作成や問い合わせ対応での活用が進んでいる。",
+    link: "https://news.yahoo.co.jp/",
+  },
+  {
+    title: "Azure新リージョン開設、国内クラウド需要に対応",
+    summary: "マイクロソフトはクラウド需要の高まりを受け、Azureの新リージョンを開設したと発表。データの国内保持ニーズに応え、金融・公共分野での採用が期待されている。",
+    link: "https://azure.microsoft.com/",
+  },
+  {
+    title: "次世代半導体の国内生産、大手メーカーが新工場を稼働へ",
+    summary: "半導体大手が国内に新工場を稼働開始したと発表。次世代プロセスの量産体制を整え、AI需要の急拡大に伴う供給不足の解消を目指すとしている。",
+    link: "https://news.yahoo.co.jp/",
+  },
+  {
+    title: "量子コンピュータ研究で新たな成果、誤り訂正技術が前進",
+    summary: "研究チームが量子ビットの誤り訂正に関する新手法を発表。実用的な量子コンピュータの実現に向けた課題とされてきた精度の課題解決に前進したという。",
+    link: "https://news.yahoo.co.jp/",
+  },
+  {
+    title: "クラウドセキュリティ人材の需要が急増、資格取得者にニーズ",
+    summary: "クラウド移行の加速に伴い、セキュリティ人材の需要が急増していると各社が報告。関連資格の取得者は転職市場でも高く評価される傾向にあるという。",
+    link: "https://news.yahoo.co.jp/",
+  },
 ];
 
 function withTimeout(promise, ms) {
@@ -40,13 +63,24 @@ function withTimeout(promise, ms) {
   ]);
 }
 
+// RSSのdescriptionは装飾タグを含むことがあるため、テキストのみ抽出して整形する
+function cleanSummary(raw, fallbackTitle) {
+  const text = (raw || "").replace(/\s+/g, " ").trim();
+  if (!text) return fallbackTitle; // 要約が空の場合はタイトルを代用し、欄を空白にしない
+  return text.length > SUMMARY_MAX_LEN ? text.slice(0, SUMMARY_MAX_LEN) + "…" : text;
+}
+
 function parseFeedXml(xmlText) {
   const doc = new DOMParser().parseFromString(xmlText, "application/xml");
   if (doc.querySelector("parsererror")) throw new Error("RSSの解析に失敗しました");
-  return [...doc.querySelectorAll("item")].map(item => ({
-    title: (item.querySelector("title")?.textContent || "").trim(),
-    link: (item.querySelector("link")?.textContent || "").trim() || null,
-  })).filter(n => n.title);
+  return [...doc.querySelectorAll("item")].map(item => {
+    const title = (item.querySelector("title")?.textContent || "").trim();
+    return {
+      title,
+      summary: cleanSummary(item.querySelector("description")?.textContent, title),
+      link: (item.querySelector("link")?.textContent || "").trim() || null,
+    };
+  }).filter(n => n.title);
 }
 
 // 1つのプロキシがダウン・レート制限中でも他が使えるよう、順番に試す
@@ -81,7 +115,7 @@ function saveCache(items) {
   try { localStorage.setItem(CACHE_KEY, JSON.stringify({ savedAt: Date.now(), items })); } catch (e) {}
 }
 
-// 複数フィードから最新ニュースを取得（3件に整形）。失敗時はフォールバックを返す
+// 複数フィードから最新ニュースを取得（5件に整形）。失敗時はフォールバックを返す
 export async function getNews() {
   const cached = loadCache();
   if (cached) return cached;
