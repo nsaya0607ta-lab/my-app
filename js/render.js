@@ -967,7 +967,99 @@ function stocksCardHTML(){
         <button type="button" class="stock-trade-btn buy" id="stock-buy">📈 買付</button>
         <button type="button" class="stock-trade-btn sell" id="stock-sell">📉 売却</button>
       </div>
+      <div class="stock-news">
+        <div class="stock-news-head">
+          <span class="stock-news-badge">📰 IT/AI NEWS</span>
+          <span class="stock-news-status">
+            <span class="tape-session">サンプル</span>
+            <span class="stock-news-elapsed" id="stock-news-elapsed"></span>
+          </span>
+        </div>
+        <div class="stock-news-list" id="stock-news-list"></div>
+      </div>
     </div>`;
+}
+
+/* ---- IT/AIニュース（売買ボタン下のコンパクトなリスト） ----
+   TechCrunch・The Verge・Wired・Hacker Newsなど主要IT/AI系メディアを想定した
+   モックデータのプールから3件を選んで表示し、10分に1回シャッフルして
+   自動的に入れ替える。実際の記事フィードではないため「サンプル」ラベルを
+   常時表示し、タップ時は各メディアの実在するAI/テック系セクションを
+   新しいタブで安全に開く（target="_blank" + rel="noopener noreferrer"） */
+
+const IT_NEWS_POOL = [
+  { source:"TechCrunch", tag:"AI", title:"OpenAI rival raises $2B to build enterprise AI agents", url:"https://techcrunch.com/category/artificial-intelligence/", hoursAgo:3 },
+  { source:"The Verge", tag:"AI", title:"Google DeepMind unveils its next-gen multimodal model", url:"https://www.theverge.com/ai-artificial-intelligence", hoursAgo:4 },
+  { source:"Wired", tag:"AI", title:"The race to build energy-efficient AI chips heats up", url:"https://www.wired.com/tag/artificial-intelligence/", hoursAgo:8 },
+  { source:"Hacker News", tag:"Dev", title:"Show HN: An open-source local-first LLM workspace", url:"https://news.ycombinator.com/", hoursAgo:2 },
+  { source:"TechCrunch", tag:"Cloud", title:"AWS launches a new serverless GPU tier for inference", url:"https://techcrunch.com/category/enterprise/", hoursAgo:6 },
+  { source:"Ars Technica", tag:"AI", title:"Study finds AI coding assistants boost developer output", url:"https://arstechnica.com/ai/", hoursAgo:10 },
+  { source:"MIT Tech Review", tag:"AI", title:"What small language models mean for on-device AI", url:"https://www.technologyreview.com/topic/artificial-intelligence/", hoursAgo:12 },
+  { source:"VentureBeat", tag:"Biz", title:"Enterprise RAG adoption doubles year over year", url:"https://venturebeat.com/category/ai/", hoursAgo:7 },
+  { source:"Wired", tag:"Sec", title:"AI-powered phishing is getting harder to detect", url:"https://www.wired.com/category/security/", hoursAgo:9 },
+  { source:"Hacker News", tag:"Dev", title:"Ask HN: Best practices for agentic CI pipelines?", url:"https://news.ycombinator.com/ask", hoursAgo:1 },
+  { source:"The Verge", tag:"Tech", title:"Microsoft brings Copilot deeper into Windows", url:"https://www.theverge.com/microsoft", hoursAgo:5 },
+  { source:"TechCrunch", tag:"Robotics", title:"Humanoid robot startups attract record funding", url:"https://techcrunch.com/category/robotics/", hoursAgo:11 },
+];
+
+let itNewsItems = [];
+let itNewsLastUpdatedAt = null;
+let itNewsRefreshTimer = null;
+let itNewsElapsedTimer = null;
+const IT_NEWS_REFRESH_MS = 10 * 60 * 1000; // 10分に1回、自動でニュースを入れ替える
+const IT_NEWS_COUNT = 3;
+
+// プールをシャッフルして先頭3件を選ぶ（Fisher–Yates）
+function pickItNews(){
+  const pool = IT_NEWS_POOL.slice();
+  for(let i = pool.length - 1; i > 0; i--){
+    const j = Math.floor(Math.random() * (i + 1));
+    [pool[i], pool[j]] = [pool[j], pool[i]];
+  }
+  return pool.slice(0, IT_NEWS_COUNT);
+}
+
+// 「前回の更新から何分経過したか」の控えめなインジケーター
+function renderItNewsElapsed(){
+  const el = document.getElementById("stock-news-elapsed");
+  if(!el || !itNewsLastUpdatedAt) return;
+  const mins = Math.floor((Date.now() - itNewsLastUpdatedAt) / 60000);
+  el.textContent = mins <= 0 ? "たった今更新" : `${mins}分前に更新`;
+}
+
+function renderItNews(){
+  const listEl = document.getElementById("stock-news-list");
+  if(!listEl) return;
+  listEl.innerHTML = itNewsItems.map(n => `
+    <a class="stock-news-item" href="${esc(n.url)}" target="_blank" rel="noopener noreferrer">
+      <span class="stock-news-src">${esc(n.source)}</span>
+      <span class="stock-news-title">${esc(n.title)}</span>
+      <span class="stock-news-time">${n.hoursAgo}h ago</span>
+    </a>`).join("");
+  renderItNewsElapsed();
+}
+
+function refreshItNews(){
+  itNewsItems = pickItNews();
+  itNewsLastUpdatedAt = Date.now();
+  renderItNews();
+}
+
+// 10分ごとの自動入れ替え＋1分ごとの経過表示更新。どちらのタイマーも
+// ニュースエリアがDOMから消えたら自動で止まる（他のタイマーと同じ
+// 自己クリーンアップパターン）
+function startItNewsTimers(){
+  if(itNewsRefreshTimer){ clearInterval(itNewsRefreshTimer); itNewsRefreshTimer = null; }
+  if(itNewsElapsedTimer){ clearInterval(itNewsElapsedTimer); itNewsElapsedTimer = null; }
+  refreshItNews();
+  itNewsRefreshTimer = setInterval(() => {
+    if(!document.getElementById("stock-news-list")){ clearInterval(itNewsRefreshTimer); itNewsRefreshTimer = null; return; }
+    refreshItNews();
+  }, IT_NEWS_REFRESH_MS);
+  itNewsElapsedTimer = setInterval(() => {
+    if(!document.getElementById("stock-news-list")){ clearInterval(itNewsElapsedTimer); itNewsElapsedTimer = null; return; }
+    renderItNewsElapsed();
+  }, 60000);
 }
 
 // 株価カード左上の「◯月◯日 ◯時◯分時点」表示を更新する。
@@ -1309,6 +1401,7 @@ function initStocksCard(){
   renderStockUpdated();
   startStockRefresh();
   initStockTape();
+  startItNewsTimers();
 }
 
 /* ポートフォリオ（資産保有額）詳細画面：株価カード右上の「→」から遷移する。
