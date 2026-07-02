@@ -433,9 +433,6 @@ h1.title{font-size:34px;line-height:1.05;font-weight:800;margin:8px 0 0;letter-s
 .stock-change{font-size:12.5px;font-weight:800;white-space:nowrap;}
 .stock-change.up{color:var(--good);}
 .stock-change.down{color:var(--bad);}
-.stock-chart-wrap{margin-top:10px;height:60px;}
-.stock-chart-svg{width:100%;height:100%;display:block;}
-.stock-period{margin-top:4px;font-size:10px;color:var(--muted);}
 
 .stock-dots{display:flex;gap:6px;justify-content:center;margin-top:10px;}
 .stock-dot{width:6px;height:6px;border-radius:50%;background:var(--line);cursor:pointer;transition:background .2s,transform .2s;}
