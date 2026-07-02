@@ -971,7 +971,6 @@ function stocksCardHTML(){
         <div class="stock-news-head">
           <span class="stock-news-badge">📰 IT/AI NEWS</span>
           <span class="stock-news-status">
-            <span class="tape-session">サンプル</span>
             <span class="stock-news-elapsed" id="stock-news-elapsed"></span>
           </span>
         </div>
@@ -981,25 +980,24 @@ function stocksCardHTML(){
 }
 
 /* ---- IT/AIニュース（売買ボタン下のコンパクトなリスト） ----
-   TechCrunch・The Verge・Wired・Hacker Newsなど主要IT/AI系メディアを想定した
-   モックデータのプールから3件を選んで表示し、10分に1回シャッフルして
-   自動的に入れ替える。実際の記事フィードではないため「サンプル」ラベルを
-   常時表示し、タップ時は各メディアの実在するAI/テック系セクションを
-   新しいタブで安全に開く（target="_blank" + rel="noopener noreferrer"） */
+   Microsoft / NVIDIA / Apple / Google / Meta の5社に関する実際の報道記事を
+   厳選したプール（2026年7月時点のスナップショット。タイトルは日本語に要約）
+   から3件を表示し、10分に1回シャッフルして自動的に入れ替える。
+   タップ時は元記事のURLを新しいタブで安全に開く
+   （target="_blank" + rel="noopener noreferrer"） */
 
 const IT_NEWS_POOL = [
-  { source:"TechCrunch", tag:"AI", title:"OpenAI rival raises $2B to build enterprise AI agents", url:"https://techcrunch.com/category/artificial-intelligence/", hoursAgo:3 },
-  { source:"The Verge", tag:"AI", title:"Google DeepMind unveils its next-gen multimodal model", url:"https://www.theverge.com/ai-artificial-intelligence", hoursAgo:4 },
-  { source:"Wired", tag:"AI", title:"The race to build energy-efficient AI chips heats up", url:"https://www.wired.com/tag/artificial-intelligence/", hoursAgo:8 },
-  { source:"Hacker News", tag:"Dev", title:"Show HN: An open-source local-first LLM workspace", url:"https://news.ycombinator.com/", hoursAgo:2 },
-  { source:"TechCrunch", tag:"Cloud", title:"AWS launches a new serverless GPU tier for inference", url:"https://techcrunch.com/category/enterprise/", hoursAgo:6 },
-  { source:"Ars Technica", tag:"AI", title:"Study finds AI coding assistants boost developer output", url:"https://arstechnica.com/ai/", hoursAgo:10 },
-  { source:"MIT Tech Review", tag:"AI", title:"What small language models mean for on-device AI", url:"https://www.technologyreview.com/topic/artificial-intelligence/", hoursAgo:12 },
-  { source:"VentureBeat", tag:"Biz", title:"Enterprise RAG adoption doubles year over year", url:"https://venturebeat.com/category/ai/", hoursAgo:7 },
-  { source:"Wired", tag:"Sec", title:"AI-powered phishing is getting harder to detect", url:"https://www.wired.com/category/security/", hoursAgo:9 },
-  { source:"Hacker News", tag:"Dev", title:"Ask HN: Best practices for agentic CI pipelines?", url:"https://news.ycombinator.com/ask", hoursAgo:1 },
-  { source:"The Verge", tag:"Tech", title:"Microsoft brings Copilot deeper into Windows", url:"https://www.theverge.com/microsoft", hoursAgo:5 },
-  { source:"TechCrunch", tag:"Robotics", title:"Humanoid robot startups attract record funding", url:"https://techcrunch.com/category/robotics/", hoursAgo:11 },
+  { source:"TechCrunch", title:"【Meta】余剰AI計算資源を外販するクラウド事業を計画", url:"https://techcrunch.com/2026/07/01/meta-like-spacex-looks-to-turn-excess-ai-compute-into-cash/", time:"18h ago" },
+  { source:"CNBC", title:"【Meta】AIクラウド事業の報道で株価が9%急伸", url:"https://www.cnbc.com/2026/07/01/meta-stock-cloud-ai-compute.html", time:"20h ago" },
+  { source:"NPR", title:"【Meta】AI搭載の予測市場アプリを開発中と報道", url:"https://www.npr.org/2026/06/24/nx-s1-5869486/meta-prediction-market-app-ai", time:"1w ago" },
+  { source:"TechCrunch", title:"【Meta】Facebookに横断検索の「AIモード」を導入", url:"https://techcrunch.com/2026/06/15/metas-new-ai-mode-on-facebook-pulls-from-public-info-across-its-platforms/", time:"2w ago" },
+  { source:"CRN", title:"【Microsoft】Copilot Coworkを全世界で正式提供開始", url:"https://www.crnasia.com/news/2026/artificial-intelligence/microsoft-copilot-cowork-launches-worldwide", time:"2w ago" },
+  { source:"Microsoft", title:"【Microsoft】初の自律型エージェント「Scout」を発表", url:"https://blogs.microsoft.com/blog/2026/06/02/microsoft-build-2026-be-yourself-at-work/", time:"4w ago" },
+  { source:"Windows Blog", title:"【Microsoft】RTX Spark搭載の新世代Windows PCを発表", url:"https://blogs.windows.com/windowsexperience/2026/05/31/introducing-a-powerful-new-chapter-for-windows-pcs-accelerated-by-nvidia-rtx-spark/", time:"4w ago" },
+  { source:"NVIDIA", title:"【NVIDIA】次世代AI基盤「Rubin」と新チップ6種を発表", url:"https://nvidianews.nvidia.com/news/rubin-platform-ai-supercomputer", time:"4w ago" },
+  { source:"NPR", title:"【Apple】Gemini搭載の新Siriを発表 チャット型UIに", url:"https://www.npr.org/2026/06/08/nx-s1-5847937/apple-wwdc-2026-siri-ai-tim-cook", time:"3w ago" },
+  { source:"CNBC", title:"【Apple】AI開発でGoogle・NVIDIAと提携へ", url:"https://www.cnbc.com/2026/06/08/apple-google-nvidia-ai-chips.html", time:"3w ago" },
+  { source:"TechNewsWorld", title:"【Google】あらゆる出力を生成する「Gemini Omni」発表", url:"https://www.technewsworld.com/story/google-i-o-2026-signals-an-extinction-event-for-standalone-apps-180348.html", time:"5w ago" },
 ];
 
 let itNewsItems = [];
@@ -1034,7 +1032,7 @@ function renderItNews(){
     <a class="stock-news-item" href="${esc(n.url)}" target="_blank" rel="noopener noreferrer">
       <span class="stock-news-src">${esc(n.source)}</span>
       <span class="stock-news-title">${esc(n.title)}</span>
-      <span class="stock-news-time">${n.hoursAgo}h ago</span>
+      <span class="stock-news-time">${esc(n.time)}</span>
     </a>`).join("");
   renderItNewsElapsed();
 }
