@@ -762,7 +762,8 @@ let weatherRefreshTimer = null;
 const WEATHER_REFRESH_MS = 20 * 60 * 1000; // 20分ごとに天気を自動で再フェッチする
 
 // カード内は左から「日付＋デジタル時計」「天気（地名・アイコン・気温・降水確率）」
-// 「簡易予定表」の3カラム構成。予定表は現時点ではダミー表示（予定管理機能は未実装）
+// 「6時間おきの降水確率（4段）」「簡易予定表」の4カラム構成。
+// 予定表は現時点ではダミー表示（予定管理機能は未実装）
 function weatherCardHTML(){
   return `
     <div class="news-card weather-card" id="weather-card">
@@ -782,6 +783,7 @@ function weatherCardHTML(){
           </div>
           <div class="weather-pop" id="weather-pop"></div>
         </div>
+        <div class="weather-hourly6" id="weather-hourly6"></div>
         <div class="weather-schedule">
           <div class="weather-schedule-title">予定</div>
           <div class="weather-schedule-item">15:00 勉強会</div>
@@ -811,6 +813,22 @@ function startClock(){
   clockTimer = setInterval(updateClock, 1000);
 }
 
+// 6時間おき（6・12・18・24時間後）の降水確率を「時刻」「確率(%)」が横に並ぶ行として
+// 縦に4段表示する。予定表と地名天気の間の余白に収まる控えめなミニ予報
+function renderWeatherHourly6(hourly6){
+  const el = document.getElementById("weather-hourly6");
+  if(!el) return;
+  if(!hourly6 || !hourly6.length){ el.innerHTML = ""; return; }
+  el.innerHTML = hourly6.map(h => {
+    const d = new Date(h.time);
+    const hh = String(d.getHours()).padStart(2,"0");
+    return `<div class="weather-hourly6-row">
+      <span class="weather-hourly6-time">${hh}:00</span>
+      <span class="weather-hourly6-pop">${h.pop}%</span>
+    </div>`;
+  }).join("");
+}
+
 // 天気情報を取得してカードを再描画する。ホーム画面から離れて weather-card が
 // DOM上から消えている場合は、取得結果を無駄に描画せず自動更新タイマーも止める
 // （画面遷移時のクリーンアップ）。
@@ -830,12 +848,14 @@ async function refreshWeatherCard(){
     if(iconEl) iconEl.textContent = "🌡️";
     if(tempEl) tempEl.textContent = "";
     if(popEl) popEl.textContent = "";
+    renderWeatherHourly6(null);
     return;
   }
   if(cityEl) cityEl.textContent = w.isDefaultLocation ? `${w.city}（現在地未取得）` : w.city;
   if(iconEl) iconEl.textContent = w.icon;
   if(tempEl) tempEl.textContent = `${w.temp}℃`;
   if(popEl) popEl.textContent = (typeof w.pop === "number") ? `☔ 降水確率 ${w.pop}%` : "";
+  renderWeatherHourly6(w.hourly6);
 }
 
 function startWeatherRefresh(){

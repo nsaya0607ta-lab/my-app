@@ -94,7 +94,20 @@ async function reverseGeocode(lat, lon){
   }
 }
 
-// 現在の気温・天気・降水確率を取得する
+const HOURLY_STEP_HOURS = 6; // 6時間おき
+const HOURLY_STEPS = 4;      // 6・12・18・24時間後の4つ
+
+// 現在時刻からの経過時間(ms)に最も近いhourlyの時刻インデックスを探す
+function nearestHourlyIndex(times, targetMs){
+  let best = -1, bestDiff = Infinity;
+  times.forEach((t, i) => {
+    const diff = Math.abs(new Date(t).getTime() - targetMs);
+    if(diff < bestDiff){ bestDiff = diff; best = i; }
+  });
+  return best;
+}
+
+// 現在の気温・天気・降水確率・6時間おき（4つ）の降水確率を取得する
 async function fetchForecast(lat, lon){
   const params = new URLSearchParams({
     latitude: String(lat),
@@ -102,7 +115,7 @@ async function fetchForecast(lat, lon){
     current: "temperature_2m,weather_code",
     hourly: "precipitation_probability",
     timezone: "auto",
-    forecast_days: "1",
+    forecast_days: "2", // 24時間後まで含めるため2日分取得する
   });
   const url = `https://api.open-meteo.com/v1/forecast?${params.toString()}`;
   const res = await withTimeout(fetch(url), FETCH_TIMEOUT_MS);
@@ -114,26 +127,32 @@ async function fetchForecast(lat, lon){
   const temp = Math.round(data.current.temperature_2m);
   const { icon, label } = describeWeatherCode(data.current.weather_code);
 
+  const times = data.hourly?.time || [];
+  const pops = data.hourly?.precipitation_probability || [];
+
   // 降水確率は current には含まれないため、hourly から現在時刻に一致（または
   // 最も近い）時刻のポイントを探して拾う
   let pop = null;
-  const times = data.hourly?.time || [];
-  const pops = data.hourly?.precipitation_probability || [];
   if(times.length && pops.length){
     let idx = times.indexOf(data.current.time);
-    if(idx < 0){
-      const nowMs = Date.now();
-      let best = 0, bestDiff = Infinity;
-      times.forEach((t, i) => {
-        const diff = Math.abs(new Date(t).getTime() - nowMs);
-        if(diff < bestDiff){ bestDiff = diff; best = i; }
-      });
-      idx = best;
-    }
+    if(idx < 0) idx = nearestHourlyIndex(times, Date.now());
     if(typeof pops[idx] === "number") pop = pops[idx];
   }
 
-  return { temp, icon, label, pop };
+  // 6時間おき（6・12・18・24時間後）の降水確率
+  const hourly6 = [];
+  if(times.length && pops.length){
+    const nowMs = Date.now();
+    for(let step = 1; step <= HOURLY_STEPS; step++){
+      const targetMs = nowMs + step * HOURLY_STEP_HOURS * 60 * 60 * 1000;
+      const i = nearestHourlyIndex(times, targetMs);
+      if(i >= 0 && typeof pops[i] === "number"){
+        hourly6.push({ time: times[i], pop: pops[i] });
+      }
+    }
+  }
+
+  return { temp, icon, label, pop, hourly6 };
 }
 
 function loadCache(){
