@@ -781,7 +781,6 @@ function weatherCardHTML(){
             <span class="weather-icon" id="weather-icon">🌡️</span>
             <span class="weather-temp" id="weather-temp"></span>
           </div>
-          <div class="weather-pop" id="weather-pop"></div>
         </div>
         <div class="weather-hourly6" id="weather-hourly6"></div>
         <div class="weather-schedule">
@@ -813,20 +812,29 @@ function startClock(){
   clockTimer = setInterval(updateClock, 1000);
 }
 
-// 6時間おき（6・12・18・24時間後）の降水確率を「時刻」「確率(%)」が横に並ぶ行として
-// 縦に4段表示する。予定表と地名天気の間の余白に収まる控えめなミニ予報
+// 予報時刻(ISO文字列)を「M/D H:MM」形式に整形する。日付をまたぐ場合も
+// 一目でわかるよう、常に月日を時刻の前に付ける
+function formatHourly6Time(isoTime){
+  const d = new Date(isoTime);
+  const md = `${d.getMonth()+1}/${d.getDate()}`;
+  const hm = `${String(d.getHours()).padStart(2,"0")}:${String(d.getMinutes()).padStart(2,"0")}`;
+  return `${md} ${hm}`;
+}
+
+// 6時間おき（6・12・18・24時間後）の降水確率を「☔ 降水確率」の見出し＋
+// 「日付 時刻」「確率(%)」が横に並ぶ行として縦に4段表示する。
+// 予定表と地名天気の間の余白に収まる控えめなミニ予報
 function renderWeatherHourly6(hourly6){
   const el = document.getElementById("weather-hourly6");
   if(!el) return;
-  if(!hourly6 || !hourly6.length){ el.innerHTML = ""; return; }
-  el.innerHTML = hourly6.map(h => {
-    const d = new Date(h.time);
-    const hh = String(d.getHours()).padStart(2,"0");
-    return `<div class="weather-hourly6-row">
-      <span class="weather-hourly6-time">${hh}:00</span>
+  const title = `<div class="weather-hourly6-title">☔ 降水確率</div>`;
+  if(!hourly6 || !hourly6.length){ el.innerHTML = title; return; }
+  const rows = hourly6.map(h => `
+    <div class="weather-hourly6-row">
+      <span class="weather-hourly6-time">${formatHourly6Time(h.time)}</span>
       <span class="weather-hourly6-pop">${h.pop}%</span>
-    </div>`;
-  }).join("");
+    </div>`).join("");
+  el.innerHTML = title + rows;
 }
 
 // 天気情報を取得してカードを再描画する。ホーム画面から離れて weather-card が
@@ -840,21 +848,18 @@ async function refreshWeatherCard(){
   const cityEl = document.getElementById("weather-city");
   const iconEl = document.getElementById("weather-icon");
   const tempEl = document.getElementById("weather-temp");
-  const popEl = document.getElementById("weather-pop");
   const w = await getWeather();
   if(!document.getElementById("weather-card")) return; // フェッチ中に画面遷移した場合は描画しない
   if(!w){
     if(cityEl) cityEl.textContent = "天気を取得できませんでした";
     if(iconEl) iconEl.textContent = "🌡️";
     if(tempEl) tempEl.textContent = "";
-    if(popEl) popEl.textContent = "";
     renderWeatherHourly6(null);
     return;
   }
   if(cityEl) cityEl.textContent = w.isDefaultLocation ? `${w.city}（現在地未取得）` : w.city;
   if(iconEl) iconEl.textContent = w.icon;
   if(tempEl) tempEl.textContent = `${w.temp}℃`;
-  if(popEl) popEl.textContent = (typeof w.pop === "number") ? `☔ 降水確率 ${w.pop}%` : "";
   renderWeatherHourly6(w.hourly6);
 }
 
