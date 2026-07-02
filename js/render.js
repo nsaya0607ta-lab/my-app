@@ -980,10 +980,10 @@ function stocksCardHTML(){
     <div class="news-card stocks-card" id="stocks-card">
       <div class="news-card-head">
         <div class="stock-head-left">
-          <span class="news-badge stock-badge">📊 株価 (STOCKS)</span>
+          <span class="news-badge stock-badge">📈 株価</span>
           <div class="stock-updated" id="stock-updated"></div>
         </div>
-        <button type="button" class="news-arrow" id="stock-detail" aria-label="ポートフォリオ詳細へ">→</button>
+        <button type="button" class="stock-assets-link" id="stock-detail" aria-label="ポートフォリオ詳細へ">資産 →</button>
       </div>
       <div class="stock-tape" id="stock-tape">
         <div class="stock-tape-track">${tapeCopy(0)}${tapeCopy(1)}</div>
@@ -999,9 +999,7 @@ function stocksCardHTML(){
             <span class="stock-news-elapsed" id="stock-news-elapsed"></span>
           </span>
         </div>
-        <div class="stock-news-tape" id="stock-news-tape">
-          <div class="stock-news-track" id="stock-news-track"></div>
-        </div>
+        <div class="stock-news-list" id="stock-news-list"></div>
       </div>
     </div>`;
 }
@@ -1052,19 +1050,41 @@ function renderItNewsElapsed(){
   el.textContent = mins <= 0 ? "たった今更新" : `${mins}分前に更新`;
 }
 
-// ニュースも株価と同じ「右から左へ流れる＋手動スワイプ可能」なテープとして
-// 描画する。3件のニュースを1行につなげ、シームレスにループさせるため
-// 同じ列を2周分並べる。各ニュースはリンクのままなので、タップすると
-// 元記事が新しいタブで開く（ドラッグ直後の誤タップは抑止される）
-function renderItNews(){
-  const trackEl = document.getElementById("stock-news-track");
-  if(!trackEl) return;
-  const itemsHTML = (copy) => itNewsItems.map(n => `
-    <a class="stock-news-item" href="${esc(n.url)}" target="_blank" rel="noopener noreferrer"${copy===1?' tabindex="-1" aria-hidden="true"':''}>
+// ニュースは縦並びで3件を同時表示する。各行はそれぞれ独立したテープで、
+// タイトルが行の横幅に収まらない（オーバーフローする）場合のみ、その行だけ
+// 右から左へ自動ループスクロールさせる（2周分に複製してシームレスに循環）。
+// 収まっている短いタイトルの行は静止したまま。流れている行は株価と同じく
+// タッチ・ドラッグで手動スワイプでき、タップで元記事が新しいタブで開く
+// （ドラッグ直後の誤タップは抑止される）
+function itNewsItemHTML(n, hidden){
+  return `
+    <a class="stock-news-item" href="${esc(n.url)}" target="_blank" rel="noopener noreferrer"${hidden?' tabindex="-1" aria-hidden="true"':''}>
       <span class="stock-news-title">${esc(n.title)}</span>
       <span class="stock-news-time">${esc(n.time)}</span>
-    </a>`).join("");
-  trackEl.innerHTML = itemsHTML(0) + itemsHTML(1);
+    </a>`;
+}
+
+function renderItNews(){
+  const listEl = document.getElementById("stock-news-list");
+  if(!listEl) return;
+  listEl.innerHTML = itNewsItems.map((n, i) => `
+    <div class="stock-news-line" id="stock-news-line-${i}">
+      <div class="stock-news-line-track">${itNewsItemHTML(n, false)}</div>
+    </div>`).join("");
+  // まず1周分だけ置いた状態で行ごとにオーバーフローを実測し、
+  // はみ出す行だけ2周分に複製してテープ（自動ループ＋手動スワイプ）を有効化する
+  itNewsItems.forEach((n, i) => {
+    const id = `stock-news-line-${i}`;
+    const line = document.getElementById(id);
+    if(!line) return;
+    if(line.scrollWidth > line.clientWidth + 1){
+      line.classList.add("flowing");
+      line.firstElementChild.innerHTML = itNewsItemHTML(n, false) + itNewsItemHTML(n, true);
+      initHybridTape(id, 20);
+    } else {
+      removeHybridTape(id); // 前回流れていた行が静止に変わった場合の後始末
+    }
+  });
   renderItNewsElapsed();
 }
 
@@ -1082,11 +1102,11 @@ function startItNewsTimers(){
   if(itNewsElapsedTimer){ clearInterval(itNewsElapsedTimer); itNewsElapsedTimer = null; }
   refreshItNews();
   itNewsRefreshTimer = setInterval(() => {
-    if(!document.getElementById("stock-news-track")){ clearInterval(itNewsRefreshTimer); itNewsRefreshTimer = null; return; }
+    if(!document.getElementById("stock-news-list")){ clearInterval(itNewsRefreshTimer); itNewsRefreshTimer = null; return; }
     refreshItNews();
   }, IT_NEWS_REFRESH_MS);
   itNewsElapsedTimer = setInterval(() => {
-    if(!document.getElementById("stock-news-track")){ clearInterval(itNewsElapsedTimer); itNewsElapsedTimer = null; return; }
+    if(!document.getElementById("stock-news-list")){ clearInterval(itNewsElapsedTimer); itNewsElapsedTimer = null; return; }
     renderItNewsElapsed();
   }, 60000);
 }
@@ -1225,6 +1245,14 @@ window.addEventListener("mouseup", () => {
   scheduleTapeResume(tapeDragId);
   tapeDragId = null;
 });
+
+// テープ1本分の登録解除（前回は流れていた行が静止表示に切り替わった場合など）
+function removeHybridTape(id){
+  const st = tapeControllers[id];
+  if(!st) return;
+  clearTimeout(st.resumeTimer);
+  delete tapeControllers[id];
+}
 
 // テープ1本分の初期化。再レンダー時に呼び直しても多重にならない
 // （イベントはon〇〇プロパティへの代入、状態はIDで上書き）
@@ -1449,9 +1477,8 @@ function initStocksCard(){
   renderStockTape();
   renderStockUpdated();
   startStockRefresh();
-  initHybridTape("stock-tape", 27);       // 株価ティッカー
-  startItNewsTimers();
-  initHybridTape("stock-news-tape", 23);  // ニュースは少しゆっくり流す
+  initHybridTape("stock-tape", 27); // 株価ティッカー
+  startItNewsTimers(); // ニュースの各行のテープはrenderItNews内で必要な行にだけ張られる
 }
 
 /* ポートフォリオ（資産保有額）詳細画面：株価カード右上の「→」から遷移する。
