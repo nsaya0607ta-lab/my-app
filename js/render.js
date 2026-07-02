@@ -19,12 +19,16 @@ export function go(s){
   render();
 }
 
-// 最上段の共通ステータスバー：総合ランク／AC所持数。render()のたびに最新化。
-// ホーム（select）画面・資格一覧（certs）画面の【この2画面にいる時だけ】表示し、
-// AZ-900などの個別資格の画面やその他の画面では完全に非表示にする。
-// この2画面はどちらも特定の資格に紐づかない全体ビューなので、常に総合ランクの
-// みを表示する（個別資格のランク行は出さない。go()側でS.certを都度クリアして
-// いるため、他画面から戻った直後に前の資格のランクが残る心配もない）。
+// 最上段の共通ステータスバー：render()のたびに最新化。表示する画面ごとに
+// レイアウトが変わる（左に縦積みのランク行、右にAC。.statusbarがalign-items:
+// centerのflexコンテナのため、AC表示は左側の行数（1行/2行）の高さに応じて
+// 自動的に縦中央へ揃う）。
+//   ・ホーム（select）／資格一覧（certs）画面 … 総合ランクのみ1行＋AC
+//   ・AZ-900などの個別資格の画面（home/quiz/result等） … 総合ランク＋個別
+//     資格ランクの2段＋AC（右側は2行分の高さに揃って縦中央）
+//   ・ランキング／プロフィール／設定などその他の画面 … 完全に非表示
+// go()側でselect/certsへ遷移するたびにS.certをクリアしているため、
+// 個別資格の画面から資格一覧に戻った直後は自動的に1行表示へ切り替わる。
 export function renderStatusBar(){
   const el=document.getElementById("statusbar"); if(!el) return;
   // 認証前・ユーザー名未設定などプレイヤーが確定していない画面では非表示
@@ -32,10 +36,29 @@ export function renderStatusBar(){
              || (!state.guestMode && !state.currentUser)
              || (!state.guestMode && state.currentUser && (!state.profileChecked || !getProfileName()));
   const screen = resolveScreen();
-  const shownOnScreen = (screen === "select" || screen === "certs");
-  if(gated || !shownOnScreen){ el.classList.remove("show"); el.innerHTML=""; return; }
+  const otherScreens = ["ranking","profile","settings","skins","analytics","schedule","portfolio"];
+  if(gated || otherScreens.includes(screen)){ el.classList.remove("show"); el.innerHTML=""; return; }
   const ov = overallStat();          // 総合Lvと次Lvまでの進捗(%)
   const coins = (S.coins||0);
+
+  // 個別資格の画面（select/certs以外）でのみ、総合ランクの下に個別資格ランクを追加する
+  let certRow = "";
+  if(screen !== "select" && screen !== "certs" && S.cert){
+    const c = certById(S.cert) || {};
+    const bp = getBP();
+    const lvl = dcCount(bp);
+    const next = TIERS.find(t=>t.bp>bp);
+    let cpct;
+    if(next){ const prevBp = lvl>0 ? TIERS[lvl-1].bp : 0; cpct = Math.max(0, Math.min(100, Math.round((bp-prevBp)/(next.bp-prevBp)*100))); }
+    else cpct = 100;
+    const curName = lvl>0 ? (TIERS[lvl-1].icon+" "+TIERS[lvl-1].name) : "スタート";
+    const certTitle = next ? `${curName} → ${next.icon} ${next.name}（あと ${(next.bp-bp).toLocaleString()} BP）` : "全リソース稼働";
+    certRow = `
+      <div class="sb-line">
+        <span class="sb-lab sb-lab-cert">${esc(c.code||"選択資格")} Lv.<b>${lvl}</b></span>
+        <span class="sb-prog" title="${esc(certTitle)}"><span class="sb-prog-f cert" style="width:${cpct}%"></span></span>
+      </div>`;
+  }
 
   el.innerHTML = `
     <div class="sb-levels">
@@ -43,6 +66,7 @@ export function renderStatusBar(){
         <span class="sb-lab">総合ランク Lv.<b>${ov.lv}</b></span>
         <span class="sb-prog" title="次の総合Lvまで ${ov.remain.toLocaleString()} BP"><span class="sb-prog-f overall" style="width:${ov.pct}%"></span></span>
       </div>
+      ${certRow}
     </div>
     <span class="sb-div"></span>
     <span class="sb-coin">💰 <b>${coins.toLocaleString()}</b> AC</span>
