@@ -11,15 +11,13 @@
    ========================================================================= */
 
 import { fetchDirectOrProxied } from './cors-proxy.js';
-import { FINNHUB_API_KEY, STOCK_TICKERS, STOCK_NAMES, FIXED_INSTRUMENTS } from './finnhub-config.js';
+import { FINNHUB_API_KEY, STOCK_TICKERS, STOCK_NAMES } from './finnhub-config.js';
 
-export { STOCK_TICKERS, FIXED_INSTRUMENTS };
+export { STOCK_TICKERS };
 
 const FETCH_TIMEOUT_MS = 8000;
 const CACHE_KEY = "stocks_cache_v8"; // 6銘柄化・チャート再廃止に伴いキーを更新（旧キャッシュを無効化）
 const CACHE_TTL_MS = 60 * 1000; // 60秒キャッシュ（Finnhub無料枠は60req/分なので十分余裕がある）
-const FIXED_CACHE_KEY = "stocks_fixed_cache_v1";
-const FIXED_CACHE_TTL_MS = 60 * 1000;
 
 async function fetchQuote(ticker) {
   const url = `https://finnhub.io/api/v1/quote?symbol=${ticker}&token=${FINNHUB_API_KEY}`;
@@ -77,46 +75,5 @@ export async function getLiveStocks() {
   });
   if (results.every(r => r === null)) return null;
   saveCache(results);
-  return results;
-}
-
-async function fetchFixedInstrumentData(item) {
-  const q = await fetchQuote(item.symbol);
-  const previousClose = q.pc;
-  const price = q.c;
-  const change = ((price - previousClose) / previousClose) * 100;
-  return { symbol: item.symbol, name: item.name, price, previousClose, change };
-}
-
-function loadFixedCache() {
-  try {
-    const raw = JSON.parse(localStorage.getItem(FIXED_CACHE_KEY) || "null");
-    if (raw && Array.isArray(raw.items) && raw.items.length && (Date.now() - raw.savedAt) < FIXED_CACHE_TTL_MS) {
-      return raw.items;
-    }
-  } catch (e) {}
-  return null;
-}
-
-function saveFixedCache(items) {
-  try { localStorage.setItem(FIXED_CACHE_KEY, JSON.stringify({ savedAt: Date.now(), items })); } catch (e) {}
-}
-
-// STOCKSカード右側に固定表示するドル円・FANG+の実値を取得する。
-// 個別株と同じ耐障害設計（銘柄ごとにnull許容・全滅時のみnull）。
-export async function getFixedInstruments() {
-  if (!FINNHUB_API_KEY || FINNHUB_API_KEY === "YOUR_FINNHUB_API_KEY") return null;
-
-  const cached = loadFixedCache();
-  if (cached) return cached;
-
-  const settled = await Promise.allSettled(FIXED_INSTRUMENTS.map(fetchFixedInstrumentData));
-  const results = settled.map((r, i) => {
-    if (r.status === "fulfilled") return r.value;
-    console.warn(`[stocks] ${FIXED_INSTRUMENTS[i].name} の取得に失敗しました:`, r.reason?.message || r.reason);
-    return null;
-  });
-  if (results.every(r => r === null)) return null;
-  saveFixedCache(results);
   return results;
 }
