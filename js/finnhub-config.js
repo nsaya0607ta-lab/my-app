@@ -12,5 +12,5 @@
 
 export const FINNHUB_API_KEY = "d92jlgpr01qs541v5g60d92jlgpr01qs541v5g6g";
 
-export const STOCK_TICKERS = ["MSFT", "AMZN", "GOOGL"];
-export const STOCK_NAMES = { MSFT: "Microsoft", AMZN: "Amazon", GOOGL: "Alphabet" };
+export const STOCK_TICKERS = ["MSFT", "AMZN", "GOOGL", "AAPL", "META", "NVDA"];
+export const STOCK_NAMES = { MSFT: "Microsoft", AMZN: "Amazon", GOOGL: "Alphabet", AAPL: "Apple", META: "Meta", NVDA: "NVIDIA" };

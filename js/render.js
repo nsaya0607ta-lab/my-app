@@ -940,8 +940,10 @@ async function loadNewsCard(){
 
 /* =========================================================================
    株価カード（STOCKS）：ニュースカードと同じデザインシステムを流用した
-   情報表示専用ウィジェット（購入・売却などの取引機能・チャートは無し。
-   最新の株価データ（現在値・前日比）のみを表示するシンプルな構成）。
+   横スワイプ（スクロールスナップ）式カルーセル。MSFT/AMZN/GOOGL/AAPL/META/
+   NVDAの6銘柄それぞれを1枚のスライドとして表示し、指でスワイプ、または
+   ヘッダーの‹›ボタン・下部のドットで銘柄を切り替えられる。
+   各スライドには現在値・前日比に加えて簡易的な日足トレンドラインを表示する。
    起動直後はサンプル株価で表示し、Finnhubの株価APIから実際の株価を取得
    できた場合はそちらに置き換える。取得に失敗した場合、一度も実データを
    取得できていなければ引き続きサンプル値を、既に実データを取得済みの
@@ -949,10 +951,37 @@ async function loadNewsCard(){
    （実データのように見える擬似変動はさせない）。
    ========================================================================= */
 
+// series: 日足（Daily）の {t: 時刻(ms), close: 終値} 配列。トレンドラインに
+// そのまま使う。モックは start→end へゆるやかにランダムウォークする
+// 擬似的な値動きを、1日間隔で30ポイント生成する。
+function mockDailySeries(start, end, points=30, stepDays=1){
+  const now = Date.now();
+  const stepMs = stepDays*24*60*60*1000;
+  const swing = Math.abs(end-start) * 0.06 || 0.5;
+  const series = [];
+  let v = start;
+  for(let i=0;i<points;i++){
+    const target = start + (end-start) * (i/(points-1));
+    v += (target - v) * 0.25 + (Math.random()-0.5) * swing;
+    series.push({ t: now - (points-1-i)*stepMs, close: round2(v) });
+  }
+  series[series.length-1].close = end; // 最新値は現在値と必ず一致させる
+  return series;
+}
+
 const STOCKS = [
-  { ticker:"MSFT", name:"Microsoft", price:435.12, previousClose:429.91, sessionLabel:"サンプル", isLive:false, everLive:false },
-  { ticker:"AMZN", name:"Amazon", price:189.50, previousClose:190.45, sessionLabel:"サンプル", isLive:false, everLive:false },
-  { ticker:"GOOGL", name:"Alphabet", price:199.80, previousClose:200.80, sessionLabel:"サンプル", isLive:false, everLive:false },
+  { ticker:"MSFT", name:"Microsoft", price:435.12, previousClose:429.91, sessionLabel:"サンプル", isLive:false, chartIsLive:false, everLive:false,
+    series: mockDailySeries(429.91, 435.12) },
+  { ticker:"AMZN", name:"Amazon", price:189.50, previousClose:190.45, sessionLabel:"サンプル", isLive:false, chartIsLive:false, everLive:false,
+    series: mockDailySeries(190.45, 189.50) },
+  { ticker:"GOOGL", name:"Alphabet", price:199.80, previousClose:200.80, sessionLabel:"サンプル", isLive:false, chartIsLive:false, everLive:false,
+    series: mockDailySeries(200.80, 199.80) },
+  { ticker:"AAPL", name:"Apple", price:213.40, previousClose:211.20, sessionLabel:"サンプル", isLive:false, chartIsLive:false, everLive:false,
+    series: mockDailySeries(211.20, 213.40) },
+  { ticker:"META", name:"Meta", price:512.30, previousClose:520.10, sessionLabel:"サンプル", isLive:false, chartIsLive:false, everLive:false,
+    series: mockDailySeries(520.10, 512.30) },
+  { ticker:"NVDA", name:"NVIDIA", price:135.60, previousClose:131.90, sessionLabel:"サンプル", isLive:false, chartIsLive:false, everLive:false,
+    series: mockDailySeries(131.90, 135.60) },
 ];
 // change(%)は常に previousClose（前日終値）を基準に計算する。
 // 実データ取得時・擬似変動時ともにこの基準値を更新して整合性を保つ。
@@ -961,16 +990,46 @@ STOCKS.forEach(s => { s.change = ((s.price - s.previousClose) / s.previousClose)
 
 let stockIndex = 0;
 let stockRefreshTimer = null;
+let stockScrollDebounce = null;
 let stocksLastUpdatedAt = null; // Finnhubから実データを最後に取得できた日時(ms)。未取得の間はnull
 const STOCK_REFRESH_MS = 45000; // 実株価の再取得・擬似変動の更新間隔
 const STOCK_TICK_PCT = 0.006;   // 実データが使えない場合の1回あたりの変動幅（±0.3%程度）
 
 function round2(n){ return Math.round(n*100)/100; }
 
+function formatChartDate(ms){
+  const d = new Date(ms);
+  return `${d.getMonth()+1}/${d.getDate()}`;
+}
+
 // 「◯月◯日 ◯時◯分時点」形式に整形する（最終更新日時の表示用）
 function formatStocksUpdatedAt(ms){
   const d = new Date(ms);
   return `${d.getMonth()+1}月${d.getDate()}日 ${d.getHours()}時${String(d.getMinutes()).padStart(2,"0")}分時点`;
+}
+
+// 前日終値比が上昇なら緑、下降なら赤（Yahoo!ファイナンス風の動的な配色）
+function stockTrendColors(up){
+  return up
+    ? { line: "#16a34a", fillTop: "rgba(22,163,74,.28)" }
+    : { line: "#dc2626", fillTop: "rgba(220,38,38,.22)" };
+}
+
+function stockSlideHTML(i){
+  return `
+    <div class="stock-slide" id="stock-slide-${i}" data-idx="${i}">
+      <div class="stock-slide-top">
+        <span class="stock-ticker" id="stock-ticker-${i}"></span>
+        <span class="stock-session" id="stock-session-${i}" style="display:none"></span>
+      </div>
+      <div class="stock-name" id="stock-name-${i}"></div>
+      <div class="stock-priceline">
+        <span class="stock-price" id="stock-price-${i}"></span>
+        <span class="stock-change" id="stock-change-${i}"></span>
+      </div>
+      <div class="stock-chart-wrap" id="stock-chart-wrap-${i}"></div>
+      <div class="stock-period" id="stock-period-${i}"></div>
+    </div>`;
 }
 
 function stocksCardHTML(){
@@ -986,7 +1045,10 @@ function stocksCardHTML(){
           <button type="button" class="news-arrow" id="stock-next" aria-label="次の銘柄">›</button>
         </div>
       </div>
-      <div class="stock-row" id="stock-row"></div>
+      <div class="stock-slides" id="stock-slides">
+        ${STOCKS.map((_,i) => stockSlideHTML(i)).join("")}
+      </div>
+      <div class="stock-dots" id="stock-dots"></div>
     </div>`;
 }
 
@@ -998,25 +1060,106 @@ function renderStockUpdated(){
   el.textContent = stocksLastUpdatedAt ? formatStocksUpdatedAt(stocksLastUpdatedAt) : "";
 }
 
-function renderStockRow(){
-  const rowEl = document.getElementById("stock-row");
-  if(!rowEl) return;
-  rowEl.innerHTML = STOCKS.map((s,i) => {
-    const up = s.change >= 0;
-    return `<button type="button" class="stock-item${i===stockIndex?" active":""}" data-idx="${i}">
-      <div class="stock-ticker">${esc(s.ticker)}</div>
-      ${s.sessionLabel?`<div class="stock-session">${esc(s.sessionLabel)}</div>`:""}
-      <div class="stock-name">(${esc(s.name)})</div>
-      <div class="stock-priceline">
-        <span class="stock-price">$${s.price.toFixed(2)}</span>
-        <span class="stock-change ${up?"up":"down"}">${up?"▲":"▼"} ${up?"+":""}${s.change.toFixed(1)}%</span>
-      </div>
-    </button>`;
-  }).join("");
-  rowEl.querySelectorAll("[data-idx]").forEach(b => b.onclick = () => {
-    stockIndex = +b.dataset.idx;
-    renderStockRow();
-  });
+// 銘柄1件分のスライド（テキスト＋トレンドライン）の中身を最新の状態に更新する。
+// スライド自体のDOM構造（スクロール位置）は変えず、中身だけ差し替える。
+function renderStockSlideContent(i){
+  const s = STOCKS[i];
+  if(!s) return;
+  const up = s.change >= 0;
+  const tickerEl = document.getElementById(`stock-ticker-${i}`);
+  const sessionEl = document.getElementById(`stock-session-${i}`);
+  const nameEl = document.getElementById(`stock-name-${i}`);
+  const priceEl = document.getElementById(`stock-price-${i}`);
+  const changeEl = document.getElementById(`stock-change-${i}`);
+  const periodEl = document.getElementById(`stock-period-${i}`);
+  if(tickerEl) tickerEl.textContent = s.ticker;
+  if(sessionEl){
+    if(s.sessionLabel){ sessionEl.textContent = s.sessionLabel; sessionEl.style.display = ""; }
+    else { sessionEl.style.display = "none"; }
+  }
+  if(nameEl) nameEl.textContent = `(${s.name})`;
+  if(priceEl) priceEl.textContent = `$${s.price.toFixed(2)}`;
+  if(changeEl){
+    changeEl.textContent = `${up?"▲":"▼"} ${up?"+":""}${s.change.toFixed(1)}%`;
+    changeEl.className = `stock-change ${up?"up":"down"}`;
+  }
+  if(periodEl){
+    periodEl.textContent = s.chartIsLive ? "日足トレンド" : (s.everLive ? "日足トレンド・最終参照" : "日足トレンド・サンプル");
+  }
+  renderStockSlideChart(i);
+}
+
+// トレンドラインを外部CDNに頼らず純粋なSVGで自前描画する（軽量な装飾用の
+// ミニチャートのため、タップ操作等のインタラクションは持たせない）。
+function renderStockSlideChart(i){
+  const s = STOCKS[i];
+  const wrap = document.getElementById(`stock-chart-wrap-${i}`);
+  if(!wrap || !s) return;
+  const series = s.series;
+  const n = series ? series.length : 0;
+  if(!n){ wrap.innerHTML = ""; return; }
+
+  const W = 280, H = 60;
+  const closes = series.map(p => p.close);
+  const min = Math.min(...closes), max = Math.max(...closes);
+  const pad = (max - min) * 0.12 || Math.max(min * 0.01, 0.5);
+  const lo = min - pad, hi = max + pad;
+  const xAt = idx => n<=1 ? W/2 : (idx/(n-1)) * W;
+  const yAt = v => H - ((v - lo) / ((hi - lo) || 1)) * H;
+  const pts = series.map((p,idx) => `${xAt(idx).toFixed(1)},${yAt(p.close).toFixed(1)}`);
+  const linePath = "M" + pts.join(" L");
+  const areaPath = `M${xAt(0).toFixed(1)},${H} L${pts.join(" L")} L${xAt(n-1).toFixed(1)},${H} Z`;
+  const { line, fillTop } = stockTrendColors(s.change >= 0);
+  const gid = "stock-grad-" + i;
+
+  wrap.innerHTML = `
+    <svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" class="stock-chart-svg">
+      <defs>
+        <linearGradient id="${gid}" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stop-color="${fillTop}"></stop>
+          <stop offset="100%" stop-color="rgba(255,255,255,0)"></stop>
+        </linearGradient>
+      </defs>
+      <path d="${areaPath}" fill="url(#${gid})" stroke="none"></path>
+      <path d="${linePath}" fill="none" stroke="${line}" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"></path>
+    </svg>`;
+}
+
+function renderStockDots(){
+  const dotsEl = document.getElementById("stock-dots");
+  if(!dotsEl) return;
+  dotsEl.innerHTML = STOCKS.map((_,i) => `<span class="stock-dot${i===stockIndex?" on":""}" data-idx="${i}"></span>`).join("");
+  dotsEl.querySelectorAll("[data-idx]").forEach(d => d.onclick = () => goToStockSlide(+d.dataset.idx));
+}
+
+function renderStockSlides(){
+  STOCKS.forEach((_,i) => renderStockSlideContent(i));
+  renderStockDots();
+}
+
+// 指定インデックスの銘柄までスクロールスナップで滑らかに移動する
+// （‹›ボタン・ドットタップの両方から呼ばれる共通の遷移処理）
+function goToStockSlide(i){
+  const slidesEl = document.getElementById("stock-slides");
+  if(!slidesEl || !STOCKS.length) return;
+  stockIndex = (i + STOCKS.length) % STOCKS.length;
+  const target = slidesEl.children[stockIndex];
+  if(target) slidesEl.scrollTo({ left: target.offsetLeft, behavior: "smooth" });
+  renderStockDots();
+}
+
+// 指でスワイプして手動スクロールした場合も、止まった位置から現在の銘柄
+// （ドットの位置）を追従させる。scrollイベントは連発するためデバウンスする。
+function onStockSlidesScroll(){
+  clearTimeout(stockScrollDebounce);
+  stockScrollDebounce = setTimeout(() => {
+    const slidesEl = document.getElementById("stock-slides");
+    if(!slidesEl || !slidesEl.children.length) return;
+    const w = slidesEl.clientWidth || 1;
+    const idx = Math.round(slidesEl.scrollLeft / w);
+    const clamped = Math.max(0, Math.min(STOCKS.length-1, idx));
+    if(clamped !== stockIndex){ stockIndex = clamped; renderStockDots(); }
+  }, 100);
 }
 
 // 実株価取得の結果をSTOCKSへ反映する（銘柄ごと。取得できなかった銘柄だけ
@@ -1034,6 +1177,17 @@ function applyLiveStocks(liveItems){
     s.sessionLabel = null; // 実データ取得成功時はバッジ非表示
     s.isLive = true;
     s.everLive = true; // 一度でも実データを取得できたことを記録（以後の取得失敗時に擬似変動ではなく最終参照値を出すために使う）
+    if(live.series){
+      // トレンドラインも取得できた場合のみ実データに置き換える
+      s.series = live.series;
+      s.chartIsLive = true;
+    } else {
+      // 価格は実データだがトレンドライン(candle)だけ取得できなかった場合：
+      // 既存のサンプル系列を使い続けつつ、末尾だけ実際の現在値に合わせておく
+      const last = s.series[s.series.length - 1];
+      if(last) last.close = s.price;
+      s.chartIsLive = false;
+    }
     appliedAny = true;
   });
   // 1銘柄でも実データを反映できたら、その瞬間を「最終更新日時」として記録する
@@ -1047,6 +1201,7 @@ function applyLiveStocks(liveItems){
 // （この場合のみ「サンプル」ラベルを出し、実データと誤認されないようにする）。
 function simulateStockTick(s){
   s.isLive = false;
+  s.chartIsLive = false;
   if(s.everLive){
     // 実データ取得済みの銘柄：価格・変化率は動かさず、最後に取得できた値のまま据え置く
     s.sessionLabel = "最終参照";
@@ -1056,6 +1211,8 @@ function simulateStockTick(s){
   s.price = Math.max(0.01, round2(s.price * (1 + delta)));
   s.change = ((s.price - s.previousClose) / s.previousClose) * 100;
   s.sessionLabel = "サンプル";
+  const last = s.series[s.series.length - 1];
+  if(last) last.close = s.price;
 }
 
 async function refreshStockPrices(){
@@ -1063,7 +1220,7 @@ async function refreshStockPrices(){
   STOCKS.forEach(s => { s.isLive = false; }); // 今回の取得結果で改めて判定し直す
   applyLiveStocks(live);
   STOCKS.forEach(s => { if(!s.isLive) simulateStockTick(s); });
-  renderStockRow();
+  renderStockSlides();
   renderStockUpdated();
 }
 
@@ -1081,9 +1238,11 @@ function initStocksCard(){
   if(!card) return;
   const prev = document.getElementById("stock-prev");
   const next = document.getElementById("stock-next");
-  if(prev) prev.onclick = () => { stockIndex = (stockIndex - 1 + STOCKS.length) % STOCKS.length; renderStockRow(); };
-  if(next) next.onclick = () => { stockIndex = (stockIndex + 1) % STOCKS.length; renderStockRow(); };
-  renderStockRow();
+  const slidesEl = document.getElementById("stock-slides");
+  if(prev) prev.onclick = () => goToStockSlide(stockIndex - 1);
+  if(next) next.onclick = () => goToStockSlide(stockIndex + 1);
+  if(slidesEl) slidesEl.onscroll = onStockSlidesScroll;
+  renderStockSlides();
   renderStockUpdated();
   startStockRefresh();
 }
