@@ -1022,11 +1022,13 @@ const IT_NEWS_POOL = [
   { source:"NVIDIA", title:"【NVIDIA】次世代AI基盤「Rubin」と新チップ6種を発表", url:"https://nvidianews.nvidia.com/news/rubin-platform-ai-supercomputer", time:"4w ago" },
   { source:"NPR", title:"【Apple】Gemini搭載の新Siriを発表 チャット型UIに", url:"https://www.npr.org/2026/06/08/nx-s1-5847937/apple-wwdc-2026-siri-ai-tim-cook", time:"3w ago" },
   { source:"CNBC", title:"【Apple】AI開発でGoogle・NVIDIAと提携へ", url:"https://www.cnbc.com/2026/06/08/apple-google-nvidia-ai-chips.html", time:"3w ago" },
-  { source:"TechNewsWorld", title:"【Google】あらゆる出力を生成する「Gemini Omni」発表", url:"https://www.technewsworld.com/story/google-i-o-2026-signals-an-extinction-event-for-standalone-apps-180348.html", time:"5w ago" },
+  { source:"TechNewsWorld", title:"【Google】あらゆる出力を生成するAI「Gemini Omni」発表", url:"https://www.technewsworld.com/story/google-i-o-2026-signals-an-extinction-event-for-standalone-apps-180348.html", time:"5w ago" },
+  { source:"Google Blog", title:"【Google】「Gemini 3.5 Flash」公開、AIエージェント機能を強化", url:"https://blog.google/innovation-and-ai/technology/ai/google-ai-updates-june-2026/", time:"1w ago" },
   { source:"AWS News Blog", title:"【Amazon】諜報機関向けにAWS移行支援へ10億ドル投資", url:"https://aws.amazon.com/blogs/aws/top-announcements-of-the-whats-next-with-aws-2026/", time:"2w ago" },
   { source:"AWS News Blog", title:"【Amazon】AIエージェント基盤「Bedrock AgentCore」を4地域に拡大", url:"https://aws.amazon.com/new/", time:"3w ago" },
   { source:"Electrek", title:"【Tesla】26年Q2の納車台数が予想を上回り前年比25%増", url:"https://electrek.co/2026/06/26/tesla-q2-2026-delivery-consensus-406000/", time:"just now" },
   { source:"Teslarati", title:"【Tesla】人型ロボット「Optimus」の稼働ラインが始動", url:"https://www.teslarati.com/tesla-expands-massive-safety-feature-worldwide-latest-update/", time:"3d ago" },
+  { source:"Forbes", title:"【Tesla】AI運転支援「FSD」が事実上のロボタクシー水準に進化", url:"https://www.forbes.com/sites/brookecrothers/2026/06/14/tesla-fsd-is-evolving-into-a-de-facto-robotaxi/", time:"2w ago" },
 ];
 
 let itNewsItems = [];
@@ -1036,14 +1038,27 @@ let itNewsElapsedTimer = null;
 const IT_NEWS_REFRESH_MS = 10 * 60 * 1000; // 10分に1回、自動でニュースを入れ替える
 const IT_NEWS_COUNT = 3;
 
-// プールをシャッフルして先頭3件を選ぶ（Fisher–Yates）
-function pickItNews(){
-  const pool = IT_NEWS_POOL.slice();
-  for(let i = pool.length - 1; i > 0; i--){
+function shuffled(arr){
+  const a = arr.slice();
+  for(let i = a.length - 1; i > 0; i--){
     const j = Math.floor(Math.random() * (i + 1));
-    [pool[i], pool[j]] = [pool[j], pool[i]];
+    [a[i], a[j]] = [a[j], a[i]];
   }
-  return pool.slice(0, IT_NEWS_COUNT);
+  return a;
+}
+
+// プールから3件を選ぶ（Fisher–Yates）。タイトルに「AI」が入った記事が
+// 毎回必ず最低1件は含まれるよう、AI関連記事とそれ以外を別々にシャッフルして
+// 組み合わせてから、表示順だけさらにシャッフルする
+function pickItNews(){
+  const aiPool = IT_NEWS_POOL.filter(n => n.title.includes("AI"));
+  const otherPool = IT_NEWS_POOL.filter(n => !n.title.includes("AI"));
+  const picked = [];
+  if(aiPool.length) picked.push(shuffled(aiPool)[0]);
+  const restNeeded = IT_NEWS_COUNT - picked.length;
+  const restPool = otherPool.length ? otherPool : IT_NEWS_POOL.filter(n => !picked.includes(n));
+  picked.push(...shuffled(restPool).slice(0, restNeeded));
+  return shuffled(picked);
 }
 
 // 「前回の更新から何分経過したか」の控えめなインジケーター
