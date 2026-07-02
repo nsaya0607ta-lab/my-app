@@ -1,7 +1,7 @@
 import { CERTS } from './data/certs.js';
 import { DC_PHASES, L, REGIONS } from './data/constants.js';
 import { CONCEPTS, DRAW, PASS, Q, TIERS, applySkin, certById, certStat, commit, correctSet, dcCount, dcPhase, dcTitle, esc, exportCode, fmt, getBP, getProfileName, grade, importCode, isMulti, loadHist, loadReviewStats, loadWrong, overallLevel, overallStat, pick, pts, publishLeaderboard, purchaseSkin, saveToCloud, selectCert, setBP, setProfileName, stars, start, startReview, totalBP } from './core.js';
-import { getLiveStocks, getFixedInstruments } from './stocks.js';
+import { getLiveStocks } from './stocks.js';
 import { getWeather } from './weather.js';
 import { SKIN_DATA } from './data/skins.js';
 import { S, state } from './state.js';
@@ -905,24 +905,12 @@ const STOCKS = [
 STOCKS.forEach(s => { s.change = ((s.price - s.previousClose) / s.previousClose) * 100; });
 // 起動直後は実データ取得前なので、必ず「サンプル」表示から始める（実データと誤認させない）
 
-// カード右側に常時固定表示するドル円・FANG+。左のカルーセルと違い切り替わらない。
-// seriesには取得できた実際の価格をリフレッシュのたびに積み上げ、ミニトレンドラインの
-// 描画に使う（過去の日足を捏造するのではなく、実際に観測できた値だけを線で結ぶ）。
-const FIXED_ITEMS = [
-  { symbol:"OANDA:USD_JPY", name:"USD/JPY", price:157.20, previousClose:156.85, sessionLabel:"サンプル", isLive:false, everLive:false, series:[] },
-  { symbol:"FNGS", name:"FANG+", price:68.40, previousClose:67.10, sessionLabel:"サンプル", isLive:false, everLive:false, series:[] },
-];
-FIXED_ITEMS.forEach(f => { f.change = ((f.price - f.previousClose) / f.previousClose) * 100; });
-const FIXED_SERIES_MAX = 12;
-
 let stockIndex = 0;
 let stockRefreshTimer = null;
 let stockScrollDebounce = null;
-let stockAutoTimer = null;
 let stocksLastUpdatedAt = null; // Finnhubから実データを最後に取得できた日時(ms)。未取得の間はnull
 const STOCK_REFRESH_MS = 45000; // 実株価の再取得・擬似変動の更新間隔
 const STOCK_TICK_PCT = 0.006;   // 実データが使えない場合の1回あたりの変動幅（±0.3%程度）
-const STOCK_AUTO_ROTATE_MS = 7000; // 左カラムの銘柄を自動で切り替える間隔
 
 function round2(n){ return Math.round(n*100)/100; }
 
@@ -947,50 +935,6 @@ function stockSlideHTML(i){
     </div>`;
 }
 
-function fixedItemHTML(i){
-  return `
-    <div class="stock-fixed-item" id="stock-fixed-${i}">
-      <div class="stock-fixed-top">
-        <span class="stock-fixed-name" id="stock-fixed-name-${i}"></span>
-        <span class="stock-session" id="stock-fixed-session-${i}" style="display:none"></span>
-      </div>
-      <div class="stock-fixed-priceline">
-        <span class="stock-fixed-price" id="stock-fixed-price-${i}"></span>
-        <span class="stock-fixed-change" id="stock-fixed-change-${i}"></span>
-      </div>
-      <div class="stock-fixed-chartwrap" id="stock-fixed-chartwrap-${i}"></div>
-    </div>`;
-}
-
-// 実際に観測できた価格の推移（series）から自己生成するミニトレンドライン。
-// 外部チャートライブラリは使わず、SVGのpolyline/polygonを直接組み立てる
-// （個別株カルーセルと同じ「捏造しない」方針で、履歴が2点未満の間はフラット線）
-function miniTrendSVG(series, up, gradId){
-  const w = 100, h = 32, pad = 3;
-  const color = up ? "#16a34a" : "#dc2626";
-  if(!series || series.length < 2){
-    return `<svg class="stock-fixed-chart" viewBox="0 0 ${w} ${h}" preserveAspectRatio="none"><line x1="0" y1="${h/2}" x2="${w}" y2="${h/2}" stroke="#d0d5dd" stroke-width="2"/></svg>`;
-  }
-  const prices = series.map(p => p.price);
-  const min = Math.min(...prices), max = Math.max(...prices);
-  const range = (max - min) || 1;
-  const xAt = (i) => (i / (series.length - 1)) * w;
-  const yAt = (v) => h - pad - ((v - min) / range) * (h - pad * 2);
-  const points = series.map((p, i) => `${xAt(i)},${yAt(p.price)}`).join(" ");
-  const areaPoints = `0,${h} ${points} ${w},${h}`;
-  return `
-    <svg class="stock-fixed-chart" viewBox="0 0 ${w} ${h}" preserveAspectRatio="none">
-      <defs>
-        <linearGradient id="${gradId}" x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0%" stop-color="${color}" stop-opacity="0.35"/>
-          <stop offset="100%" stop-color="${color}" stop-opacity="0"/>
-        </linearGradient>
-      </defs>
-      <polygon points="${areaPoints}" fill="url(#${gradId})" stroke="none"/>
-      <polyline points="${points}" fill="none" stroke="${color}" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>
-    </svg>`;
-}
-
 function stocksCardHTML(){
   return `
     <div class="news-card stocks-card" id="stocks-card">
@@ -1004,44 +948,11 @@ function stocksCardHTML(){
           <button type="button" class="news-arrow" id="stock-next" aria-label="次の銘柄">›</button>
         </div>
       </div>
-      <div class="stock-columns">
-        <div class="stock-col-left">
-          <div class="stock-slides" id="stock-slides">
-            ${STOCKS.map((_,i) => stockSlideHTML(i)).join("")}
-          </div>
-          <div class="stock-dots" id="stock-dots"></div>
-        </div>
-        <div class="stock-col-right">
-          ${FIXED_ITEMS.map((_,i) => fixedItemHTML(i)).join("")}
-        </div>
+      <div class="stock-slides" id="stock-slides">
+        ${STOCKS.map((_,i) => stockSlideHTML(i)).join("")}
       </div>
+      <div class="stock-dots" id="stock-dots"></div>
     </div>`;
-}
-
-function renderFixedItemContent(i){
-  const f = FIXED_ITEMS[i];
-  if(!f) return;
-  const up = f.change >= 0;
-  const nameEl = document.getElementById(`stock-fixed-name-${i}`);
-  const sessionEl = document.getElementById(`stock-fixed-session-${i}`);
-  const priceEl = document.getElementById(`stock-fixed-price-${i}`);
-  const changeEl = document.getElementById(`stock-fixed-change-${i}`);
-  const chartEl = document.getElementById(`stock-fixed-chartwrap-${i}`);
-  if(nameEl) nameEl.textContent = f.name;
-  if(sessionEl){
-    if(f.sessionLabel){ sessionEl.textContent = f.sessionLabel; sessionEl.style.display = ""; }
-    else { sessionEl.style.display = "none"; }
-  }
-  if(priceEl) priceEl.textContent = f.price.toFixed(2);
-  if(changeEl){
-    changeEl.textContent = `${up?"▲":"▼"} ${up?"+":""}${f.change.toFixed(1)}%`;
-    changeEl.className = `stock-fixed-change ${up?"up":"down"}`;
-  }
-  if(chartEl) chartEl.innerHTML = miniTrendSVG(f.series, up, `stockFixedGrad${i}`);
-}
-
-function renderFixedItems(){
-  FIXED_ITEMS.forEach((_,i) => renderFixedItemContent(i));
 }
 
 // 株価カード左上の「◯月◯日 ◯時◯分時点」表示を更新する。
@@ -1089,7 +1000,7 @@ function renderStockSlides(){
 }
 
 // 指定インデックスの銘柄までスクロールスナップで滑らかに移動する
-// （‹›ボタン・ドットタップ・自動ローテーションのいずれからも呼ばれる共通の遷移処理）
+// （‹›ボタン・ドットタップの両方から呼ばれる共通の遷移処理）
 function goToStockSlide(i){
   const slidesEl = document.getElementById("stock-slides");
   if(!slidesEl || !STOCKS.length) return;
@@ -1097,7 +1008,6 @@ function goToStockSlide(i){
   const target = slidesEl.children[stockIndex];
   if(target) slidesEl.scrollTo({ left: target.offsetLeft, behavior: "smooth" });
   renderStockDots();
-  startStockAutoRotate(); // 手動操作の場合も次の自動切り替えまでの間隔をリセットする
 }
 
 // 指でスワイプして手動スクロールした場合も、止まった位置から現在の銘柄
@@ -1110,20 +1020,8 @@ function onStockSlidesScroll(){
     const w = slidesEl.clientWidth || 1;
     const idx = Math.round(slidesEl.scrollLeft / w);
     const clamped = Math.max(0, Math.min(STOCKS.length-1, idx));
-    if(clamped !== stockIndex){ stockIndex = clamped; renderStockDots(); startStockAutoRotate(); }
+    if(clamped !== stockIndex){ stockIndex = clamped; renderStockDots(); }
   }, 100);
-}
-
-// 左カラムの個別株カルーセルを一定間隔で自動的に次の銘柄へ進める。
-// カードがDOMから外れたら自動的にタイマーを止める（他の画面タイマーと同じ自己終了パターン）
-function autoAdvanceStockSlide(){
-  if(!document.getElementById("stocks-card")){ clearInterval(stockAutoTimer); stockAutoTimer = null; return; }
-  goToStockSlide(stockIndex + 1);
-}
-
-function startStockAutoRotate(){
-  if(stockAutoTimer){ clearInterval(stockAutoTimer); stockAutoTimer = null; }
-  stockAutoTimer = setInterval(autoAdvanceStockSlide, STOCK_AUTO_ROTATE_MS);
 }
 
 // 実株価取得の結果をSTOCKSへ反映する（銘柄ごと。取得できなかった銘柄だけ
@@ -1165,56 +1063,13 @@ function simulateStockTick(s){
   s.sessionLabel = "サンプル";
 }
 
-// 右カラムの固定表示（ドル円・FANG+）版のapplyLiveStocks/simulateStockTick。
-// 挙動は個別株とまったく同じ耐障害ロジックを流用する。
-function applyLiveFixedItems(liveItems){
-  if(!liveItems) return;
-  liveItems.forEach(live => {
-    if(!live) return;
-    const f = FIXED_ITEMS.find(x => x.symbol === live.symbol);
-    if(!f) return;
-    f.price = live.price;
-    f.previousClose = live.previousClose;
-    f.change = live.change;
-    f.sessionLabel = null;
-    f.isLive = true;
-    f.everLive = true;
-  });
-}
-
-function simulateFixedTick(f){
-  f.isLive = false;
-  if(f.everLive){
-    f.sessionLabel = "最終参照";
-    return;
-  }
-  const delta = (Math.random() - 0.5) * STOCK_TICK_PCT;
-  f.price = Math.max(0.01, round2(f.price * (1 + delta)));
-  f.change = ((f.price - f.previousClose) / f.previousClose) * 100;
-  f.sessionLabel = "サンプル";
-}
-
-// ミニトレンドライン用に、実際に反映できた値を履歴として積み上げる
-// （表示するたびに毎回呼ぶことで、実測値だけで線が伸びていく）
-function pushFixedSeriesPoint(f){
-  f.series.push({ t: Date.now(), price: f.price });
-  if(f.series.length > FIXED_SERIES_MAX) f.series = f.series.slice(-FIXED_SERIES_MAX);
-}
-
 async function refreshStockPrices(){
-  const [live, liveFixed] = await Promise.all([getLiveStocks(), getFixedInstruments()]);
-
+  const live = await getLiveStocks();
   STOCKS.forEach(s => { s.isLive = false; }); // 今回の取得結果で改めて判定し直す
   applyLiveStocks(live);
   STOCKS.forEach(s => { if(!s.isLive) simulateStockTick(s); });
-
-  FIXED_ITEMS.forEach(f => { f.isLive = false; });
-  applyLiveFixedItems(liveFixed);
-  FIXED_ITEMS.forEach(f => { if(!f.isLive) simulateFixedTick(f); pushFixedSeriesPoint(f); });
-
   renderStockSlides();
   renderStockUpdated();
-  renderFixedItems();
 }
 
 function startStockRefresh(){
@@ -1237,9 +1092,7 @@ function initStocksCard(){
   if(slidesEl) slidesEl.onscroll = onStockSlidesScroll;
   renderStockSlides();
   renderStockUpdated();
-  renderFixedItems();
   startStockRefresh();
-  startStockAutoRotate();
 }
 
 
