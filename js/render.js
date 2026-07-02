@@ -1,6 +1,6 @@
 import { CERTS } from './data/certs.js';
 import { DC_PHASES, L, REGIONS } from './data/constants.js';
-import { CONCEPTS, DRAW, PASS, Q, TIERS, applySkin, certById, certStat, commit, correctSet, dcCount, dcPhase, dcTitle, esc, exportCode, fmt, getBP, getProfileName, grade, importCode, isMulti, loadHist, loadReviewStats, loadWrong, overallLevel, overallStat, pick, pts, publishLeaderboard, purchaseSkin, saveToCloud, selectCert, setBP, setProfileName, stars, start, startReview, totalBP } from './core.js';
+import { CONCEPTS, DRAW, PASS, Q, TIERS, applySkin, certById, certStat, commit, correctSet, dcCount, dcPhase, dcTitle, esc, exportCode, fmt, getBP, getProfileName, grade, importCode, isMulti, loadHist, loadReviewStats, loadWrong, overallLevel, overallStat, pick, pts, publishLeaderboard, purchaseSkin, saveCoins, saveToCloud, selectCert, setBP, setProfileName, stars, start, startReview, totalBP } from './core.js';
 import { getLiveStocks } from './stocks.js';
 import { getWeather } from './weather.js';
 import { SKIN_DATA } from './data/skins.js';
@@ -99,6 +99,7 @@ export function render(){
   if(S.screen==="analytics") return renderAnalytics();
   if(S.screen==="certs") return renderCertList();
   if(S.screen==="schedule") return renderSchedule();
+  if(S.screen==="portfolio") return renderPortfolio();
   // 大元：資格選択画面
   if(S.screen==="select" || !S.cert) return renderSelect();
   if(S.screen==="home") return renderHome();
@@ -881,10 +882,13 @@ async function loadWeatherCard(){
 
 /* =========================================================================
    株価カード（STOCKS）：ニュースカードと同じデザインシステムを流用した
-   横スワイプ（スクロールスナップ）式カルーセル。MSFT/AMZN/GOOGL/AAPL/META/
-   NVDAの6銘柄それぞれを1枚のスライドとして表示し、指でスワイプ、または
-   ヘッダーの‹›ボタン・下部のドットで銘柄を切り替えられる（チャートは無し。
-   現在値・前日比のみを表示するシンプルな構成）。
+   「電光掲示板（ティッカーボード）風」カード。
+   - 上部：MSFT/AMZN/GOOGL/AAPL/META/NVDAの6銘柄（銘柄名＋株価＋前日比）が
+     右から左へエンドレスに流れるマーキー。左上に最終更新日時、右上に
+     ポートフォリオ詳細画面への「→」ナビゲーションを配置する。
+   - 下部：ゲーム内通貨AC（コイン）を使った「買付」「売却」ボタン。タップで
+     デモ取引モーダルを開き、AC残高と連動した売買シミュレーションができる
+     （保有株はローカルに保存し、ポートフォリオ画面で確認できる）。
    起動直後はサンプル株価で表示し、Finnhubの株価APIから実際の株価を取得
    できた場合はそちらに置き換える。取得に失敗した場合、一度も実データを
    取得できていなければ引き続きサンプル値を、既に実データを取得済みの
@@ -905,12 +909,23 @@ const STOCKS = [
 STOCKS.forEach(s => { s.change = ((s.price - s.previousClose) / s.previousClose) * 100; });
 // 起動直後は実データ取得前なので、必ず「サンプル」表示から始める（実データと誤認させない）
 
-let stockIndex = 0;
 let stockRefreshTimer = null;
-let stockScrollDebounce = null;
 let stocksLastUpdatedAt = null; // Finnhubから実データを最後に取得できた日時(ms)。未取得の間はnull
 const STOCK_REFRESH_MS = 45000; // 実株価の再取得・擬似変動の更新間隔
 const STOCK_TICK_PCT = 0.006;   // 実データが使えない場合の1回あたりの変動幅（±0.3%程度）
+
+/* ---- 保有株（デモ取引のポートフォリオ）。端末ローカルに保存する ---- */
+const PORTFOLIO_KEY = "stock_portfolio_v1";
+
+function loadPortfolio(){
+  try{
+    const p = JSON.parse(localStorage.getItem(PORTFOLIO_KEY) || "{}");
+    return (p && typeof p === "object" && !Array.isArray(p)) ? p : {};
+  }catch(e){ return {}; }
+}
+function savePortfolio(p){
+  try{ localStorage.setItem(PORTFOLIO_KEY, JSON.stringify(p)); }catch(e){}
+}
 
 function round2(n){ return Math.round(n*100)/100; }
 
@@ -920,22 +935,22 @@ function formatStocksUpdatedAt(ms){
   return `${d.getMonth()+1}月${d.getDate()}日 ${d.getHours()}時${String(d.getMinutes()).padStart(2,"0")}分時点`;
 }
 
-function stockSlideHTML(i){
+// ティッカー1銘柄分。マーキーをシームレスにループさせるため同じ列を2周分
+// 描画する（copy=0/1）。中身のテキストはIDで直接更新し、アニメーション中の
+// DOM再構築（＝流れのリセット）を避ける
+function stockTapeItemHTML(copy, i){
+  const hidden = copy === 1 ? ` aria-hidden="true"` : "";
   return `
-    <div class="stock-slide" id="stock-slide-${i}" data-idx="${i}">
-      <div class="stock-slide-top">
-        <span class="stock-ticker" id="stock-ticker-${i}"></span>
-        <span class="stock-session" id="stock-session-${i}" style="display:none"></span>
-      </div>
-      <div class="stock-name" id="stock-name-${i}"></div>
-      <div class="stock-priceline">
-        <span class="stock-price" id="stock-price-${i}"></span>
-        <span class="stock-change" id="stock-change-${i}"></span>
-      </div>
-    </div>`;
+    <span class="stock-tape-item"${hidden}>
+      <span class="tape-ticker" id="tape-ticker-${copy}-${i}"></span>
+      <span class="tape-price" id="tape-price-${copy}-${i}"></span>
+      <span class="tape-change" id="tape-change-${copy}-${i}"></span>
+      <span class="tape-session" id="tape-session-${copy}-${i}" style="display:none"></span>
+    </span>`;
 }
 
 function stocksCardHTML(){
+  const tapeCopy = (copy) => STOCKS.map((_,i) => stockTapeItemHTML(copy, i)).join("");
   return `
     <div class="news-card stocks-card" id="stocks-card">
       <div class="news-card-head">
@@ -943,15 +958,15 @@ function stocksCardHTML(){
           <span class="news-badge stock-badge">📊 株価 (STOCKS)</span>
           <div class="stock-updated" id="stock-updated"></div>
         </div>
-        <div class="news-nav">
-          <button type="button" class="news-arrow" id="stock-prev" aria-label="前の銘柄">‹</button>
-          <button type="button" class="news-arrow" id="stock-next" aria-label="次の銘柄">›</button>
-        </div>
+        <button type="button" class="news-arrow" id="stock-detail" aria-label="ポートフォリオ詳細へ">→</button>
       </div>
-      <div class="stock-slides" id="stock-slides">
-        ${STOCKS.map((_,i) => stockSlideHTML(i)).join("")}
+      <div class="stock-tape">
+        <div class="stock-tape-track">${tapeCopy(0)}${tapeCopy(1)}</div>
       </div>
-      <div class="stock-dots" id="stock-dots"></div>
+      <div class="stock-trade-row">
+        <button type="button" class="stock-trade-btn buy" id="stock-buy">📈 買付</button>
+        <button type="button" class="stock-trade-btn sell" id="stock-sell">📉 売却</button>
+      </div>
     </div>`;
 }
 
@@ -963,65 +978,150 @@ function renderStockUpdated(){
   el.textContent = stocksLastUpdatedAt ? formatStocksUpdatedAt(stocksLastUpdatedAt) : "";
 }
 
-// 銘柄1件分のスライドの中身を最新の状態に更新する。
-// スライド自体のDOM構造（スクロール位置）は変えず、中身だけ差し替える。
-function renderStockSlideContent(i){
+// ティッカー1銘柄分の表示を最新の状態に更新する（2周分の両方のコピーを同じ
+// 内容にする）。DOM構造は変えずテキストだけ差し替えるので、マーキーの流れは
+// 途切れない
+function renderStockTapeContent(i){
   const s = STOCKS[i];
   if(!s) return;
   const up = s.change >= 0;
-  const tickerEl = document.getElementById(`stock-ticker-${i}`);
-  const sessionEl = document.getElementById(`stock-session-${i}`);
-  const nameEl = document.getElementById(`stock-name-${i}`);
-  const priceEl = document.getElementById(`stock-price-${i}`);
-  const changeEl = document.getElementById(`stock-change-${i}`);
-  if(tickerEl) tickerEl.textContent = s.ticker;
-  if(sessionEl){
-    if(s.sessionLabel){ sessionEl.textContent = s.sessionLabel; sessionEl.style.display = ""; }
-    else { sessionEl.style.display = "none"; }
+  for(let copy = 0; copy < 2; copy++){
+    const tickerEl = document.getElementById(`tape-ticker-${copy}-${i}`);
+    const priceEl = document.getElementById(`tape-price-${copy}-${i}`);
+    const changeEl = document.getElementById(`tape-change-${copy}-${i}`);
+    const sessionEl = document.getElementById(`tape-session-${copy}-${i}`);
+    if(tickerEl) tickerEl.textContent = s.ticker;
+    if(priceEl) priceEl.textContent = `$${s.price.toFixed(2)}`;
+    if(changeEl){
+      changeEl.textContent = `${up?"▲":"▼"} ${up?"+":""}${s.change.toFixed(1)}%`;
+      changeEl.className = `tape-change ${up?"up":"down"}`;
+    }
+    if(sessionEl){
+      if(s.sessionLabel){ sessionEl.textContent = s.sessionLabel; sessionEl.style.display = ""; }
+      else { sessionEl.style.display = "none"; }
+    }
   }
-  if(nameEl) nameEl.textContent = `(${s.name})`;
-  if(priceEl) priceEl.textContent = `$${s.price.toFixed(2)}`;
-  if(changeEl){
-    changeEl.textContent = `${up?"▲":"▼"} ${up?"+":""}${s.change.toFixed(1)}%`;
-    changeEl.className = `stock-change ${up?"up":"down"}`;
+}
+
+function renderStockTape(){
+  STOCKS.forEach((_,i) => renderStockTapeContent(i));
+}
+
+/* ---- AC連動のデモ売買 ---- */
+
+// 売買金額の換算レート：1ドル＝1ACとして四捨五入する（デモ取引用）
+function tradeAmount(price, qty){ return Math.max(1, Math.round(price * qty)); }
+
+// 買付・売却を実行し、AC残高と保有株を更新する。検証エラーはmsgで返す
+function executeTrade(mode, ticker, qty){
+  const s = STOCKS.find(x => x.ticker === ticker);
+  if(!s) return { ok:false, msg:"不明な銘柄です。" };
+  if(!Number.isInteger(qty) || qty < 1) return { ok:false, msg:"株数は1株以上で指定してください。" };
+  const pf = loadPortfolio();
+  const amount = tradeAmount(s.price, qty);
+  if(mode === "buy"){
+    if((S.coins||0) < amount) return { ok:false, msg:`ACが不足しています（必要 ${amount.toLocaleString()} AC / 残高 ${(S.coins||0).toLocaleString()} AC）。` };
+    S.coins -= amount;
+    const h = pf[ticker] || { shares:0, cost:0 };
+    h.shares += qty;
+    h.cost += amount;
+    pf[ticker] = h;
+  } else {
+    const h = pf[ticker];
+    const held = h ? h.shares : 0;
+    if(held < qty) return { ok:false, msg:`保有株数が足りません（${ticker} の保有：${held} 株）。` };
+    S.coins = (S.coins||0) + amount;
+    // 取得原価は平均取得単価ベースで按分して減らす
+    h.cost = Math.round(h.cost * (h.shares - qty) / h.shares);
+    h.shares -= qty;
+    if(h.shares <= 0) delete pf[ticker]; else pf[ticker] = h;
   }
+  saveCoins(S.coins);
+  savePortfolio(pf);
+  try{ saveToCloud(getBP(), loadWrong(), loadHist()); }catch(e){}
+  renderStatusBar(); // 画面上部のAC残高へ即時反映
+  return { ok:true, amount };
 }
 
-function renderStockDots(){
-  const dotsEl = document.getElementById("stock-dots");
-  if(!dotsEl) return;
-  dotsEl.innerHTML = STOCKS.map((_,i) => `<span class="stock-dot${i===stockIndex?" on":""}" data-idx="${i}"></span>`).join("");
-  dotsEl.querySelectorAll("[data-idx]").forEach(d => d.onclick = () => goToStockSlide(+d.dataset.idx));
-}
+// 買付／売却モーダル。銘柄と株数を選ぶと合計ACをその場で計算して表示し、
+// 実行時にAC残高・保有株を検証のうえ更新する（ゲーム内デモ取引）
+function openTradeModal(mode){
+  const isBuy = mode === "buy";
+  const pf = loadPortfolio();
+  const heldOf = (t) => (pf[t] ? pf[t].shares : 0);
+  const tickers = isBuy ? STOCKS.map(s => s.ticker) : STOCKS.filter(s => heldOf(s.ticker) > 0).map(s => s.ticker);
 
-function renderStockSlides(){
-  STOCKS.forEach((_,i) => renderStockSlideContent(i));
-  renderStockDots();
-}
+  const ov = document.createElement("div");
+  ov.className = "modal-ov";
+  if(!tickers.length){
+    ov.innerHTML = `
+      <div class="modal">
+        <div class="modal-title" style="color:var(--text)">📉 売却</div>
+        <div class="modal-body">売却できる保有株がありません。<br>まずは「買付」からACで株を購入してみましょう。</div>
+        <button class="ghost" id="trade-cancel">閉じる</button>
+      </div>`;
+  } else {
+    const options = tickers.map(t => {
+      const s = STOCKS.find(x => x.ticker === t);
+      const held = heldOf(t);
+      return `<option value="${t}">${t}（$${s.price.toFixed(2)}${!isBuy || held ? ` / 保有 ${held}株` : ""}）</option>`;
+    }).join("");
+    ov.innerHTML = `
+      <div class="modal">
+        <div class="modal-title" style="color:${isBuy?"var(--accent)":"var(--text)"}">${isBuy?"📈 買付":"📉 売却"}<span class="trade-demo-tag">デモ取引</span></div>
+        <div class="trade-balance">💰 AC残高：<b>${(S.coins||0).toLocaleString()}</b> AC</div>
+        <label class="trade-lab" for="trade-sym">銘柄</label>
+        <select id="trade-sym" class="trade-select">${options}</select>
+        <label class="trade-lab" for="trade-qty">株数</label>
+        <div class="trade-qty-row">
+          <button type="button" class="trade-qty-btn" id="trade-minus" aria-label="1株減らす">−</button>
+          <input id="trade-qty" class="trade-qty" type="number" inputmode="numeric" min="1" step="1" value="1">
+          <button type="button" class="trade-qty-btn" id="trade-plus" aria-label="1株増やす">＋</button>
+        </div>
+        <div class="trade-summary" id="trade-summary"></div>
+        <div class="trade-msg" id="trade-msg"></div>
+        <button class="cta" id="trade-go">${isBuy?"買付を実行":"売却を実行"}</button>
+        <button class="ghost" id="trade-cancel" style="margin-top:8px">キャンセル</button>
+        <div class="trade-note">※ゲーム内通貨ACを使ったシミュレーションです。実際の売買は行われません。</div>
+      </div>`;
+  }
+  document.body.appendChild(ov);
+  const close = () => { try{ ov.remove(); }catch(e){} };
+  ov.addEventListener("click", (e) => { if(e.target === ov) close(); });
+  const cancelBtn = ov.querySelector("#trade-cancel");
+  if(cancelBtn) cancelBtn.onclick = close;
+  if(!tickers.length) return;
 
-// 指定インデックスの銘柄までスクロールスナップで滑らかに移動する
-// （‹›ボタン・ドットタップの両方から呼ばれる共通の遷移処理）
-function goToStockSlide(i){
-  const slidesEl = document.getElementById("stock-slides");
-  if(!slidesEl || !STOCKS.length) return;
-  stockIndex = (i + STOCKS.length) % STOCKS.length;
-  const target = slidesEl.children[stockIndex];
-  if(target) slidesEl.scrollTo({ left: target.offsetLeft, behavior: "smooth" });
-  renderStockDots();
-}
+  const symEl = ov.querySelector("#trade-sym");
+  const qtyEl = ov.querySelector("#trade-qty");
+  const msgEl = ov.querySelector("#trade-msg");
+  const summaryEl = ov.querySelector("#trade-summary");
 
-// 指でスワイプして手動スクロールした場合も、止まった位置から現在の銘柄
-// （ドットの位置）を追従させる。scrollイベントは連発するためデバウンスする。
-function onStockSlidesScroll(){
-  clearTimeout(stockScrollDebounce);
-  stockScrollDebounce = setTimeout(() => {
-    const slidesEl = document.getElementById("stock-slides");
-    if(!slidesEl || !slidesEl.children.length) return;
-    const w = slidesEl.clientWidth || 1;
-    const idx = Math.round(slidesEl.scrollLeft / w);
-    const clamped = Math.max(0, Math.min(STOCKS.length-1, idx));
-    if(clamped !== stockIndex){ stockIndex = clamped; renderStockDots(); }
-  }, 100);
+  const readQty = () => {
+    const v = parseInt(qtyEl.value, 10);
+    return (isNaN(v) || v < 1) ? 1 : v;
+  };
+  const updateSummary = () => {
+    const s = STOCKS.find(x => x.ticker === symEl.value);
+    if(!s) return;
+    const qty = readQty();
+    const amount = tradeAmount(s.price, qty);
+    const held = heldOf(s.ticker);
+    summaryEl.innerHTML = `合計 <b>${amount.toLocaleString()}</b> AC（$${s.price.toFixed(2)} × ${qty}株）` +
+      (isBuy ? "" : `<span class="trade-held">保有 ${held}株</span>`);
+    msgEl.textContent = "";
+  };
+  symEl.onchange = updateSummary;
+  qtyEl.oninput = updateSummary;
+  ov.querySelector("#trade-minus").onclick = () => { qtyEl.value = String(Math.max(1, readQty() - 1)); updateSummary(); };
+  ov.querySelector("#trade-plus").onclick = () => { qtyEl.value = String(readQty() + 1); updateSummary(); };
+  updateSummary();
+
+  ov.querySelector("#trade-go").onclick = () => {
+    const r = executeTrade(mode, symEl.value, readQty());
+    if(!r.ok){ msgEl.textContent = r.msg; return; }
+    close();
+  };
 }
 
 // 実株価取得の結果をSTOCKSへ反映する（銘柄ごと。取得できなかった銘柄だけ
@@ -1068,7 +1168,7 @@ async function refreshStockPrices(){
   STOCKS.forEach(s => { s.isLive = false; }); // 今回の取得結果で改めて判定し直す
   applyLiveStocks(live);
   STOCKS.forEach(s => { if(!s.isLive) simulateStockTick(s); });
-  renderStockSlides();
+  renderStockTape();
   renderStockUpdated();
 }
 
@@ -1084,15 +1184,54 @@ function startStockRefresh(){
 function initStocksCard(){
   const card = document.getElementById("stocks-card");
   if(!card) return;
-  const prev = document.getElementById("stock-prev");
-  const next = document.getElementById("stock-next");
-  const slidesEl = document.getElementById("stock-slides");
-  if(prev) prev.onclick = () => goToStockSlide(stockIndex - 1);
-  if(next) next.onclick = () => goToStockSlide(stockIndex + 1);
-  if(slidesEl) slidesEl.onscroll = onStockSlidesScroll;
-  renderStockSlides();
+  const detail = document.getElementById("stock-detail");
+  const buy = document.getElementById("stock-buy");
+  const sell = document.getElementById("stock-sell");
+  if(detail) detail.onclick = () => go("portfolio");
+  if(buy) buy.onclick = () => openTradeModal("buy");
+  if(sell) sell.onclick = () => openTradeModal("sell");
+  renderStockTape();
   renderStockUpdated();
   startStockRefresh();
+}
+
+/* ポートフォリオ（資産保有額）詳細画面：株価カード右上の「→」から遷移する。
+   現金AC＋保有株の評価額（現在株価ベース）のサマリーと保有明細を表示する */
+export function renderPortfolio(){
+  const pf = loadPortfolio();
+  const tickers = Object.keys(pf);
+  let stockValue = 0;
+  const rows = tickers.map(t => {
+    const s = STOCKS.find(x => x.ticker === t);
+    const h = pf[t];
+    const val = s ? tradeAmount(s.price, h.shares) : h.cost;
+    stockValue += val;
+    return `<div class="pf-row">
+      <div class="pf-row-left">
+        <span class="pf-ticker">${esc(t)}</span>
+        <span class="pf-name">${esc(s ? s.name : "")}</span>
+      </div>
+      <div class="pf-row-right">
+        <span class="pf-shares">${h.shares}株</span>
+        <span class="pf-val">${val.toLocaleString()} AC</span>
+      </div>
+    </div>`;
+  }).join("");
+  const cash = S.coins || 0;
+  app.innerHTML = `
+    <div class="q-head"><button class="quit" data-go="select">← ホーム</button><span class="q-count">ポートフォリオ</span></div>
+    <div class="pf-hero">
+      <div class="pf-hero-lab">総資産（評価額）</div>
+      <div class="pf-hero-total">${(cash + stockValue).toLocaleString()} <small>AC</small></div>
+      <div class="pf-hero-sub">💰 現金 ${cash.toLocaleString()} AC ・ 📈 株式 ${stockValue.toLocaleString()} AC</div>
+    </div>
+    ${rows
+      ? `<div class="section-lab">保有株</div><div class="pf-list">${rows}</div>`
+      : `<div class="sel-sub" style="margin-top:24px;text-align:center;">保有している株はまだありません。<br>株価カードの「買付」からACで購入できます。</div>`}
+    <div class="trade-note" style="text-align:center;margin-top:18px;">※ゲーム内通貨ACを使ったデモ取引のポートフォリオです。</div>
+  `;
+  app.querySelectorAll("[data-go]").forEach(b => b.onclick = () => go(b.dataset.go));
+  window.scrollTo(0,0);
 }
 
 
