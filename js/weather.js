@@ -12,7 +12,7 @@ const DEFAULT_LOCATION = { lat: 35.6762, lon: 139.6503 };
 const DEFAULT_CITY = "東京";
 const GEO_TIMEOUT_MS = 8000;
 const FETCH_TIMEOUT_MS = 8000;
-const CACHE_KEY = "weather_cache_v1";
+const CACHE_KEY = "weather_cache_v2"; // currentTime追加に伴い旧キャッシュを無効化
 const CACHE_TTL_MS = 15 * 60 * 1000; // 15分キャッシュ
 
 // WMO Weather interpretation code（Open-Meteoが返すweather_code）→ アイコン・日本語表記
@@ -152,7 +152,9 @@ async function fetchForecast(lat, lon){
     }
   }
 
-  return { temp, icon, label, pop, hourly6 };
+  // currentTime: この観測値がいつ時点のものか（timezone=autoにより現地時刻の
+  // ISO文字列が返る）。表示側で「HH:MM時点」ラベルに使う
+  return { temp, icon, label, pop, hourly6, currentTime: data.current.time || null };
 }
 
 function loadCache(){

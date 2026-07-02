@@ -765,19 +765,20 @@ const WEATHER_REFRESH_MS = 20 * 60 * 1000; // 20分ごとに天気を自動で�
 // カード内は左から「日付＋デジタル時計」「天気（地名・アイコン・気温・降水確率）」
 // 「6時間おきの降水確率（4段）」「簡易予定表」の4カラム構成。
 // 予定表は現時点ではダミー表示（予定管理機能は未実装）
+// ヘッダーバッジは置かず、4カラムをカード全体で上下中央に据えるミニマル構成
 function weatherCardHTML(){
   return `
     <div class="news-card weather-card" id="weather-card">
-      <div class="news-card-head">
-        <span class="news-badge weather-badge">⛅ WEATHER</span>
-      </div>
       <div class="weather-body">
         <div class="weather-datetime">
           <div class="weather-date" id="weather-clock-date"></div>
-          <div class="weather-time" id="weather-clock-time"></div>
+          <div class="weather-time">
+            <span id="weather-clock-time"></span><span class="weather-time-sec" id="weather-clock-sec"></span>
+          </div>
         </div>
         <div class="weather-info" id="weather-info">
           <div class="weather-city" id="weather-city">取得中…</div>
+          <div class="weather-asof" id="weather-asof"></div>
           <div class="weather-main">
             <span class="weather-icon" id="weather-icon">🌡️</span>
             <span class="weather-temp" id="weather-temp"></span>
@@ -803,8 +804,14 @@ function updateClock(){
     return;
   }
   const now = new Date();
+  const pad = (n) => String(n).padStart(2,"0");
   if(dateEl) dateEl.textContent = `${now.getMonth()+1}/${now.getDate()}(${WEEKDAY_JA[now.getDay()]})`;
-  if(timeEl) timeEl.textContent = `${String(now.getHours()).padStart(2,"0")}:${String(now.getMinutes()).padStart(2,"0")}`;
+  if(timeEl) timeEl.textContent = `${pad(now.getHours())}:${pad(now.getMinutes())}`;
+  const secEl = document.getElementById("weather-clock-sec");
+  if(secEl) secEl.textContent = `:${pad(now.getSeconds())}`;
+  // 降水確率リスト先頭の「今」の行の時刻もリアルタイムに追従させる
+  const nowTimeEl = document.getElementById("weather-hourly6-now-time");
+  if(nowTimeEl) nowTimeEl.textContent = `${pad(now.getHours())}:${pad(now.getMinutes())}`;
 }
 
 function startClock(){
@@ -822,20 +829,27 @@ function formatHourly6Time(isoTime){
   return `${md} ${hm}`;
 }
 
-// 6時間おき（6・12・18・24時間後）の降水確率を「☔ 降水確率」の見出し＋
-// 「日付 時刻」「確率(%)」が横に並ぶ行として縦に4段表示する。
-// 予定表と地名天気の間の余白に収まる控えめなミニ予報
-function renderWeatherHourly6(hourly6){
+// 「☔ 降水確率」の見出しの直下に「今」のリアルタイム降水確率を1行、続けて
+// 6時間おき（6・12・18・24時間後）の予報を「日付 時刻」「確率(%)」の行として
+// 縦に表示する。現在の状況と今後の予測をひと目で比較できるミニ予報
+function renderWeatherHourly6(w){
   const el = document.getElementById("weather-hourly6");
   if(!el) return;
   const title = `<div class="weather-hourly6-title">☔ 降水確率</div>`;
-  if(!hourly6 || !hourly6.length){ el.innerHTML = title; return; }
-  const rows = hourly6.map(h => `
+  if(!w){ el.innerHTML = title; return; }
+  const now = new Date();
+  const nowHM = `${String(now.getHours()).padStart(2,"0")}:${String(now.getMinutes()).padStart(2,"0")}`;
+  const nowRow = (typeof w.pop === "number") ? `
+    <div class="weather-hourly6-row now">
+      <span class="weather-hourly6-time">今 <span id="weather-hourly6-now-time">${nowHM}</span></span>
+      <span class="weather-hourly6-pop">${w.pop}%</span>
+    </div>` : "";
+  const rows = (w.hourly6 || []).map(h => `
     <div class="weather-hourly6-row">
       <span class="weather-hourly6-time">${formatHourly6Time(h.time)}</span>
       <span class="weather-hourly6-pop">${h.pop}%</span>
     </div>`).join("");
-  el.innerHTML = title + rows;
+  el.innerHTML = title + nowRow + rows;
 }
 
 // 天気情報を取得してカードを再描画する。ホーム画面から離れて weather-card が
@@ -847,21 +861,32 @@ async function refreshWeatherCard(){
     return;
   }
   const cityEl = document.getElementById("weather-city");
+  const asofEl = document.getElementById("weather-asof");
   const iconEl = document.getElementById("weather-icon");
   const tempEl = document.getElementById("weather-temp");
   const w = await getWeather();
   if(!document.getElementById("weather-card")) return; // フェッチ中に画面遷移した場合は描画しない
   if(!w){
     if(cityEl) cityEl.textContent = "天気を取得できませんでした";
+    if(asofEl) asofEl.textContent = "";
     if(iconEl) iconEl.textContent = "🌡️";
     if(tempEl) tempEl.textContent = "";
     renderWeatherHourly6(null);
     return;
   }
   if(cityEl) cityEl.textContent = w.isDefaultLocation ? `${w.city}（現在地未取得）` : w.city;
+  // この天気がいつ時点の観測かをアイコンのすぐ上に明記する
+  if(asofEl){
+    if(w.currentTime){
+      const d = new Date(w.currentTime);
+      asofEl.textContent = `${String(d.getHours()).padStart(2,"0")}:${String(d.getMinutes()).padStart(2,"0")}時点`;
+    } else {
+      asofEl.textContent = "現在";
+    }
+  }
   if(iconEl) iconEl.textContent = w.icon;
   if(tempEl) tempEl.textContent = `${w.temp}℃`;
-  renderWeatherHourly6(w.hourly6);
+  renderWeatherHourly6(w);
 }
 
 function startWeatherRefresh(){
