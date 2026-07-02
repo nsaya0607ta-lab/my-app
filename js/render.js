@@ -1005,15 +1005,15 @@ function stocksCardHTML(){
 }
 
 /* ---- IT/AIニュース（売買ボタン下のコンパクトなリスト） ----
-   Microsoft / NVIDIA / Apple / Google / Meta の5社に関する実際の報道記事を
-   厳選したプール（2026年7月時点のスナップショット。タイトルは日本語に要約）
-   から3件を表示し、10分に1回シャッフルして自動的に入れ替える。
-   タップ時は元記事のURLを新しいタブで安全に開く
+   大型テック7社（Microsoft / NVIDIA / Apple / Google / Meta / Amazon / Tesla）
+   に関する実際の報道記事を厳選したプール（2026年7月時点のスナップショット。
+   タイトルは日本語に要約）から3件を表示し、10分に1回シャッフルして
+   自動的に入れ替える。タップ時は元記事のURLを新しいタブで安全に開く
    （target="_blank" + rel="noopener noreferrer"） */
 
 const IT_NEWS_POOL = [
-  { source:"TechCrunch", title:"【Meta】余剰AI計算資源を外販するクラウド事業を計画", url:"https://techcrunch.com/2026/07/01/meta-like-spacex-looks-to-turn-excess-ai-compute-into-cash/", time:"18h ago" },
-  { source:"CNBC", title:"【Meta】AIクラウド事業の報道で株価が9%急伸", url:"https://www.cnbc.com/2026/07/01/meta-stock-cloud-ai-compute.html", time:"20h ago" },
+  { source:"TechCrunch", title:"【Meta】余剰AI計算資源を外販するクラウド事業を計画", url:"https://techcrunch.com/2026/07/01/meta-like-spacex-looks-to-turn-excess-ai-compute-into-cash/", time:"1d ago" },
+  { source:"CNBC", title:"【Meta】AIクラウド事業の報道で株価が9%急伸", url:"https://www.cnbc.com/2026/07/01/meta-stock-cloud-ai-compute.html", time:"1d ago" },
   { source:"NPR", title:"【Meta】AI搭載の予測市場アプリを開発中と報道", url:"https://www.npr.org/2026/06/24/nx-s1-5869486/meta-prediction-market-app-ai", time:"1w ago" },
   { source:"TechCrunch", title:"【Meta】Facebookに横断検索の「AIモード」を導入", url:"https://techcrunch.com/2026/06/15/metas-new-ai-mode-on-facebook-pulls-from-public-info-across-its-platforms/", time:"2w ago" },
   { source:"CRN", title:"【Microsoft】Copilot Coworkを全世界で正式提供開始", url:"https://www.crnasia.com/news/2026/artificial-intelligence/microsoft-copilot-cowork-launches-worldwide", time:"2w ago" },
@@ -1023,6 +1023,10 @@ const IT_NEWS_POOL = [
   { source:"NPR", title:"【Apple】Gemini搭載の新Siriを発表 チャット型UIに", url:"https://www.npr.org/2026/06/08/nx-s1-5847937/apple-wwdc-2026-siri-ai-tim-cook", time:"3w ago" },
   { source:"CNBC", title:"【Apple】AI開発でGoogle・NVIDIAと提携へ", url:"https://www.cnbc.com/2026/06/08/apple-google-nvidia-ai-chips.html", time:"3w ago" },
   { source:"TechNewsWorld", title:"【Google】あらゆる出力を生成する「Gemini Omni」発表", url:"https://www.technewsworld.com/story/google-i-o-2026-signals-an-extinction-event-for-standalone-apps-180348.html", time:"5w ago" },
+  { source:"AWS News Blog", title:"【Amazon】諜報機関向けにAWS移行支援へ10億ドル投資", url:"https://aws.amazon.com/blogs/aws/top-announcements-of-the-whats-next-with-aws-2026/", time:"2w ago" },
+  { source:"AWS News Blog", title:"【Amazon】AIエージェント基盤「Bedrock AgentCore」を4地域に拡大", url:"https://aws.amazon.com/new/", time:"3w ago" },
+  { source:"Electrek", title:"【Tesla】26年Q2の納車台数が予想を上回り前年比25%増", url:"https://electrek.co/2026/06/26/tesla-q2-2026-delivery-consensus-406000/", time:"just now" },
+  { source:"Teslarati", title:"【Tesla】人型ロボット「Optimus」の稼働ラインが始動", url:"https://www.teslarati.com/tesla-expands-massive-safety-feature-worldwide-latest-update/", time:"3d ago" },
 ];
 
 let itNewsItems = [];
