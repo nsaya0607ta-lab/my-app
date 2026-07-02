@@ -1,8 +1,8 @@
 import { CERTS } from './data/certs.js';
 import { DC_PHASES, L, REGIONS } from './data/constants.js';
 import { CONCEPTS, DRAW, PASS, Q, TIERS, applySkin, certById, certStat, commit, correctSet, dcCount, dcPhase, dcTitle, esc, exportCode, fmt, getBP, getProfileName, grade, importCode, isMulti, loadHist, loadReviewStats, loadWrong, overallLevel, overallStat, pick, pts, publishLeaderboard, purchaseSkin, saveToCloud, selectCert, setBP, setProfileName, stars, start, startReview, totalBP } from './core.js';
-import { getNews } from './news.js';
 import { getLiveStocks } from './stocks.js';
+import { getWeather } from './weather.js';
 import { SKIN_DATA } from './data/skins.js';
 import { S, state } from './state.js';
 
@@ -749,19 +749,18 @@ export function renderTransfer(){
 /* ======================= SC-300 のデータ ======================= */
 /* SC-300: Microsoft Identity and Access Administrator（IDとアクセスの管理）*/
 
-/* ニュースダッシュボード：資格一覧画面の上部。5件のニュース（タイトル＋要約）を
-   フェード切り替えで自動巡回し、ドット・矢印で手動切り替えもできる。
-   左側には現在時刻を示すアナログ時計（SVG）を常時表示する。
-   取得完了まで「読み込み中…」を表示し、失敗時は news.js 側のフォールバック
-   （ダミーのIT/Azure系ニュース）に自動で切り替わる。 */
+/* お天気カード：資格一覧画面の上部。左側に常時ティックするアナログ時計
+   （SVG）＋日付・曜日、右側に現在地（またはデフォルト地点）の気温・天気
+   アイコン・降水確率を表示する。旧ニュースカードにあった時計コンポーネント
+   はそのままこのカードへ移設している。
+   位置情報が取得できない場合はデフォルト地点（東京）にフォールバックし、
+   取得できないことを隠さずラベルで示す。天気データ自体が取得できない
+   場合は「取得できませんでした」の案内を表示し、実データのように見える
+   ダミー値は表示しない。 */
 
-let newsItems = [];
-let newsIndex = 0;
-let newsTimer = null;
-let newsRefreshTimer = null;
 let clockTimer = null;
-const NEWS_ROTATE_MS = 5500;
-const NEWS_REFRESH_MS = 10 * 60 * 1000; // 10分ごとにニュースを自動で再フェッチする
+let weatherRefreshTimer = null;
+const WEATHER_REFRESH_MS = 20 * 60 * 1000; // 20分ごとに天気を自動で再フェッチする
 
 // 時計の文字盤の目盛り（12個）を三角関数で一度だけ組み立てる静的SVG片
 function buildClockTicksSVG(){
@@ -778,19 +777,15 @@ function buildClockTicksSVG(){
 }
 const CLOCK_TICKS_SVG = buildClockTicksSVG();
 
-function newsCardHTML(){
+function weatherCardHTML(){
   return `
-    <div class="news-card" id="news-card">
+    <div class="news-card weather-card" id="weather-card">
       <div class="news-card-head">
-        <span class="news-badge">📰 NEWS</span>
-        <div class="news-nav">
-          <button type="button" class="news-arrow" id="news-prev" aria-label="前のニュース">‹</button>
-          <button type="button" class="news-arrow" id="news-next" aria-label="次のニュース">›</button>
-        </div>
+        <span class="news-badge weather-badge">⛅ WEATHER</span>
       </div>
-      <div class="news-body">
-        <div class="news-clock">
-          <svg viewBox="0 0 100 100" class="news-clock-svg">
+      <div class="weather-body">
+        <div class="weather-clock">
+          <svg viewBox="0 0 100 100" class="weather-clock-svg">
             <circle class="clock-face" cx="50" cy="50" r="46"/>
             ${CLOCK_TICKS_SVG}
             <line class="clock-hand hour" id="clock-hour" x1="50" y1="50" x2="50" y2="29"/>
@@ -798,63 +793,18 @@ function newsCardHTML(){
             <line class="clock-hand second" id="clock-second" x1="50" y1="50" x2="50" y2="15"/>
             <circle class="clock-center" cx="50" cy="50" r="3"/>
           </svg>
-          <div class="news-clock-date" id="news-clock-date"></div>
+          <div class="weather-clock-date" id="weather-clock-date"></div>
         </div>
-        <div class="news-content">
-          <div class="news-headline" id="news-headline">読み込み中…</div>
-          <div class="news-summary" id="news-summary"></div>
-          <div class="news-footer">
-            <a class="news-readmore" id="news-readmore" target="_blank" rel="noopener noreferrer" style="visibility:hidden">続きを読む →</a>
-            <button type="button" class="news-refresh-btn" id="news-refresh-btn" aria-label="ニュースを更新" title="ニュースを更新">
-              <svg viewBox="0 0 24 24" class="news-refresh-icon" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
-                <path d="M21 12a9 9 0 1 1-2.64-6.36"/>
-                <polyline points="21 3 21 9 15 9"/>
-              </svg>
-            </button>
+        <div class="weather-info" id="weather-info">
+          <div class="weather-city" id="weather-city">取得中…</div>
+          <div class="weather-main">
+            <span class="weather-icon" id="weather-icon">🌡️</span>
+            <span class="weather-temp" id="weather-temp"></span>
           </div>
+          <div class="weather-pop" id="weather-pop"></div>
         </div>
       </div>
-      <div class="news-dots" id="news-dots"></div>
     </div>`;
-}
-
-function renderNewsSlide(){
-  const headline = document.getElementById("news-headline");
-  const summaryEl = document.getElementById("news-summary");
-  const readmore = document.getElementById("news-readmore");
-  const dotsEl = document.getElementById("news-dots");
-  if(!headline || !summaryEl || !dotsEl || !newsItems.length) return;
-  const n = newsItems[newsIndex];
-  // クラスを一度外して再付与し、フェードインアニメーションを毎回やり直す
-  [headline, summaryEl].forEach(el => { el.classList.remove("news-fade-in"); void el.offsetWidth; el.classList.add("news-fade-in"); });
-  headline.textContent = n.title;
-  headline.title = n.title; // 行数で切れた分はホバーで全文確認できる
-  summaryEl.textContent = n.summary || "";
-  summaryEl.title = n.summary || "";
-  if(readmore){
-    if(n.link){ readmore.href = n.link; readmore.style.visibility = "visible"; }
-    else { readmore.removeAttribute("href"); readmore.style.visibility = "hidden"; }
-  }
-  dotsEl.innerHTML = newsItems.map((_, i) => `<span class="news-dot${i===newsIndex?" on":""}" data-idx="${i}"></span>`).join("");
-  dotsEl.querySelectorAll("[data-idx]").forEach(d => d.onclick = () => gotoNewsSlide(+d.dataset.idx));
-}
-
-function gotoNewsSlide(i){
-  if(!newsItems.length) return;
-  newsIndex = (i + newsItems.length) % newsItems.length;
-  renderNewsSlide();
-  restartNewsTimer();
-}
-
-function restartNewsTimer(){
-  if(newsTimer){ clearInterval(newsTimer); newsTimer = null; }
-  if(newsItems.length > 1){
-    newsTimer = setInterval(() => {
-      if(!document.getElementById("news-card")){ clearInterval(newsTimer); newsTimer = null; return; }
-      newsIndex = (newsIndex + 1) % newsItems.length;
-      renderNewsSlide();
-    }, NEWS_ROTATE_MS);
-  }
 }
 
 const WEEKDAY_JA = ["日","月","火","水","木","金","土"];
@@ -863,7 +813,7 @@ function updateClock(){
   const hourHand = document.getElementById("clock-hour");
   const minHand = document.getElementById("clock-minute");
   const secHand = document.getElementById("clock-second");
-  const dateEl = document.getElementById("news-clock-date");
+  const dateEl = document.getElementById("weather-clock-date");
   if(!hourHand || !minHand || !secHand){
     if(clockTimer){ clearInterval(clockTimer); clockTimer = null; }
     return;
@@ -882,60 +832,47 @@ function startClock(){
   clockTimer = setInterval(updateClock, 1000);
 }
 
-// ニュースを取得してカードを再描画する。ホーム画面から離れて news-card が
+// 天気情報を取得してカードを再描画する。ホーム画面から離れて weather-card が
 // DOM上から消えている場合は、取得結果を無駄に描画せず自動更新タイマーも止める
-// （画面遷移時のクリーンアップ）。force=true の場合は10分キャッシュを無視して
-// 必ずAPIへ再フェッチする（手動更新ボタン用）。
-async function refreshNewsCard(force){
-  if(!document.getElementById("news-card")){
-    if(newsRefreshTimer){ clearInterval(newsRefreshTimer); newsRefreshTimer = null; }
+// （画面遷移時のクリーンアップ）。
+async function refreshWeatherCard(){
+  if(!document.getElementById("weather-card")){
+    if(weatherRefreshTimer){ clearInterval(weatherRefreshTimer); weatherRefreshTimer = null; }
     return;
   }
-  newsItems = await getNews(force);
-  newsIndex = 0;
-  renderNewsSlide();
-  restartNewsTimer();
-}
-
-// 10分（600秒）ごとにニュースをバックグラウンドで自動再フェッチするタイマーを開始する。
-// 呼び出し前に既存のタイマーを必ずクリアするため、ホーム画面を何度再訪しても
-// タイマーが重複して積み上がることはない。
-function startNewsRefresh(){
-  if(newsRefreshTimer){ clearInterval(newsRefreshTimer); newsRefreshTimer = null; }
-  newsRefreshTimer = setInterval(() => refreshNewsCard(false), NEWS_REFRESH_MS);
-}
-
-// ニュースカード右下の更新アイコンをタップした際のハンドラ。10分の待機タイマーを
-// 待たず即座に強制再フェッチし、完了するまでアイコンを回転させてローディング中
-// であることを伝える。連打による多重フェッチはボタンのdisabledで防ぐ。
-let newsManualRefreshBusy = false;
-async function handleNewsRefreshClick(){
-  if(newsManualRefreshBusy) return;
-  const btn = document.getElementById("news-refresh-btn");
-  newsManualRefreshBusy = true;
-  if(btn){ btn.classList.add("spinning"); btn.disabled = true; }
-  try{
-    await refreshNewsCard(true);
-  } finally {
-    newsManualRefreshBusy = false;
-    if(btn){ btn.classList.remove("spinning"); btn.disabled = false; }
+  const cityEl = document.getElementById("weather-city");
+  const iconEl = document.getElementById("weather-icon");
+  const tempEl = document.getElementById("weather-temp");
+  const popEl = document.getElementById("weather-pop");
+  const w = await getWeather();
+  if(!document.getElementById("weather-card")) return; // フェッチ中に画面遷移した場合は描画しない
+  if(!w){
+    if(cityEl) cityEl.textContent = "天気を取得できませんでした";
+    if(iconEl) iconEl.textContent = "🌡️";
+    if(tempEl) tempEl.textContent = "";
+    if(popEl) popEl.textContent = "";
+    return;
   }
+  if(cityEl) cityEl.textContent = w.isDefaultLocation ? `${w.city}（現在地未取得）` : w.city;
+  if(iconEl) iconEl.textContent = w.icon;
+  if(tempEl) tempEl.textContent = `${w.temp}℃`;
+  if(popEl) popEl.textContent = (typeof w.pop === "number") ? `☔ 降水確率 ${w.pop}%` : "";
 }
 
-async function loadNewsCard(){
-  const card = document.getElementById("news-card");
+function startWeatherRefresh(){
+  if(weatherRefreshTimer){ clearInterval(weatherRefreshTimer); weatherRefreshTimer = null; }
+  weatherRefreshTimer = setInterval(() => {
+    if(!document.getElementById("weather-card")){ clearInterval(weatherRefreshTimer); weatherRefreshTimer = null; return; }
+    refreshWeatherCard();
+  }, WEATHER_REFRESH_MS);
+}
+
+async function loadWeatherCard(){
+  const card = document.getElementById("weather-card");
   if(!card) return;
-  const prev = document.getElementById("news-prev");
-  const next = document.getElementById("news-next");
-  const refreshBtn = document.getElementById("news-refresh-btn");
-  if(prev) prev.onclick = () => gotoNewsSlide(newsIndex - 1);
-  if(next) next.onclick = () => gotoNewsSlide(newsIndex + 1);
-  if(refreshBtn) refreshBtn.onclick = handleNewsRefreshClick;
-
   startClock();
-
-  await refreshNewsCard(false); // 画面を開いた瞬間の即時フェッチ（10分キャッシュは尊重する）
-  startNewsRefresh();           // 以後10分間隔でバックグラウンド自動更新
+  await refreshWeatherCard(); // 画面を開いた瞬間の即時フェッチ
+  startWeatherRefresh();      // 以後20分間隔でバックグラウンド自動更新
 }
 
 /* =========================================================================
@@ -1156,7 +1093,7 @@ function initStocksCard(){
 
 
 // Microsoftロゴ（4色の田の字）をイメージした丸型ボタン＋その下のテキストを、
-// ニュース・株価カードと同じ .news-card（白背景・角丸・薄いシャドウ）に内包した
+// お天気・株価カードと同じ .news-card（白背景・角丸・薄いシャドウ）に内包した
 // 独立カードとして表示する。カード内で丸ボタン・テキストとも完全に中央揃え。
 // テキストは最大9文字までは静止表示、それを超える場合は電光掲示板風に
 // 右から左へ無限ループでスライドする。どちらをタップしても資格選択画面
@@ -1193,7 +1130,7 @@ function msCertLauncherHTML(){
 
 export function renderSelect(){
   app.innerHTML = `
-    ${newsCardHTML()}
+    ${weatherCardHTML()}
     ${stocksCardHTML()}
     ${msCertLauncherHTML()}
     ${state.currentUser
@@ -1203,7 +1140,7 @@ export function renderSelect(){
   app.querySelectorAll("[data-go]").forEach(b=>b.onclick=()=>go(b.dataset.go));
   const lo=app.querySelector("[data-logout]"); if(lo)lo.onclick=()=>logout();
   const li=app.querySelector("[data-login]"); if(li)li.onclick=()=>{ state.guestMode=false; state.authMode="login"; render(); };
-  loadNewsCard();
+  loadWeatherCard();
   initStocksCard();
   window.scrollTo(0,0);
 }

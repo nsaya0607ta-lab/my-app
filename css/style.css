@@ -363,19 +363,21 @@ h1.title{font-size:34px;line-height:1.05;font-weight:800;margin:8px 0 0;letter-s
 .sel-sub{font-size:13px;color:var(--muted);line-height:1.7;margin:0;}
 .cert-list{display:flex;flex-direction:column;gap:12px;}
 
-/* ============ 追加：資格一覧画面 上部のニュースダッシュボード（5件・要約・時計） ============ */
+/* ============ 追加：資格一覧画面 上部のお天気カード（時計＋現在地の天気） ============ */
 .news-card{background:linear-gradient(160deg,rgba(2,132,199,.05) 0%,var(--surface) 65%);border:1px solid var(--line);border-radius:18px;padding:14px 16px 12px;margin-bottom:16px;box-shadow:0 4px 14px rgba(15,23,42,.04);}
 .news-card-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;}
 .news-badge{flex:none;font-size:10.5px;font-weight:800;letter-spacing:.06em;color:var(--bad);background:rgba(220,38,38,.08);border:1px solid rgba(220,38,38,.22);border-radius:99px;padding:3px 9px;}
 .news-nav{display:flex;gap:5px;}
 .news-arrow{width:24px;height:24px;flex:none;border-radius:50%;border:1px solid var(--line);background:rgba(255,255,255,.7);color:var(--muted);font-size:15px;line-height:1;cursor:pointer;display:flex;align-items:center;justify-content:center;padding:0;}
 .news-arrow:active{transform:scale(.9);}
+.weather-card{margin-bottom:14px;}
+.weather-badge{color:var(--accent);background:rgba(2,132,199,.08);border-color:rgba(2,132,199,.22);}
 
-.news-body{display:flex;align-items:flex-start;gap:14px;}
+.weather-body{display:flex;align-items:center;gap:16px;}
 
 /* アナログ時計（SVG・画像不使用）。学習の妨げにならないミニマルなデザイン */
-.news-clock{flex:none;width:72px;display:flex;flex-direction:column;align-items:center;gap:5px;}
-.news-clock-svg{width:72px;height:72px;}
+.weather-clock{flex:none;width:72px;display:flex;flex-direction:column;align-items:center;gap:5px;}
+.weather-clock-svg{width:72px;height:72px;}
 .clock-face{fill:rgba(255,255,255,.9);stroke:var(--line);stroke-width:2;}
 .clock-tick{stroke:var(--muted);stroke-width:1.6;opacity:.55;}
 .clock-tick.major{stroke:var(--accent);stroke-width:2.4;opacity:.85;}
@@ -384,32 +386,14 @@ h1.title{font-size:34px;line-height:1.05;font-weight:800;margin:8px 0 0;letter-s
 .clock-hand.minute{stroke:var(--text);stroke-width:3.4;}
 .clock-hand.second{stroke:var(--accent);stroke-width:1.6;}
 .clock-center{fill:var(--accent);}
-.news-clock-date{font-size:10px;font-weight:700;color:var(--muted);letter-spacing:.02em;white-space:nowrap;}
+.weather-clock-date{font-size:10px;font-weight:700;color:var(--muted);letter-spacing:.02em;white-space:nowrap;}
 
-.news-content{flex:1;min-width:0;}
-.news-headline{font-size:13.5px;font-weight:800;color:var(--text);line-height:1.4;opacity:0;
-  display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;line-clamp:2;overflow:hidden;}
-.news-summary{margin-top:4px;font-size:11.5px;font-weight:500;color:var(--muted);line-height:1.6;opacity:0;
-  display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;line-clamp:2;overflow:hidden;}
-.news-fade-in{animation:newsFadeIn .35s ease forwards;}
-@keyframes newsFadeIn{from{opacity:0;transform:translateY(4px);}to{opacity:1;transform:translateY(0);}}
-.news-readmore{display:inline-block;font-size:11px;font-weight:800;color:var(--accent);text-decoration:none;}
-.news-readmore:hover{text-decoration:underline;}
-
-.news-footer{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-top:7px;}
-.news-refresh-btn{flex:none;border:none;background:none;padding:4px;margin:0 -4px 0 0;cursor:pointer;
-  color:var(--muted);display:flex;align-items:center;justify-content:center;border-radius:50%;
-  transition:color .15s,background-color .15s;}
-.news-refresh-btn:hover{color:var(--accent);background:rgba(2,132,199,.08);}
-.news-refresh-btn:active{color:var(--accent);}
-.news-refresh-btn:disabled{cursor:default;}
-.news-refresh-icon{width:15px;height:15px;display:block;}
-.news-refresh-btn.spinning .news-refresh-icon{animation:newsRefreshSpin .8s linear infinite;}
-@keyframes newsRefreshSpin{from{transform:rotate(0deg);}to{transform:rotate(360deg);}}
-
-.news-dots{display:flex;gap:6px;justify-content:center;margin-top:10px;}
-.news-dot{width:6px;height:6px;border-radius:50%;background:var(--line);cursor:pointer;transition:background .2s,transform .2s;}
-.news-dot.on{background:var(--accent);transform:scale(1.3);}
+.weather-info{flex:1;min-width:0;display:flex;flex-direction:column;gap:4px;}
+.weather-city{font-size:12px;font-weight:700;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.weather-main{display:flex;align-items:center;gap:8px;}
+.weather-icon{font-size:32px;line-height:1;}
+.weather-temp{font-size:26px;font-weight:800;color:var(--text);font-variant-numeric:tabular-nums;}
+.weather-pop{font-size:11.5px;font-weight:700;color:var(--accent);}
 
 /* ============ 追加：株価カード（STOCKS） ============
    ニュースカードと同じ .news-card / .news-card-head / .news-badge / .news-nav /
