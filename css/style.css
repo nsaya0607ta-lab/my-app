@@ -414,13 +414,17 @@ h1.title{font-size:34px;line-height:1.05;font-weight:800;margin:8px 0 0;letter-s
 .stock-badge{color:var(--accent);background:rgba(2,132,199,.08);border-color:rgba(2,132,199,.22);}
 .stock-updated{font-size:10.5px;line-height:1.2;color:#605e5c;font-weight:600;white-space:nowrap;}
 
-/* 流れる株価ティッカー：同じ6銘柄セットを2周分並べ、トラック全体を
-   translateX(-50%)まで等速で動かし続けることでシームレスに無限ループさせる */
-.stock-tape{overflow:hidden;margin-top:2px;padding:9px 0;border-top:1px solid var(--line);border-bottom:1px solid var(--line);}
-.stock-tape-track{display:inline-flex;align-items:baseline;white-space:nowrap;width:max-content;
-  animation:stockTape 26s linear infinite;will-change:transform;}
-.stock-tape:active .stock-tape-track{animation-play-state:paused;}
-@keyframes stockTape{from{transform:translateX(0);}to{transform:translateX(-50%);}}
+/* 流れる株価ティッカー：同じ6銘柄セットを2周分並べた実スクロールコンテナ。
+   自動送りはJS（requestAnimationFrameでscrollLeftを等速で加算）が担い、
+   ユーザーはいつでも指でスワイプ／マウスドラッグで手動スクロールできる。
+   スクロールバーはFirefox系（scrollbar-width）とWebKit系（::-webkit-scrollbar）
+   の両方で徹底的に非表示にする */
+.stock-tape{overflow-x:auto;overflow-y:hidden;margin-top:2px;padding:9px 0;
+  border-top:1px solid var(--line);border-bottom:1px solid var(--line);
+  scrollbar-width:none;-ms-overflow-style:none;-webkit-overflow-scrolling:touch;cursor:grab;}
+.stock-tape::-webkit-scrollbar{display:none;width:0;height:0;}
+.stock-tape.dragging{cursor:grabbing;}
+.stock-tape-track{display:inline-flex;align-items:baseline;white-space:nowrap;width:max-content;}
 .stock-tape-item{display:inline-flex;align-items:baseline;gap:6px;margin-right:30px;}
 .tape-ticker{font-size:12.5px;font-weight:800;color:var(--text);}
 .tape-price{font-size:12.5px;font-weight:700;color:var(--text);font-variant-numeric:tabular-nums;}

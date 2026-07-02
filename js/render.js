@@ -960,7 +960,7 @@ function stocksCardHTML(){
         </div>
         <button type="button" class="news-arrow" id="stock-detail" aria-label="ポートフォリオ詳細へ">→</button>
       </div>
-      <div class="stock-tape">
+      <div class="stock-tape" id="stock-tape">
         <div class="stock-tape-track">${tapeCopy(0)}${tapeCopy(1)}</div>
       </div>
       <div class="stock-trade-row">
@@ -1005,6 +1005,121 @@ function renderStockTapeContent(i){
 
 function renderStockTape(){
   STOCKS.forEach((_,i) => renderStockTapeContent(i));
+}
+
+/* ---- ティッカーの自動ループ＋手動スワイプのハイブリッド制御 ----
+   CSSアニメーションではなく、実際にスクロールできるコンテナ（overflow-x:auto）の
+   scrollLeftをrequestAnimationFrameで少しずつ進めて「流れる」動きを作る。
+   こうすることで、ユーザーはいつでも指でタッチして左右に自由にスワイプでき
+   （タッチ中は自動送りを一時停止）、指を離すと少しのディレイの後に
+   その位置から自動スクロールが滑らかに再開する。
+   同じ銘柄列を2周分並べてあるため、scrollLeftが1周分を超えたら1周分だけ
+   巻き戻す（左端まで巻き戻したら1周分進める）ことで、前後どちらの方向にも
+   境目なく無限にループしているように見せる */
+
+let tapeRafId = null;
+let tapeLastTs = 0;
+let tapePos = 1;            // 自動送り用のスクロール位置（小数を保持して等速を保証する）
+let tapePaused = false;     // タッチ・ドラッグ中は自動送りを止める
+let tapeResumeTimer = null;
+let tapeDragging = false;   // マウスドラッグ中か（PC向け）
+let tapeDragStartX = 0;
+let tapeDragStartScroll = 0;
+const TAPE_SPEED_PX_S = 27;         // 自動送りの速度（px/秒）
+const TAPE_RESUME_DELAY_MS = 2500;  // 指を離してから自動送りを再開するまでの待ち時間
+
+function tapeHalfWidth(tapeEl){
+  const track = tapeEl.firstElementChild;
+  return track ? track.scrollWidth / 2 : 0;
+}
+
+// 手動スクロール中のシームレスなループ処理（1周分を超えたら巻き戻す）
+function onTapeScroll(){
+  const tapeEl = document.getElementById("stock-tape");
+  if(!tapeEl || !tapePaused) return; // 自動送り中の巻き戻しはtapeStep側で行う
+  const half = tapeHalfWidth(tapeEl);
+  if(half <= 0) return;
+  if(tapeEl.scrollLeft >= half) tapeEl.scrollLeft -= half;
+  // 左端まで巻き戻したら1周先の同じ見た目の位置へ（half丁度に置くと直後に
+  // 上の巻き戻し条件と往復してしまうため、1px内側に着地させる）
+  else if(tapeEl.scrollLeft < 1) tapeEl.scrollLeft += half - 1;
+}
+
+function tapeStep(ts){
+  const tapeEl = document.getElementById("stock-tape");
+  if(!tapeEl){ tapeRafId = null; return; } // カードがDOMから消えたら自動終了
+  if(tapeLastTs && !tapePaused){
+    tapePos += TAPE_SPEED_PX_S * (ts - tapeLastTs) / 1000;
+    const half = tapeHalfWidth(tapeEl);
+    if(half > 0 && tapePos >= half) tapePos -= half;
+    tapeEl.scrollLeft = tapePos;
+  }
+  tapeLastTs = ts;
+  tapeRafId = requestAnimationFrame(tapeStep);
+}
+
+function pauseTape(){
+  tapePaused = true;
+  clearTimeout(tapeResumeTimer);
+}
+
+// 指を離してから一定時間後に、ユーザーが動かした位置を引き継いで自動送りを再開する
+function scheduleTapeResume(){
+  clearTimeout(tapeResumeTimer);
+  tapeResumeTimer = setTimeout(() => {
+    const tapeEl = document.getElementById("stock-tape");
+    if(tapeEl) tapePos = tapeEl.scrollLeft;
+    tapePaused = false;
+  }, TAPE_RESUME_DELAY_MS);
+}
+
+function startTapeAuto(){
+  if(tapeRafId){ cancelAnimationFrame(tapeRafId); tapeRafId = null; }
+  clearTimeout(tapeResumeTimer);
+  const tapeEl = document.getElementById("stock-tape");
+  if(!tapeEl) return;
+  tapePos = Math.max(1, tapeEl.scrollLeft);
+  tapeEl.scrollLeft = tapePos;
+  tapePaused = false;
+  tapeLastTs = 0;
+  tapeRafId = requestAnimationFrame(tapeStep);
+}
+
+// PCのマウスドラッグでもスワイプできるようにする（moveとupは画面全体で拾う
+// 必要があるためwindowに一度だけ登録し、対象要素は都度探す）
+window.addEventListener("mousemove", (e) => {
+  if(!tapeDragging) return;
+  const tapeEl = document.getElementById("stock-tape");
+  if(!tapeEl) return;
+  tapeEl.scrollLeft = tapeDragStartScroll - (e.clientX - tapeDragStartX);
+});
+window.addEventListener("mouseup", () => {
+  if(!tapeDragging) return;
+  tapeDragging = false;
+  const tapeEl = document.getElementById("stock-tape");
+  if(tapeEl) tapeEl.classList.remove("dragging");
+  scheduleTapeResume();
+});
+
+function initStockTape(){
+  const tapeEl = document.getElementById("stock-tape");
+  if(!tapeEl) return;
+  // タッチ中は自動送りを止め、指の動き（ネイティブスクロール）に任せる
+  tapeEl.ontouchstart = () => pauseTape();
+  tapeEl.ontouchend = () => scheduleTapeResume();
+  tapeEl.ontouchcancel = () => scheduleTapeResume();
+  // トラックパッド等の横スクロールでも同様に一時停止→自動再開
+  tapeEl.onwheel = () => { pauseTape(); scheduleTapeResume(); };
+  tapeEl.onscroll = onTapeScroll;
+  tapeEl.onmousedown = (e) => {
+    tapeDragging = true;
+    tapeDragStartX = e.clientX;
+    tapeDragStartScroll = tapeEl.scrollLeft;
+    tapeEl.classList.add("dragging");
+    pauseTape();
+    e.preventDefault();
+  };
+  startTapeAuto();
 }
 
 /* ---- AC連動のデモ売買 ---- */
@@ -1193,6 +1308,7 @@ function initStocksCard(){
   renderStockTape();
   renderStockUpdated();
   startStockRefresh();
+  initStockTape();
 }
 
 /* ポートフォリオ（資産保有額）詳細画面：株価カード右上の「→」から遷移する。
