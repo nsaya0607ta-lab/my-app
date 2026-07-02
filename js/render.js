@@ -98,6 +98,7 @@ export function render(){
   if(S.screen==="skins") return renderSkinShop();
   if(S.screen==="analytics") return renderAnalytics();
   if(S.screen==="certs") return renderCertList();
+  if(S.screen==="schedule") return renderSchedule();
   // 大元：資格選択画面
   if(S.screen==="select" || !S.cert) return renderSelect();
   if(S.screen==="home") return renderHome();
@@ -749,10 +750,8 @@ export function renderTransfer(){
 /* ======================= SC-300 のデータ ======================= */
 /* SC-300: Microsoft Identity and Access Administrator（IDとアクセスの管理）*/
 
-/* お天気カード：資格一覧画面の上部。左側に常時ティックするアナログ時計
-   （SVG）＋日付・曜日、右側に現在地（またはデフォルト地点）の気温・天気
-   アイコン・降水確率を表示する。旧ニュースカードにあった時計コンポーネント
-   はそのままこのカードへ移設している。
+/* お天気カード：資格一覧画面の上部。左から「日付＋デジタル時計」
+   「天気（地名・気温・降水確率）」「簡易予定表」の3カラム構成。
    位置情報が取得できない場合はデフォルト地点（東京）にフォールバックし、
    取得できないことを隠さずラベルで示す。天気データ自体が取得できない
    場合は「取得できませんでした」の案内を表示し、実データのように見える
@@ -762,21 +761,8 @@ let clockTimer = null;
 let weatherRefreshTimer = null;
 const WEATHER_REFRESH_MS = 20 * 60 * 1000; // 20分ごとに天気を自動で再フェッチする
 
-// 時計の文字盤の目盛り（12個）を三角関数で一度だけ組み立てる静的SVG片
-function buildClockTicksSVG(){
-  let ticks = "";
-  for(let i=0;i<12;i++){
-    const angle = (i*30) * Math.PI/180;
-    const major = i % 3 === 0; // 12・3・6・9 は長め・太めの目盛り
-    const outerR = 44, innerR = major ? 36 : 40;
-    const x1 = (50 + outerR*Math.sin(angle)).toFixed(2), y1 = (50 - outerR*Math.cos(angle)).toFixed(2);
-    const x2 = (50 + innerR*Math.sin(angle)).toFixed(2), y2 = (50 - innerR*Math.cos(angle)).toFixed(2);
-    ticks += `<line class="clock-tick${major?" major":""}" x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}"/>`;
-  }
-  return ticks;
-}
-const CLOCK_TICKS_SVG = buildClockTicksSVG();
-
+// カード内は左から「日付＋デジタル時計」「天気（地名・アイコン・気温・降水確率）」
+// 「簡易予定表」の3カラム構成。予定表は現時点ではダミー表示（予定管理機能は未実装）
 function weatherCardHTML(){
   return `
     <div class="news-card weather-card" id="weather-card">
@@ -784,16 +770,9 @@ function weatherCardHTML(){
         <span class="news-badge weather-badge">⛅ WEATHER</span>
       </div>
       <div class="weather-body">
-        <div class="weather-clock">
-          <svg viewBox="0 0 100 100" class="weather-clock-svg">
-            <circle class="clock-face" cx="50" cy="50" r="46"/>
-            ${CLOCK_TICKS_SVG}
-            <line class="clock-hand hour" id="clock-hour" x1="50" y1="50" x2="50" y2="29"/>
-            <line class="clock-hand minute" id="clock-minute" x1="50" y1="50" x2="50" y2="19"/>
-            <line class="clock-hand second" id="clock-second" x1="50" y1="50" x2="50" y2="15"/>
-            <circle class="clock-center" cx="50" cy="50" r="3"/>
-          </svg>
-          <div class="weather-clock-date" id="weather-clock-date"></div>
+        <div class="weather-datetime">
+          <div class="weather-date" id="weather-clock-date"></div>
+          <div class="weather-time" id="weather-clock-time"></div>
         </div>
         <div class="weather-info" id="weather-info">
           <div class="weather-city" id="weather-city">取得中…</div>
@@ -803,6 +782,11 @@ function weatherCardHTML(){
           </div>
           <div class="weather-pop" id="weather-pop"></div>
         </div>
+        <div class="weather-schedule">
+          <div class="weather-schedule-title">予定</div>
+          <div class="weather-schedule-item">15:00 勉強会</div>
+          <div class="weather-schedule-item">19:00 買い物</div>
+        </div>
       </div>
     </div>`;
 }
@@ -810,20 +794,15 @@ function weatherCardHTML(){
 const WEEKDAY_JA = ["日","月","火","水","木","金","土"];
 
 function updateClock(){
-  const hourHand = document.getElementById("clock-hour");
-  const minHand = document.getElementById("clock-minute");
-  const secHand = document.getElementById("clock-second");
   const dateEl = document.getElementById("weather-clock-date");
-  if(!hourHand || !minHand || !secHand){
+  const timeEl = document.getElementById("weather-clock-time");
+  if(!dateEl && !timeEl){
     if(clockTimer){ clearInterval(clockTimer); clockTimer = null; }
     return;
   }
   const now = new Date();
-  const h = now.getHours() % 12, m = now.getMinutes(), s = now.getSeconds();
-  hourHand.setAttribute("transform", `rotate(${(h*30 + m*0.5).toFixed(2)} 50 50)`);
-  minHand.setAttribute("transform", `rotate(${(m*6 + s*0.1).toFixed(2)} 50 50)`);
-  secHand.setAttribute("transform", `rotate(${(s*6).toFixed(2)} 50 50)`);
   if(dateEl) dateEl.textContent = `${now.getMonth()+1}/${now.getDate()}(${WEEKDAY_JA[now.getDay()]})`;
+  if(timeEl) timeEl.textContent = `${String(now.getHours()).padStart(2,"0")}:${String(now.getMinutes()).padStart(2,"0")}`;
 }
 
 function startClock(){
@@ -1092,46 +1071,76 @@ function initStocksCard(){
 }
 
 
-// Microsoftロゴ（4色の田の字）をイメージした丸型ボタン＋その下のテキストを、
-// お天気・株価カードと同じ .news-card（白背景・角丸・薄いシャドウ）に内包した
-// 独立カードとして表示する。カード内で丸ボタン・テキストとも完全に中央揃え。
-// テキストは最大9文字までは静止表示、それを超える場合は電光掲示板風に
-// 右から左へ無限ループでスライドする。どちらをタップしても資格選択画面
-//（資格一覧）へ遷移する。
-const MS_CERT_LABEL = "Microsoft認定試験";
-const MS_CERT_LABEL_MAX_CHARS = 9;
+// アイコン＋その下のテキストを、お天気・株価カードと同じ .news-card
+// （白背景・角丸・薄いシャドウ）に内包した独立カードとして表示する共通処理。
+// カード内でアイコン・テキストとも完全に中央揃え。テキストは最大9文字までは
+// 静止表示、それを超える場合は電光掲示板風に右から左へ無限ループでスライド
+// する。アイコン・テキストのどちらをタップしても指定画面へ遷移する。
+// Microsoft認定試験カード・予定管理カードの両方で共有するレイアウト。
+const LAUNCHER_LABEL_MAX_CHARS = 9;
 
-function msCertLauncherHTML(){
-  const chars = [...MS_CERT_LABEL]; // サロゲートペアも1文字として正しく数える
-  const needsMarquee = chars.length > MS_CERT_LABEL_MAX_CHARS;
+function launcherCardHTML({ cardId, cardClass, iconHTML, label, dataGo, ariaLabel }){
+  const chars = [...label]; // サロゲートペアも1文字として正しく数える
+  const needsMarquee = chars.length > LAUNCHER_LABEL_MAX_CHARS;
   const labelHTML = needsMarquee
     ? `<span class="ms-cert-marquee-track">
-         <span class="ms-cert-marquee-item">${esc(MS_CERT_LABEL)}</span>
-         <span class="ms-cert-marquee-item" aria-hidden="true">${esc(MS_CERT_LABEL)}</span>
+         <span class="ms-cert-marquee-item">${esc(label)}</span>
+         <span class="ms-cert-marquee-item" aria-hidden="true">${esc(label)}</span>
        </span>`
-    : `<span class="ms-cert-static">${esc(MS_CERT_LABEL)}</span>`;
+    : `<span class="ms-cert-static">${esc(label)}</span>`;
   return `
-    <div class="news-card ms-cert-card" id="ms-cert-card">
+    <div class="news-card ms-cert-card${cardClass ? " " + cardClass : ""}" id="${cardId}">
       <div class="ms-cert-inner">
-        <button type="button" class="ms-logo-btn" id="ms-cert-logo-btn" data-go="certs" aria-label="資格を選ぶ" title="資格を選ぶ">
-          <span class="ms-logo-grid">
-            <span class="ms-logo-sq r"></span>
-            <span class="ms-logo-sq g"></span>
-            <span class="ms-logo-sq b"></span>
-            <span class="ms-logo-sq y"></span>
-          </span>
+        <button type="button" class="ms-logo-btn" data-go="${dataGo}" aria-label="${esc(ariaLabel)}" title="${esc(ariaLabel)}">
+          ${iconHTML}
         </button>
-        <button type="button" class="ms-cert-link" id="ms-cert-text-link" data-go="certs" title="${esc(MS_CERT_LABEL)}">
+        <button type="button" class="ms-cert-link" data-go="${dataGo}" title="${esc(label)}">
           <span class="ms-cert-textwrap">${labelHTML}</span>
         </button>
       </div>
     </div>`;
 }
 
+// Microsoftロゴ（4色の田の字）をイメージした丸型ボタン。タップで資格選択画面へ
+function msCertLauncherHTML(){
+  return launcherCardHTML({
+    cardId: "ms-cert-card",
+    iconHTML: `<span class="ms-logo-grid">
+      <span class="ms-logo-sq r"></span>
+      <span class="ms-logo-sq g"></span>
+      <span class="ms-logo-sq b"></span>
+      <span class="ms-logo-sq y"></span>
+    </span>`,
+    label: "Microsoft認定試験",
+    dataGo: "certs",
+    ariaLabel: "資格を選ぶ",
+  });
+}
+
+// カレンダー風アイコンの丸型ボタン。タップで予定管理画面へ（画面自体は今は空）
+function scheduleLauncherHTML(){
+  const calendarIconSVG = `
+    <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="var(--accent)" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+      <rect x="3" y="4.5" width="18" height="16" rx="2.5"></rect>
+      <line x1="8" y1="2.5" x2="8" y2="6.5"></line>
+      <line x1="16" y1="2.5" x2="16" y2="6.5"></line>
+      <line x1="3" y1="10" x2="21" y2="10"></line>
+    </svg>`;
+  return launcherCardHTML({
+    cardId: "schedule-card",
+    cardClass: "schedule-card",
+    iconHTML: calendarIconSVG,
+    label: "予定管理",
+    dataGo: "schedule",
+    ariaLabel: "予定管理",
+  });
+}
+
 export function renderSelect(){
   app.innerHTML = `
     ${weatherCardHTML()}
     ${stocksCardHTML()}
+    ${scheduleLauncherHTML()}
     ${msCertLauncherHTML()}
     ${state.currentUser
       ? `<div class="acct-bar">👤 ${esc(state.currentUser.email||"ログイン中")}<button class="link2" data-logout>ログアウト</button></div>`
@@ -1142,6 +1151,16 @@ export function renderSelect(){
   const li=app.querySelector("[data-login]"); if(li)li.onclick=()=>{ state.guestMode=false; state.authMode="login"; render(); };
   loadWeatherCard();
   initStocksCard();
+  window.scrollTo(0,0);
+}
+
+// 予定管理カードから遷移するプレースホルダー画面（機能は未実装、今は空のまま）
+export function renderSchedule(){
+  app.innerHTML = `
+    <div class="q-head"><button class="quit" data-go="select">← ホーム</button><span class="q-count">予定管理</span></div>
+    <div class="sel-sub" style="margin-top:24px;text-align:center;">この機能は近日公開予定です。</div>
+  `;
+  app.querySelectorAll("[data-go]").forEach(b=>b.onclick=()=>go(b.dataset.go));
   window.scrollTo(0,0);
 }
 
