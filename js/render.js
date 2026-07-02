@@ -8,41 +8,34 @@ import { S, state } from './state.js';
 
 export const app = document.getElementById("app");
 
-export function go(s){ S.screen=s; render(); }
+// 「資格を選ぶ」画面・ホーム（select）画面はどちらも特定の資格に紐づかない
+// 全体ビューのため、遷移するたびに選択中の資格をクリアする。これにより、
+// 個別資格の画面（AZ-900など）から資格一覧へ「戻る」際に、前の資格の
+// ランク表示が残ってしまうバグを防ぐ（ステータスバーの再描画は
+// S.cert の値を見て個別資格行の要否を判断しているため）。
+export function go(s){
+  if(s === "certs" || s === "select") S.cert = null;
+  S.screen = s;
+  render();
+}
 
-// 右上の共通ステータスバー：上段=総合Lv／下段=選択中の資格Lv／右=AC。render()のたびに最新化
-
+// 最上段の共通ステータスバー：総合ランク／AC所持数。render()のたびに最新化。
+// ホーム（select）画面・資格一覧（certs）画面の【この2画面にいる時だけ】表示し、
+// AZ-900などの個別資格の画面やその他の画面では完全に非表示にする。
+// この2画面はどちらも特定の資格に紐づかない全体ビューなので、常に総合ランクの
+// みを表示する（個別資格のランク行は出さない。go()側でS.certを都度クリアして
+// いるため、他画面から戻った直後に前の資格のランクが残る心配もない）。
 export function renderStatusBar(){
   const el=document.getElementById("statusbar"); if(!el) return;
   // 認証前・ユーザー名未設定などプレイヤーが確定していない画面では非表示
   const gated = (!state.guestMode && !state.authReady)
              || (!state.guestMode && !state.currentUser)
              || (!state.guestMode && state.currentUser && (!state.profileChecked || !getProfileName()));
-  // ホーム画面（ニュースカードのある起動直後の画面）ではランクカードごと非表示にする
-  const hiddenOnScreen = (S.screen === "select");
-  if(gated || hiddenOnScreen){ el.classList.remove("show"); el.innerHTML=""; return; }
-  const ov = overallStat();          // 上段：全資格合計から総合Lvと次Lvまでの進捗(%)
+  const screen = resolveScreen();
+  const shownOnScreen = (screen === "select" || screen === "certs");
+  if(gated || !shownOnScreen){ el.classList.remove("show"); el.innerHTML=""; return; }
+  const ov = overallStat();          // 総合Lvと次Lvまでの進捗(%)
   const coins = (S.coins||0);
-
-  // 下段：選択中の資格レベルと、次のリソース解放までの進捗（データセンターと同じロジック）
-  let certRow = "";
-  if(S.cert){
-    const c = certById(S.cert) || {};
-    const bp = getBP();
-    const lvl = dcCount(bp);
-    const next = TIERS.find(t=>t.bp>bp);
-    let cpct;
-    if(next){ const prevBp = lvl>0 ? TIERS[lvl-1].bp : 0; cpct = Math.max(0, Math.min(100, Math.round((bp-prevBp)/(next.bp-prevBp)*100))); }
-    else cpct = 100;
-    // どのリソース間の進捗か（例：VM → ストレージ）をツールチップに明示
-    const curName = lvl>0 ? (TIERS[lvl-1].icon+" "+TIERS[lvl-1].name) : "スタート";
-    const certTitle = next ? `${curName} → ${next.icon} ${next.name}（あと ${(next.bp-bp).toLocaleString()} BP）` : "全リソース稼働";
-    certRow = `
-      <div class="sb-line">
-        <span class="sb-lab sb-lab-cert">${esc(c.code||"選択資格")} Lv.<b>${lvl}</b></span>
-        <span class="sb-prog" title="${esc(certTitle)}"><span class="sb-prog-f cert" style="width:${cpct}%"></span></span>
-      </div>`;
-  }
 
   el.innerHTML = `
     <div class="sb-levels">
@@ -50,7 +43,6 @@ export function renderStatusBar(){
         <span class="sb-lab">総合ランク Lv.<b>${ov.lv}</b></span>
         <span class="sb-prog" title="次の総合Lvまで ${ov.remain.toLocaleString()} BP"><span class="sb-prog-f overall" style="width:${ov.pct}%"></span></span>
       </div>
-      ${certRow}
     </div>
     <span class="sb-div"></span>
     <span class="sb-coin">💰 <b>${coins.toLocaleString()}</b> AC</span>
@@ -58,20 +50,38 @@ export function renderStatusBar(){
   el.classList.add("show");
 }
 
+// S.screen の値だけでは実際に描画される画面と食い違うことがある
+// （例：資格未選択だと screen="home" でも実際は renderSelect が表示される。
+// render()末尾の分岐と同じ優先順位で判定する）ため、ヘッダー周りの表示制御は
+// この「実際に描画される画面名」を使って判断する。
+function resolveScreen(){
+  const noCertScreens = ["ranking","profile","settings","skins","analytics","certs","schedule","portfolio"];
+  if(noCertScreens.includes(S.screen)) return S.screen;
+  if(S.screen==="select" || !S.cert) return "select";
+  return S.screen; // home/quiz/result/review/dict/transfer/history
+}
+
 // ヘッダーのランキング／プロフィール丸型ボタンは「資格を選ぶ」画面と
-// 資格ごとのホーム画面でのみ表示する。S.screen の値だけでは実際に描画される
-// 画面と食い違うことがある（例：資格未選択だと screen="home" でも実際は
-// renderSelect が表示される）ため、各画面側で明示的に表示・非表示を指定する。
+// 資格ごとのホーム画面でのみ表示する。各画面側で明示的に表示・非表示を指定する。
 function updateHeaderNav(show){
   const nav = document.querySelector(".top-nav");
   if(nav) nav.style.display = show ? "" : "none";
 }
 
-// ヘッダーのメインタイトルを状態に応じて動的に切り替える：
-// 資格を選択中はその資格コード（AZ-900 など）、未選択なら「ホーム」
+// ヘッダーのメインタイトル・見出しブロックを状態に応じて切り替える：
+// ホーム（select）画面では見出し自体を非表示にし、ステータスバーが最上段に
+// ピタッと収まるミニマルなレイアウトにする。資格選択中はその資格コード
+// （AZ-900 など）、それ以外の画面（ランキング等）では「ホーム」を表示する。
 function updateHeaderTitle(){
+  const topEl = document.querySelector(".top");
   const titleEl = document.querySelector("h1.title");
-  if(!titleEl) return;
+  if(!topEl || !titleEl) return;
+  const screen = resolveScreen();
+  if(screen === "select"){
+    topEl.style.display = "none";
+    return;
+  }
+  topEl.style.display = "";
   const c = S.cert ? certById(S.cert) : null;
   titleEl.textContent = c ? c.code : "ホーム";
 }
