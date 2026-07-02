@@ -17,7 +17,7 @@ import { FINNHUB_API_KEY, STOCK_TICKERS, STOCK_NAMES } from './finnhub-config.js
 export { STOCK_TICKERS };
 
 const FETCH_TIMEOUT_MS = 8000;
-const CACHE_KEY = "stocks_cache_v6"; // チャート廃止（現在値のみ）への変更に伴いキーを更新（旧キャッシュを無効化）
+const CACHE_KEY = "stocks_cache_v8"; // 6銘柄化・チャート再廃止に伴いキーを更新（旧キャッシュを無効化）
 const CACHE_TTL_MS = 60 * 1000; // 60秒キャッシュ（Finnhub無料枠は60req/分なので十分余裕がある）
 
 async function fetchQuote(ticker) {
@@ -59,7 +59,7 @@ function saveCache(items) {
   try { localStorage.setItem(CACHE_KEY, JSON.stringify({ savedAt: Date.now(), items })); } catch (e) {}
 }
 
-// 実際の株価を取得（3銘柄）。銘柄ごとに成否を判定し、失敗した銘柄は配列内で
+// 実際の株価を取得（6銘柄）。銘柄ごとに成否を判定し、失敗した銘柄は配列内で
 // null を返す（呼び出し側はその銘柄だけフォールバックに回せる）。
 // APIキー未設定の間は通信を試みず、常にサンプル表示にする。
 export async function getLiveStocks() {

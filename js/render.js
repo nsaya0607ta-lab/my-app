@@ -940,8 +940,10 @@ async function loadNewsCard(){
 
 /* =========================================================================
    株価カード（STOCKS）：ニュースカードと同じデザインシステムを流用した
-   情報表示専用ウィジェット（購入・売却などの取引機能・チャートは無し。
-   最新の株価データ（現在値・前日比）のみを表示するシンプルな構成）。
+   横スワイプ（スクロールスナップ）式カルーセル。MSFT/AMZN/GOOGL/AAPL/META/
+   NVDAの6銘柄それぞれを1枚のスライドとして表示し、指でスワイプ、または
+   ヘッダーの‹›ボタン・下部のドットで銘柄を切り替えられる（チャートは無し。
+   現在値・前日比のみを表示するシンプルな構成）。
    起動直後はサンプル株価で表示し、Finnhubの株価APIから実際の株価を取得
    できた場合はそちらに置き換える。取得に失敗した場合、一度も実データを
    取得できていなければ引き続きサンプル値を、既に実データを取得済みの
@@ -953,6 +955,9 @@ const STOCKS = [
   { ticker:"MSFT", name:"Microsoft", price:435.12, previousClose:429.91, sessionLabel:"サンプル", isLive:false, everLive:false },
   { ticker:"AMZN", name:"Amazon", price:189.50, previousClose:190.45, sessionLabel:"サンプル", isLive:false, everLive:false },
   { ticker:"GOOGL", name:"Alphabet", price:199.80, previousClose:200.80, sessionLabel:"サンプル", isLive:false, everLive:false },
+  { ticker:"AAPL", name:"Apple", price:213.40, previousClose:211.20, sessionLabel:"サンプル", isLive:false, everLive:false },
+  { ticker:"META", name:"Meta", price:512.30, previousClose:520.10, sessionLabel:"サンプル", isLive:false, everLive:false },
+  { ticker:"NVDA", name:"NVIDIA", price:135.60, previousClose:131.90, sessionLabel:"サンプル", isLive:false, everLive:false },
 ];
 // change(%)は常に previousClose（前日終値）を基準に計算する。
 // 実データ取得時・擬似変動時ともにこの基準値を更新して整合性を保つ。
@@ -961,6 +966,7 @@ STOCKS.forEach(s => { s.change = ((s.price - s.previousClose) / s.previousClose)
 
 let stockIndex = 0;
 let stockRefreshTimer = null;
+let stockScrollDebounce = null;
 let stocksLastUpdatedAt = null; // Finnhubから実データを最後に取得できた日時(ms)。未取得の間はnull
 const STOCK_REFRESH_MS = 45000; // 実株価の再取得・擬似変動の更新間隔
 const STOCK_TICK_PCT = 0.006;   // 実データが使えない場合の1回あたりの変動幅（±0.3%程度）
@@ -971,6 +977,21 @@ function round2(n){ return Math.round(n*100)/100; }
 function formatStocksUpdatedAt(ms){
   const d = new Date(ms);
   return `${d.getMonth()+1}月${d.getDate()}日 ${d.getHours()}時${String(d.getMinutes()).padStart(2,"0")}分時点`;
+}
+
+function stockSlideHTML(i){
+  return `
+    <div class="stock-slide" id="stock-slide-${i}" data-idx="${i}">
+      <div class="stock-slide-top">
+        <span class="stock-ticker" id="stock-ticker-${i}"></span>
+        <span class="stock-session" id="stock-session-${i}" style="display:none"></span>
+      </div>
+      <div class="stock-name" id="stock-name-${i}"></div>
+      <div class="stock-priceline">
+        <span class="stock-price" id="stock-price-${i}"></span>
+        <span class="stock-change" id="stock-change-${i}"></span>
+      </div>
+    </div>`;
 }
 
 function stocksCardHTML(){
@@ -986,7 +1007,10 @@ function stocksCardHTML(){
           <button type="button" class="news-arrow" id="stock-next" aria-label="次の銘柄">›</button>
         </div>
       </div>
-      <div class="stock-row" id="stock-row"></div>
+      <div class="stock-slides" id="stock-slides">
+        ${STOCKS.map((_,i) => stockSlideHTML(i)).join("")}
+      </div>
+      <div class="stock-dots" id="stock-dots"></div>
     </div>`;
 }
 
@@ -998,25 +1022,65 @@ function renderStockUpdated(){
   el.textContent = stocksLastUpdatedAt ? formatStocksUpdatedAt(stocksLastUpdatedAt) : "";
 }
 
-function renderStockRow(){
-  const rowEl = document.getElementById("stock-row");
-  if(!rowEl) return;
-  rowEl.innerHTML = STOCKS.map((s,i) => {
-    const up = s.change >= 0;
-    return `<button type="button" class="stock-item${i===stockIndex?" active":""}" data-idx="${i}">
-      <div class="stock-ticker">${esc(s.ticker)}</div>
-      ${s.sessionLabel?`<div class="stock-session">${esc(s.sessionLabel)}</div>`:""}
-      <div class="stock-name">(${esc(s.name)})</div>
-      <div class="stock-priceline">
-        <span class="stock-price">$${s.price.toFixed(2)}</span>
-        <span class="stock-change ${up?"up":"down"}">${up?"▲":"▼"} ${up?"+":""}${s.change.toFixed(1)}%</span>
-      </div>
-    </button>`;
-  }).join("");
-  rowEl.querySelectorAll("[data-idx]").forEach(b => b.onclick = () => {
-    stockIndex = +b.dataset.idx;
-    renderStockRow();
-  });
+// 銘柄1件分のスライドの中身を最新の状態に更新する。
+// スライド自体のDOM構造（スクロール位置）は変えず、中身だけ差し替える。
+function renderStockSlideContent(i){
+  const s = STOCKS[i];
+  if(!s) return;
+  const up = s.change >= 0;
+  const tickerEl = document.getElementById(`stock-ticker-${i}`);
+  const sessionEl = document.getElementById(`stock-session-${i}`);
+  const nameEl = document.getElementById(`stock-name-${i}`);
+  const priceEl = document.getElementById(`stock-price-${i}`);
+  const changeEl = document.getElementById(`stock-change-${i}`);
+  if(tickerEl) tickerEl.textContent = s.ticker;
+  if(sessionEl){
+    if(s.sessionLabel){ sessionEl.textContent = s.sessionLabel; sessionEl.style.display = ""; }
+    else { sessionEl.style.display = "none"; }
+  }
+  if(nameEl) nameEl.textContent = `(${s.name})`;
+  if(priceEl) priceEl.textContent = `$${s.price.toFixed(2)}`;
+  if(changeEl){
+    changeEl.textContent = `${up?"▲":"▼"} ${up?"+":""}${s.change.toFixed(1)}%`;
+    changeEl.className = `stock-change ${up?"up":"down"}`;
+  }
+}
+
+function renderStockDots(){
+  const dotsEl = document.getElementById("stock-dots");
+  if(!dotsEl) return;
+  dotsEl.innerHTML = STOCKS.map((_,i) => `<span class="stock-dot${i===stockIndex?" on":""}" data-idx="${i}"></span>`).join("");
+  dotsEl.querySelectorAll("[data-idx]").forEach(d => d.onclick = () => goToStockSlide(+d.dataset.idx));
+}
+
+function renderStockSlides(){
+  STOCKS.forEach((_,i) => renderStockSlideContent(i));
+  renderStockDots();
+}
+
+// 指定インデックスの銘柄までスクロールスナップで滑らかに移動する
+// （‹›ボタン・ドットタップの両方から呼ばれる共通の遷移処理）
+function goToStockSlide(i){
+  const slidesEl = document.getElementById("stock-slides");
+  if(!slidesEl || !STOCKS.length) return;
+  stockIndex = (i + STOCKS.length) % STOCKS.length;
+  const target = slidesEl.children[stockIndex];
+  if(target) slidesEl.scrollTo({ left: target.offsetLeft, behavior: "smooth" });
+  renderStockDots();
+}
+
+// 指でスワイプして手動スクロールした場合も、止まった位置から現在の銘柄
+// （ドットの位置）を追従させる。scrollイベントは連発するためデバウンスする。
+function onStockSlidesScroll(){
+  clearTimeout(stockScrollDebounce);
+  stockScrollDebounce = setTimeout(() => {
+    const slidesEl = document.getElementById("stock-slides");
+    if(!slidesEl || !slidesEl.children.length) return;
+    const w = slidesEl.clientWidth || 1;
+    const idx = Math.round(slidesEl.scrollLeft / w);
+    const clamped = Math.max(0, Math.min(STOCKS.length-1, idx));
+    if(clamped !== stockIndex){ stockIndex = clamped; renderStockDots(); }
+  }, 100);
 }
 
 // 実株価取得の結果をSTOCKSへ反映する（銘柄ごと。取得できなかった銘柄だけ
@@ -1063,7 +1127,7 @@ async function refreshStockPrices(){
   STOCKS.forEach(s => { s.isLive = false; }); // 今回の取得結果で改めて判定し直す
   applyLiveStocks(live);
   STOCKS.forEach(s => { if(!s.isLive) simulateStockTick(s); });
-  renderStockRow();
+  renderStockSlides();
   renderStockUpdated();
 }
 
@@ -1081,9 +1145,11 @@ function initStocksCard(){
   if(!card) return;
   const prev = document.getElementById("stock-prev");
   const next = document.getElementById("stock-next");
-  if(prev) prev.onclick = () => { stockIndex = (stockIndex - 1 + STOCKS.length) % STOCKS.length; renderStockRow(); };
-  if(next) next.onclick = () => { stockIndex = (stockIndex + 1) % STOCKS.length; renderStockRow(); };
-  renderStockRow();
+  const slidesEl = document.getElementById("stock-slides");
+  if(prev) prev.onclick = () => goToStockSlide(stockIndex - 1);
+  if(next) next.onclick = () => goToStockSlide(stockIndex + 1);
+  if(slidesEl) slidesEl.onscroll = onStockSlidesScroll;
+  renderStockSlides();
   renderStockUpdated();
   startStockRefresh();
 }

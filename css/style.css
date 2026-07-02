@@ -413,22 +413,30 @@ h1.title{font-size:34px;line-height:1.05;font-weight:800;margin:8px 0 0;letter-s
 
 /* ============ 追加：株価カード（STOCKS） ============
    ニュースカードと同じ .news-card / .news-card-head / .news-badge / .news-nav /
-   .news-arrow を流用し、デザインシステムを完全に統一している */
+   .news-arrow を流用し、デザインシステムを完全に統一している。
+   6銘柄を横スワイプ（scroll-snap）で1銘柄ずつ切り替えるカルーセル形式 */
 .stocks-card{margin-top:14px;}
 .stock-head-left{display:flex;flex-direction:column;align-items:flex-start;gap:3px;}
 .stock-badge{color:var(--accent);background:rgba(2,132,199,.08);border-color:rgba(2,132,199,.22);}
 .stock-updated{font-size:10.5px;line-height:1.2;color:#605e5c;font-weight:600;white-space:nowrap;}
-.stock-row{display:flex;gap:6px;margin-top:2px;}
-.stock-item{flex:1;min-width:0;text-align:left;background:none;border:1px solid transparent;border-radius:12px;padding:8px 8px;cursor:pointer;font-family:inherit;}
-.stock-item.active{border-color:var(--accent);background:rgba(2,132,199,.06);}
-.stock-ticker{font-size:14px;font-weight:800;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
-.stock-session{display:inline-block;margin-top:2px;font-size:8px;font-weight:700;color:var(--muted);background:var(--bg2);border-radius:6px;padding:1px 5px;letter-spacing:.02em;white-space:nowrap;}
-.stock-name{font-size:9.5px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin:1px 0 5px;}
-.stock-priceline{display:flex;flex-direction:column;gap:2px;}
-.stock-price{font-size:13.5px;font-weight:800;color:var(--text);font-variant-numeric:tabular-nums;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
-.stock-change{font-size:11px;font-weight:800;white-space:nowrap;}
+
+.stock-slides{display:flex;overflow-x:auto;scroll-snap-type:x mandatory;-webkit-overflow-scrolling:touch;
+  scrollbar-width:none;margin-top:4px;}
+.stock-slides::-webkit-scrollbar{display:none;}
+.stock-slide{flex:0 0 100%;scroll-snap-align:start;min-width:0;}
+.stock-slide-top{display:flex;align-items:center;gap:8px;}
+.stock-ticker{font-size:18px;font-weight:800;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.stock-session{display:inline-block;font-size:9px;font-weight:700;color:var(--muted);background:var(--bg2);border-radius:6px;padding:1px 6px;letter-spacing:.02em;white-space:nowrap;}
+.stock-name{font-size:11px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin:1px 0 6px;}
+.stock-priceline{display:flex;align-items:baseline;gap:8px;}
+.stock-price{font-size:22px;font-weight:800;color:var(--text);font-variant-numeric:tabular-nums;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.stock-change{font-size:12.5px;font-weight:800;white-space:nowrap;}
 .stock-change.up{color:var(--good);}
 .stock-change.down{color:var(--bad);}
+
+.stock-dots{display:flex;gap:6px;justify-content:center;margin-top:10px;}
+.stock-dot{width:6px;height:6px;border-radius:50%;background:var(--line);cursor:pointer;transition:background .2s,transform .2s;}
+.stock-dot.on{background:var(--accent);transform:scale(1.3);}
 
 /* Microsoft認定試験カード：NEWS/STOCKSと同じ .news-card を土台にした独立カード。
    丸型ロゴボタン＋テキストを縦横完全中央揃えで内包する */
