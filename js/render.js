@@ -947,12 +947,12 @@ async function loadWeatherCard(){
    銘柄名＋株価＋前日比が右から左へエンドレスに流れるマーキーと、左上の
    最終更新日時からなる。ホーム画面には表示せず、日本経済・世界経済の
    各ニュース画面の最上部にcreateMarketWatch()のインスタンスとしてそれぞれ
-   独立して表示する（日本経済＝JP_STOCKS、世界経済＝STOCKS＝Finnhub実データ
-   連動の米国株）。
-   起動直後はサンプル株価で表示し、世界経済側はFinnhubの株価APIから実際の
-   株価を取得できた場合はそちらに置き換える（日本経済側はFinnhub無料枠で
-   日経平均などの国内指標が取得できないため、常にサンプル値の擬似変動で
-   表示する）。取得に失敗した場合、一度も実データを取得できていなければ
+   独立して表示する（日本経済＝JP_STOCKS＝日本の主要企業のNYSE上場ADR、
+   世界経済＝STOCKS＝米国株6銘柄。どちらもFinnhub実データ取得を同条件で試みる）。
+   起動直後はサンプル株価で表示し、Finnhubの株価APIから実際の株価を取得
+   できた場合はそちらに置き換える（東証の個別銘柄・指数はFinnhub無料枠では
+   実データが取得できないことを確認済みのため、日本経済側はNYSE上場のADRを
+   採用している）。取得に失敗した場合、一度も実データを取得できていなければ
    引き続きサンプル値を、既に実データを取得済みの銘柄であれば最後に取得
    できた値（最終参照値）をそのまま据え置いて表示する（実データのように
    見える擬似変動はさせない）。
@@ -967,18 +967,18 @@ const STOCKS = [
   { ticker:"NVDA", name:"NVIDIA", price:135.60, previousClose:131.90, sessionLabel:"サンプル", isLive:false, everLive:false },
 ];
 
-// 日本経済ニュース画面用の株価ティッカー（日経平均・TOPIXなどの国内指標＋
-// 主要な国内テック・金融銘柄）。米国株と同条件でFinnhubから実データ取得を
-// 試み、取得できた銘柄だけ実データに置き換える（できなければサンプル値のまま）。
-// ticker はFinnhub側のシンボル表記（東証銘柄は".T"サフィックス）で実データとの
-// 突合に使い、displayTickerはティッカーテープ表示用の見た目のよい銘柄コード
+// 日本経済ニュース画面用の株価ティッカー。東証の個別銘柄・指数はFinnhub無料枠
+// では実データ取得ができないことを確認済みのため使用せず、日本の主要企業が
+// NYSEに上場しているADR（米国預託証券）を採用する。米国株と全く同じ取引所・
+// 取得経路のため、米国株と同条件（取得できた銘柄だけ実データに置き換え、
+// 失敗した銘柄はサンプル値の擬似変動）でFinnhubの実データ取得を試みる
 const JP_STOCKS = [
-  { ticker:"^N225", displayTicker:"^N225", name:"日経平均", price:69120.30, previousClose:68830.10, sessionLabel:"サンプル", isLive:false, everLive:false },
-  { ticker:"TOPIX", displayTicker:"TOPIX", name:"TOPIX", price:2986.40, previousClose:2975.20, sessionLabel:"サンプル", isLive:false, everLive:false },
-  { ticker:"7203.T", displayTicker:"7203", name:"トヨタ自動車", price:2890.50, previousClose:2865.00, sessionLabel:"サンプル", isLive:false, everLive:false },
-  { ticker:"8306.T", displayTicker:"8306", name:"三菱UFJ", price:1980.00, previousClose:1972.50, sessionLabel:"サンプル", isLive:false, everLive:false },
-  { ticker:"6758.T", displayTicker:"6758", name:"ソニーG", price:3540.00, previousClose:3560.00, sessionLabel:"サンプル", isLive:false, everLive:false },
-  { ticker:"9984.T", displayTicker:"9984", name:"ソフトバンクG", price:9820.00, previousClose:9750.00, sessionLabel:"サンプル", isLive:false, everLive:false },
+  { ticker:"TM", name:"トヨタ自動車(ADR)", price:195.40, previousClose:193.80, sessionLabel:"サンプル", isLive:false, everLive:false },
+  { ticker:"SONY", name:"ソニーG(ADR)", price:24.60, previousClose:24.30, sessionLabel:"サンプル", isLive:false, everLive:false },
+  { ticker:"HMC", name:"本田技研(ADR)", price:32.10, previousClose:32.50, sessionLabel:"サンプル", isLive:false, everLive:false },
+  { ticker:"MUFG", name:"三菱UFJ(ADR)", price:11.20, previousClose:11.05, sessionLabel:"サンプル", isLive:false, everLive:false },
+  { ticker:"MFG", name:"みずほFG(ADR)", price:4.55, previousClose:4.60, sessionLabel:"サンプル", isLive:false, everLive:false },
+  { ticker:"NMR", name:"野村HD(ADR)", price:6.35, previousClose:6.20, sessionLabel:"サンプル", isLive:false, everLive:false },
 ];
 
 // change(%)は常に previousClose（前日終値）を基準に計算する。
@@ -1088,7 +1088,7 @@ function createMarketWatch({ instanceId, stocks, fetchLive, formatPrice }){
       const priceEl = document.getElementById(`tape-price-${instanceId}-${copy}-${i}`);
       const changeEl = document.getElementById(`tape-change-${instanceId}-${copy}-${i}`);
       const sessionEl = document.getElementById(`tape-session-${instanceId}-${copy}-${i}`);
-      if(tickerEl) tickerEl.textContent = s.displayTicker || s.ticker;
+      if(tickerEl) tickerEl.textContent = s.ticker;
       if(priceEl) priceEl.textContent = priceText(s);
       if(changeEl){
         changeEl.textContent = `${up?"▲":"▼"} ${up?"+":""}${s.change.toFixed(1)}%`;
@@ -1155,11 +1155,12 @@ function createMarketWatch({ instanceId, stocks, fetchLive, formatPrice }){
   return { html, mount };
 }
 
+// JP_STOCKSはNYSE上場のADR（米国預託証券）でドル建てのため、価格表示は
+// 世界経済側と同じ既定の"$"フォーマットのままでよい（formatPriceの指定なし）
 const jpMarketWatch = createMarketWatch({
   instanceId: "jp",
   stocks: JP_STOCKS,
   fetchLive: getLiveStocksJP, // 米国株と同条件でFinnhubから実データ取得を試みる
-  formatPrice: s => `¥${s.price.toLocaleString("ja-JP", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
 });
 const worldMarketWatch = createMarketWatch({ instanceId: "world", stocks: STOCKS, fetchLive: getLiveStocks });
 
