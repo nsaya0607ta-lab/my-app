@@ -1049,6 +1049,12 @@ function stockTapeItemHTML(instanceId, copy, i){
 // fetchLiveを渡した場合のみFinnhub実データ取得を試み、銘柄ごとに成否を判定
 // する（一部の銘柄が取得できなくても他の銘柄は実データを表示できる）。
 // fetchLiveを渡さない場合は常にサンプル値の擬似変動で表示する
+// MARKET WATCHカード右上のミニ買付/売却/ポートフォリオボタン用アイコン。
+// カレンダー起動アイコン等と同じ、線画のみのプレーンなSVGで統一する
+const STOCK_MINI_ICON_BUY = `<svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="19" x2="12" y2="5"></line><polyline points="6 11 12 5 18 11"></polyline></svg>`;
+const STOCK_MINI_ICON_SELL = `<svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"></line><polyline points="6 13 12 19 18 13"></polyline></svg>`;
+const STOCK_MINI_ICON_PORTFOLIO = `<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19V7a2 2 0 0 1 2-2h9l5 5v9a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2Z"></path><path d="M15 5v5h5"></path><line x1="8" y1="13" x2="16" y2="13"></line><line x1="8" y1="17" x2="13" y2="17"></line></svg>`;
+
 function createMarketWatch({ instanceId, stocks, fetchLive, formatPrice }){
   let lastUpdatedAt = null;
   let refreshTimer = null;
@@ -1066,6 +1072,17 @@ function createMarketWatch({ instanceId, stocks, fetchLive, formatPrice }){
           <div class="stock-head-left">
             <span class="news-badge stock-badge">📈 株価</span>
             <div class="stock-updated" id="${updatedId}"></div>
+          </div>
+          <div class="stock-mini-actions">
+            <button type="button" class="stock-mini-btn buy" id="stock-buy-${instanceId}" aria-label="買付" title="買付">
+              ${STOCK_MINI_ICON_BUY}買付
+            </button>
+            <button type="button" class="stock-mini-btn sell" id="stock-sell-${instanceId}" aria-label="売却" title="売却">
+              ${STOCK_MINI_ICON_SELL}売却
+            </button>
+            <button type="button" class="stock-mini-portfolio" id="stock-portfolio-${instanceId}" aria-label="ポートフォリオへ" title="ポートフォリオ">
+              ${STOCK_MINI_ICON_PORTFOLIO}
+            </button>
           </div>
         </div>
         <div class="stock-tape" id="${tapeId}">
@@ -1150,6 +1167,13 @@ function createMarketWatch({ instanceId, stocks, fetchLive, formatPrice }){
     renderUpdated();
     startRefresh();
     initHybridTape(tapeId, 27); // 株価ティッカー（自動ループ＋手動スワイプ）
+
+    const buyBtn = document.getElementById(`stock-buy-${instanceId}`);
+    const sellBtn = document.getElementById(`stock-sell-${instanceId}`);
+    const portfolioBtn = document.getElementById(`stock-portfolio-${instanceId}`);
+    if(buyBtn) buyBtn.onclick = () => openTradeModal("buy", stocks);
+    if(sellBtn) sellBtn.onclick = () => openTradeModal("sell", stocks);
+    if(portfolioBtn) portfolioBtn.onclick = () => go("portfolio");
   }
 
   return { html, mount };
@@ -1312,9 +1336,13 @@ function initHybridTape(id, speedPxS){
 // 売買金額の換算レート：1ドル＝1ACとして四捨五入する（デモ取引用）
 function tradeAmount(price, qty){ return Math.max(1, Math.round(price * qty)); }
 
-// 買付・売却を実行し、AC残高と保有株を更新する。検証エラーはmsgで返す
-function executeTrade(mode, ticker, qty){
-  const s = STOCKS.find(x => x.ticker === ticker);
+// 買付・売却を実行し、AC残高と保有株を更新する。検証エラーはmsgで返す。
+// stocksは呼び出し元のMARKET WATCHインスタンスが持つ銘柄配列（STOCKSまたは
+// JP_STOCKS）で、日本経済・世界経済どちらの画面から売買しても対象銘柄を
+// 正しく参照できるようにする（保有株は共通のPORTFOLIO_KEYに銘柄ticker単位で
+// 保存されるため、日米の保有をまとめて1つのポートフォリオ画面で確認できる）
+function executeTrade(mode, stocks, ticker, qty){
+  const s = stocks.find(x => x.ticker === ticker);
   if(!s) return { ok:false, msg:"不明な銘柄です。" };
   if(!Number.isInteger(qty) || qty < 1) return { ok:false, msg:"株数は1株以上で指定してください。" };
   const pf = loadPortfolio();
@@ -1344,12 +1372,14 @@ function executeTrade(mode, ticker, qty){
 }
 
 // 買付／売却モーダル。銘柄と株数を選ぶと合計ACをその場で計算して表示し、
-// 実行時にAC残高・保有株を検証のうえ更新する（ゲーム内デモ取引）
-function openTradeModal(mode){
+// 実行時にAC残高・保有株を検証のうえ更新する（ゲーム内デモ取引）。
+// stocksはボタンを開いたMARKET WATCHインスタンスの銘柄配列（STOCKSまたは
+// JP_STOCKS）で、そのカードで表示中の銘柄だけを売買対象にする
+function openTradeModal(mode, stocks){
   const isBuy = mode === "buy";
   const pf = loadPortfolio();
   const heldOf = (t) => (pf[t] ? pf[t].shares : 0);
-  const tickers = isBuy ? STOCKS.map(s => s.ticker) : STOCKS.filter(s => heldOf(s.ticker) > 0).map(s => s.ticker);
+  const tickers = isBuy ? stocks.map(s => s.ticker) : stocks.filter(s => heldOf(s.ticker) > 0).map(s => s.ticker);
 
   const ov = document.createElement("div");
   ov.className = "modal-ov";
@@ -1362,7 +1392,7 @@ function openTradeModal(mode){
       </div>`;
   } else {
     const options = tickers.map(t => {
-      const s = STOCKS.find(x => x.ticker === t);
+      const s = stocks.find(x => x.ticker === t);
       const held = heldOf(t);
       return `<option value="${t}">${t}（$${s.price.toFixed(2)}${!isBuy || held ? ` / 保有 ${held}株` : ""}）</option>`;
     }).join("");
@@ -1402,7 +1432,7 @@ function openTradeModal(mode){
     return (isNaN(v) || v < 1) ? 1 : v;
   };
   const updateSummary = () => {
-    const s = STOCKS.find(x => x.ticker === symEl.value);
+    const s = stocks.find(x => x.ticker === symEl.value);
     if(!s) return;
     const qty = readQty();
     const amount = tradeAmount(s.price, qty);
@@ -1418,20 +1448,23 @@ function openTradeModal(mode){
   updateSummary();
 
   ov.querySelector("#trade-go").onclick = () => {
-    const r = executeTrade(mode, symEl.value, readQty());
+    const r = executeTrade(mode, stocks, symEl.value, readQty());
     if(!r.ok){ msgEl.textContent = r.msg; return; }
     close();
   };
 }
 
-/* ポートフォリオ（資産保有額）詳細画面：株価カード右上の「→」から遷移する。
+/* ポートフォリオ（資産保有額）詳細画面：日本経済・世界経済どちらのMARKET WATCH
+   から買付/売却しても、保有株は共通のPORTFOLIO_KEYにまとまるため、
+   この画面ではSTOCKS・JP_STOCKS両方から銘柄情報を検索して表示する。
    現金AC＋保有株の評価額（現在株価ベース）のサマリーと保有明細を表示する */
 export function renderPortfolio(){
   const pf = loadPortfolio();
   const tickers = Object.keys(pf);
+  const allStocks = [...STOCKS, ...JP_STOCKS];
   let stockValue = 0;
   const rows = tickers.map(t => {
-    const s = STOCKS.find(x => x.ticker === t);
+    const s = allStocks.find(x => x.ticker === t);
     const h = pf[t];
     const val = s ? tradeAmount(s.price, h.shares) : h.cost;
     stockValue += val;
