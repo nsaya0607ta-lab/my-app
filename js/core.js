@@ -425,6 +425,15 @@ export function overallStat(){
   return { tbp, lv, pct, remain, active, title:overallTitle(lv) };
 }
 
+// 管理者アカウント判定：メールアドレスまたは表示名（プロフィール名）が
+// 一致する場合に管理者とみなす。管理者はランキングへの公開対象から除外し、
+// 日本経済ニュース画面の投稿フォームはこの判定が真の場合のみ表示する
+export function isAdminAccount(){
+  const email = (state.currentUser && state.currentUser.email) || "";
+  const name = getProfileName() || "";
+  return email.toLowerCase() === "admin@gmail.com" || name.toLowerCase() === "admin";
+}
+
 export function getProfileName(){ return localStorage.getItem("profile_name") || ""; }
 
 export function setProfileName(n){ try{ localStorage.setItem("profile_name", n); }catch(e){} }
@@ -450,7 +459,10 @@ export function buildPublic(){
 // ランキングへ自動公開・更新（ログイン中なら表示名の有無に関わらず自動で反映）
 
 export function publishLeaderboard(){
-  if(!window.LB || !state.currentUserId || state.guestMode) return;
+  // 管理者アカウントは公開ランキングコレクションへ一切書き込まない
+  // （書き込み自体を止めることで、一覧表示・件数集計・myRank等の
+  // すべての集計ロジックから確実に除外される）
+  if(!window.LB || !state.currentUserId || state.guestMode || isAdminAccount()) return;
   try{ window.LB.publish(buildPublic()); }catch(e){}
 }
 

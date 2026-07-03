@@ -508,6 +508,43 @@ h1.title{font-size:34px;line-height:1.05;font-weight:800;margin:8px 0 0;letter-s
 .pf-shares{font-size:11px;font-weight:700;color:var(--muted);}
 .pf-val{font-size:14.5px;font-weight:800;color:var(--text);font-variant-numeric:tabular-nums;}
 
+/* 日本経済ニュース画面：ミニカレンダー・日付別ニュース一覧・管理者投稿欄 */
+.njp-cal{background:var(--surface);border:1px solid var(--line);border-radius:16px;padding:14px;
+  box-shadow:0 2px 8px rgba(15,23,42,.03);}
+.njp-cal-title{font-size:13px;font-weight:800;color:var(--text);margin-bottom:10px;text-align:center;}
+.njp-cal-grid{display:grid;grid-template-columns:repeat(7,1fr);gap:4px;}
+.njp-cal-grid.njp-cal-weekdays{margin-bottom:6px;}
+.njp-cal-weekdays span{font-size:10px;font-weight:700;color:var(--muted);text-align:center;}
+.njp-cal-cell{aspect-ratio:1;border:none;border-radius:10px;background:transparent;color:var(--text);
+  font-size:12.5px;font-weight:600;cursor:pointer;display:flex;align-items:center;justify-content:center;
+  position:relative;padding:0;}
+.njp-cal-cell:active{background:var(--bg2);}
+.njp-cal-cell.empty{cursor:default;}
+.njp-cal-cell.today{color:var(--accent);font-weight:800;}
+.njp-cal-cell.selected{background:var(--accent);color:#ffffff;font-weight:800;}
+.njp-cal-cell.has-news:not(.selected)::after{content:"";position:absolute;bottom:3px;left:50%;
+  transform:translateX(-50%);width:4px;height:4px;border-radius:50%;background:var(--accent);}
+
+.njp-empty{margin-top:6px;padding:20px 12px;text-align:center;font-size:12.5px;color:var(--muted);
+  background:var(--bg2);border-radius:14px;}
+.njp-news-list{display:flex;flex-direction:column;gap:9px;}
+.njp-news-item{display:flex;align-items:center;justify-content:space-between;gap:10px;
+  background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:13px 15px;
+  box-shadow:0 2px 6px rgba(15,23,42,.03);text-decoration:none;transition:transform .12s;}
+.njp-news-item[href]:active{transform:scale(.98);background:var(--bg2);}
+.njp-news-title{font-size:13px;font-weight:600;color:var(--text);line-height:1.5;}
+.njp-news-arrow{flex:none;color:var(--accent);font-weight:800;font-size:14px;}
+
+.njp-admin{margin-top:18px;padding-top:16px;border-top:1px solid var(--line);}
+.njp-admin-title{font-size:12px;font-weight:800;color:var(--muted);letter-spacing:.04em;margin-bottom:8px;}
+.njp-admin-textarea{width:100%;padding:12px;border:1px solid var(--line);border-radius:12px;
+  background:var(--surface);color:var(--text);font-size:13px;font-family:inherit;resize:vertical;
+  box-sizing:border-box;}
+.njp-admin-btn{margin-top:10px;width:100%;padding:11px 0;border-radius:12px;border:1px solid var(--accent);
+  background:var(--accent);color:#ffffff;font-size:13.5px;font-weight:800;cursor:pointer;
+  box-shadow:0 2px 8px rgba(2,132,199,.25);transition:transform .12s,filter .12s;}
+.njp-admin-btn:active{transform:scale(.97);filter:brightness(.95);}
+
 /* Microsoft認定試験カード：NEWS/STOCKSと同じ .news-card を土台にした独立カード。
    丸型ロゴボタン＋テキストを縦横完全中央揃えで内包する */
 .ms-cert-card{margin-top:14px;min-height:104px;display:flex;align-items:center;justify-content:center;}
