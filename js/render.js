@@ -1,7 +1,7 @@
 import { CERTS } from './data/certs.js';
 import { DC_PHASES, L, REGIONS } from './data/constants.js';
 import { CONCEPTS, DRAW, PASS, Q, TIERS, applySkin, certById, certStat, commit, correctSet, dcCount, dcPhase, dcTitle, esc, exportCode, fmt, getBP, getProfileName, grade, importCode, isAdminAccount, isMulti, loadHist, loadReviewStats, loadWrong, overallLevel, overallStat, pick, pts, publishLeaderboard, purchaseSkin, saveCoins, saveToCloud, selectCert, setBP, setProfileName, stars, start, startReview, totalBP } from './core.js';
-import { getLiveStocks } from './stocks.js';
+import { getLiveStocks, getLiveStocksJP } from './stocks.js';
 import { getWeather } from './weather.js';
 import { SKIN_DATA } from './data/skins.js';
 import { S, state } from './state.js';
@@ -968,14 +968,17 @@ const STOCKS = [
 ];
 
 // 日本経済ニュース画面用の株価ティッカー（日経平均・TOPIXなどの国内指標＋
-// 主要な国内テック・金融銘柄）。Finnhub無料枠では取得できないため常にサンプル値
+// 主要な国内テック・金融銘柄）。米国株と同条件でFinnhubから実データ取得を
+// 試み、取得できた銘柄だけ実データに置き換える（できなければサンプル値のまま）。
+// ticker はFinnhub側のシンボル表記（東証銘柄は".T"サフィックス）で実データとの
+// 突合に使い、displayTickerはティッカーテープ表示用の見た目のよい銘柄コード
 const JP_STOCKS = [
-  { ticker:"^N225", name:"日経平均", price:69120.30, previousClose:68830.10, sessionLabel:"サンプル", isLive:false, everLive:false },
-  { ticker:"TOPIX", name:"TOPIX", price:2986.40, previousClose:2975.20, sessionLabel:"サンプル", isLive:false, everLive:false },
-  { ticker:"7203", name:"トヨタ自動車", price:2890.50, previousClose:2865.00, sessionLabel:"サンプル", isLive:false, everLive:false },
-  { ticker:"8306", name:"三菱UFJ", price:1980.00, previousClose:1972.50, sessionLabel:"サンプル", isLive:false, everLive:false },
-  { ticker:"6758", name:"ソニーG", price:3540.00, previousClose:3560.00, sessionLabel:"サンプル", isLive:false, everLive:false },
-  { ticker:"9984", name:"ソフトバンクG", price:9820.00, previousClose:9750.00, sessionLabel:"サンプル", isLive:false, everLive:false },
+  { ticker:"^N225", displayTicker:"^N225", name:"日経平均", price:69120.30, previousClose:68830.10, sessionLabel:"サンプル", isLive:false, everLive:false },
+  { ticker:"TOPIX", displayTicker:"TOPIX", name:"TOPIX", price:2986.40, previousClose:2975.20, sessionLabel:"サンプル", isLive:false, everLive:false },
+  { ticker:"7203.T", displayTicker:"7203", name:"トヨタ自動車", price:2890.50, previousClose:2865.00, sessionLabel:"サンプル", isLive:false, everLive:false },
+  { ticker:"8306.T", displayTicker:"8306", name:"三菱UFJ", price:1980.00, previousClose:1972.50, sessionLabel:"サンプル", isLive:false, everLive:false },
+  { ticker:"6758.T", displayTicker:"6758", name:"ソニーG", price:3540.00, previousClose:3560.00, sessionLabel:"サンプル", isLive:false, everLive:false },
+  { ticker:"9984.T", displayTicker:"9984", name:"ソフトバンクG", price:9820.00, previousClose:9750.00, sessionLabel:"サンプル", isLive:false, everLive:false },
 ];
 
 // change(%)は常に previousClose（前日終値）を基準に計算する。
@@ -1043,9 +1046,10 @@ function stockTapeItemHTML(instanceId, copy, i){
 // 日本経済・世界経済それぞれのMARKET WATCHインスタンスを生成するファクトリー。
 // instanceIdごとに独立したDOM id・自動更新タイマー・電光掲示板テープを持つため、
 // 2画面で同時に（切り替えながら）使っても互いに干渉しない。
-// live=trueの場合のみFinnhub実データ取得（getLiveStocks、常にSTOCK_TICKERS＝
-// 米国株6銘柄を返す）を試み、それ以外は常にサンプル値の擬似変動で表示する
-function createMarketWatch({ instanceId, stocks, live, formatPrice }){
+// fetchLiveを渡した場合のみFinnhub実データ取得を試み、銘柄ごとに成否を判定
+// する（一部の銘柄が取得できなくても他の銘柄は実データを表示できる）。
+// fetchLiveを渡さない場合は常にサンプル値の擬似変動で表示する
+function createMarketWatch({ instanceId, stocks, fetchLive, formatPrice }){
   let lastUpdatedAt = null;
   let refreshTimer = null;
   const tapeId = `stock-tape-${instanceId}`;
@@ -1084,7 +1088,7 @@ function createMarketWatch({ instanceId, stocks, live, formatPrice }){
       const priceEl = document.getElementById(`tape-price-${instanceId}-${copy}-${i}`);
       const changeEl = document.getElementById(`tape-change-${instanceId}-${copy}-${i}`);
       const sessionEl = document.getElementById(`tape-session-${instanceId}-${copy}-${i}`);
-      if(tickerEl) tickerEl.textContent = s.ticker;
+      if(tickerEl) tickerEl.textContent = s.displayTicker || s.ticker;
       if(priceEl) priceEl.textContent = priceText(s);
       if(changeEl){
         changeEl.textContent = `${up?"▲":"▼"} ${up?"+":""}${s.change.toFixed(1)}%`;
@@ -1121,8 +1125,8 @@ function createMarketWatch({ instanceId, stocks, live, formatPrice }){
 
   async function refresh(){
     stocks.forEach(s => { s.isLive = false; }); // 今回の取得結果で改めて判定し直す
-    if(live){
-      const liveItems = await getLiveStocks();
+    if(fetchLive){
+      const liveItems = await fetchLive();
       applyLiveStocks(liveItems);
     }
     stocks.forEach(s => { if(!s.isLive) simulateStockTick(s); });
@@ -1154,10 +1158,10 @@ function createMarketWatch({ instanceId, stocks, live, formatPrice }){
 const jpMarketWatch = createMarketWatch({
   instanceId: "jp",
   stocks: JP_STOCKS,
-  live: false,
+  fetchLive: getLiveStocksJP, // 米国株と同条件でFinnhubから実データ取得を試みる
   formatPrice: s => `¥${s.price.toLocaleString("ja-JP", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
 });
-const worldMarketWatch = createMarketWatch({ instanceId: "world", stocks: STOCKS, live: true });
+const worldMarketWatch = createMarketWatch({ instanceId: "world", stocks: STOCKS, fetchLive: getLiveStocks });
 
 /* ---- ハイブリッドテープ（自動ループ＋手動スワイプ）の共通制御 ----
    株価ティッカーとIT/AIニュースの両方で使う汎用の仕組み。
