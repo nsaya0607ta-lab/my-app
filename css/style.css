@@ -528,12 +528,26 @@ h1.title{font-size:34px;line-height:1.05;font-weight:800;margin:8px 0 0;letter-s
 .njp-empty{margin-top:6px;padding:20px 12px;text-align:center;font-size:12.5px;color:var(--muted);
   background:var(--bg2);border-radius:14px;}
 .njp-news-list{display:flex;flex-direction:column;gap:9px;}
-.njp-news-item{display:flex;align-items:center;justify-content:space-between;gap:10px;
+/* カード本体：管理者モードでは左端に削除選択チェックボックス、右側にタイトル
+   ＋リンクを並べる。チェックボックスはリンク(<a>)の外に置くことで、
+   選択操作がURL遷移を発火させないようにしている */
+.njp-news-item{display:flex;align-items:center;gap:10px;
   background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:13px 15px;
-  box-shadow:0 2px 6px rgba(15,23,42,.03);text-decoration:none;transition:transform .12s;}
-.njp-news-item[href]:active{transform:scale(.98);background:var(--bg2);}
+  box-shadow:0 2px 6px rgba(15,23,42,.03);transition:transform .12s;}
+.njp-news-item.has-link:active{transform:scale(.98);background:var(--bg2);}
+.njp-news-check{flex:none;width:18px;height:18px;accent-color:var(--accent);cursor:pointer;}
+.njp-news-link{flex:1;min-width:0;display:flex;align-items:center;justify-content:space-between;gap:10px;
+  text-decoration:none;color:inherit;}
 .njp-news-title{font-size:13px;font-weight:600;color:var(--text);line-height:1.5;}
 .njp-news-arrow{flex:none;color:var(--accent);font-weight:800;font-size:14px;}
+
+.njp-bulk-row{margin-top:14px;}
+.njp-bulk-btn{width:100%;padding:11px 0;border-radius:12px;border:1px solid var(--bad);
+  background:var(--bad);color:#ffffff;font-size:13.5px;font-weight:800;cursor:pointer;
+  box-shadow:0 2px 8px rgba(220,38,38,.25);transition:transform .12s,filter .12s;}
+.njp-bulk-btn:active{transform:scale(.97);filter:brightness(.95);}
+.njp-bulk-btn:disabled{cursor:not-allowed;box-shadow:none;filter:none;
+  background:var(--surface2);border-color:var(--line);color:var(--muted);}
 
 .njp-admin{margin-top:18px;padding-top:16px;border-top:1px solid var(--line);}
 .njp-admin-title{font-size:12px;font-weight:800;color:var(--muted);letter-spacing:.04em;margin-bottom:8px;}
