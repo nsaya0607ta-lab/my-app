@@ -1546,59 +1546,34 @@ export function renderSchedule(){
   window.scrollTo(0,0);
 }
 
-// 株価カードの「ニュース」欄から遷移するプレースホルダー画面
-// （日本経済・世界経済とも機能は未実装、今は空のまま）
 /* =========================================================================
-   日本経済ニュース画面：カレンダー＋日付別ニュース一覧＋管理者専用投稿欄。
+   ニュース画面（日本経済・世界経済）共通ロジック
    - 上部：今月のミニカレンダー。日付をタップすると選択日が切り替わる
-   - 中央：選択中の日付に紐づくニュースを縦並びで表示。URLがある項目は
-     タップで新しいタブへ安全に開く（target="_blank" + rel="noopener noreferrer"）
+   - 中央：選択中の日付に紐づくニュースをタイトルのみで縦並びに表示。
+     URLが登録されている項目はカード（または右の矢印）をタップすると
+     新しいタブへ安全に開く（target="_blank" + rel="noopener noreferrer"）
    - 下部：ログイン中のアカウントが管理者（isAdminAccount()）の場合のみ、
-     テキストを貼り付けてその日のニュースへ即時追加できる投稿フォームを表示
+     「タイトル入力欄」「URL入力欄」「登録ボタン」の3点構成フォームを表示。
+     タイトルとURLを別々のフィールドで受け取ることで、1件の登録操作で
+     タイトルとURLが正しく1つのニュース項目として保存される
    日付ごとのニュースはこの端末のlocalStorageに保存する（他ユーザーへの
-   共有は行わない、この端末限定の簡易実装）。今日の日付には要望どおりの
-   3件のモックニュースをあらかじめ登録しておく。
+   共有は行わない、この端末限定の簡易実装）。日本経済・世界経済は同一の
+   カレンダー／一覧／管理フォームのロジックをcreateNewsScreen()で共有し、
+   保存先のキーと画面ラベルだけが異なる
    ========================================================================= */
 
-const NEWS_JP_STORE_KEY = "news_japan_store_v1";
-const NEWS_JP_WEEKDAYS = ["日","月","火","水","木","金","土"];
+const NEWS_WEEKDAYS = ["日","月","火","水","木","金","土"];
 
-function newsJapanDateKey(y, m, d){ return `${y}-${String(m+1).padStart(2,"0")}-${String(d).padStart(2,"0")}`; }
+function newsDateKey(y, m, d){ return `${y}-${String(m+1).padStart(2,"0")}-${String(d).padStart(2,"0")}`; }
 
-function newsJapanTodaySeed(){
-  const now = new Date();
-  const key = newsJapanDateKey(now.getFullYear(), now.getMonth(), now.getDate());
-  return { key, items: [
-    { title:"【日本経済】日銀の追加利上げ観測でメガバンク株急騰、円高シフトへの警戒も", url:"https://newspicks.com/theme-news/1131/" },
-    { title:"【米国経済】米雇用統計が予想超えの堅調、FRBによる利下げ時期予測が後退か", url:"https://newspicks.com/theme-news/54/" },
-    { title:"【日本経済】東証のPBR1倍割れ是正勧告から2年、企業の「稼ぐ力」の現在地", url:"https://newspicks.com/news/10178940" },
-  ]};
-}
-
-function loadNewsJapanStore(){
-  let store = {};
-  try{ store = JSON.parse(localStorage.getItem(NEWS_JP_STORE_KEY) || "{}"); }catch(e){}
-  const seed = newsJapanTodaySeed();
-  if(!store[seed.key]) store[seed.key] = seed.items;
-  return store;
-}
-
-function saveNewsJapanStore(store){
-  try{ localStorage.setItem(NEWS_JP_STORE_KEY, JSON.stringify(store)); }catch(e){}
-}
-
-// 画面を離れても選択中の日付を覚えておく（再訪時は前回の続きから）。
-// 未選択（初回訪問）の場合のみ「今日」を初期値にする
-let newsJapanSelected = null;
-
-function newsJapanCalendarHTML(y, m, selectedDay, hasNewsSet, todayKey){
+function newsCalendarHTML(y, m, selectedDay, hasNewsSet, todayKey){
   const first = new Date(y, m, 1);
   const startWeekday = first.getDay();
   const daysInMonth = new Date(y, m+1, 0).getDate();
   const cells = [];
   for(let i=0;i<startWeekday;i++) cells.push(`<span class="njp-cal-cell empty"></span>`);
   for(let d=1; d<=daysInMonth; d++){
-    const key = newsJapanDateKey(y, m, d);
+    const key = newsDateKey(y, m, d);
     const cls = ["njp-cal-cell"];
     if(d===selectedDay) cls.push("selected");
     if(key===todayKey) cls.push("today");
@@ -1608,12 +1583,14 @@ function newsJapanCalendarHTML(y, m, selectedDay, hasNewsSet, todayKey){
   return `
     <div class="njp-cal">
       <div class="njp-cal-title">${y}年${m+1}月</div>
-      <div class="njp-cal-grid njp-cal-weekdays">${NEWS_JP_WEEKDAYS.map(w=>`<span>${w}</span>`).join("")}</div>
+      <div class="njp-cal-grid njp-cal-weekdays">${NEWS_WEEKDAYS.map(w=>`<span>${w}</span>`).join("")}</div>
       <div class="njp-cal-grid">${cells.join("")}</div>
     </div>`;
 }
 
-function newsJapanListHTML(items){
+// タイトルのみを表示し、URLが登録されている項目はカード全体がリンクになる
+// （URL文字列そのものは画面に出さない）
+function newsListHTML(items){
   if(!items || !items.length){
     return `<div class="njp-empty">この日のニュースはまだ登録されていません。</div>`;
   }
@@ -1628,66 +1605,111 @@ function newsJapanListHTML(items){
   }).join("")}</div>`;
 }
 
-function newsJapanAdminFormHTML(){
+function newsAdminFormHTML(){
   return `
     <div class="njp-admin">
       <div class="njp-admin-title">🛠️ 管理者専用：ニュース登録</div>
-      <textarea class="njp-admin-textarea" id="njp-admin-input" rows="4" placeholder="タイトルやURLを含むニューステキストを貼り付け…"></textarea>
+      <input type="text" class="njp-admin-input" id="njp-admin-title" placeholder="ニュースのタイトルを入力">
+      <input type="url" class="njp-admin-input" id="njp-admin-url" placeholder="リンク先のURLを入力">
       <button type="button" class="njp-admin-btn" id="njp-admin-submit">ニュースを登録</button>
     </div>`;
 }
 
-export function renderNewsJapan(){
-  const now = new Date();
-  if(!newsJapanSelected) newsJapanSelected = { y: now.getFullYear(), m: now.getMonth(), d: now.getDate() };
-  const { y, m, d } = newsJapanSelected;
-  const store = loadNewsJapanStore();
-  const selKey = newsJapanDateKey(y, m, d);
-  const hasNewsSet = new Set(Object.keys(store).filter(k => (store[k]||[]).length));
-  const todayKey = newsJapanDateKey(now.getFullYear(), now.getMonth(), now.getDate());
-  const admin = isAdminAccount();
+// 日本経済・世界経済の両画面が使う共通ロジックを1箇所にまとめたファクトリー。
+// storeKeyとlabel/iconだけを差し替えれば同じ挙動の画面を量産できる
+function createNewsScreen({ storeKey, label, icon, seedFn }){
+  // 画面を離れても選択中の日付を覚えておく（再訪時は前回の続きから）。
+  // 未選択（初回訪問）の場合のみ「今日」を初期値にする
+  let selected = null;
 
-  app.innerHTML = `
-    <div class="q-head"><button class="quit" data-go="select">← ホーム</button><span class="q-count">🇯🇵 日本経済</span></div>
-    ${newsJapanCalendarHTML(y, m, d, hasNewsSet, todayKey)}
-    <div class="section-lab" style="margin-top:16px">${m+1}月${d}日のニュース</div>
-    <div id="njp-news-area">${newsJapanListHTML(store[selKey])}</div>
-    ${admin ? newsJapanAdminFormHTML() : ""}
-  `;
-  app.querySelectorAll("[data-go]").forEach(b=>b.onclick=()=>go(b.dataset.go));
-  app.querySelectorAll("[data-day]").forEach(b=>b.onclick=()=>{
-    newsJapanSelected = { y, m, d: parseInt(b.dataset.day, 10) };
-    renderNewsJapan();
-  });
-  if(admin){
-    const submitBtn = document.getElementById("njp-admin-submit");
-    if(submitBtn) submitBtn.onclick = () => {
-      const ta = document.getElementById("njp-admin-input");
-      const raw = (ta.value||"").trim();
-      if(!raw) return;
-      const urlMatch = raw.match(/https?:\/\/\S+/);
-      const url = urlMatch ? urlMatch[0] : "";
-      const title = url ? raw.replace(url, "").trim() : raw;
-      const freshStore = loadNewsJapanStore();
-      if(!freshStore[selKey]) freshStore[selKey] = [];
-      freshStore[selKey].push({ title: title || raw, url });
-      saveNewsJapanStore(freshStore);
-      ta.value = "";
-      const area = document.getElementById("njp-news-area");
-      if(area) area.innerHTML = newsJapanListHTML(freshStore[selKey]);
-    };
+  function loadStore(){
+    let store = {};
+    try{ store = JSON.parse(localStorage.getItem(storeKey) || "{}"); }catch(e){}
+    if(seedFn){
+      const seed = seedFn();
+      if(!store[seed.key]) store[seed.key] = seed.items;
+    }
+    return store;
   }
-  window.scrollTo(0,0);
+
+  function saveStore(store){
+    try{ localStorage.setItem(storeKey, JSON.stringify(store)); }catch(e){}
+  }
+
+  function render(){
+    const now = new Date();
+    if(!selected) selected = { y: now.getFullYear(), m: now.getMonth(), d: now.getDate() };
+    const { y, m, d } = selected;
+    const store = loadStore();
+    const selKey = newsDateKey(y, m, d);
+    const hasNewsSet = new Set(Object.keys(store).filter(k => (store[k]||[]).length));
+    const todayKey = newsDateKey(now.getFullYear(), now.getMonth(), now.getDate());
+    const admin = isAdminAccount();
+
+    app.innerHTML = `
+      <div class="q-head"><button class="quit" data-go="select">← ホーム</button><span class="q-count">${icon} ${label}</span></div>
+      ${newsCalendarHTML(y, m, d, hasNewsSet, todayKey)}
+      <div class="section-lab" style="margin-top:16px">${m+1}月${d}日のニュース</div>
+      <div id="njp-news-area">${newsListHTML(store[selKey])}</div>
+      ${admin ? newsAdminFormHTML() : ""}
+    `;
+    app.querySelectorAll("[data-go]").forEach(b=>b.onclick=()=>go(b.dataset.go));
+    app.querySelectorAll("[data-day]").forEach(b=>b.onclick=()=>{
+      selected = { y, m, d: parseInt(b.dataset.day, 10) };
+      render();
+    });
+    if(admin){
+      const submitBtn = document.getElementById("njp-admin-submit");
+      if(submitBtn) submitBtn.onclick = () => {
+        const titleInput = document.getElementById("njp-admin-title");
+        const urlInput = document.getElementById("njp-admin-url");
+        const title = (titleInput.value||"").trim();
+        const url = (urlInput.value||"").trim();
+        if(!title){ titleInput.focus(); return; }
+        if(url && !/^https?:\/\//.test(url)){
+          alert("URLは http:// または https:// から始まる形式で入力してください（省略も可）。");
+          urlInput.focus();
+          return;
+        }
+        const freshStore = loadStore();
+        if(!freshStore[selKey]) freshStore[selKey] = [];
+        freshStore[selKey].push({ title, url });
+        saveStore(freshStore);
+        titleInput.value = "";
+        urlInput.value = "";
+        const area = document.getElementById("njp-news-area");
+        if(area) area.innerHTML = newsListHTML(freshStore[selKey]);
+      };
+    }
+    window.scrollTo(0,0);
+  }
+
+  return render;
 }
 
-export function renderNewsWorld(){
-  app.innerHTML = `
-    <div class="q-head"><button class="quit" data-go="select">← ホーム</button><span class="q-count">🌐 世界経済</span></div>
-    <div class="sel-sub" style="margin-top:24px;text-align:center;">この機能は近日公開予定です。</div>
-  `;
-  app.querySelectorAll("[data-go]").forEach(b=>b.onclick=()=>go(b.dataset.go));
-  window.scrollTo(0,0);
+// 今日の日付にあらかじめ登録しておく日本経済のモックニュース3件
+function newsJapanSeed(){
+  const now = new Date();
+  const key = newsDateKey(now.getFullYear(), now.getMonth(), now.getDate());
+  return { key, items: [
+    { title:"【日本経済】日銀の追加利上げ観測でメガバンク株急騰、円高シフトへの警戒も", url:"https://newspicks.com/theme-news/1131/" },
+    { title:"【米国経済】米雇用統計が予想超えの堅調、FRBによる利下げ時期予測が後退か", url:"https://newspicks.com/theme-news/54/" },
+    { title:"【日本経済】東証のPBR1倍割れ是正勧告から2年、企業の「稼ぐ力」の現在地", url:"https://newspicks.com/news/10178940" },
+  ]};
 }
+
+export const renderNewsJapan = createNewsScreen({
+  storeKey: "news_japan_store_v1",
+  label: "日本経済",
+  icon: "🇯🇵",
+  seedFn: newsJapanSeed,
+});
+
+export const renderNewsWorld = createNewsScreen({
+  storeKey: "news_world_store_v1",
+  label: "世界経済",
+  icon: "🌐",
+});
 
 /* 「資格を選ぶ」CTAボタンから遷移する専用画面：総合レベルと資格カード一覧 */
 

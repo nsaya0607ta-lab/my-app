@@ -508,7 +508,7 @@ h1.title{font-size:34px;line-height:1.05;font-weight:800;margin:8px 0 0;letter-s
 .pf-shares{font-size:11px;font-weight:700;color:var(--muted);}
 .pf-val{font-size:14.5px;font-weight:800;color:var(--text);font-variant-numeric:tabular-nums;}
 
-/* 日本経済ニュース画面：ミニカレンダー・日付別ニュース一覧・管理者投稿欄 */
+/* ニュース画面（日本経済・世界経済で共用）：ミニカレンダー・日付別ニュース一覧・管理者投稿欄 */
 .njp-cal{background:var(--surface);border:1px solid var(--line);border-radius:16px;padding:14px;
   box-shadow:0 2px 8px rgba(15,23,42,.03);}
 .njp-cal-title{font-size:13px;font-weight:800;color:var(--text);margin-bottom:10px;text-align:center;}
@@ -537,9 +537,10 @@ h1.title{font-size:34px;line-height:1.05;font-weight:800;margin:8px 0 0;letter-s
 
 .njp-admin{margin-top:18px;padding-top:16px;border-top:1px solid var(--line);}
 .njp-admin-title{font-size:12px;font-weight:800;color:var(--muted);letter-spacing:.04em;margin-bottom:8px;}
-.njp-admin-textarea{width:100%;padding:12px;border:1px solid var(--line);border-radius:12px;
-  background:var(--surface);color:var(--text);font-size:13px;font-family:inherit;resize:vertical;
+.njp-admin-input{width:100%;padding:12px;border:1px solid var(--line);border-radius:12px;
+  background:var(--surface);color:var(--text);font-size:13px;font-family:inherit;
   box-sizing:border-box;}
+.njp-admin-input+.njp-admin-input{margin-top:8px;}
 .njp-admin-btn{margin-top:10px;width:100%;padding:11px 0;border-radius:12px;border:1px solid var(--accent);
   background:var(--accent);color:#ffffff;font-size:13.5px;font-weight:800;cursor:pointer;
   box-shadow:0 2px 8px rgba(2,132,199,.25);transition:transform .12s,filter .12s;}
