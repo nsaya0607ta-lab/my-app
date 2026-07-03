@@ -2,11 +2,12 @@
    お天気カード用の天気情報取得。
    - 位置情報: ブラウザのGeolocation APIでユーザーの現在地を取得する
      （権限が無い/取得できない場合は東京をデフォルト地点として扱う）
-   - 天気データ: Open-Meteo（https://open-meteo.com）の無料API。
-     APIキー登録不要・CORSも許可されている想定だが、直接fetchが失敗する
-     環境もあるため、株価取得（stocks.js）と同じ「まず直接fetch、失敗時のみ
-     無料CORSプロキシ経由にフォールバック」というfetchDirectOrProxied()を
-     共通利用し、天気が取得できなくなる問題への耐性を高めている
+   - 天気データ: Open-Meteo（https://open-meteo.com）の無料APIを第一候補とし、
+     株価取得（stocks.js）と同じfetchDirectOrProxied()（直接fetch→失敗時のみ
+     無料CORSプロキシ経由）で取得する。それでも取得できなかった場合に備え、
+     完全に別系統の無料API・wttr.in（https://wttr.in）を予備の取得先として
+     試す（Open-Meteo・CORSプロキシが軒並み使えない環境でも復旧できるように
+     する二段構えの耐障害設計）
    - 地域名（都市名）: BigDataCloudの無料リバースジオコーディングAPI
      （こちらも同様にfetchDirectOrProxied()経由で取得する）
    ========================================================================= */
@@ -53,6 +54,27 @@ const WEATHER_CODES = {
 };
 function describeWeatherCode(code){
   return WEATHER_CODES[code] || { icon: "🌡️", label: "" };
+}
+
+// wttr.in（World Weather Online由来）のweatherCode → アイコン・日本語表記。
+// Open-Meteoとはコード体系が異なる予備プロバイダ用の簡易マッピング
+// （公式コード一覧を大まかにグルーピング。厳密な一致より見た目の妥当性を優先）
+const WTTR_CODE_GROUPS = [
+  { codes: [113], icon: "☀️", label: "快晴" },
+  { codes: [116], icon: "🌤️", label: "晴れ" },
+  { codes: [119, 122], icon: "☁️", label: "曇り" },
+  { codes: [143, 248, 260], icon: "🌫️", label: "霧" },
+  { codes: [176, 263, 266, 293, 296, 353], icon: "🌦️", label: "小雨" },
+  { codes: [281, 284, 311, 314], icon: "🌧️", label: "着氷性の雨" },
+  { codes: [299, 302, 305, 308, 356, 359], icon: "🌧️", label: "雨" },
+  { codes: [182, 317, 320, 362, 365], icon: "🌨️", label: "みぞれ" },
+  { codes: [200, 386, 389, 392, 395], icon: "⛈️", label: "雷雨" },
+  { codes: [227, 230, 323, 326, 329, 332, 335, 338, 350, 368, 371, 374, 377], icon: "❄️", label: "雪" },
+];
+function describeWttrCode(codeStr){
+  const code = parseInt(codeStr, 10);
+  const group = WTTR_CODE_GROUPS.find(g => g.codes.includes(code));
+  return group ? { icon: group.icon, label: group.label } : { icon: "🌡️", label: "" };
 }
 
 // ブラウザのGeolocation APIで現在地を取得する。権限が無い・非対応・失敗した
@@ -153,6 +175,25 @@ async function fetchForecast(lat, lon){
   return { temp, icon, label, pop, hourly6, currentTime: data.current.time || null };
 }
 
+// Open-Meteo（直接fetch＋CORSプロキシ）が軒並み失敗した場合の予備プロバイダ。
+// wttr.inは緯度経度を直接パスに指定でき、CORSも許可されている無料API。
+// 現在の気温・天気アイコンのみを返す簡易版（6時間おきの降水確率は
+// Open-Meteo専用の機能のため、このフォールバック時は空のまま。無いものを
+// 捏造するより、取得できた範囲だけ正直に表示する）
+async function fetchWttrFallback(lat, lon){
+  const url = `https://wttr.in/${lat},${lon}?format=j1`;
+  const res = await fetchDirectOrProxied(url, { timeoutMs: FETCH_TIMEOUT_MS });
+  const data = await res.json();
+  const cur = data.current_condition && data.current_condition[0];
+  if(!cur || typeof cur.temp_C === "undefined"){
+    throw new Error("invalid wttr response");
+  }
+  const temp = Math.round(parseFloat(cur.temp_C));
+  const { icon, label } = describeWttrCode(cur.weatherCode);
+  const pop = (cur.chanceofrain != null && cur.chanceofrain !== "") ? parseInt(cur.chanceofrain, 10) : null;
+  return { temp, icon, label, pop, hourly6: [], currentTime: null };
+}
+
 function loadCache(){
   try{
     const raw = JSON.parse(localStorage.getItem(CACHE_KEY) || "null");
@@ -180,8 +221,13 @@ export async function getWeather(){
   try{
     forecast = await fetchForecast(lat, lon);
   } catch(e){
-    console.warn("[weather] 天気情報の取得に失敗しました:", e.message);
-    return null;
+    console.warn("[weather] Open-Meteoでの天気取得に失敗しました。予備の天気APIを試します:", e.message);
+    try{
+      forecast = await fetchWttrFallback(lat, lon);
+    } catch(e2){
+      console.warn("[weather] 予備の天気APIでも取得に失敗しました:", e2.message);
+      return null;
+    }
   }
 
   const city = isDefaultLocation ? DEFAULT_CITY : ((await reverseGeocode(lat, lon)) || "現在地");
