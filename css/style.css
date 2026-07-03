@@ -459,28 +459,18 @@ h1.title{font-size:34px;line-height:1.05;font-weight:800;margin:8px 0 0;letter-s
   color:var(--accent);font-size:12px;font-weight:700;white-space:nowrap;letter-spacing:.02em;}
 .stock-assets-link:active{opacity:.55;}
 
-/* 売買ボタン下のIT/AIニュース：縦並びで3件を同時表示。各行は独立したテープで、
-   タイトルが横幅からはみ出す行だけ自動で右から左へ流れ（手動スワイプも可能）、
-   収まっている行は静止したまま。各ニュースはリンクで、タップすると元記事が
-   新しいタブで開く */
+/* 売買ボタン下の「ニュース」欄：見出し＋日本経済/世界経済への
+   ナビゲーションボタン2つのみのシンプルな構成（買付/売却ボタンと
+   同じサイズ感・間隔で統一する） */
 .stock-news{margin-top:11px;border-top:1px solid var(--line);padding-top:9px;}
-.stock-news-head{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:5px;}
+.stock-news-head{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:9px;}
 .stock-news-badge{font-size:10px;font-weight:800;color:var(--muted);letter-spacing:.06em;}
-.stock-news-status{display:flex;align-items:center;gap:6px;}
-.stock-news-elapsed{font-size:9.5px;color:var(--muted);white-space:nowrap;font-variant-numeric:tabular-nums;}
-.stock-news-list{display:flex;flex-direction:column;gap:1px;}
-.stock-news-line{overflow-x:auto;overflow-y:hidden;
-  scrollbar-width:none;-ms-overflow-style:none;-webkit-overflow-scrolling:touch;}
-.stock-news-line::-webkit-scrollbar{display:none;width:0;height:0;}
-.stock-news-line.flowing{cursor:grab;}
-.stock-news-line.dragging{cursor:grabbing;}
-.stock-news-line-track{display:inline-flex;align-items:baseline;white-space:nowrap;width:max-content;min-width:100%;}
-.stock-news-item{display:inline-flex;align-items:baseline;gap:7px;padding:4px 2px;text-decoration:none;}
-/* 流れる行では2周分のコピーの間に読みやすい間隔を空ける */
-.stock-news-line.flowing .stock-news-item{margin-right:44px;}
-.stock-news-item:active .stock-news-title{color:var(--accent);}
-.stock-news-title{font-size:11.5px;font-weight:600;color:var(--text);white-space:nowrap;}
-.stock-news-time{font-size:9.5px;color:var(--muted);white-space:nowrap;font-variant-numeric:tabular-nums;}
+.stock-news-nav{display:flex;gap:10px;}
+.stock-news-btn{flex:1;padding:10px 0;border-radius:12px;font-size:13.5px;font-weight:800;cursor:pointer;
+  transition:transform .12s,filter .12s;}
+.stock-news-btn:active{transform:scale(.97);filter:brightness(.95);}
+.stock-news-btn.jp{background:var(--accent);border:1px solid var(--accent);color:#ffffff;box-shadow:0 2px 8px rgba(2,132,199,.25);}
+.stock-news-btn.world{background:var(--surface);border:1px solid var(--accent);color:var(--accent);box-shadow:0 2px 6px rgba(15,23,42,.05);}
 
 /* 売買モーダル内のフォーム部品 */
 .trade-demo-tag{margin-left:8px;font-size:10px;font-weight:700;color:var(--muted);background:var(--bg2);border-radius:99px;padding:2px 8px;vertical-align:middle;}

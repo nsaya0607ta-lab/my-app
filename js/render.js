@@ -36,7 +36,7 @@ export function renderStatusBar(){
              || (!state.guestMode && !state.currentUser)
              || (!state.guestMode && state.currentUser && (!state.profileChecked || !getProfileName()));
   const screen = resolveScreen();
-  const otherScreens = ["ranking","profile","settings","skins","analytics","schedule","portfolio"];
+  const otherScreens = ["ranking","profile","settings","skins","analytics","schedule","portfolio","news-japan","news-world"];
   if(gated || otherScreens.includes(screen)){ el.classList.remove("show"); el.innerHTML=""; return; }
   const ov = overallStat();          // 総合Lvと次Lvまでの進捗(%)
   const coins = (S.coins||0);
@@ -79,7 +79,7 @@ export function renderStatusBar(){
 // render()末尾の分岐と同じ優先順位で判定する）ため、ヘッダー周りの表示制御は
 // この「実際に描画される画面名」を使って判断する。
 function resolveScreen(){
-  const noCertScreens = ["ranking","profile","settings","skins","analytics","certs","schedule","portfolio"];
+  const noCertScreens = ["ranking","profile","settings","skins","analytics","certs","schedule","portfolio","news-japan","news-world"];
   if(noCertScreens.includes(S.screen)) return S.screen;
   if(S.screen==="select" || !S.cert) return "select";
   return S.screen; // home/quiz/result/review/dict/transfer/history
@@ -134,6 +134,8 @@ export function render(){
   if(S.screen==="certs") return renderCertList();
   if(S.screen==="schedule") return renderSchedule();
   if(S.screen==="portfolio") return renderPortfolio();
+  if(S.screen==="news-japan") return renderNewsJapan();
+  if(S.screen==="news-world") return renderNewsWorld();
   // 大元：資格選択画面
   if(S.screen==="select" || !S.cert) return renderSelect();
   if(S.screen==="home") return renderHome();
@@ -1028,140 +1030,14 @@ function stocksCardHTML(){
       </div>
       <div class="stock-news">
         <div class="stock-news-head">
-          <span class="stock-news-badge">📰 IT/AI NEWS</span>
-          <span class="stock-news-status">
-            <span class="stock-news-elapsed" id="stock-news-elapsed"></span>
-          </span>
+          <span class="stock-news-badge">📰 ニュース</span>
         </div>
-        <div class="stock-news-list" id="stock-news-list"></div>
+        <div class="stock-news-nav">
+          <button type="button" class="stock-news-btn jp" id="news-japan">🇯🇵 日本経済</button>
+          <button type="button" class="stock-news-btn world" id="news-world">🌐 世界経済</button>
+        </div>
       </div>
     </div>`;
-}
-
-/* ---- IT/AIニュース（売買ボタン下のコンパクトなリスト） ----
-   大型テック7社（Microsoft / NVIDIA / Apple / Google / Meta / Amazon / Tesla）
-   に関する実際の報道記事を厳選したプール（2026年7月時点のスナップショット。
-   タイトルは日本語に要約）から3件を表示し、10分に1回シャッフルして
-   自動的に入れ替える。タップ時は元記事のURLを新しいタブで安全に開く
-   （target="_blank" + rel="noopener noreferrer"） */
-
-const IT_NEWS_POOL = [
-  { source:"TechCrunch", title:"【Meta】余剰AI計算資源を外販するクラウド事業を計画", url:"https://techcrunch.com/2026/07/01/meta-like-spacex-looks-to-turn-excess-ai-compute-into-cash/", time:"1d ago" },
-  { source:"CNBC", title:"【Meta】AIクラウド事業の報道で株価が9%急伸", url:"https://www.cnbc.com/2026/07/01/meta-stock-cloud-ai-compute.html", time:"1d ago" },
-  { source:"NPR", title:"【Meta】AI搭載の予測市場アプリを開発中と報道", url:"https://www.npr.org/2026/06/24/nx-s1-5869486/meta-prediction-market-app-ai", time:"1w ago" },
-  { source:"TechCrunch", title:"【Meta】Facebookに横断検索の「AIモード」を導入", url:"https://techcrunch.com/2026/06/15/metas-new-ai-mode-on-facebook-pulls-from-public-info-across-its-platforms/", time:"2w ago" },
-  { source:"CRN", title:"【Microsoft】Copilot Coworkを全世界で正式提供開始", url:"https://www.crnasia.com/news/2026/artificial-intelligence/microsoft-copilot-cowork-launches-worldwide", time:"2w ago" },
-  { source:"Microsoft", title:"【Microsoft】初の自律型エージェント「Scout」を発表", url:"https://blogs.microsoft.com/blog/2026/06/02/microsoft-build-2026-be-yourself-at-work/", time:"4w ago" },
-  { source:"Windows Blog", title:"【Microsoft】RTX Spark搭載の新世代Windows PCを発表", url:"https://blogs.windows.com/windowsexperience/2026/05/31/introducing-a-powerful-new-chapter-for-windows-pcs-accelerated-by-nvidia-rtx-spark/", time:"4w ago" },
-  { source:"NVIDIA", title:"【NVIDIA】次世代AI基盤「Rubin」と新チップ6種を発表", url:"https://nvidianews.nvidia.com/news/rubin-platform-ai-supercomputer", time:"4w ago" },
-  { source:"NPR", title:"【Apple】Gemini搭載の新Siriを発表 チャット型UIに", url:"https://www.npr.org/2026/06/08/nx-s1-5847937/apple-wwdc-2026-siri-ai-tim-cook", time:"3w ago" },
-  { source:"CNBC", title:"【Apple】AI開発でGoogle・NVIDIAと提携へ", url:"https://www.cnbc.com/2026/06/08/apple-google-nvidia-ai-chips.html", time:"3w ago" },
-  { source:"TechNewsWorld", title:"【Google】あらゆる出力を生成するAI「Gemini Omni」発表", url:"https://www.technewsworld.com/story/google-i-o-2026-signals-an-extinction-event-for-standalone-apps-180348.html", time:"5w ago" },
-  { source:"Google Blog", title:"【Google】「Gemini 3.5 Flash」公開、AIエージェント機能を強化", url:"https://blog.google/innovation-and-ai/technology/ai/google-ai-updates-june-2026/", time:"1w ago" },
-  { source:"AWS News Blog", title:"【Amazon】諜報機関向けにAWS移行支援へ10億ドル投資", url:"https://aws.amazon.com/blogs/aws/top-announcements-of-the-whats-next-with-aws-2026/", time:"2w ago" },
-  { source:"AWS News Blog", title:"【Amazon】AIエージェント基盤「Bedrock AgentCore」を4地域に拡大", url:"https://aws.amazon.com/new/", time:"3w ago" },
-  { source:"Electrek", title:"【Tesla】26年Q2の納車台数が予想を上回り前年比25%増", url:"https://electrek.co/2026/06/26/tesla-q2-2026-delivery-consensus-406000/", time:"just now" },
-  { source:"Teslarati", title:"【Tesla】人型ロボット「Optimus」の稼働ラインが始動", url:"https://www.teslarati.com/tesla-expands-massive-safety-feature-worldwide-latest-update/", time:"3d ago" },
-  { source:"Forbes", title:"【Tesla】AI運転支援「FSD」が事実上のロボタクシー水準に進化", url:"https://www.forbes.com/sites/brookecrothers/2026/06/14/tesla-fsd-is-evolving-into-a-de-facto-robotaxi/", time:"2w ago" },
-];
-
-let itNewsItems = [];
-let itNewsLastUpdatedAt = null;
-let itNewsRefreshTimer = null;
-let itNewsElapsedTimer = null;
-const IT_NEWS_REFRESH_MS = 10 * 60 * 1000; // 10分に1回、自動でニュースを入れ替える
-const IT_NEWS_COUNT = 3;
-
-function shuffled(arr){
-  const a = arr.slice();
-  for(let i = a.length - 1; i > 0; i--){
-    const j = Math.floor(Math.random() * (i + 1));
-    [a[i], a[j]] = [a[j], a[i]];
-  }
-  return a;
-}
-
-// プールから3件を選ぶ（Fisher–Yates）。タイトルに「AI」が入った記事が
-// 毎回必ず最低1件は含まれるよう、AI関連記事とそれ以外を別々にシャッフルして
-// 組み合わせてから、表示順だけさらにシャッフルする
-function pickItNews(){
-  const aiPool = IT_NEWS_POOL.filter(n => n.title.includes("AI"));
-  const otherPool = IT_NEWS_POOL.filter(n => !n.title.includes("AI"));
-  const picked = [];
-  if(aiPool.length) picked.push(shuffled(aiPool)[0]);
-  const restNeeded = IT_NEWS_COUNT - picked.length;
-  const restPool = otherPool.length ? otherPool : IT_NEWS_POOL.filter(n => !picked.includes(n));
-  picked.push(...shuffled(restPool).slice(0, restNeeded));
-  return shuffled(picked);
-}
-
-// 「前回の更新から何分経過したか」の控えめなインジケーター
-function renderItNewsElapsed(){
-  const el = document.getElementById("stock-news-elapsed");
-  if(!el || !itNewsLastUpdatedAt) return;
-  const mins = Math.floor((Date.now() - itNewsLastUpdatedAt) / 60000);
-  el.textContent = mins <= 0 ? "たった今更新" : `${mins}分前に更新`;
-}
-
-// ニュースは縦並びで3件を同時表示する。各行はそれぞれ独立したテープで、
-// タイトルが行の横幅に収まらない（オーバーフローする）場合のみ、その行だけ
-// 右から左へ自動ループスクロールさせる（2周分に複製してシームレスに循環）。
-// 収まっている短いタイトルの行は静止したまま。流れている行は株価と同じく
-// タッチ・ドラッグで手動スワイプでき、タップで元記事が新しいタブで開く
-// （ドラッグ直後の誤タップは抑止される）
-function itNewsItemHTML(n, hidden){
-  return `
-    <a class="stock-news-item" href="${esc(n.url)}" target="_blank" rel="noopener noreferrer"${hidden?' tabindex="-1" aria-hidden="true"':''}>
-      <span class="stock-news-title">${esc(n.title)}</span>
-      <span class="stock-news-time">${esc(n.time)}</span>
-    </a>`;
-}
-
-function renderItNews(){
-  const listEl = document.getElementById("stock-news-list");
-  if(!listEl) return;
-  listEl.innerHTML = itNewsItems.map((n, i) => `
-    <div class="stock-news-line" id="stock-news-line-${i}">
-      <div class="stock-news-line-track">${itNewsItemHTML(n, false)}</div>
-    </div>`).join("");
-  // まず1周分だけ置いた状態で行ごとにオーバーフローを実測し、
-  // はみ出す行だけ2周分に複製してテープ（自動ループ＋手動スワイプ）を有効化する
-  itNewsItems.forEach((n, i) => {
-    const id = `stock-news-line-${i}`;
-    const line = document.getElementById(id);
-    if(!line) return;
-    if(line.scrollWidth > line.clientWidth + 1){
-      line.classList.add("flowing");
-      line.firstElementChild.innerHTML = itNewsItemHTML(n, false) + itNewsItemHTML(n, true);
-      initHybridTape(id, 20);
-    } else {
-      removeHybridTape(id); // 前回流れていた行が静止に変わった場合の後始末
-    }
-  });
-  renderItNewsElapsed();
-}
-
-function refreshItNews(){
-  itNewsItems = pickItNews();
-  itNewsLastUpdatedAt = Date.now();
-  renderItNews();
-}
-
-// 10分ごとの自動入れ替え＋1分ごとの経過表示更新。どちらのタイマーも
-// ニュースエリアがDOMから消えたら自動で止まる（他のタイマーと同じ
-// 自己クリーンアップパターン）
-function startItNewsTimers(){
-  if(itNewsRefreshTimer){ clearInterval(itNewsRefreshTimer); itNewsRefreshTimer = null; }
-  if(itNewsElapsedTimer){ clearInterval(itNewsElapsedTimer); itNewsElapsedTimer = null; }
-  refreshItNews();
-  itNewsRefreshTimer = setInterval(() => {
-    if(!document.getElementById("stock-news-list")){ clearInterval(itNewsRefreshTimer); itNewsRefreshTimer = null; return; }
-    refreshItNews();
-  }, IT_NEWS_REFRESH_MS);
-  itNewsElapsedTimer = setInterval(() => {
-    if(!document.getElementById("stock-news-list")){ clearInterval(itNewsElapsedTimer); itNewsElapsedTimer = null; return; }
-    renderItNewsElapsed();
-  }, 60000);
 }
 
 // 株価カード左上の「◯月◯日 ◯時◯分時点」表示を更新する。
@@ -1524,14 +1400,17 @@ function initStocksCard(){
   const detail = document.getElementById("stock-detail");
   const buy = document.getElementById("stock-buy");
   const sell = document.getElementById("stock-sell");
+  const newsJp = document.getElementById("news-japan");
+  const newsWorld = document.getElementById("news-world");
   if(detail) detail.onclick = () => go("portfolio");
   if(buy) buy.onclick = () => openTradeModal("buy");
   if(sell) sell.onclick = () => openTradeModal("sell");
+  if(newsJp) newsJp.onclick = () => go("news-japan");
+  if(newsWorld) newsWorld.onclick = () => go("news-world");
   renderStockTape();
   renderStockUpdated();
   startStockRefresh();
   initHybridTape("stock-tape", 27); // 株価ティッカー
-  startItNewsTimers(); // ニュースの各行のテープはrenderItNews内で必要な行にだけ張られる
 }
 
 /* ポートフォリオ（資産保有額）詳細画面：株価カード右上の「→」から遷移する。
@@ -1661,6 +1540,26 @@ export function renderSelect(){
 export function renderSchedule(){
   app.innerHTML = `
     <div class="q-head"><button class="quit" data-go="select">← ホーム</button><span class="q-count">予定管理</span></div>
+    <div class="sel-sub" style="margin-top:24px;text-align:center;">この機能は近日公開予定です。</div>
+  `;
+  app.querySelectorAll("[data-go]").forEach(b=>b.onclick=()=>go(b.dataset.go));
+  window.scrollTo(0,0);
+}
+
+// 株価カードの「ニュース」欄から遷移するプレースホルダー画面
+// （日本経済・世界経済とも機能は未実装、今は空のまま）
+export function renderNewsJapan(){
+  app.innerHTML = `
+    <div class="q-head"><button class="quit" data-go="select">← ホーム</button><span class="q-count">🇯🇵 日本経済</span></div>
+    <div class="sel-sub" style="margin-top:24px;text-align:center;">この機能は近日公開予定です。</div>
+  `;
+  app.querySelectorAll("[data-go]").forEach(b=>b.onclick=()=>go(b.dataset.go));
+  window.scrollTo(0,0);
+}
+
+export function renderNewsWorld(){
+  app.innerHTML = `
+    <div class="q-head"><button class="quit" data-go="select">← ホーム</button><span class="q-count">🌐 世界経済</span></div>
     <div class="sel-sub" style="margin-top:24px;text-align:center;">この機能は近日公開予定です。</div>
   `;
   app.querySelectorAll("[data-go]").forEach(b=>b.onclick=()=>go(b.dataset.go));
