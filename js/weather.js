@@ -175,11 +175,28 @@ async function fetchForecast(lat, lon){
   return { temp, icon, label, pop, hourly6, currentTime: data.current.time || null };
 }
 
+// wttr.inのweather[]（日ごとの3時間刻み予報）から、Open-Meteoと同じ形式の
+// 時刻配列・降水確率配列を組み立てる。各hourly要素のtimeは"0","300",...,
+// "2100"のようなHHMM形式の文字列（3時間おき）
+function wttrTimesAndPops(weatherDays){
+  const times = [], pops = [];
+  (weatherDays || []).forEach(day => {
+    (day.hourly || []).forEach(h => {
+      const t = parseInt(h.time, 10) || 0;
+      const hh = String(Math.floor(t / 100)).padStart(2, "0");
+      const mm = String(t % 100).padStart(2, "0");
+      times.push(`${day.date}T${hh}:${mm}`);
+      pops.push(parseInt(h.chanceofrain, 10) || 0);
+    });
+  });
+  return { times, pops };
+}
+
 // Open-Meteo（直接fetch＋CORSプロキシ）が軒並み失敗した場合の予備プロバイダ。
 // wttr.inは緯度経度を直接パスに指定でき、CORSも許可されている無料API。
-// 現在の気温・天気アイコンのみを返す簡易版（6時間おきの降水確率は
-// Open-Meteo専用の機能のため、このフォールバック時は空のまま。無いものを
-// 捏造するより、取得できた範囲だけ正直に表示する）
+// 降水確率は current_condition には含まれないため（temp/天気のみ）、
+// weather[].hourly[]（3時間刻み）から現在時刻・6時間おきに最も近い値を
+// Open-Meteoと同じロジック（nearestHourlyIndex）で拾う
 async function fetchWttrFallback(lat, lon){
   const url = `https://wttr.in/${lat},${lon}?format=j1`;
   const res = await fetchDirectOrProxied(url, { timeoutMs: FETCH_TIMEOUT_MS });
@@ -190,8 +207,28 @@ async function fetchWttrFallback(lat, lon){
   }
   const temp = Math.round(parseFloat(cur.temp_C));
   const { icon, label } = describeWttrCode(cur.weatherCode);
-  const pop = (cur.chanceofrain != null && cur.chanceofrain !== "") ? parseInt(cur.chanceofrain, 10) : null;
-  return { temp, icon, label, pop, hourly6: [], currentTime: null };
+
+  const { times, pops } = wttrTimesAndPops(data.weather);
+
+  let pop = null;
+  if(times.length && pops.length){
+    const idx = nearestHourlyIndex(times, Date.now());
+    if(idx >= 0 && typeof pops[idx] === "number") pop = pops[idx];
+  }
+
+  const hourly6 = [];
+  if(times.length && pops.length){
+    const nowMs = Date.now();
+    for(let step = 1; step <= HOURLY_STEPS; step++){
+      const targetMs = nowMs + step * HOURLY_STEP_HOURS * 60 * 60 * 1000;
+      const i = nearestHourlyIndex(times, targetMs);
+      if(i >= 0 && typeof pops[i] === "number"){
+        hourly6.push({ time: times[i], pop: pops[i] });
+      }
+    }
+  }
+
+  return { temp, icon, label, pop, hourly6, currentTime: null };
 }
 
 function loadCache(){
