@@ -942,19 +942,20 @@ async function loadWeatherCard(){
 }
 
 /* =========================================================================
-   株価カード（STOCKS）：ニュースカードと同じデザインシステムを流用した
-   「電光掲示板（ティッカーボード）風」カード。
-   - 上部：MSFT/AMZN/GOOGL/AAPL/META/NVDAの6銘柄（銘柄名＋株価＋前日比）が
-     右から左へエンドレスに流れるマーキー。左上に最終更新日時、右上に
-     ポートフォリオ詳細画面への「→」ナビゲーションを配置する。
-   - 下部：ゲーム内通貨AC（コイン）を使った「買付」「売却」ボタン。タップで
-     デモ取引モーダルを開き、AC残高と連動した売買シミュレーションができる
-     （保有株はローカルに保存し、ポートフォリオ画面で確認できる）。
-   起動直後はサンプル株価で表示し、Finnhubの株価APIから実際の株価を取得
-   できた場合はそちらに置き換える。取得に失敗した場合、一度も実データを
-   取得できていなければ引き続きサンプル値を、既に実データを取得済みの
-   銘柄であれば最後に取得できた値（最終参照値）をそのまま据え置いて表示する
-   （実データのように見える擬似変動はさせない）。
+   MARKET WATCH（株価ティッカー）：ニュースカードと同じデザインシステムを
+   流用した「電光掲示板（ティッカーボード）風」の株価ティッカー。
+   銘柄名＋株価＋前日比が右から左へエンドレスに流れるマーキーと、左上の
+   最終更新日時からなる。ホーム画面には表示せず、日本経済・世界経済の
+   各ニュース画面の最上部にcreateMarketWatch()のインスタンスとしてそれぞれ
+   独立して表示する（日本経済＝JP_STOCKS、世界経済＝STOCKS＝Finnhub実データ
+   連動の米国株）。
+   起動直後はサンプル株価で表示し、世界経済側はFinnhubの株価APIから実際の
+   株価を取得できた場合はそちらに置き換える（日本経済側はFinnhub無料枠で
+   日経平均などの国内指標が取得できないため、常にサンプル値の擬似変動で
+   表示する）。取得に失敗した場合、一度も実データを取得できていなければ
+   引き続きサンプル値を、既に実データを取得済みの銘柄であれば最後に取得
+   できた値（最終参照値）をそのまま据え置いて表示する（実データのように
+   見える擬似変動はさせない）。
    ========================================================================= */
 
 const STOCKS = [
@@ -965,13 +966,23 @@ const STOCKS = [
   { ticker:"META", name:"Meta", price:512.30, previousClose:520.10, sessionLabel:"サンプル", isLive:false, everLive:false },
   { ticker:"NVDA", name:"NVIDIA", price:135.60, previousClose:131.90, sessionLabel:"サンプル", isLive:false, everLive:false },
 ];
+
+// 日本経済ニュース画面用の株価ティッカー（日経平均・TOPIXなどの国内指標＋
+// 主要な国内テック・金融銘柄）。Finnhub無料枠では取得できないため常にサンプル値
+const JP_STOCKS = [
+  { ticker:"^N225", name:"日経平均", price:69120.30, previousClose:68830.10, sessionLabel:"サンプル", isLive:false, everLive:false },
+  { ticker:"TOPIX", name:"TOPIX", price:2986.40, previousClose:2975.20, sessionLabel:"サンプル", isLive:false, everLive:false },
+  { ticker:"7203", name:"トヨタ自動車", price:2890.50, previousClose:2865.00, sessionLabel:"サンプル", isLive:false, everLive:false },
+  { ticker:"8306", name:"三菱UFJ", price:1980.00, previousClose:1972.50, sessionLabel:"サンプル", isLive:false, everLive:false },
+  { ticker:"6758", name:"ソニーG", price:3540.00, previousClose:3560.00, sessionLabel:"サンプル", isLive:false, everLive:false },
+  { ticker:"9984", name:"ソフトバンクG", price:9820.00, previousClose:9750.00, sessionLabel:"サンプル", isLive:false, everLive:false },
+];
+
 // change(%)は常に previousClose（前日終値）を基準に計算する。
 // 実データ取得時・擬似変動時ともにこの基準値を更新して整合性を保つ。
-STOCKS.forEach(s => { s.change = ((s.price - s.previousClose) / s.previousClose) * 100; });
+[STOCKS, JP_STOCKS].forEach(list => list.forEach(s => { s.change = ((s.price - s.previousClose) / s.previousClose) * 100; }));
 // 起動直後は実データ取得前なので、必ず「サンプル」表示から始める（実データと誤認させない）
 
-let stockRefreshTimer = null;
-let stocksLastUpdatedAt = null; // Finnhubから実データを最後に取得できた日時(ms)。未取得の間はnull
 const STOCK_REFRESH_MS = 45000; // 実株価の再取得・擬似変動の更新間隔
 const STOCK_TICK_PCT = 0.006;   // 実データが使えない場合の1回あたりの変動幅（±0.3%程度）
 
@@ -996,86 +1007,157 @@ function formatStocksUpdatedAt(ms){
   return `${d.getMonth()+1}月${d.getDate()}日 ${d.getHours()}時${String(d.getMinutes()).padStart(2,"0")}分時点`;
 }
 
+// 実データが取得できなかった銘柄のフォールバック処理。
+// 一度でも実データを取得できたことがある銘柄（everLive）は、ランダムな擬似変動は
+// させず、最後に取得できた実際の値をそのまま据え置いて表示する（「最終参照」）。
+// まだ一度も実データを取得できていない起動直後のみ、デモ表示用に擬似的な値動きを見せる
+// （この場合のみ「サンプル」ラベルを出し、実データと誤認されないようにする）。
+function simulateStockTick(s){
+  s.isLive = false;
+  if(s.everLive){
+    // 実データ取得済みの銘柄：価格・変化率は動かさず、最後に取得できた値のまま据え置く
+    s.sessionLabel = "最終参照";
+    return;
+  }
+  const delta = (Math.random() - 0.5) * STOCK_TICK_PCT;
+  s.price = Math.max(0.01, round2(s.price * (1 + delta)));
+  s.change = ((s.price - s.previousClose) / s.previousClose) * 100;
+  s.sessionLabel = "サンプル";
+}
+
 // ティッカー1銘柄分。マーキーをシームレスにループさせるため同じ列を2周分
 // 描画する（copy=0/1）。中身のテキストはIDで直接更新し、アニメーション中の
-// DOM再構築（＝流れのリセット）を避ける
-function stockTapeItemHTML(copy, i){
+// DOM再構築（＝流れのリセット）を避ける。instanceIdで日本経済／世界経済の
+// 2インスタンス分のDOM idを衝突なく分離する
+function stockTapeItemHTML(instanceId, copy, i){
   const hidden = copy === 1 ? ` aria-hidden="true"` : "";
   return `
     <span class="stock-tape-item"${hidden}>
-      <span class="tape-ticker" id="tape-ticker-${copy}-${i}"></span>
-      <span class="tape-price" id="tape-price-${copy}-${i}"></span>
-      <span class="tape-change" id="tape-change-${copy}-${i}"></span>
-      <span class="tape-session" id="tape-session-${copy}-${i}" style="display:none"></span>
+      <span class="tape-ticker" id="tape-ticker-${instanceId}-${copy}-${i}"></span>
+      <span class="tape-price" id="tape-price-${instanceId}-${copy}-${i}"></span>
+      <span class="tape-change" id="tape-change-${instanceId}-${copy}-${i}"></span>
+      <span class="tape-session" id="tape-session-${instanceId}-${copy}-${i}" style="display:none"></span>
     </span>`;
 }
 
-function stocksCardHTML(){
-  const tapeCopy = (copy) => STOCKS.map((_,i) => stockTapeItemHTML(copy, i)).join("");
-  return `
-    <div class="news-card stocks-card" id="stocks-card">
-      <div class="news-card-head">
-        <div class="stock-head-left">
-          <span class="news-badge stock-badge">📈 株価</span>
-          <div class="stock-updated" id="stock-updated"></div>
-        </div>
-        <button type="button" class="stock-assets-link" id="stock-detail" aria-label="ポートフォリオ詳細へ">資産 →</button>
-      </div>
-      <div class="stock-tape" id="stock-tape">
-        <div class="stock-tape-track">${tapeCopy(0)}${tapeCopy(1)}</div>
-      </div>
-      <div class="stock-trade-row">
-        <button type="button" class="stock-trade-btn buy" id="stock-buy">📈 買付</button>
-        <button type="button" class="stock-trade-btn sell" id="stock-sell">📉 売却</button>
-      </div>
-      <div class="stock-news">
-        <div class="stock-news-head">
-          <span class="stock-news-badge">📰 ニュース</span>
-        </div>
-        <div class="stock-news-nav">
-          <button type="button" class="stock-news-btn jp" id="news-japan">🇯🇵 日本経済</button>
-          <button type="button" class="stock-news-btn world" id="news-world">🌐 世界経済</button>
-        </div>
-      </div>
-    </div>`;
-}
+// 日本経済・世界経済それぞれのMARKET WATCHインスタンスを生成するファクトリー。
+// instanceIdごとに独立したDOM id・自動更新タイマー・電光掲示板テープを持つため、
+// 2画面で同時に（切り替えながら）使っても互いに干渉しない。
+// live=trueの場合のみFinnhub実データ取得（getLiveStocks、常にSTOCK_TICKERS＝
+// 米国株6銘柄を返す）を試み、それ以外は常にサンプル値の擬似変動で表示する
+function createMarketWatch({ instanceId, stocks, live, formatPrice }){
+  let lastUpdatedAt = null;
+  let refreshTimer = null;
+  const tapeId = `stock-tape-${instanceId}`;
+  const updatedId = `stock-updated-${instanceId}`;
+  // 価格の通貨表示：世界経済（米国株）は"$"、日本経済（円建て指標・銘柄）は
+  // 桁区切りの円表示にするため、インスタンスごとにフォーマットを差し替える
+  const priceText = formatPrice || (s => `$${s.price.toFixed(2)}`);
 
-// 株価カード左上の「◯月◯日 ◯時◯分時点」表示を更新する。
-// 一度も実データを取得できていない間（起動直後・通信失敗が続く間）は空欄のままにする。
-function renderStockUpdated(){
-  const el = document.getElementById("stock-updated");
-  if(!el) return;
-  el.textContent = stocksLastUpdatedAt ? formatStocksUpdatedAt(stocksLastUpdatedAt) : "";
-}
+  function html(){
+    const tapeCopy = (copy) => stocks.map((_,i) => stockTapeItemHTML(instanceId, copy, i)).join("");
+    return `
+      <div class="news-card stocks-card" id="stocks-card-${instanceId}">
+        <div class="news-card-head">
+          <div class="stock-head-left">
+            <span class="news-badge stock-badge">📈 株価</span>
+            <div class="stock-updated" id="${updatedId}"></div>
+          </div>
+        </div>
+        <div class="stock-tape" id="${tapeId}">
+          <div class="stock-tape-track">${tapeCopy(0)}${tapeCopy(1)}</div>
+        </div>
+      </div>`;
+  }
 
-// ティッカー1銘柄分の表示を最新の状態に更新する（2周分の両方のコピーを同じ
-// 内容にする）。DOM構造は変えずテキストだけ差し替えるので、マーキーの流れは
-// 途切れない
-function renderStockTapeContent(i){
-  const s = STOCKS[i];
-  if(!s) return;
-  const up = s.change >= 0;
-  for(let copy = 0; copy < 2; copy++){
-    const tickerEl = document.getElementById(`tape-ticker-${copy}-${i}`);
-    const priceEl = document.getElementById(`tape-price-${copy}-${i}`);
-    const changeEl = document.getElementById(`tape-change-${copy}-${i}`);
-    const sessionEl = document.getElementById(`tape-session-${copy}-${i}`);
-    if(tickerEl) tickerEl.textContent = s.ticker;
-    if(priceEl) priceEl.textContent = `$${s.price.toFixed(2)}`;
-    if(changeEl){
-      changeEl.textContent = `${up?"▲":"▼"} ${up?"+":""}${s.change.toFixed(1)}%`;
-      changeEl.className = `tape-change ${up?"up":"down"}`;
-    }
-    if(sessionEl){
-      if(s.sessionLabel){ sessionEl.textContent = s.sessionLabel; sessionEl.style.display = ""; }
-      else { sessionEl.style.display = "none"; }
+  function renderUpdated(){
+    const el = document.getElementById(updatedId);
+    if(el) el.textContent = lastUpdatedAt ? formatStocksUpdatedAt(lastUpdatedAt) : "";
+  }
+
+  function renderTapeContent(i){
+    const s = stocks[i];
+    if(!s) return;
+    const up = s.change >= 0;
+    for(let copy = 0; copy < 2; copy++){
+      const tickerEl = document.getElementById(`tape-ticker-${instanceId}-${copy}-${i}`);
+      const priceEl = document.getElementById(`tape-price-${instanceId}-${copy}-${i}`);
+      const changeEl = document.getElementById(`tape-change-${instanceId}-${copy}-${i}`);
+      const sessionEl = document.getElementById(`tape-session-${instanceId}-${copy}-${i}`);
+      if(tickerEl) tickerEl.textContent = s.ticker;
+      if(priceEl) priceEl.textContent = priceText(s);
+      if(changeEl){
+        changeEl.textContent = `${up?"▲":"▼"} ${up?"+":""}${s.change.toFixed(1)}%`;
+        changeEl.className = `tape-change ${up?"up":"down"}`;
+      }
+      if(sessionEl){
+        if(s.sessionLabel){ sessionEl.textContent = s.sessionLabel; sessionEl.style.display = ""; }
+        else { sessionEl.style.display = "none"; }
+      }
     }
   }
+  function renderTape(){ stocks.forEach((_,i) => renderTapeContent(i)); }
+
+  // 実株価取得の結果をstocksへ反映する（銘柄ごと。取得できなかった銘柄だけ
+  // フォールバックに回す＝一部失敗しても他の銘柄は実データを表示できる）
+  function applyLiveStocks(liveItems){
+    if(!liveItems) return;
+    let appliedAny = false;
+    liveItems.forEach(liveItem => {
+      if(!liveItem) return; // その銘柄は取得失敗（nullが入る）→ 後段の擬似変動に任せる
+      const s = stocks.find(x => x.ticker === liveItem.ticker);
+      if(!s) return;
+      s.price = liveItem.price;
+      s.previousClose = liveItem.previousClose;
+      s.change = liveItem.change;
+      s.sessionLabel = null; // 実データ取得成功時はバッジ非表示
+      s.isLive = true;
+      s.everLive = true;
+      appliedAny = true;
+    });
+    // 1銘柄でも実データを反映できたら、その瞬間を「最終更新日時」として記録する
+    if(appliedAny) lastUpdatedAt = Date.now();
+  }
+
+  async function refresh(){
+    stocks.forEach(s => { s.isLive = false; }); // 今回の取得結果で改めて判定し直す
+    if(live){
+      const liveItems = await getLiveStocks();
+      applyLiveStocks(liveItems);
+    }
+    stocks.forEach(s => { if(!s.isLive) simulateStockTick(s); });
+    renderTape();
+    renderUpdated();
+  }
+
+  function startRefresh(){
+    if(refreshTimer){ clearInterval(refreshTimer); refreshTimer = null; }
+    refresh();
+    refreshTimer = setInterval(() => {
+      if(!document.getElementById(tapeId)){ clearInterval(refreshTimer); refreshTimer = null; return; }
+      refresh();
+    }, STOCK_REFRESH_MS);
+  }
+
+  // 画面のinnerHTML挿入後に呼び出す。DOMが無い（別画面に切り替わった）場合は何もしない
+  function mount(){
+    if(!document.getElementById(tapeId)) return;
+    renderTape();
+    renderUpdated();
+    startRefresh();
+    initHybridTape(tapeId, 27); // 株価ティッカー（自動ループ＋手動スワイプ）
+  }
+
+  return { html, mount };
 }
 
-function renderStockTape(){
-  STOCKS.forEach((_,i) => renderStockTapeContent(i));
-}
+const jpMarketWatch = createMarketWatch({
+  instanceId: "jp",
+  stocks: JP_STOCKS,
+  live: false,
+  formatPrice: s => `¥${s.price.toLocaleString("ja-JP", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
+});
+const worldMarketWatch = createMarketWatch({ instanceId: "world", stocks: STOCKS, live: true });
 
 /* ---- ハイブリッドテープ（自動ループ＋手動スワイプ）の共通制御 ----
    株価ティッカーとIT/AIニュースの両方で使う汎用の仕組み。
@@ -1337,82 +1419,6 @@ function openTradeModal(mode){
   };
 }
 
-// 実株価取得の結果をSTOCKSへ反映する（銘柄ごと。取得できなかった銘柄だけ
-// フォールバックに回す＝一部失敗しても他の銘柄は実データを表示できる）
-function applyLiveStocks(liveItems){
-  if(!liveItems) return;
-  let appliedAny = false;
-  liveItems.forEach(live => {
-    if(!live) return; // その銘柄は取得失敗（nullが入る）→ 後段の擬似変動に任せる
-    const s = STOCKS.find(x => x.ticker === live.ticker);
-    if(!s) return;
-    s.price = live.price;
-    s.previousClose = live.previousClose;
-    s.change = live.change;
-    s.sessionLabel = null; // 実データ取得成功時はバッジ非表示
-    s.isLive = true;
-    s.everLive = true; // 一度でも実データを取得できたことを記録（以後の取得失敗時に擬似変動ではなく最終参照値を出すために使う）
-    appliedAny = true;
-  });
-  // 1銘柄でも実データを反映できたら、その瞬間を「最終更新日時」として記録する
-  if(appliedAny) stocksLastUpdatedAt = Date.now();
-}
-
-// 実データが取得できなかった銘柄のフォールバック処理。
-// 一度でも実データを取得できたことがある銘柄（everLive）は、ランダムな擬似変動は
-// させず、最後に取得できた実際の値をそのまま据え置いて表示する（「最終参照」）。
-// まだ一度も実データを取得できていない起動直後のみ、デモ表示用に擬似的な値動きを見せる
-// （この場合のみ「サンプル」ラベルを出し、実データと誤認されないようにする）。
-function simulateStockTick(s){
-  s.isLive = false;
-  if(s.everLive){
-    // 実データ取得済みの銘柄：価格・変化率は動かさず、最後に取得できた値のまま据え置く
-    s.sessionLabel = "最終参照";
-    return;
-  }
-  const delta = (Math.random() - 0.5) * STOCK_TICK_PCT;
-  s.price = Math.max(0.01, round2(s.price * (1 + delta)));
-  s.change = ((s.price - s.previousClose) / s.previousClose) * 100;
-  s.sessionLabel = "サンプル";
-}
-
-async function refreshStockPrices(){
-  const live = await getLiveStocks();
-  STOCKS.forEach(s => { s.isLive = false; }); // 今回の取得結果で改めて判定し直す
-  applyLiveStocks(live);
-  STOCKS.forEach(s => { if(!s.isLive) simulateStockTick(s); });
-  renderStockTape();
-  renderStockUpdated();
-}
-
-function startStockRefresh(){
-  if(stockRefreshTimer){ clearInterval(stockRefreshTimer); stockRefreshTimer = null; }
-  refreshStockPrices();
-  stockRefreshTimer = setInterval(() => {
-    if(!document.getElementById("stocks-card")){ clearInterval(stockRefreshTimer); stockRefreshTimer = null; return; }
-    refreshStockPrices();
-  }, STOCK_REFRESH_MS);
-}
-
-function initStocksCard(){
-  const card = document.getElementById("stocks-card");
-  if(!card) return;
-  const detail = document.getElementById("stock-detail");
-  const buy = document.getElementById("stock-buy");
-  const sell = document.getElementById("stock-sell");
-  const newsJp = document.getElementById("news-japan");
-  const newsWorld = document.getElementById("news-world");
-  if(detail) detail.onclick = () => go("portfolio");
-  if(buy) buy.onclick = () => openTradeModal("buy");
-  if(sell) sell.onclick = () => openTradeModal("sell");
-  if(newsJp) newsJp.onclick = () => go("news-japan");
-  if(newsWorld) newsWorld.onclick = () => go("news-world");
-  renderStockTape();
-  renderStockUpdated();
-  startStockRefresh();
-  initHybridTape("stock-tape", 27); // 株価ティッカー
-}
-
 /* ポートフォリオ（資産保有額）詳細画面：株価カード右上の「→」から遷移する。
    現金AC＋保有株の評価額（現在株価ベース）のサマリーと保有明細を表示する */
 export function renderPortfolio(){
@@ -1518,11 +1524,40 @@ function scheduleLauncherHTML(){
   });
 }
 
+// 予定管理の隣に並ぶ「日本NEWS」「海外ニュース」の丸型起動ボタン。
+// タップで各ニュース画面（news-japan／news-world）へ遷移する。
+// MARKET WATCH（株価ティッカー）は各ニュース画面側の最上部に移設したため、
+// ホーム画面にはこの起動ボタンのみを置く
+function japanNewsLauncherHTML(){
+  return launcherCardHTML({
+    cardId: "news-japan-card",
+    cardClass: "news-japan-card",
+    iconHTML: `<span class="launcher-emoji" aria-hidden="true">🇯🇵</span>`,
+    label: "日本NEWS",
+    dataGo: "news-japan",
+    ariaLabel: "日本NEWS",
+  });
+}
+
+function worldNewsLauncherHTML(){
+  return launcherCardHTML({
+    cardId: "news-world-card",
+    cardClass: "news-world-card",
+    iconHTML: `<span class="launcher-emoji" aria-hidden="true">🌐</span>`,
+    label: "海外ニュース",
+    dataGo: "news-world",
+    ariaLabel: "海外ニュース",
+  });
+}
+
 export function renderSelect(){
   app.innerHTML = `
     ${weatherCardHTML()}
-    ${stocksCardHTML()}
-    ${scheduleLauncherHTML()}
+    <div class="launcher-row">
+      ${scheduleLauncherHTML()}
+      ${japanNewsLauncherHTML()}
+      ${worldNewsLauncherHTML()}
+    </div>
     ${msCertLauncherHTML()}
     ${state.currentUser
       ? `<div class="acct-bar">👤 ${esc(state.currentUser.email||"ログイン中")}<button class="link2" data-logout>ログアウト</button></div>`
@@ -1532,7 +1567,6 @@ export function renderSelect(){
   const lo=app.querySelector("[data-logout]"); if(lo)lo.onclick=()=>logout();
   const li=app.querySelector("[data-login]"); if(li)li.onclick=()=>{ state.guestMode=false; state.authMode="login"; render(); };
   loadWeatherCard();
-  initStocksCard();
   window.scrollTo(0,0);
 }
 
@@ -1636,7 +1670,7 @@ function newsBulkDeleteHTML(){
 
 // 日本経済・世界経済の両画面が使う共通ロジックを1箇所にまとめたファクトリー。
 // storeKeyとlabel/iconだけを差し替えれば同じ挙動の画面を量産できる
-function createNewsScreen({ storeKey, label, icon, seedFn }){
+function createNewsScreen({ storeKey, label, icon, seedFn, marketWatch }){
   // 画面を離れても選択中の日付を覚えておく（再訪時は前回の続きから）。
   // 未選択（初回訪問）の場合のみ「今日」を初期値にする
   let selected = null;
@@ -1684,6 +1718,7 @@ function createNewsScreen({ storeKey, label, icon, seedFn }){
     Array.from(selectedIds).forEach(id=>{ if(!validIds.has(id)) selectedIds.delete(id); });
 
     app.innerHTML = `
+      ${marketWatch ? marketWatch.html() : ""}
       <div class="q-head"><button class="quit" data-go="select">← ホーム</button><span class="q-count">${icon} ${label}</span></div>
       ${newsCalendarHTML(y, m, d, hasNewsSet, todayKey)}
       <div class="section-lab" style="margin-top:16px">${m+1}月${d}日のニュース</div>
@@ -1743,6 +1778,7 @@ function createNewsScreen({ storeKey, label, icon, seedFn }){
         render();
       };
     }
+    if(marketWatch) marketWatch.mount();
     window.scrollTo(0,0);
   }
 
@@ -1765,12 +1801,14 @@ export const renderNewsJapan = createNewsScreen({
   label: "日本経済",
   icon: "🇯🇵",
   seedFn: newsJapanSeed,
+  marketWatch: jpMarketWatch,
 });
 
 export const renderNewsWorld = createNewsScreen({
   storeKey: "news_world_store_v1",
   label: "世界経済",
   icon: "🌐",
+  marketWatch: worldMarketWatch,
 });
 
 /* 「資格を選ぶ」CTAボタンから遷移する専用画面：総合レベルと資格カード一覧 */
