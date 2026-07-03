@@ -3,10 +3,15 @@
    - 位置情報: ブラウザのGeolocation APIでユーザーの現在地を取得する
      （権限が無い/取得できない場合は東京をデフォルト地点として扱う）
    - 天気データ: Open-Meteo（https://open-meteo.com）の無料API。
-     APIキー登録不要・CORSも許可されているため、ブラウザから直接fetchできる
+     APIキー登録不要・CORSも許可されている想定だが、直接fetchが失敗する
+     環境もあるため、株価取得（stocks.js）と同じ「まず直接fetch、失敗時のみ
+     無料CORSプロキシ経由にフォールバック」というfetchDirectOrProxied()を
+     共通利用し、天気が取得できなくなる問題への耐性を高めている
    - 地域名（都市名）: BigDataCloudの無料リバースジオコーディングAPI
-     （こちらもAPIキー不要・CORS許可済み。クライアントサイド利用を想定）
+     （こちらも同様にfetchDirectOrProxied()経由で取得する）
    ========================================================================= */
+
+import { fetchDirectOrProxied } from './cors-proxy.js';
 
 const DEFAULT_LOCATION = { lat: 35.6762, lon: 139.6503 };
 const DEFAULT_CITY = "東京";
@@ -50,13 +55,6 @@ function describeWeatherCode(code){
   return WEATHER_CODES[code] || { icon: "🌡️", label: "" };
 }
 
-function withTimeout(promise, ms){
-  return Promise.race([
-    promise,
-    new Promise((_, reject) => setTimeout(() => reject(new Error("timeout")), ms)),
-  ]);
-}
-
 // ブラウザのGeolocation APIで現在地を取得する。権限が無い・非対応・失敗した
 // 場合は null を返す（呼び出し側でデフォルト地点にフォールバックする）
 function getCurrentPosition(){
@@ -84,8 +82,7 @@ function getCurrentPosition(){
 async function reverseGeocode(lat, lon){
   try{
     const url = `https://api.bigdatacloud.net/data/reverse-geocode-client?latitude=${lat}&longitude=${lon}&localityLanguage=ja`;
-    const res = await withTimeout(fetch(url), FETCH_TIMEOUT_MS);
-    if(!res.ok) throw new Error("HTTP " + res.status);
+    const res = await fetchDirectOrProxied(url, { timeoutMs: FETCH_TIMEOUT_MS });
     const data = await res.json();
     return data.locality || data.city || data.principalSubdivision || null;
   } catch(e){
@@ -118,8 +115,7 @@ async function fetchForecast(lat, lon){
     forecast_days: "2", // 24時間後まで含めるため2日分取得する
   });
   const url = `https://api.open-meteo.com/v1/forecast?${params.toString()}`;
-  const res = await withTimeout(fetch(url), FETCH_TIMEOUT_MS);
-  if(!res.ok) throw new Error("HTTP " + res.status);
+  const res = await fetchDirectOrProxied(url, { timeoutMs: FETCH_TIMEOUT_MS });
   const data = await res.json();
   if(!data.current || typeof data.current.temperature_2m !== "number"){
     throw new Error("invalid forecast response");
