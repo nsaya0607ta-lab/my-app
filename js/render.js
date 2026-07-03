@@ -1552,19 +1552,26 @@ export function renderSchedule(){
    - 中央：選択中の日付に紐づくニュースをタイトルのみで縦並びに表示。
      URLが登録されている項目はカード（または右の矢印）をタップすると
      新しいタブへ安全に開く（target="_blank" + rel="noopener noreferrer"）
-   - 下部：ログイン中のアカウントが管理者（isAdminAccount()）の場合のみ、
-     「タイトル入力欄」「URL入力欄」「登録ボタン」の3点構成フォームを表示。
-     タイトルとURLを別々のフィールドで受け取ることで、1件の登録操作で
-     タイトルとURLが正しく1つのニュース項目として保存される
+   - 管理者（isAdminAccount()）の場合のみ、各カード左側に削除選択用の
+     チェックボックスと「選択したニュースを削除」ボタン、および
+     「タイトル入力欄」「URL入力欄」「登録ボタン」の3点構成の登録フォーム
+     を表示。タイトルとURLを別々のフィールドで受け取ることで、1件の
+     登録操作でタイトルとURLが正しく1つのニュース項目として保存される
    日付ごとのニュースはこの端末のlocalStorageに保存する（他ユーザーへの
    共有は行わない、この端末限定の簡易実装）。日本経済・世界経済は同一の
-   カレンダー／一覧／管理フォームのロジックをcreateNewsScreen()で共有し、
+   カレンダー／一覧／管理フォーム／削除ロジックをcreateNewsScreen()で共有し、
    保存先のキーと画面ラベルだけが異なる
    ========================================================================= */
 
 const NEWS_WEEKDAYS = ["日","月","火","水","木","金","土"];
 
 function newsDateKey(y, m, d){ return `${y}-${String(m+1).padStart(2,"0")}-${String(d).padStart(2,"0")}`; }
+
+// 一覧の各ニュースをチェックボックス選択・削除対象として区別するための
+// 端末内限定の一意なID（サーバー同期はしないためシンプルな乱数で十分）
+function newsGenId(){
+  return `n${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`;
+}
 
 function newsCalendarHTML(y, m, selectedDay, hasNewsSet, todayKey){
   const first = new Date(y, m, 1);
@@ -1589,8 +1596,9 @@ function newsCalendarHTML(y, m, selectedDay, hasNewsSet, todayKey){
 }
 
 // タイトルのみを表示し、URLが登録されている項目はカード全体がリンクになる
-// （URL文字列そのものは画面に出さない）
-function newsListHTML(items){
+// （URL文字列そのものは画面に出さない）。管理者の場合のみ、削除選択用の
+// チェックボックスをカード左側に添える（selectedIdsは選択中のnews.idの集合）
+function newsListHTML(items, admin, selectedIds){
   if(!items || !items.length){
     return `<div class="njp-empty">この日のニュースはまだ登録されていません。</div>`;
   }
@@ -1598,10 +1606,14 @@ function newsListHTML(items){
     const hasUrl = /^https?:\/\//.test(n.url||"");
     const tag = hasUrl ? "a" : "div";
     const attrs = hasUrl ? `href="${esc(n.url)}" target="_blank" rel="noopener noreferrer"` : "";
-    return `<${tag} class="njp-news-item"${attrs?" "+attrs:""}>
+    const link = `<${tag} class="njp-news-link"${attrs?" "+attrs:""}>
       <span class="njp-news-title">${esc(n.title)}</span>
       ${hasUrl?'<span class="njp-news-arrow">→</span>':""}
     </${tag}>`;
+    const checkbox = admin
+      ? `<input type="checkbox" class="njp-news-check" data-id="${esc(n.id)}" aria-label="削除対象として選択"${selectedIds&&selectedIds.has(n.id)?" checked":""}>`
+      : "";
+    return `<div class="njp-news-item${hasUrl?" has-link":""}">${checkbox}${link}</div>`;
   }).join("")}</div>`;
 }
 
@@ -1615,12 +1627,22 @@ function newsAdminFormHTML(){
     </div>`;
 }
 
+function newsBulkDeleteHTML(){
+  return `
+    <div class="njp-bulk-row">
+      <button type="button" class="njp-bulk-btn" id="njp-bulk-delete" disabled>選択したニュースを削除</button>
+    </div>`;
+}
+
 // 日本経済・世界経済の両画面が使う共通ロジックを1箇所にまとめたファクトリー。
 // storeKeyとlabel/iconだけを差し替えれば同じ挙動の画面を量産できる
 function createNewsScreen({ storeKey, label, icon, seedFn }){
   // 画面を離れても選択中の日付を覚えておく（再訪時は前回の続きから）。
   // 未選択（初回訪問）の場合のみ「今日」を初期値にする
   let selected = null;
+  // 削除対象としてチェックボックスで選択中のnews.idの集合。日付を切り替えた
+  // ときや削除実行後にはリセットする（別の日の選択が残らないように）
+  let selectedIds = new Set();
 
   function loadStore(){
     let store = {};
@@ -1629,6 +1651,15 @@ function createNewsScreen({ storeKey, label, icon, seedFn }){
       const seed = seedFn();
       if(!store[seed.key]) store[seed.key] = seed.items;
     }
+    // 旧バージョンで保存された（idを持たない）ニュースにも削除機能が
+    // 使えるよう、idが無い項目には初回読み込み時に一度だけ払い出す
+    let migrated = false;
+    Object.keys(store).forEach(k=>{
+      (store[k]||[]).forEach(n=>{
+        if(!n.id){ n.id = newsGenId(); migrated = true; }
+      });
+    });
+    if(migrated) saveStore(store);
     return store;
   }
 
@@ -1642,23 +1673,55 @@ function createNewsScreen({ storeKey, label, icon, seedFn }){
     const { y, m, d } = selected;
     const store = loadStore();
     const selKey = newsDateKey(y, m, d);
+    const items = store[selKey] || [];
     const hasNewsSet = new Set(Object.keys(store).filter(k => (store[k]||[]).length));
     const todayKey = newsDateKey(now.getFullYear(), now.getMonth(), now.getDate());
     const admin = isAdminAccount();
+
+    // その日のニュースに存在しないidの選択は持ち越さない（削除済み・日付
+    // 切り替え後の残留選択を防ぐ）
+    const validIds = new Set(items.map(n=>n.id));
+    Array.from(selectedIds).forEach(id=>{ if(!validIds.has(id)) selectedIds.delete(id); });
 
     app.innerHTML = `
       <div class="q-head"><button class="quit" data-go="select">← ホーム</button><span class="q-count">${icon} ${label}</span></div>
       ${newsCalendarHTML(y, m, d, hasNewsSet, todayKey)}
       <div class="section-lab" style="margin-top:16px">${m+1}月${d}日のニュース</div>
-      <div id="njp-news-area">${newsListHTML(store[selKey])}</div>
+      <div id="njp-news-area">${newsListHTML(items, admin, selectedIds)}</div>
+      ${admin ? newsBulkDeleteHTML() : ""}
       ${admin ? newsAdminFormHTML() : ""}
     `;
     app.querySelectorAll("[data-go]").forEach(b=>b.onclick=()=>go(b.dataset.go));
     app.querySelectorAll("[data-day]").forEach(b=>b.onclick=()=>{
       selected = { y, m, d: parseInt(b.dataset.day, 10) };
+      selectedIds = new Set();
       render();
     });
+
     if(admin){
+      const bulkBtn = document.getElementById("njp-bulk-delete");
+      const syncBulkBtn = () => {
+        if(bulkBtn) bulkBtn.disabled = !(items.length > 0 && selectedIds.size > 0);
+      };
+      syncBulkBtn();
+
+      app.querySelectorAll(".njp-news-check").forEach(cb=>{
+        cb.onchange = () => {
+          const id = cb.dataset.id;
+          if(cb.checked) selectedIds.add(id); else selectedIds.delete(id);
+          syncBulkBtn();
+        };
+      });
+
+      if(bulkBtn) bulkBtn.onclick = () => {
+        if(bulkBtn.disabled || !selectedIds.size) return;
+        const freshStore = loadStore();
+        freshStore[selKey] = (freshStore[selKey] || []).filter(n => !selectedIds.has(n.id));
+        saveStore(freshStore);
+        selectedIds = new Set();
+        render();
+      };
+
       const submitBtn = document.getElementById("njp-admin-submit");
       if(submitBtn) submitBtn.onclick = () => {
         const titleInput = document.getElementById("njp-admin-title");
@@ -1673,12 +1736,11 @@ function createNewsScreen({ storeKey, label, icon, seedFn }){
         }
         const freshStore = loadStore();
         if(!freshStore[selKey]) freshStore[selKey] = [];
-        freshStore[selKey].push({ title, url });
+        freshStore[selKey].push({ id: newsGenId(), title, url });
         saveStore(freshStore);
         titleInput.value = "";
         urlInput.value = "";
-        const area = document.getElementById("njp-news-area");
-        if(area) area.innerHTML = newsListHTML(freshStore[selKey]);
+        render();
       };
     }
     window.scrollTo(0,0);
@@ -1692,9 +1754,9 @@ function newsJapanSeed(){
   const now = new Date();
   const key = newsDateKey(now.getFullYear(), now.getMonth(), now.getDate());
   return { key, items: [
-    { title:"【日本経済】日銀の追加利上げ観測でメガバンク株急騰、円高シフトへの警戒も", url:"https://newspicks.com/theme-news/1131/" },
-    { title:"【米国経済】米雇用統計が予想超えの堅調、FRBによる利下げ時期予測が後退か", url:"https://newspicks.com/theme-news/54/" },
-    { title:"【日本経済】東証のPBR1倍割れ是正勧告から2年、企業の「稼ぐ力」の現在地", url:"https://newspicks.com/news/10178940" },
+    { id:"jp-seed-1", title:"【日本経済】日銀の追加利上げ観測でメガバンク株急騰、円高シフトへの警戒も", url:"https://newspicks.com/theme-news/1131/" },
+    { id:"jp-seed-2", title:"【米国経済】米雇用統計が予想超えの堅調、FRBによる利下げ時期予測が後退か", url:"https://newspicks.com/theme-news/54/" },
+    { id:"jp-seed-3", title:"【日本経済】東証のPBR1倍割れ是正勧告から2年、企業の「稼ぐ力」の現在地", url:"https://newspicks.com/news/10178940" },
   ]};
 }
 
