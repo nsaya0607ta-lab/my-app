@@ -1497,15 +1497,14 @@ export function renderPortfolio(){
 }
 
 
-// アイコン＋その下のテキストを、お天気・株価カードと同じ .news-card
-// （白背景・角丸・薄いシャドウ）に内包した独立カードとして表示する共通処理。
-// カード内でアイコン・テキストとも完全に中央揃え。テキストは最大9文字までは
-// 静止表示、それを超える場合は電光掲示板風に右から左へ無限ループでスライド
-// する。アイコン・テキストのどちらをタップしても指定画面へ遷移する。
-// Microsoft認定試験カード・予定管理カードの両方で共有するレイアウト。
+// アイコン＋その下のテキストの1組。テキストは最大9文字までは静止表示、
+// それを超える場合は電光掲示板風に右から左へ無限ループでスライドする。
+// アイコン・テキストのどちらをタップしても指定画面へ遷移する。
+// Microsoft認定試験カード・ホーム画面の統合起動カードの両方で共有する
+// 最小単位のパーツ（launcherCardHTML／homeLauncherCardHTMLの両方から使う）
 const LAUNCHER_LABEL_MAX_CHARS = 9;
 
-function launcherCardHTML({ cardId, cardClass, iconHTML, label, dataGo, ariaLabel }){
+function launcherItemHTML({ iconHTML, label, dataGo, ariaLabel }){
   const chars = [...label]; // サロゲートペアも1文字として正しく数える
   const needsMarquee = chars.length > LAUNCHER_LABEL_MAX_CHARS;
   const labelHTML = needsMarquee
@@ -1515,15 +1514,23 @@ function launcherCardHTML({ cardId, cardClass, iconHTML, label, dataGo, ariaLabe
        </span>`
     : `<span class="ms-cert-static">${esc(label)}</span>`;
   return `
+    <div class="launcher-item">
+      <button type="button" class="ms-logo-btn" data-go="${dataGo}" aria-label="${esc(ariaLabel)}" title="${esc(ariaLabel)}">
+        ${iconHTML}
+      </button>
+      <button type="button" class="ms-cert-link" data-go="${dataGo}" title="${esc(label)}">
+        <span class="ms-cert-textwrap">${labelHTML}</span>
+      </button>
+    </div>`;
+}
+
+// launcherItemHTML1組を、お天気・株価カードと同じ .news-card
+// （白背景・角丸・薄いシャドウ）に内包した独立カードとして表示する。
+// 現在はMicrosoft認定試験カードのみがこの単独カード形式を使う
+function launcherCardHTML({ cardId, cardClass, iconHTML, label, dataGo, ariaLabel }){
+  return `
     <div class="news-card ms-cert-card${cardClass ? " " + cardClass : ""}" id="${cardId}">
-      <div class="ms-cert-inner">
-        <button type="button" class="ms-logo-btn" data-go="${dataGo}" aria-label="${esc(ariaLabel)}" title="${esc(ariaLabel)}">
-          ${iconHTML}
-        </button>
-        <button type="button" class="ms-cert-link" data-go="${dataGo}" title="${esc(label)}">
-          <span class="ms-cert-textwrap">${labelHTML}</span>
-        </button>
-      </div>
+      ${launcherItemHTML({ iconHTML, label, dataGo, ariaLabel })}
     </div>`;
 }
 
@@ -1543,59 +1550,46 @@ function msCertLauncherHTML(){
   });
 }
 
-// カレンダー風アイコンの丸型ボタン。タップで予定管理画面へ（画面自体は今は空）
-function scheduleLauncherHTML(){
-  const calendarIconSVG = `
-    <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="var(--accent)" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
-      <rect x="3" y="4.5" width="18" height="16" rx="2.5"></rect>
-      <line x1="8" y1="2.5" x2="8" y2="6.5"></line>
-      <line x1="16" y1="2.5" x2="16" y2="6.5"></line>
-      <line x1="3" y1="10" x2="21" y2="10"></line>
-    </svg>`;
-  return launcherCardHTML({
-    cardId: "schedule-card",
-    cardClass: "schedule-card",
-    iconHTML: calendarIconSVG,
-    label: "予定管理",
-    dataGo: "schedule",
-    ariaLabel: "予定管理",
-  });
-}
+// 「予定管理」「日本NEWS」「海外ニュース」「ポートフォリオ」の4項目を
+// 1つの横長カードにまとめたもの。外枠はMicrosoft認定試験カードと同じ
+// .ms-cert-card（背景・角丸・シャドウ・margin-top）を流用し、中身だけを
+// launcherItemHTML4個の横並びに差し替えている。
+// MARKET WATCH（株価ティッカー）は各ニュース画面側の最上部に移設済みのため
+// ここには置かず、日本経済／世界経済への起動ボタンのみを配置する
+const CALENDAR_LAUNCHER_ICON_SVG = `
+  <svg viewBox="0 0 24 24" width="19" height="19" fill="none" stroke="var(--accent)" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+    <rect x="3" y="4.5" width="18" height="16" rx="2.5"></rect>
+    <line x1="8" y1="2.5" x2="8" y2="6.5"></line>
+    <line x1="16" y1="2.5" x2="16" y2="6.5"></line>
+    <line x1="3" y1="10" x2="21" y2="10"></line>
+  </svg>`;
+const PORTFOLIO_LAUNCHER_ICON_SVG = `
+  <svg viewBox="0 0 24 24" width="19" height="19" fill="none" stroke="var(--accent)" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M4 19V7a2 2 0 0 1 2-2h9l5 5v9a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2Z"></path>
+    <path d="M15 5v5h5"></path>
+    <line x1="8" y1="13" x2="16" y2="13"></line>
+    <line x1="8" y1="17" x2="13" y2="17"></line>
+  </svg>`;
 
-// 予定管理の隣に並ぶ「日本NEWS」「海外ニュース」の丸型起動ボタン。
-// タップで各ニュース画面（news-japan／news-world）へ遷移する。
-// MARKET WATCH（株価ティッカー）は各ニュース画面側の最上部に移設したため、
-// ホーム画面にはこの起動ボタンのみを置く
-function japanNewsLauncherHTML(){
-  return launcherCardHTML({
-    cardId: "news-japan-card",
-    cardClass: "news-japan-card",
-    iconHTML: `<span class="launcher-emoji" aria-hidden="true">🇯🇵</span>`,
-    label: "日本NEWS",
-    dataGo: "news-japan",
-    ariaLabel: "日本NEWS",
-  });
-}
-
-function worldNewsLauncherHTML(){
-  return launcherCardHTML({
-    cardId: "news-world-card",
-    cardClass: "news-world-card",
-    iconHTML: `<span class="launcher-emoji" aria-hidden="true">🌐</span>`,
-    label: "海外ニュース",
-    dataGo: "news-world",
-    ariaLabel: "海外ニュース",
-  });
+function homeLauncherCardHTML(){
+  const items = [
+    { iconHTML: CALENDAR_LAUNCHER_ICON_SVG, label: "予定管理", dataGo: "schedule", ariaLabel: "予定管理" },
+    { iconHTML: `<span class="launcher-emoji" aria-hidden="true">🇯🇵</span>`, label: "日本NEWS", dataGo: "news-japan", ariaLabel: "日本NEWS" },
+    { iconHTML: `<span class="launcher-emoji" aria-hidden="true">🌐</span>`, label: "海外ニュース", dataGo: "news-world", ariaLabel: "海外ニュース" },
+    { iconHTML: PORTFOLIO_LAUNCHER_ICON_SVG, label: "ポートフォリオ", dataGo: "portfolio", ariaLabel: "ポートフォリオ" },
+  ];
+  return `
+    <div class="news-card ms-cert-card home-launcher-card" id="home-launcher-card">
+      <div class="home-launcher-row">
+        ${items.map(it => launcherItemHTML(it)).join("")}
+      </div>
+    </div>`;
 }
 
 export function renderSelect(){
   app.innerHTML = `
     ${weatherCardHTML()}
-    <div class="launcher-row">
-      ${scheduleLauncherHTML()}
-      ${japanNewsLauncherHTML()}
-      ${worldNewsLauncherHTML()}
-    </div>
+    ${homeLauncherCardHTML()}
     ${msCertLauncherHTML()}
     ${state.currentUser
       ? `<div class="acct-bar">👤 ${esc(state.currentUser.email||"ログイン中")}<button class="link2" data-logout>ログアウト</button></div>`

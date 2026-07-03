@@ -554,11 +554,10 @@ h1.title{font-size:34px;line-height:1.05;font-weight:800;margin:8px 0 0;letter-s
   box-shadow:0 2px 8px rgba(2,132,199,.25);transition:transform .12s,filter .12s;}
 .njp-admin-btn:active{transform:scale(.97);filter:brightness(.95);}
 
-/* Microsoft認定試験カード・予定管理／ニュース起動カード：NEWS/STOCKSと同じ
+/* Microsoft認定試験カード・ホーム画面の統合起動カード：NEWS/STOCKSと同じ
    .news-card を土台にした独立カード。丸型ロゴボタン＋テキストを縦横完全
    中央揃えで内包する */
 .ms-cert-card{margin-top:14px;min-height:104px;display:flex;align-items:center;justify-content:center;}
-.ms-cert-inner{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:7px;}
 .ms-logo-btn{flex:none;width:44px;height:44px;border-radius:50%;border:1px solid var(--line);background:var(--surface);
   display:flex;align-items:center;justify-content:center;padding:0;cursor:pointer;box-shadow:0 2px 6px rgba(15,23,42,.06);}
 .ms-logo-btn:active{transform:scale(.94);}
@@ -570,12 +569,18 @@ h1.title{font-size:34px;line-height:1.05;font-weight:800;margin:8px 0 0;letter-s
 .ms-logo-sq.y{background:#ffb900;}
 .launcher-emoji{font-size:19px;line-height:1;}
 
-/* 予定管理・日本NEWS・海外ニュースの3つの起動カードを横並びにする行。
-   各カードは.launcher-row内では独立カードとしての上マージンを持たず、
-   3等分の幅に収まるようパディングを詰める */
-.launcher-row{display:flex;gap:10px;margin-top:14px;}
-.launcher-row .ms-cert-card{flex:1;min-width:0;margin-top:0;min-height:96px;padding:12px 6px 10px;}
-.launcher-row .ms-cert-textwrap{width:auto;}
+/* アイコン＋テキスト1組の最小単位。単独カード（Microsoft認定試験）では
+   .ms-cert-card直下に1つだけ、統合カード（.home-launcher-row）では
+   4つが横並びで使われる */
+.launcher-item{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:7px;}
+
+/* 予定管理・日本NEWS・海外ニュース・ポートフォリオの4項目を1つの横長カードに
+   まとめたもの。外枠は.ms-cert-cardをそのまま流用し、中身だけ.launcher-item
+   4個をカード幅いっぱいに均等配置する行に差し替えている */
+.home-launcher-card{padding:14px 6px;}
+.home-launcher-row{display:flex;width:100%;justify-content:space-between;gap:2px;}
+.home-launcher-row .launcher-item{flex:1;min-width:0;}
+.home-launcher-row .ms-cert-textwrap{width:auto;}
 
 /* テキスト部分：9文字までは中央揃えで静止、超える場合は電光掲示板風に無限スライド */
 .ms-cert-link{border:none;background:none;padding:0;cursor:pointer;font-family:inherit;display:block;}
