@@ -1,6 +1,6 @@
 import { CERTS } from './data/certs.js';
 import { DC_PHASES, L, REGIONS } from './data/constants.js';
-import { CONCEPTS, DRAW, PASS, Q, TIERS, applySkin, certById, certStat, commit, correctSet, dcCount, dcPhase, dcTitle, esc, exportCode, fmt, getBP, getProfileName, grade, importCode, isMulti, loadHist, loadReviewStats, loadWrong, overallLevel, overallStat, pick, pts, publishLeaderboard, purchaseSkin, saveCoins, saveToCloud, selectCert, setBP, setProfileName, stars, start, startReview, totalBP } from './core.js';
+import { CONCEPTS, DRAW, PASS, Q, TIERS, applySkin, certById, certStat, commit, correctSet, dcCount, dcPhase, dcTitle, esc, exportCode, fmt, getBP, getProfileName, grade, importCode, isAdminAccount, isMulti, loadHist, loadReviewStats, loadWrong, overallLevel, overallStat, pick, pts, publishLeaderboard, purchaseSkin, saveCoins, saveToCloud, selectCert, setBP, setProfileName, stars, start, startReview, totalBP } from './core.js';
 import { getLiveStocks } from './stocks.js';
 import { getWeather } from './weather.js';
 import { SKIN_DATA } from './data/skins.js';
@@ -1548,12 +1548,135 @@ export function renderSchedule(){
 
 // 株価カードの「ニュース」欄から遷移するプレースホルダー画面
 // （日本経済・世界経済とも機能は未実装、今は空のまま）
+/* =========================================================================
+   日本経済ニュース画面：カレンダー＋日付別ニュース一覧＋管理者専用投稿欄。
+   - 上部：今月のミニカレンダー。日付をタップすると選択日が切り替わる
+   - 中央：選択中の日付に紐づくニュースを縦並びで表示。URLがある項目は
+     タップで新しいタブへ安全に開く（target="_blank" + rel="noopener noreferrer"）
+   - 下部：ログイン中のアカウントが管理者（isAdminAccount()）の場合のみ、
+     テキストを貼り付けてその日のニュースへ即時追加できる投稿フォームを表示
+   日付ごとのニュースはこの端末のlocalStorageに保存する（他ユーザーへの
+   共有は行わない、この端末限定の簡易実装）。今日の日付には要望どおりの
+   3件のモックニュースをあらかじめ登録しておく。
+   ========================================================================= */
+
+const NEWS_JP_STORE_KEY = "news_japan_store_v1";
+const NEWS_JP_WEEKDAYS = ["日","月","火","水","木","金","土"];
+
+function newsJapanDateKey(y, m, d){ return `${y}-${String(m+1).padStart(2,"0")}-${String(d).padStart(2,"0")}`; }
+
+function newsJapanTodaySeed(){
+  const now = new Date();
+  const key = newsJapanDateKey(now.getFullYear(), now.getMonth(), now.getDate());
+  return { key, items: [
+    { title:"【日本経済】日銀の追加利上げ観測でメガバンク株急騰、円高シフトへの警戒も", url:"https://newspicks.com/theme-news/1131/" },
+    { title:"【米国経済】米雇用統計が予想超えの堅調、FRBによる利下げ時期予測が後退か", url:"https://newspicks.com/theme-news/54/" },
+    { title:"【日本経済】東証のPBR1倍割れ是正勧告から2年、企業の「稼ぐ力」の現在地", url:"https://newspicks.com/news/10178940" },
+  ]};
+}
+
+function loadNewsJapanStore(){
+  let store = {};
+  try{ store = JSON.parse(localStorage.getItem(NEWS_JP_STORE_KEY) || "{}"); }catch(e){}
+  const seed = newsJapanTodaySeed();
+  if(!store[seed.key]) store[seed.key] = seed.items;
+  return store;
+}
+
+function saveNewsJapanStore(store){
+  try{ localStorage.setItem(NEWS_JP_STORE_KEY, JSON.stringify(store)); }catch(e){}
+}
+
+// 画面を離れても選択中の日付を覚えておく（再訪時は前回の続きから）。
+// 未選択（初回訪問）の場合のみ「今日」を初期値にする
+let newsJapanSelected = null;
+
+function newsJapanCalendarHTML(y, m, selectedDay, hasNewsSet, todayKey){
+  const first = new Date(y, m, 1);
+  const startWeekday = first.getDay();
+  const daysInMonth = new Date(y, m+1, 0).getDate();
+  const cells = [];
+  for(let i=0;i<startWeekday;i++) cells.push(`<span class="njp-cal-cell empty"></span>`);
+  for(let d=1; d<=daysInMonth; d++){
+    const key = newsJapanDateKey(y, m, d);
+    const cls = ["njp-cal-cell"];
+    if(d===selectedDay) cls.push("selected");
+    if(key===todayKey) cls.push("today");
+    if(hasNewsSet.has(key)) cls.push("has-news");
+    cells.push(`<button type="button" class="${cls.join(" ")}" data-day="${d}">${d}</button>`);
+  }
+  return `
+    <div class="njp-cal">
+      <div class="njp-cal-title">${y}年${m+1}月</div>
+      <div class="njp-cal-grid njp-cal-weekdays">${NEWS_JP_WEEKDAYS.map(w=>`<span>${w}</span>`).join("")}</div>
+      <div class="njp-cal-grid">${cells.join("")}</div>
+    </div>`;
+}
+
+function newsJapanListHTML(items){
+  if(!items || !items.length){
+    return `<div class="njp-empty">この日のニュースはまだ登録されていません。</div>`;
+  }
+  return `<div class="njp-news-list">${items.map(n => {
+    const hasUrl = /^https?:\/\//.test(n.url||"");
+    const tag = hasUrl ? "a" : "div";
+    const attrs = hasUrl ? `href="${esc(n.url)}" target="_blank" rel="noopener noreferrer"` : "";
+    return `<${tag} class="njp-news-item"${attrs?" "+attrs:""}>
+      <span class="njp-news-title">${esc(n.title)}</span>
+      ${hasUrl?'<span class="njp-news-arrow">→</span>':""}
+    </${tag}>`;
+  }).join("")}</div>`;
+}
+
+function newsJapanAdminFormHTML(){
+  return `
+    <div class="njp-admin">
+      <div class="njp-admin-title">🛠️ 管理者専用：ニュース登録</div>
+      <textarea class="njp-admin-textarea" id="njp-admin-input" rows="4" placeholder="タイトルやURLを含むニューステキストを貼り付け…"></textarea>
+      <button type="button" class="njp-admin-btn" id="njp-admin-submit">ニュースを登録</button>
+    </div>`;
+}
+
 export function renderNewsJapan(){
+  const now = new Date();
+  if(!newsJapanSelected) newsJapanSelected = { y: now.getFullYear(), m: now.getMonth(), d: now.getDate() };
+  const { y, m, d } = newsJapanSelected;
+  const store = loadNewsJapanStore();
+  const selKey = newsJapanDateKey(y, m, d);
+  const hasNewsSet = new Set(Object.keys(store).filter(k => (store[k]||[]).length));
+  const todayKey = newsJapanDateKey(now.getFullYear(), now.getMonth(), now.getDate());
+  const admin = isAdminAccount();
+
   app.innerHTML = `
     <div class="q-head"><button class="quit" data-go="select">← ホーム</button><span class="q-count">🇯🇵 日本経済</span></div>
-    <div class="sel-sub" style="margin-top:24px;text-align:center;">この機能は近日公開予定です。</div>
+    ${newsJapanCalendarHTML(y, m, d, hasNewsSet, todayKey)}
+    <div class="section-lab" style="margin-top:16px">${m+1}月${d}日のニュース</div>
+    <div id="njp-news-area">${newsJapanListHTML(store[selKey])}</div>
+    ${admin ? newsJapanAdminFormHTML() : ""}
   `;
   app.querySelectorAll("[data-go]").forEach(b=>b.onclick=()=>go(b.dataset.go));
+  app.querySelectorAll("[data-day]").forEach(b=>b.onclick=()=>{
+    newsJapanSelected = { y, m, d: parseInt(b.dataset.day, 10) };
+    renderNewsJapan();
+  });
+  if(admin){
+    const submitBtn = document.getElementById("njp-admin-submit");
+    if(submitBtn) submitBtn.onclick = () => {
+      const ta = document.getElementById("njp-admin-input");
+      const raw = (ta.value||"").trim();
+      if(!raw) return;
+      const urlMatch = raw.match(/https?:\/\/\S+/);
+      const url = urlMatch ? urlMatch[0] : "";
+      const title = url ? raw.replace(url, "").trim() : raw;
+      const freshStore = loadNewsJapanStore();
+      if(!freshStore[selKey]) freshStore[selKey] = [];
+      freshStore[selKey].push({ title: title || raw, url });
+      saveNewsJapanStore(freshStore);
+      ta.value = "";
+      const area = document.getElementById("njp-news-area");
+      if(area) area.innerHTML = newsJapanListHTML(freshStore[selKey]);
+    };
+  }
   window.scrollTo(0,0);
 }
 
@@ -1692,7 +1815,10 @@ export async function loadRanking(){
     return;
   }
   try{
-    const rows = await window.LB.top(50);
+    // 管理者アカウントはpublishLeaderboard側で書き込み自体を止めているが、
+    // それ以前に登録された古いデータが残っている場合に備えて表示側でも
+    // 念のため除外する（表示名一致による二重防御）
+    const rows = (await window.LB.top(50)).filter(r => (r.displayName||"").trim().toLowerCase() !== "admin");
     const ov = overallStat();
     let myRank=null; try{ myRank = await window.LB.myRank(ov.tbp); }catch(e){}
     if(!rows.length){
