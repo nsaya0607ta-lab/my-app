@@ -395,22 +395,16 @@ h1.title{font-size:34px;line-height:1.05;font-weight:800;margin:8px 0 0;letter-s
   font-variant-numeric:tabular-nums;white-space:nowrap;line-height:1;}
 .weather-time-sec{font-size:11px;font-weight:700;color:var(--muted);opacity:.8;font-variant-numeric:tabular-nums;}
 
-/* 左上段・中：地名・基準時間・天気アイコン・気温。時計との間に縦の区切り線を
-   入れ、「日付・時刻」と「天気」の情報グループを視覚的に分ける */
-.weather-info{flex:none;min-width:0;max-width:76px;border-left:1px solid var(--line);padding-left:7px;
+/* 左上段・中：地名・基準時間・天気アイコン・気温。時計との間、および
+   天気情報グループの右側にも縦の区切り線を入れ、「日付・時刻」と「天気」の
+   情報グループを視覚的に分ける */
+.weather-info{flex:none;min-width:0;max-width:76px;border-left:1px solid var(--line);border-right:1px solid var(--line);padding-left:7px;padding-right:7px;
   display:flex;flex-direction:column;gap:3px;}
 .weather-city{font-size:10.5px;font-weight:700;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
 .weather-asof{font-size:8.5px;font-weight:600;color:var(--muted);opacity:.85;letter-spacing:.02em;white-space:nowrap;}
 .weather-main{display:flex;align-items:center;gap:4px;}
 .weather-icon{font-size:20px;line-height:1;}
 .weather-temp{font-size:16px;font-weight:800;color:var(--text);font-variant-numeric:tabular-nums;}
-
-/* 左上段・右：明日の天気（今日より一回り小さいアイコン・予想気温） */
-.weather-tomorrow{flex:none;min-width:0;max-width:56px;display:flex;flex-direction:column;gap:3px;}
-.weather-tomorrow-label{font-size:8px;font-weight:800;color:var(--muted);letter-spacing:.02em;}
-.weather-tomorrow-main{display:flex;align-items:center;gap:3px;}
-.weather-tomorrow-icon{font-size:14px;line-height:1;}
-.weather-tomorrow-temp{font-size:9.5px;font-weight:700;color:var(--muted);font-variant-numeric:tabular-nums;white-space:nowrap;}
 
 /* 左下段：降水確率の推移を示す滑らかな曲線グラフ。1時間ごとの点をドットとして
    打ち、縦軸（0〜100%の目盛り）・横軸（3時間ごとの時刻ラベル）を添える。
