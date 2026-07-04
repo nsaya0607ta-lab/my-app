@@ -1665,7 +1665,7 @@ function googleCalendarCardHTML(){
    ―― それらは本家Googleカレンダー側で行ってもらう想定。
    未連携時は既存のローカル保存（localStorage）のデモ用カレンダーに
    フォールバックする */
-const GCAL_GOOGLE_CLIENT_ID = "YOUR_GOOGLE_OAUTH_CLIENT_ID.apps.googleusercontent.com";
+const GCAL_GOOGLE_CLIENT_ID = "989248012630-eouubhdevjm057iub24r8lojnjn1lres.apps.googleusercontent.com";
 const GCAL_GOOGLE_SCOPES = "https://www.googleapis.com/auth/calendar.events https://www.googleapis.com/auth/calendar.calendarlist.readonly";
 const GCAL_GOOGLE_CONNECTED_KEY = "gcal_google_connected";
 const GCAL_GOOGLE_ACTIVE_KEY = "gcal_google_active_id";
