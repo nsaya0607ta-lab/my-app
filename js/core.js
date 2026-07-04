@@ -1,7 +1,7 @@
 import { CERTS } from './data/certs.js';
 import { DC_PHASES, IMP_POINTS, L, OVERALL_STEP } from './data/constants.js';
 import { SKIN_DATA } from './data/skins.js';
-import { go, loadPortfolio, render } from './render.js';
+import { gcalLoadAuthorName, go, loadGcalStore, loadGcalTodoStore, loadPortfolio, render } from './render.js';
 import { S, state } from './state.js';
 
 export let PASS = 700;   // 選択中の資格の合格ライン（loadCertで設定）
@@ -368,9 +368,17 @@ export function seedCloudFromLocal(){
   });
   const portfolio = loadPortfolio();
   const hasPortfolio = Object.keys(portfolio).length > 0;
-  if(Object.keys(patch).length || loadCoins() || hasPortfolio){
+  const gcalStore = loadGcalStore();
+  const gcalTodos = loadGcalTodoStore();
+  const gcalAuthorName = gcalLoadAuthorName();
+  const hasGcal = !!gcalAuthorName
+    || Object.keys(gcalTodos).length > 0
+    || gcalStore.calendars.length > 1
+    || Object.values(gcalStore.events || {}).some(m => m && Object.keys(m).length > 0);
+  if(Object.keys(patch).length || loadCoins() || hasPortfolio || hasGcal){
     const payload = { certs: patch, coins: loadCoins(), updatedAt:new Date().toISOString() };
     if(hasPortfolio) payload.portfolio = portfolio;
+    if(hasGcal) payload.gcal = { store: gcalStore, todos: gcalTodos, authorName: gcalAuthorName };
     try{
       window.FirebaseSync.setDoc(window.FirebaseSync.doc(state.db,"users",state.currentUserId),
         payload, { merge:true });
