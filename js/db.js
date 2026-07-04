@@ -1,5 +1,5 @@
   import { initializeApp } from "https://www.gstatic.com/firebasejs/10.0.0/firebase-app.js";
-  import { getFirestore, doc, setDoc, getDoc, deleteDoc, onSnapshot, collection, query, where, orderBy, limit, getDocs, getCountFromServer, writeBatch, increment } from "https://www.gstatic.com/firebasejs/10.0.0/firebase-firestore.js";
+  import { getFirestore, doc, setDoc, getDoc, deleteDoc, onSnapshot, collection, query, where, orderBy, limit, getDocs, getCountFromServer, writeBatch, increment, runTransaction } from "https://www.gstatic.com/firebasejs/10.0.0/firebase-firestore.js";
   import { getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword, signOut, onAuthStateChanged, deleteUser, reauthenticateWithCredential, EmailAuthProvider } from "https://www.gstatic.com/firebasejs/10.0.0/firebase-auth.js";
 import { applyCloud, applyCloudSkins, commit, publishLeaderboard, saveCoins, seedCloudFromLocal, totalBP } from './core.js';
 import { app, applyCloudGcal, applyCloudPortfolio, logout, render } from './render.js';
@@ -15,7 +15,8 @@ import { S, state } from './state.js';
     measurementId: "G-4E16HLF386"
   };
 
-  window.FirebaseSync = { doc, setDoc };
+  // runTransaction：株の買付・売却でAC残高と保有株を原子的に検証・更新するために使う
+  window.FirebaseSync = { doc, setDoc, runTransaction };
   try {
     const fbApp = initializeApp(firebaseConfig);
     state.db = getFirestore(fbApp);

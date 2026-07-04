@@ -1061,20 +1061,6 @@ function savePortfolio(p){
   try{ localStorage.setItem(portfolioStorageKey(), JSON.stringify(p)); }catch(e){}
 }
 
-// ポートフォリオ（保有株）をFirestoreの users/{uid} ドキュメントへ同期する。
-// certs/coinsと同じ merge:true の部分更新で、portfolioフィールドだけを
-// 書き換える（他ユーザーのドキュメントには一切触れない＝currentUserId自身の
-// パスにしか書き込まないためユーザー間の混入は起きない）
-function syncPortfolioToCloud(pf){
-  if(!state.db || !state.currentUserId || !window.FirebaseSync) return;
-  try{
-    window.FirebaseSync.setDoc(window.FirebaseSync.doc(state.db, "users", state.currentUserId), {
-      portfolio: pf,
-      updatedAt: new Date().toISOString()
-    }, { merge: true });
-  }catch(e){ console.error("portfolio cloud sync failed:", e); }
-}
-
 // クラウド（Firestoreの users/{uid}.portfolio）から届いた保有株データを
 // この端末のローカル保存へ反映する。db.jsのonSnapshotから、ログイン中の
 // 本人のドキュメントが更新されるたびに呼ばれる（他人のデータは購読して
@@ -1419,40 +1405,85 @@ function initHybridTape(id, speedPxS){
 // 売買金額の換算レート：1ドル＝1ACとして四捨五入する（デモ取引用）
 function tradeAmount(price, qty){ return Math.max(1, Math.round(price * qty)); }
 
+// 買付・売却1回分の検証込み計算。amount（総額）はAC不足／保有不足の
+// チェックに使うほか、成功時は更新後のcoins・portfolioを組み立てて返す。
+// ok:falseの場合はmsgのみを返し、呼び出し側は何も書き込まない
+function computeTrade(mode, ticker, qty, price, coins, pf){
+  const amount = tradeAmount(price, qty);
+  if(mode === "buy"){
+    if((coins||0) < amount){
+      return { ok:false, msg:`ACが不足しています（必要 ${amount.toLocaleString()} AC / 残高 ${(coins||0).toLocaleString()} AC）。` };
+    }
+    const h = pf[ticker] || { shares:0, cost:0 };
+    const newPf = Object.assign({}, pf, { [ticker]: { shares: h.shares + qty, cost: h.cost + amount } });
+    return { ok:true, amount, coins: (coins||0) - amount, portfolio: newPf };
+  }
+  const h = pf[ticker];
+  const held = h ? h.shares : 0;
+  if(held < qty){
+    return { ok:false, msg:`保有株数が足りません（${ticker} の保有：${held} 株）。` };
+  }
+  const remaining = held - qty;
+  const newPf = Object.assign({}, pf);
+  if(remaining <= 0){
+    delete newPf[ticker];
+  } else {
+    // 取得原価は平均取得単価ベースで按分して減らす
+    newPf[ticker] = { shares: remaining, cost: Math.round(h.cost * remaining / held) };
+  }
+  return { ok:true, amount, coins: (coins||0) + amount, portfolio: newPf };
+}
+
 // 買付・売却を実行し、AC残高と保有株を更新する。検証エラーはmsgで返す。
 // stocksは呼び出し元のMARKET WATCHインスタンスが持つ銘柄配列（STOCKSまたは
 // JP_STOCKS）で、日本経済・世界経済どちらの画面から売買しても対象銘柄を
 // 正しく参照できるようにする（保有株は共通のPORTFOLIO_KEYに銘柄ticker単位で
-// 保存されるため、日米の保有をまとめて1つのポートフォリオ画面で確認できる）
-function executeTrade(mode, stocks, ticker, qty){
+// 保存されるため、日米の保有をまとめて1つのポートフォリオ画面で確認できる）。
+//
+// ログイン中はFirestoreの users/{uid} ドキュメントをトランザクションで読み書きする。
+// サーバー上の最新のAC残高・保有株数を基準に検証したうえでcoins・portfolioの
+// 両方を1回の書き込みで原子的に更新するため、複数端末で同時に操作しても
+// 不整合（AC減算漏れ・保有株の消し忘れ等）が起きない。未ログイン（ゲスト
+// 利用）時はローカル保存のみで同じ検証ロジックを使って更新する
+async function executeTrade(mode, stocks, ticker, qty){
   const s = stocks.find(x => x.ticker === ticker);
   if(!s) return { ok:false, msg:"不明な銘柄です。" };
   if(!Number.isInteger(qty) || qty < 1) return { ok:false, msg:"株数は1株以上で指定してください。" };
-  const pf = loadPortfolio();
-  const amount = tradeAmount(s.price, qty);
-  if(mode === "buy"){
-    if((S.coins||0) < amount) return { ok:false, msg:`ACが不足しています（必要 ${amount.toLocaleString()} AC / 残高 ${(S.coins||0).toLocaleString()} AC）。` };
-    S.coins -= amount;
-    const h = pf[ticker] || { shares:0, cost:0 };
-    h.shares += qty;
-    h.cost += amount;
-    pf[ticker] = h;
-  } else {
-    const h = pf[ticker];
-    const held = h ? h.shares : 0;
-    if(held < qty) return { ok:false, msg:`保有株数が足りません（${ticker} の保有：${held} 株）。` };
-    S.coins = (S.coins||0) + amount;
-    // 取得原価は平均取得単価ベースで按分して減らす
-    h.cost = Math.round(h.cost * (h.shares - qty) / h.shares);
-    h.shares -= qty;
-    if(h.shares <= 0) delete pf[ticker]; else pf[ticker] = h;
+
+  if(state.db && state.currentUserId && window.FirebaseSync && window.FirebaseSync.runTransaction){
+    try{
+      const ref = window.FirebaseSync.doc(state.db, "users", state.currentUserId);
+      const result = await window.FirebaseSync.runTransaction(state.db, async (tx) => {
+        const snap = await tx.get(ref);
+        const data = snap.exists() ? snap.data() : {};
+        const coins = typeof data.coins === "number" ? data.coins : (S.coins||0);
+        const pf = (data.portfolio && typeof data.portfolio === "object" && !Array.isArray(data.portfolio))
+          ? data.portfolio : loadPortfolio();
+        const r = computeTrade(mode, ticker, qty, s.price, coins, pf);
+        if(!r.ok) return r;
+        tx.set(ref, { coins: r.coins, portfolio: r.portfolio, updatedAt: new Date().toISOString() }, { merge:true });
+        return r;
+      });
+      if(!result.ok) return result;
+      S.coins = result.coins;
+      saveCoins(S.coins);
+      savePortfolio(result.portfolio);
+      renderStatusBar(); // 画面上部のAC残高へ即時反映
+      return { ok:true, amount: result.amount };
+    }catch(e){
+      console.error("trade transaction failed:", e);
+      return { ok:false, msg:"通信エラーのため取引を完了できませんでした。もう一度お試しください。" };
+    }
   }
+
+  // 未ログイン（ゲスト利用）はローカル保存のみで検証・更新する
+  const r = computeTrade(mode, ticker, qty, s.price, S.coins, loadPortfolio());
+  if(!r.ok) return r;
+  S.coins = r.coins;
   saveCoins(S.coins);
-  savePortfolio(pf);
-  syncPortfolioToCloud(pf);
-  try{ saveToCloud(getBP(), loadWrong(), loadHist()); }catch(e){}
-  renderStatusBar(); // 画面上部のAC残高へ即時反映
-  return { ok:true, amount };
+  savePortfolio(r.portfolio);
+  renderStatusBar();
+  return { ok:true, amount: r.amount };
 }
 
 // 買付／売却モーダル。銘柄と株数を選ぶと合計ACをその場で計算して表示し、
@@ -1531,10 +1562,18 @@ function openTradeModal(mode, stocks){
   ov.querySelector("#trade-plus").onclick = () => { qtyEl.value = String(readQty() + 1); updateSummary(); };
   updateSummary();
 
-  ov.querySelector("#trade-go").onclick = () => {
-    const r = executeTrade(mode, stocks, symEl.value, readQty());
-    if(!r.ok){ msgEl.textContent = r.msg; return; }
-    close();
+  const goBtn = ov.querySelector("#trade-go");
+  goBtn.onclick = async () => {
+    goBtn.disabled = true;
+    msgEl.textContent = "";
+    try{
+      const r = await executeTrade(mode, stocks, symEl.value, readQty());
+      if(!r.ok){ msgEl.textContent = r.msg; goBtn.disabled = false; return; }
+      close();
+    }catch(e){
+      msgEl.textContent = "処理中にエラーが発生しました。もう一度お試しください。";
+      goBtn.disabled = false;
+    }
   };
 }
 
