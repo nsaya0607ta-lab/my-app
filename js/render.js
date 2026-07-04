@@ -111,6 +111,7 @@ function updateHeaderTitle(){
 }
 
 export function render(){
+  gcalHandleIdentityChange(); // ログインユーザーの切替を検知し、前の人のGoogle連携状態を破棄
   renderStatusBar();   // 画面が変わっても常に最新の Lv/BP/AC を反映
   updateHeaderNav(false); // デフォルトは非表示。表示すべき画面側で個別に true にする
   updateHeaderTitle();
@@ -1659,9 +1660,40 @@ function homeLauncherCardHTML(){
 const GCAL_STORE_KEY = "gcal_store_v1";
 const GCAL_COLORS = ["#0284c7","#16a34a","#d97706","#dc2626","#7c3aed","#0d9488","#db2777","#65a30d"];
 
+// カレンダー機能が使うlocalStorageキーは、すべて「現在アプリにログイン
+// しているユーザー」ごとに独立させる。ベースキーにログイン中のFirebase
+// UID（未ログイン＝ゲスト利用中は"guest"固定）を連結することで、同じ
+// 端末・同じブラウザを複数人が使い回しても、他人が連携したGoogleカレン
+// ダーのトークンやデモ用データが絶対に見えないようにする
+function gcalStorageKey(base){
+  const uid = (state && state.currentUserId) ? state.currentUserId : "guest";
+  return `${base}::${uid}`;
+}
+
+// ログイン中のユーザーが切り替わった（ログイン／ログアウト／別アカウント
+// への切替）ことを検知し、前のユーザーのGoogle連携状態（アクセストークン・
+// カレンダー一覧・イベントキャッシュ）をメモリ上から完全に破棄する。
+// render()の先頭から毎回呼ばれる軽量なチェックで、localStorageのキー
+// 空間の切替と、メモリ上キャッシュの破棄を必ずセットで行う
+let gcalIdentityToken;
+function gcalHandleIdentityChange(){
+  const uid = (state && state.currentUserId) ? state.currentUserId : "guest";
+  if(gcalIdentityToken === uid) return;
+  const isFirstRun = gcalIdentityToken === undefined;
+  gcalIdentityToken = uid;
+  if(isFirstRun) return; // 初回描画は「切替」ではないので何もしない
+  gcalGoogleAccessToken = null;
+  gcalGoogleCalendars = null;
+  gcalGoogleEventsCache = {};
+  gcalGoogleDayEventsCache = {};
+  gcalGoogleError = null;
+  gcalGoogleConnecting = false;
+  gcalGoogleAutoTried = false;
+}
+
 function loadGcalStore(){
   let store = null;
-  try{ store = JSON.parse(localStorage.getItem(GCAL_STORE_KEY) || "null"); }catch(e){}
+  try{ store = JSON.parse(localStorage.getItem(gcalStorageKey(GCAL_STORE_KEY)) || "null"); }catch(e){}
   if(!store || !Array.isArray(store.calendars) || !store.calendars.length){
     store = {
       calendars: [{ id: "self", name: "自分のカレンダー", color: GCAL_COLORS[0], shared: [] }],
@@ -1678,7 +1710,7 @@ function loadGcalStore(){
 }
 
 function saveGcalStore(store){
-  try{ localStorage.setItem(GCAL_STORE_KEY, JSON.stringify(store)); }catch(e){}
+  try{ localStorage.setItem(gcalStorageKey(GCAL_STORE_KEY), JSON.stringify(store)); }catch(e){}
 }
 
 function gcalGenId(prefix){
@@ -1696,11 +1728,11 @@ let gcalViewY = null, gcalViewM = null;
 const GCAL_AUTHOR_NAME_KEY = "gcal_author_name";
 
 function gcalLoadAuthorName(){
-  try{ return (localStorage.getItem(GCAL_AUTHOR_NAME_KEY) || "").trim(); }catch(e){ return ""; }
+  try{ return (localStorage.getItem(gcalStorageKey(GCAL_AUTHOR_NAME_KEY)) || "").trim(); }catch(e){ return ""; }
 }
 
 function gcalSaveAuthorName(name){
-  try{ localStorage.setItem(GCAL_AUTHOR_NAME_KEY, (name||"").trim()); }catch(e){}
+  try{ localStorage.setItem(gcalStorageKey(GCAL_AUTHOR_NAME_KEY), (name||"").trim()); }catch(e){}
 }
 
 // 登録者名が未設定なら設定用モーダルを開いてから、設定済みならすぐに
@@ -1747,11 +1779,11 @@ function openGcalAuthorNameModal(onSaved){
 const GCAL_TODO_STORE_KEY = "gcal_todo_store_v1"; // { dateKey: [{id,text,done}] }
 
 function loadGcalTodoStore(){
-  try{ return JSON.parse(localStorage.getItem(GCAL_TODO_STORE_KEY) || "{}"); }catch(e){ return {}; }
+  try{ return JSON.parse(localStorage.getItem(gcalStorageKey(GCAL_TODO_STORE_KEY)) || "{}"); }catch(e){ return {}; }
 }
 
 function saveGcalTodoStore(store){
-  try{ localStorage.setItem(GCAL_TODO_STORE_KEY, JSON.stringify(store)); }catch(e){}
+  try{ localStorage.setItem(gcalStorageKey(GCAL_TODO_STORE_KEY), JSON.stringify(store)); }catch(e){}
 }
 
 // ホーム画面：本日（表示中の1日）だけのコンパクトな確認用ウィジェット
@@ -1832,19 +1864,19 @@ function gcalGoogleIsConfigured(){
    前提のため、それも失敗した場合のみ「連携」ボタンでの再認証を促す */
 function gcalSaveGoogleToken(accessToken, expiresInSec){
   const expiresAt = Date.now() + (Number(expiresInSec || 0) * 1000);
-  try{ localStorage.setItem(GCAL_GOOGLE_TOKEN_KEY, JSON.stringify({ access_token: accessToken, expires_at: expiresAt })); }catch(e){}
+  try{ localStorage.setItem(gcalStorageKey(GCAL_GOOGLE_TOKEN_KEY), JSON.stringify({ access_token: accessToken, expires_at: expiresAt })); }catch(e){}
 }
 
 function gcalLoadGoogleToken(){
   try{
-    const data = JSON.parse(localStorage.getItem(GCAL_GOOGLE_TOKEN_KEY) || "null");
+    const data = JSON.parse(localStorage.getItem(gcalStorageKey(GCAL_GOOGLE_TOKEN_KEY)) || "null");
     if(!data || !data.access_token || !data.expires_at) return null;
     return data;
   }catch(e){ return null; }
 }
 
 function gcalClearGoogleToken(){
-  try{ localStorage.removeItem(GCAL_GOOGLE_TOKEN_KEY); }catch(e){}
+  try{ localStorage.removeItem(gcalStorageKey(GCAL_GOOGLE_TOKEN_KEY)); }catch(e){}
 }
 
 // ページ読み込み時に一度だけ実行する自動ログイン復元。ホーム画面の週
@@ -2002,7 +2034,7 @@ function gcalDisconnectGoogle(){
   gcalGoogleDayEventsCache = {};
   gcalGoogleError = null;
   gcalClearGoogleToken();
-  try{ localStorage.removeItem(GCAL_GOOGLE_ACTIVE_KEY); }catch(e){}
+  try{ localStorage.removeItem(gcalStorageKey(GCAL_GOOGLE_ACTIVE_KEY)); }catch(e){}
   if(token && window.google && window.google.accounts && window.google.accounts.oauth2){
     window.google.accounts.oauth2.revoke(token, () => {});
   }
@@ -2057,12 +2089,12 @@ async function gcalRefreshGoogleCalendars(){
       primary: !!c.primary,
     }));
     let activeId = null;
-    try{ activeId = localStorage.getItem(GCAL_GOOGLE_ACTIVE_KEY); }catch(e){}
+    try{ activeId = localStorage.getItem(gcalStorageKey(GCAL_GOOGLE_ACTIVE_KEY)); }catch(e){}
     if(!activeId || !gcalGoogleCalendars.some(c => c.id === activeId)){
       const primary = gcalGoogleCalendars.find(c => c.primary);
       activeId = (primary || gcalGoogleCalendars[0] || {}).id || null;
     }
-    if(activeId){ try{ localStorage.setItem(GCAL_GOOGLE_ACTIVE_KEY, activeId); }catch(e){} }
+    if(activeId){ try{ localStorage.setItem(gcalStorageKey(GCAL_GOOGLE_ACTIVE_KEY), activeId); }catch(e){} }
   }catch(e){
     if(!gcalGoogleError) gcalGoogleError = "カレンダー一覧の取得に失敗しました。";
     gcalGoogleCalendars = [];
@@ -2411,7 +2443,7 @@ function renderGcalDailyWidget(){
       return;
     }
     let activeId = null;
-    try{ activeId = localStorage.getItem(GCAL_GOOGLE_ACTIVE_KEY); }catch(e){}
+    try{ activeId = localStorage.getItem(gcalStorageKey(GCAL_GOOGLE_ACTIVE_KEY)); }catch(e){}
     const active = gcalGoogleCalendars.find(c => c.id === activeId) || gcalGoogleCalendars[0];
     const cacheKey = gcalGoogleDayCacheKey(active.id, dateKey);
     const evMap = gcalGoogleDayEventsCache[cacheKey];
@@ -2516,7 +2548,7 @@ function renderGcalMonthCard(){
     }
 
     let activeId = null;
-    try{ activeId = localStorage.getItem(GCAL_GOOGLE_ACTIVE_KEY); }catch(e){}
+    try{ activeId = localStorage.getItem(gcalStorageKey(GCAL_GOOGLE_ACTIVE_KEY)); }catch(e){}
     const active = gcalGoogleCalendars.find(c => c.id === activeId) || gcalGoogleCalendars[0];
 
     const switcherHTML = gcalGoogleCalendars.map(c => {
@@ -2552,7 +2584,7 @@ function renderGcalMonthCard(){
     gcalBindConnectBar(root);
     gcalBindAuthorRow(root);
     root.querySelectorAll("[data-gcal]").forEach(b => b.onclick = () => {
-      try{ localStorage.setItem(GCAL_GOOGLE_ACTIVE_KEY, b.dataset.gcal); }catch(e){}
+      try{ localStorage.setItem(gcalStorageKey(GCAL_GOOGLE_ACTIVE_KEY), b.dataset.gcal); }catch(e){}
       renderGcalMonthCard();
     });
     root.querySelector("#gcal-prev").onclick = () => { gcalViewM--; if(gcalViewM<0){ gcalViewM=11; gcalViewY--; } renderGcalMonthCard(); };
