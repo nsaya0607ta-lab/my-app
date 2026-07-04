@@ -1,7 +1,7 @@
 import { CERTS } from './data/certs.js';
 import { DC_PHASES, IMP_POINTS, L, OVERALL_STEP } from './data/constants.js';
 import { SKIN_DATA } from './data/skins.js';
-import { go, render } from './render.js';
+import { go, loadPortfolio, render } from './render.js';
 import { S, state } from './state.js';
 
 export let PASS = 700;   // 選択中の資格の合格ライン（loadCertで設定）
@@ -366,10 +366,14 @@ export function seedCloudFromLocal(){
       };
     }
   });
-  if(Object.keys(patch).length || loadCoins()){
+  const portfolio = loadPortfolio();
+  const hasPortfolio = Object.keys(portfolio).length > 0;
+  if(Object.keys(patch).length || loadCoins() || hasPortfolio){
+    const payload = { certs: patch, coins: loadCoins(), updatedAt:new Date().toISOString() };
+    if(hasPortfolio) payload.portfolio = portfolio;
     try{
       window.FirebaseSync.setDoc(window.FirebaseSync.doc(state.db,"users",state.currentUserId),
-        { certs: patch, coins: loadCoins(), updatedAt:new Date().toISOString() }, { merge:true });
+        payload, { merge:true });
     }catch(e){}
   }
 }
