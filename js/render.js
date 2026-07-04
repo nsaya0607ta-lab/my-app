@@ -2242,6 +2242,7 @@ function renderGcalDailyWidget(){
       renderGcalDailyWidget();
     });
     root.querySelectorAll("[data-todo-del]").forEach(btn => btn.onclick = () => {
+      if(!confirm("このタスクを削除しますか？")) return;
       const s2 = loadGcalTodoStore();
       s2[dateKey] = (s2[dateKey] || []).filter(t => t.id !== btn.dataset.todoDel);
       saveGcalTodoStore(s2);
@@ -2316,6 +2317,7 @@ function renderGcalDailyWidget(){
       gcalRefreshGoogleDayEvents(active.id, gcalDailyY, gcalDailyM, gcalDailyD);
     } else {
       root.querySelectorAll("[data-del]").forEach(btn => btn.onclick = async () => {
+        if(!confirm("この予定を削除しますか？")) return;
         try{
           await gcalDeleteGoogleEvent(active.id, btn.dataset.del);
           await src.refresh();
@@ -2346,6 +2348,7 @@ function renderGcalDailyWidget(){
   gcalSetupDayEventsScroll(root, localScrollKey, gcalDailyY, gcalDailyM, gcalDailyD, now, prevScrollKey, prevScrollTop);
   root.dataset.dayScrollKey = localScrollKey;
   root.querySelectorAll("[data-del]").forEach(btn => btn.onclick = () => {
+    if(!confirm("この予定を削除しますか？")) return;
     const s2 = loadGcalStore();
     if(s2.events[active.id] && s2.events[active.id][dateKey]){
       s2.events[active.id][dateKey] = s2.events[active.id][dateKey].filter(ev => ev.id !== btn.dataset.del);
