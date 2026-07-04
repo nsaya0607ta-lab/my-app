@@ -1038,17 +1038,26 @@ const JP_STOCKS = [
 const STOCK_REFRESH_MS = 45000; // 実株価の再取得・擬似変動の更新間隔
 const STOCK_TICK_PCT = 0.006;   // 実データが使えない場合の1回あたりの変動幅（±0.3%程度）
 
-/* ---- 保有株（デモ取引のポートフォリオ）。端末ローカルに保存する ---- */
+/* ---- 保有株（デモ取引のポートフォリオ）。端末ローカルに保存する ----
+   保存キーは「現在ログインしているユーザー」ごとに独立させる。ベースキーに
+   ログイン中のFirebase UID（未ログイン＝ゲスト利用中は"guest"固定）を連結
+   することで、同じ端末・同じブラウザを複数人が使い回しても、他人の売買
+   履歴や保有株が絶対に混入しないようにする（gcalStorageKeyと同じ方式） */
 const PORTFOLIO_KEY = "stock_portfolio_v1";
+
+function portfolioStorageKey(){
+  const uid = (state && state.currentUserId) ? state.currentUserId : "guest";
+  return `${PORTFOLIO_KEY}::${uid}`;
+}
 
 function loadPortfolio(){
   try{
-    const p = JSON.parse(localStorage.getItem(PORTFOLIO_KEY) || "{}");
+    const p = JSON.parse(localStorage.getItem(portfolioStorageKey()) || "{}");
     return (p && typeof p === "object" && !Array.isArray(p)) ? p : {};
   }catch(e){ return {}; }
 }
 function savePortfolio(p){
-  try{ localStorage.setItem(PORTFOLIO_KEY, JSON.stringify(p)); }catch(e){}
+  try{ localStorage.setItem(portfolioStorageKey(), JSON.stringify(p)); }catch(e){}
 }
 
 function round2(n){ return Math.round(n*100)/100; }
