@@ -1656,12 +1656,215 @@ function googleCalendarCardHTML(){
   return `<div class="gcal-card" id="gcal-card"></div>`;
 }
 
+/* ================= Google カレンダー本体との連携 =================
+   Google Identity Services（GIS）のトークンクライアントでOAuthアクセス
+   トークンを取得し、Google Calendar REST APIをfetchで直接呼び出す
+   （バックエンドを持たない静的サイトのため、重いgapiクライアントは
+   使わない）。付与するスコープはカレンダー一覧の閲覧とイベントの
+   読み書きのみで、カレンダーの新規作成・共有設定（ACL）は対象外
+   ―― それらは本家Googleカレンダー側で行ってもらう想定。
+   未連携時は既存のローカル保存（localStorage）のデモ用カレンダーに
+   フォールバックする */
+const GCAL_GOOGLE_CLIENT_ID = "989248012630-eouubhdevjm057iub24r8lojnjn1lres.apps.googleusercontent.com";
+const GCAL_GOOGLE_SCOPES = "https://www.googleapis.com/auth/calendar.events https://www.googleapis.com/auth/calendar.calendarlist.readonly";
+const GCAL_GOOGLE_CONNECTED_KEY = "gcal_google_connected";
+const GCAL_GOOGLE_ACTIVE_KEY = "gcal_google_active_id";
+
+let gcalGoogleTokenClient = null;
+let gcalGoogleAccessToken = null;
+let gcalGoogleConnecting = false;
+let gcalGoogleAutoTried = false;
+let gcalGoogleError = null;
+let gcalGoogleCalendars = null;   // [{id,name,color,primary}] / 未取得ならnull
+let gcalGoogleEventsCache = {};   // "<calId>|<y>-<m>" -> { dateKey: [{id,title}] }
+
+function gcalGoogleIsConfigured(){
+  return !!GCAL_GOOGLE_CLIENT_ID && !GCAL_GOOGLE_CLIENT_ID.startsWith("YOUR_");
+}
+
+function gcalWaitForGis(cb, triesLeft){
+  if(window.google && window.google.accounts && window.google.accounts.oauth2){ cb(); return; }
+  if(triesLeft <= 0) return;
+  setTimeout(() => gcalWaitForGis(cb, triesLeft - 1), 300);
+}
+
+function gcalGoogleEnsureTokenClient(){
+  if(gcalGoogleTokenClient) return gcalGoogleTokenClient;
+  if(!window.google || !window.google.accounts || !window.google.accounts.oauth2) return null;
+  gcalGoogleTokenClient = window.google.accounts.oauth2.initTokenClient({
+    client_id: GCAL_GOOGLE_CLIENT_ID,
+    scope: GCAL_GOOGLE_SCOPES,
+    callback: (resp) => {
+      gcalGoogleConnecting = false;
+      if(resp && resp.access_token){
+        gcalGoogleAccessToken = resp.access_token;
+        gcalGoogleError = null;
+        try{ localStorage.setItem(GCAL_GOOGLE_CONNECTED_KEY, "1"); }catch(e){}
+        gcalGoogleCalendars = null;
+        gcalGoogleEventsCache = {};
+        gcalRefreshGoogleCalendars();
+      } else {
+        gcalGoogleError = "Googleへのログインに失敗しました。もう一度お試しください。";
+        renderGcalCard();
+      }
+    },
+    error_callback: () => {
+      gcalGoogleConnecting = false;
+      gcalGoogleError = "Googleへのログインがキャンセルされました。";
+      renderGcalCard();
+    },
+  });
+  return gcalGoogleTokenClient;
+}
+
+function gcalConnectGoogle(promptType){
+  if(!gcalGoogleIsConfigured()){
+    gcalGoogleError = "Google連携がまだ設定されていません（開発者にOAuthクライアントIDの登録を依頼してください）。";
+    renderGcalCard();
+    return;
+  }
+  const client = gcalGoogleEnsureTokenClient();
+  if(!client){
+    gcalGoogleConnecting = true;
+    renderGcalCard();
+    gcalWaitForGis(() => {
+      const c2 = gcalGoogleEnsureTokenClient();
+      if(c2){ c2.requestAccessToken({ prompt: promptType===undefined ? "consent" : promptType }); }
+      else { gcalGoogleConnecting = false; gcalGoogleError = "Google連携の読み込みに失敗しました。時間をおいて再度お試しください。"; renderGcalCard(); }
+    }, 10);
+    return;
+  }
+  gcalGoogleConnecting = true;
+  gcalGoogleError = null;
+  renderGcalCard();
+  client.requestAccessToken({ prompt: promptType===undefined ? "consent" : promptType });
+}
+
+function gcalDisconnectGoogle(){
+  const token = gcalGoogleAccessToken;
+  gcalGoogleAccessToken = null;
+  gcalGoogleCalendars = null;
+  gcalGoogleEventsCache = {};
+  gcalGoogleError = null;
+  try{ localStorage.removeItem(GCAL_GOOGLE_CONNECTED_KEY); localStorage.removeItem(GCAL_GOOGLE_ACTIVE_KEY); }catch(e){}
+  if(token && window.google && window.google.accounts && window.google.accounts.oauth2){
+    window.google.accounts.oauth2.revoke(token, () => {});
+  }
+  renderGcalCard();
+}
+
+async function gcalGoogleApiFetch(path, options){
+  const res = await fetch(`https://www.googleapis.com/calendar/v3/${path}`, Object.assign({}, options, {
+    headers: Object.assign({ "Authorization": `Bearer ${gcalGoogleAccessToken}` }, (options && options.headers) || {}),
+  }));
+  if(res.status === 401){
+    gcalGoogleAccessToken = null;
+    gcalGoogleError = "Googleとの接続が切れました。もう一度ログインしてください。";
+    throw new Error("gcal-unauthorized");
+  }
+  if(!res.ok) throw new Error(`gcal-api-error-${res.status}`);
+  if(res.status === 204) return null;
+  return res.json();
+}
+
+async function gcalRefreshGoogleCalendars(){
+  try{
+    const data = await gcalGoogleApiFetch("users/me/calendarList?minAccessRole=writer");
+    gcalGoogleCalendars = (data.items || []).map((c, i) => ({
+      id: c.id,
+      name: c.summaryOverride || c.summary || c.id,
+      color: c.backgroundColor || GCAL_COLORS[i % GCAL_COLORS.length],
+      primary: !!c.primary,
+    }));
+    let activeId = null;
+    try{ activeId = localStorage.getItem(GCAL_GOOGLE_ACTIVE_KEY); }catch(e){}
+    if(!activeId || !gcalGoogleCalendars.some(c => c.id === activeId)){
+      const primary = gcalGoogleCalendars.find(c => c.primary);
+      activeId = (primary || gcalGoogleCalendars[0] || {}).id || null;
+    }
+    if(activeId){ try{ localStorage.setItem(GCAL_GOOGLE_ACTIVE_KEY, activeId); }catch(e){} }
+  }catch(e){
+    if(!gcalGoogleError) gcalGoogleError = "カレンダー一覧の取得に失敗しました。";
+    gcalGoogleCalendars = [];
+  }
+  renderGcalCard();
+}
+
+function gcalGoogleEventsCacheKey(calId, y, m){ return `${calId}|${y}-${m}`; }
+
+async function gcalRefreshGoogleEvents(calId, y, m){
+  const key = gcalGoogleEventsCacheKey(calId, y, m);
+  try{
+    const timeMin = new Date(y, m, 1).toISOString();
+    const timeMax = new Date(y, m+1, 1).toISOString();
+    const params = new URLSearchParams({ timeMin, timeMax, singleEvents: "true", maxResults: "250", orderBy: "startTime" });
+    const data = await gcalGoogleApiFetch(`calendars/${encodeURIComponent(calId)}/events?${params.toString()}`);
+    const map = {};
+    (data.items || []).forEach(ev => {
+      if(ev.status === "cancelled") return;
+      const startStr = (ev.start && (ev.start.date || ev.start.dateTime)) || null;
+      if(!startStr) return;
+      const d = new Date(startStr);
+      const dk = newsDateKey(d.getFullYear(), d.getMonth(), d.getDate());
+      if(!map[dk]) map[dk] = [];
+      map[dk].push({ id: ev.id, title: ev.summary || "(タイトルなし)" });
+    });
+    gcalGoogleEventsCache[key] = map;
+  }catch(e){
+    if(!gcalGoogleError) gcalGoogleError = "予定の取得に失敗しました。";
+    gcalGoogleEventsCache[key] = {};
+  }
+  renderGcalCard();
+}
+
+async function gcalCreateGoogleEvent(calId, y, m, d, title){
+  const dateStr = newsDateKey(y, m, d);
+  const next = new Date(y, m, d+1);
+  const nextStr = newsDateKey(next.getFullYear(), next.getMonth(), next.getDate());
+  await gcalGoogleApiFetch(`calendars/${encodeURIComponent(calId)}/events`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ summary: title, start: { date: dateStr }, end: { date: nextStr } }),
+  });
+}
+
+async function gcalDeleteGoogleEvent(calId, eventId){
+  await gcalGoogleApiFetch(`calendars/${encodeURIComponent(calId)}/events/${encodeURIComponent(eventId)}`, { method: "DELETE" });
+}
+
+function gcalBindConnectBar(root){
+  const connectBtn = root.querySelector("#gcal-google-connect");
+  if(connectBtn) connectBtn.onclick = () => gcalConnectGoogle("consent");
+  const disconnectBtn = root.querySelector("#gcal-google-disconnect");
+  if(disconnectBtn) disconnectBtn.onclick = () => gcalDisconnectGoogle();
+}
+
+function gcalConnectBarHTML(){
+  if(gcalGoogleAccessToken){
+    return `
+      <div class="gcal-google-bar">
+        <span class="gcal-google-badge">🔗 Googleカレンダーと連携中</span>
+        <button type="button" class="gcal-google-disconnect" id="gcal-google-disconnect">連携解除</button>
+      </div>`;
+  }
+  return `
+    <div class="gcal-google-bar">
+      <button type="button" class="gcal-google-connect" id="gcal-google-connect"${gcalGoogleConnecting?" disabled":""}>${gcalGoogleConnecting?"連携中…":"🔗 Googleカレンダーと連携"}</button>
+    </div>`;
+}
+
+// 前月・翌月にはみ出す先頭・末尾のマスは完全な空白にせず、実際のGoogle
+// カレンダーと同様に前後の月の日付を薄く添えることで、グリッドが1行分
+// 欠けたような不自然な空白に見えないようにする（クリックはできない）
 function gcalDayCellsHTML(y, m, evMap, todayKey, color){
   const first = new Date(y, m, 1);
   const startWeekday = first.getDay();
   const daysInMonth = new Date(y, m+1, 0).getDate();
+  const prevDaysInMonth = new Date(y, m, 0).getDate();
   const cells = [];
-  for(let i=0;i<startWeekday;i++) cells.push(`<span class="gcal-cell empty"></span>`);
+  for(let i=startWeekday-1; i>=0; i--){
+    cells.push(`<span class="gcal-cell empty">${prevDaysInMonth - i}</span>`);
+  }
   for(let d=1; d<=daysInMonth; d++){
     const key = newsDateKey(y, m, d);
     const cls = ["gcal-cell"];
@@ -1669,19 +1872,113 @@ function gcalDayCellsHTML(y, m, evMap, todayKey, color){
     const hasEvents = (evMap[key]||[]).length > 0;
     cells.push(`<button type="button" class="${cls.join(" ")}" data-gday="${d}">${d}${hasEvents?`<span class="gcal-cell-dot" style="background:${esc(color)}"></span>`:""}</button>`);
   }
+  const trailing = (7 - ((startWeekday + daysInMonth) % 7)) % 7;
+  for(let d=1; d<=trailing; d++){
+    cells.push(`<span class="gcal-cell empty">${d}</span>`);
+  }
   return cells.join("");
 }
 
 // カレンダーカードの中身を描画し直す（ホーム画面全体の再描画を伴わない、
-// このカード単体の更新用。カレンダー切り替え・月移動・予定の増減のたびに呼ぶ）
+// このカード単体の更新用。カレンダー切り替え・月移動・予定の増減のたびに呼ぶ）。
+// Google連携済みなら本物のGoogleカレンダーのデータを表示し、未連携なら
+// 従来通りローカル保存のデモ用カレンダーにフォールバックする
 function renderGcalCard(){
   const root = document.getElementById("gcal-card");
   if(!root) return;
   const now = new Date();
   if(gcalViewY === null){ gcalViewY = now.getFullYear(); gcalViewM = now.getMonth(); }
+  const todayKey = newsDateKey(now.getFullYear(), now.getMonth(), now.getDate());
+
+  // 前回連携済みだった場合、ページ再読み込み時に一度だけサイレント再ログイン
+  // を試みる（Googleの同意画面は出さず、有効なセッションがあれば自動復帰）
+  if(!gcalGoogleAccessToken && !gcalGoogleConnecting && !gcalGoogleAutoTried){
+    gcalGoogleAutoTried = true;
+    let wasConnected = false;
+    try{ wasConnected = localStorage.getItem(GCAL_GOOGLE_CONNECTED_KEY) === "1"; }catch(e){}
+    if(wasConnected && gcalGoogleIsConfigured()) gcalWaitForGis(() => gcalConnectGoogle(""), 10);
+  }
+
+  const errorHTML = gcalGoogleError ? `<div class="gcal-google-error">${esc(gcalGoogleError)}</div>` : "";
+
+  if(gcalGoogleAccessToken){
+    // ---------------- Google連携モード ----------------
+    if(gcalGoogleCalendars === null){
+      root.innerHTML = `
+        <div class="gcal-box">
+          ${gcalConnectBarHTML()}
+          ${errorHTML}
+          <div class="gcal-google-loading">カレンダー一覧を読み込み中…</div>
+        </div>`;
+      gcalBindConnectBar(root);
+      gcalRefreshGoogleCalendars();
+      return;
+    }
+    if(!gcalGoogleCalendars.length){
+      root.innerHTML = `
+        <div class="gcal-box">
+          ${gcalConnectBarHTML()}
+          ${errorHTML}
+          <div class="gcal-google-loading">書き込み可能なカレンダーが見つかりませんでした。</div>
+        </div>`;
+      gcalBindConnectBar(root);
+      return;
+    }
+
+    let activeId = null;
+    try{ activeId = localStorage.getItem(GCAL_GOOGLE_ACTIVE_KEY); }catch(e){}
+    const active = gcalGoogleCalendars.find(c => c.id === activeId) || gcalGoogleCalendars[0];
+
+    const switcherHTML = gcalGoogleCalendars.map(c => {
+      const isActive = c.id === active.id;
+      return `
+        <div class="gcal-chip-wrap${isActive?" active":""}">
+          <button type="button" class="gcal-chip${isActive?" active":""}" data-gcal="${esc(c.id)}" style="--chip-color:${esc(c.color)}">
+            <span class="gcal-chip-dot"></span>${esc(c.name)}
+          </button>
+        </div>`;
+    }).join("");
+
+    const evKey = gcalGoogleEventsCacheKey(active.id, gcalViewY, gcalViewM);
+    const evOfActive = gcalGoogleEventsCache[evKey];
+
+    root.innerHTML = `
+      <div class="gcal-box">
+        ${gcalConnectBarHTML()}
+        ${errorHTML}
+        <div class="gcal-switcher">${switcherHTML}</div>
+        <div class="gcal-cal-head">
+          <button type="button" class="gcal-nav-btn" id="gcal-prev" aria-label="前の月">‹</button>
+          <div class="gcal-cal-title">${gcalViewY}年${gcalViewM+1}月</div>
+          <button type="button" class="gcal-nav-btn" id="gcal-next" aria-label="次の月">›</button>
+        </div>
+        <div class="gcal-grid gcal-weekdays">${NEWS_WEEKDAYS.map(w=>`<span>${w}</span>`).join("")}</div>
+        <div class="gcal-grid">${evOfActive ? gcalDayCellsHTML(gcalViewY, gcalViewM, evOfActive, todayKey, active.color) : ""}</div>
+        ${evOfActive ? "" : `<div class="gcal-google-loading">予定を読み込み中…</div>`}
+        <div class="gcal-google-note">カレンダーの追加・共有設定は<a href="https://calendar.google.com/" target="_blank" rel="noopener noreferrer">Googleカレンダー</a>側で行ってください。</div>
+      </div>`;
+
+    gcalBindConnectBar(root);
+    root.querySelectorAll("[data-gcal]").forEach(b => b.onclick = () => {
+      try{ localStorage.setItem(GCAL_GOOGLE_ACTIVE_KEY, b.dataset.gcal); }catch(e){}
+      renderGcalCard();
+    });
+    root.querySelector("#gcal-prev").onclick = () => { gcalViewM--; if(gcalViewM<0){ gcalViewM=11; gcalViewY--; } renderGcalCard(); };
+    root.querySelector("#gcal-next").onclick = () => { gcalViewM++; if(gcalViewM>11){ gcalViewM=0; gcalViewY++; } renderGcalCard(); };
+
+    if(!evOfActive){
+      gcalRefreshGoogleEvents(active.id, gcalViewY, gcalViewM);
+    } else {
+      root.querySelectorAll("[data-gday]").forEach(b => b.onclick = () => {
+        openGcalEventModal({ mode: "google", calId: active.id, color: active.color, name: active.name }, gcalViewY, gcalViewM, parseInt(b.dataset.gday, 10));
+      });
+    }
+    return;
+  }
+
+  // ---------------- ローカル（デモ）モード ----------------
   const store = loadGcalStore();
   const active = store.calendars.find(c => c.id === store.activeId) || store.calendars[0];
-  const todayKey = newsDateKey(now.getFullYear(), now.getMonth(), now.getDate());
   const evOfActive = store.events[active.id] || {};
 
   const switcherHTML = store.calendars.map(c => {
@@ -1697,6 +1994,8 @@ function renderGcalCard(){
 
   root.innerHTML = `
     <div class="gcal-box">
+      ${gcalConnectBarHTML()}
+      ${errorHTML}
       <div class="gcal-switcher">${switcherHTML}</div>
       <div class="gcal-cal-head">
         <button type="button" class="gcal-nav-btn" id="gcal-prev" aria-label="前の月">‹</button>
@@ -1707,6 +2006,7 @@ function renderGcalCard(){
       <div class="gcal-grid">${gcalDayCellsHTML(gcalViewY, gcalViewM, evOfActive, todayKey, active.color)}</div>
     </div>`;
 
+  gcalBindConnectBar(root);
   root.querySelectorAll("[data-cal]").forEach(b => b.onclick = () => {
     const s2 = loadGcalStore();
     s2.activeId = b.dataset.cal;
@@ -1728,66 +2028,104 @@ function renderGcalCard(){
     renderGcalCard();
   };
   root.querySelectorAll("[data-gday]").forEach(b => b.onclick = () => {
-    openGcalEventModal(active.id, gcalViewY, gcalViewM, parseInt(b.dataset.gday, 10));
+    openGcalEventModal({ mode: "local", calId: active.id, color: active.color, name: active.name }, gcalViewY, gcalViewM, parseInt(b.dataset.gday, 10));
   });
 }
 
-// 日付セルタップで開く、その日の予定の確認・追加・削除ポップアップ
-function openGcalEventModal(calId, y, m, d){
+// 日付セルタップで開く、その日の予定の確認・追加・削除ポップアップ。
+// src.mode==="google" なら本物のGoogle Calendar APIを、"local" なら
+// 従来通りlocalStorageのデモ用データを読み書きする
+function openGcalEventModal(src, y, m, d){
   const dateKey = newsDateKey(y, m, d);
   const ov = document.createElement("div");
   ov.className = "modal-ov";
   const close = () => { try{ ov.remove(); }catch(e){} };
+  let busy = false;
 
-  const draw = () => {
+  const getEvents = () => {
+    if(src.mode === "google"){
+      const map = gcalGoogleEventsCache[gcalGoogleEventsCacheKey(src.calId, y, m)] || {};
+      return map[dateKey] || [];
+    }
     const store = loadGcalStore();
-    const cal = store.calendars.find(c => c.id === calId);
-    if(!cal){ close(); return; }
-    const events = (store.events[calId] && store.events[calId][dateKey]) || [];
+    return (store.events[src.calId] && store.events[src.calId][dateKey]) || [];
+  };
+
+  const draw = (msg) => {
+    const events = getEvents();
     ov.innerHTML = `
       <div class="modal">
         <div class="modal-title" style="color:var(--text)">📅 ${m+1}月${d}日の予定</div>
-        <div class="gcal-modal-sub">${esc(cal.name)}</div>
+        <div class="gcal-modal-sub">${esc(src.name)}</div>
+        ${msg ? `<div class="gcal-google-error">${esc(msg)}</div>` : ""}
         <div class="gcal-ev-list">
           ${events.length ? events.map(ev => `
             <div class="gcal-ev-item">
-              <span class="gcal-ev-dot" style="background:${esc(cal.color)}"></span>
+              <span class="gcal-ev-dot" style="background:${esc(src.color)}"></span>
               <span class="gcal-ev-title">${esc(ev.title)}</span>
-              <button type="button" class="gcal-ev-del" data-del="${esc(ev.id)}" aria-label="この予定を削除">×</button>
+              <button type="button" class="gcal-ev-del" data-del="${esc(ev.id)}" aria-label="この予定を削除"${busy?" disabled":""}>×</button>
             </div>`).join("") : `<div class="gcal-ev-empty">この日の予定はまだありません。</div>`}
         </div>
         <div class="gcal-ev-form">
-          <input type="text" class="gcal-ev-input" id="gcal-ev-input" placeholder="予定を入力">
-          <button type="button" class="gcal-ev-add-btn" id="gcal-ev-add">追加</button>
+          <input type="text" class="gcal-ev-input" id="gcal-ev-input" placeholder="予定を入力"${busy?" disabled":""}>
+          <button type="button" class="gcal-ev-add-btn" id="gcal-ev-add"${busy?" disabled":""}>追加</button>
         </div>
         <button class="ghost" id="gcal-ev-close" style="margin-top:12px">閉じる</button>
       </div>`;
 
     ov.querySelector("#gcal-ev-close").onclick = close;
-    ov.querySelectorAll("[data-del]").forEach(btn => btn.onclick = () => {
+    ov.querySelectorAll("[data-del]").forEach(btn => btn.onclick = async () => {
+      if(busy) return;
+      const evId = btn.dataset.del;
+      if(src.mode === "google"){
+        busy = true; draw();
+        try{
+          await gcalDeleteGoogleEvent(src.calId, evId);
+          await gcalRefreshGoogleEvents(src.calId, y, m);
+          busy = false; draw();
+        }catch(e){
+          busy = false; draw("削除に失敗しました。もう一度お試しください。");
+        }
+        return;
+      }
       const s2 = loadGcalStore();
-      if(s2.events[calId] && s2.events[calId][dateKey]){
-        s2.events[calId][dateKey] = s2.events[calId][dateKey].filter(ev => ev.id !== btn.dataset.del);
+      if(s2.events[src.calId] && s2.events[src.calId][dateKey]){
+        s2.events[src.calId][dateKey] = s2.events[src.calId][dateKey].filter(ev => ev.id !== evId);
         saveGcalStore(s2);
       }
       draw();
       renderGcalCard();
     });
+
     const input = ov.querySelector("#gcal-ev-input");
-    const submit = () => {
+    const submit = async () => {
+      if(busy) return;
       const title = (input.value||"").trim();
       if(!title){ input.focus(); return; }
+      if(src.mode === "google"){
+        busy = true; draw();
+        try{
+          await gcalCreateGoogleEvent(src.calId, y, m, d, title);
+          await gcalRefreshGoogleEvents(src.calId, y, m);
+          busy = false; draw();
+        }catch(e){
+          busy = false; draw("追加に失敗しました。もう一度お試しください。");
+        }
+        return;
+      }
       const s2 = loadGcalStore();
-      if(!s2.events[calId]) s2.events[calId] = {};
-      if(!s2.events[calId][dateKey]) s2.events[calId][dateKey] = [];
-      s2.events[calId][dateKey].push({ id: gcalGenId("e"), title });
+      if(!s2.events[src.calId]) s2.events[src.calId] = {};
+      if(!s2.events[src.calId][dateKey]) s2.events[src.calId][dateKey] = [];
+      s2.events[src.calId][dateKey].push({ id: gcalGenId("e"), title });
       saveGcalStore(s2);
       draw();
       renderGcalCard();
     };
     ov.querySelector("#gcal-ev-add").onclick = submit;
-    input.onkeydown = (e) => { if(e.key === "Enter") submit(); };
-    input.focus();
+    if(!busy){
+      input.onkeydown = (e) => { if(e.key === "Enter") submit(); };
+      input.focus();
+    }
   };
 
   document.body.appendChild(ov);

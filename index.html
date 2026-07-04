@@ -14,7 +14,7 @@
      特にホーム画面に追加したSafari（standalone PWA）は古いCSS/JSを強くキャッシュ
      しやすいため、この2ファイル（または読み込まれる他のJS/CSS）を更新した際は、
      必ず下記2箇所の ?v= の値を同時に更新してください（例: 日付や連番でOK）。 -->
-<link rel="stylesheet" href="css/style.css?v=20260704b">
+<link rel="stylesheet" href="css/style.css?v=20260704f">
 </head>
 <body>
 <div class="shell">
@@ -39,6 +39,9 @@
   <div id="app" class="page"></div>
 </div>
 
-<script type="module" src="js/main.js?v=20260704b"></script>
+<!-- Googleカレンダー連携（OAuth）用。Google Identity Servicesのトークン
+     クライアントをjs/render.js側で初期化して使う -->
+<script src="https://accounts.google.com/gsi/client" async defer></script>
+<script type="module" src="js/main.js?v=20260704f"></script>
 </body>
 </html>
