@@ -789,7 +789,7 @@ export function renderTransfer(){
 /* SC-300: Microsoft Identity and Access Administrator（IDとアクセスの管理）*/
 
 /* お天気カード：資格一覧画面の上部。左から「日付＋デジタル時計」
-   「天気（地名・気温・降水確率）」「明日の天気」「簡易予定表」の4カラム構成。
+   「天気（地名・気温・降水確率）」「簡易予定表」の3カラム構成。
    位置情報が取得できない場合はデフォルト地点（東京）にフォールバックし、
    取得できないことを隠さずラベルで示す。天気データ自体が取得できない
    場合は「取得できませんでした」の案内を表示し、実データのように見える
@@ -799,8 +799,8 @@ let clockTimer = null;
 let weatherRefreshTimer = null;
 const WEATHER_REFRESH_MS = 20 * 60 * 1000; // 20分ごとに天気を自動で再フェッチする
 
-// カードは左（比率2.4）＝「日付＋デジタル時計｜天気（地名・アイコン・気温）｜
-// 明日の天気」＋その下の降水確率の推移を示す滑らかな曲線グラフ、
+// カードは左（比率2.4）＝「日付＋デジタル時計｜天気（地名・アイコン・気温）」
+// ＋その下の降水確率の推移を示す滑らかな曲線グラフ、
 // 右（比率1）＝簡易予定表（ダミー表示。予定管理機能は未実装）の2エリア構成。
 function weatherCardHTML(){
   return `
@@ -820,13 +820,6 @@ function weatherCardHTML(){
               <div class="weather-main">
                 <span class="weather-icon" id="weather-icon">🌡️</span>
                 <span class="weather-temp" id="weather-temp"></span>
-              </div>
-            </div>
-            <div class="weather-tomorrow" id="weather-tomorrow">
-              <div class="weather-tomorrow-label">明日</div>
-              <div class="weather-tomorrow-main">
-                <span class="weather-tomorrow-icon" id="weather-tomorrow-icon">-</span>
-                <span class="weather-tomorrow-temp" id="weather-tomorrow-temp"></span>
               </div>
             </div>
           </div>
@@ -955,8 +948,6 @@ async function refreshWeatherCard(){
   const asofEl = document.getElementById("weather-asof");
   const iconEl = document.getElementById("weather-icon");
   const tempEl = document.getElementById("weather-temp");
-  const tomorrowIconEl = document.getElementById("weather-tomorrow-icon");
-  const tomorrowTempEl = document.getElementById("weather-tomorrow-temp");
   const w = await getWeather();
   if(!document.getElementById("weather-card")) return; // フェッチ中に画面遷移した場合は描画しない
   if(!w){
@@ -964,8 +955,6 @@ async function refreshWeatherCard(){
     if(asofEl) asofEl.textContent = "";
     if(iconEl) iconEl.textContent = "🌡️";
     if(tempEl) tempEl.textContent = "";
-    if(tomorrowIconEl) tomorrowIconEl.textContent = "-";
-    if(tomorrowTempEl) tomorrowTempEl.textContent = "";
     renderWeatherPopChart(null);
     return;
   }
@@ -981,8 +970,6 @@ async function refreshWeatherCard(){
   }
   if(iconEl) iconEl.textContent = w.icon;
   if(tempEl) tempEl.textContent = `${w.temp}℃`;
-  if(tomorrowIconEl) tomorrowIconEl.textContent = w.tomorrow ? w.tomorrow.icon : "-";
-  if(tomorrowTempEl) tomorrowTempEl.textContent = w.tomorrow ? `${w.tomorrow.tempMax}/${w.tomorrow.tempMin}℃` : "";
   renderWeatherPopChart(w);
 }
 
