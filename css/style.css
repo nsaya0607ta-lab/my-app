@@ -415,6 +415,22 @@ h1.title{font-size:34px;line-height:1.05;font-weight:800;margin:8px 0 0;letter-s
 .gcal-box{min-width:0;width:100%;background:var(--surface);border:1px solid var(--line);border-radius:16px;padding:14px;
   box-shadow:0 4px 14px rgba(15,23,42,.04);}
 
+/* Google連携バー：未連携時は連携ボタン、連携中はバッジ＋連携解除ボタン */
+.gcal-google-bar{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:10px;}
+.gcal-google-connect{width:100%;padding:10px 0;border-radius:12px;border:1px solid var(--accent);
+  background:var(--accent);color:#ffffff;font-weight:700;font-size:12.5px;cursor:pointer;}
+.gcal-google-connect:active{filter:brightness(.95);}
+.gcal-google-connect:disabled{opacity:.6;cursor:default;}
+.gcal-google-badge{font-size:11.5px;font-weight:700;color:var(--good);}
+.gcal-google-disconnect{flex:none;padding:6px 12px;border-radius:99px;border:1px solid var(--line);
+  background:none;color:var(--muted);font-size:11.5px;font-weight:600;cursor:pointer;}
+.gcal-google-disconnect:active{background:var(--bg2);}
+.gcal-google-error{font-size:12px;color:var(--bad);background:rgba(220,38,38,.08);border-radius:10px;
+  padding:8px 10px;margin-bottom:10px;line-height:1.5;}
+.gcal-google-loading{font-size:12.5px;color:var(--muted);text-align:center;padding:24px 0;}
+.gcal-google-note{font-size:11px;color:var(--muted);line-height:1.6;margin-top:10px;text-align:center;}
+.gcal-google-note a{color:var(--accent);font-weight:600;}
+
 .gcal-switcher{display:flex;align-items:center;gap:8px;min-width:0;overflow-x:auto;-webkit-overflow-scrolling:touch;
   padding-bottom:12px;margin-bottom:12px;border-bottom:1px solid var(--line);}
 .gcal-chip-wrap{flex:none;display:flex;align-items:center;gap:1px;background:var(--bg2);border-radius:99px;padding:3px 4px 3px 5px;}
