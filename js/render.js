@@ -36,7 +36,7 @@ export function renderStatusBar(){
              || (!state.guestMode && !state.currentUser)
              || (!state.guestMode && state.currentUser && (!state.profileChecked || !getProfileName()));
   const screen = resolveScreen();
-  const otherScreens = ["ranking","profile","settings","skins","analytics","schedule","portfolio","news-japan","news-world"];
+  const otherScreens = ["ranking","profile","settings","skins","analytics","schedule","portfolio","news-japan","news-world","calendar"];
   if(gated || otherScreens.includes(screen)){ el.classList.remove("show"); el.innerHTML=""; return; }
   const ov = overallStat();          // 総合Lvと次Lvまでの進捗(%)
   const coins = (S.coins||0);
@@ -79,7 +79,7 @@ export function renderStatusBar(){
 // render()末尾の分岐と同じ優先順位で判定する）ため、ヘッダー周りの表示制御は
 // この「実際に描画される画面名」を使って判断する。
 function resolveScreen(){
-  const noCertScreens = ["ranking","profile","settings","skins","analytics","certs","schedule","portfolio","news-japan","news-world"];
+  const noCertScreens = ["ranking","profile","settings","skins","analytics","certs","schedule","portfolio","news-japan","news-world","calendar"];
   if(noCertScreens.includes(S.screen)) return S.screen;
   if(S.screen==="select" || !S.cert) return "select";
   return S.screen; // home/quiz/result/review/dict/transfer/history
@@ -136,6 +136,7 @@ export function render(){
   if(S.screen==="portfolio") return renderPortfolio();
   if(S.screen==="news-japan") return renderNewsJapan();
   if(S.screen==="news-world") return renderNewsWorld();
+  if(S.screen==="calendar") return renderCalendarScreen();
   // 大元：資格選択画面
   if(S.screen==="select" || !S.cert) return renderSelect();
   if(S.screen==="home") return renderHome();
@@ -1594,6 +1595,18 @@ const PORTFOLIO_LAUNCHER_ICON_SVG = `
     <line x1="8" y1="13" x2="16" y2="13"></line>
     <line x1="8" y1="17" x2="13" y2="17"></line>
   </svg>`;
+// Googleカレンダーのアプリアイコンを思わせる「今日の日付を表示する
+// カレンダー」デザイン（青いヘッダーバー＋今日の日付の数字）。予定管理
+// アイコン（線画のみ）とは見た目を分け、単独の「カレンダー」画面への
+// 入口だと一目でわかるようにする
+const CALENDAR_APP_LAUNCHER_ICON_SVG = `
+  <svg viewBox="0 0 24 24" width="19" height="19">
+    <rect x="2.5" y="4" width="19" height="17" rx="3" fill="#ffffff" stroke="var(--line)" stroke-width="1.2"></rect>
+    <path d="M2.5 7a3 3 0 0 1 3-3h13a3 3 0 0 1 3 3v2H2.5V7z" fill="#4285f4"></path>
+    <line x1="7.5" y1="2" x2="7.5" y2="6.5" stroke="#1a56c4" stroke-width="1.7" stroke-linecap="round"></line>
+    <line x1="16.5" y1="2" x2="16.5" y2="6.5" stroke="#1a56c4" stroke-width="1.7" stroke-linecap="round"></line>
+    <text x="12" y="18" text-anchor="middle" font-size="9" font-weight="700" fill="#3c4043" font-family="Arial, sans-serif">${new Date().getDate()}</text>
+  </svg>`;
 
 function homeLauncherCardHTML(){
   const items = [
@@ -1601,6 +1614,7 @@ function homeLauncherCardHTML(){
     { iconHTML: `<span class="launcher-emoji" aria-hidden="true">🇯🇵</span>`, label: "日本NEWS", dataGo: "news-japan", ariaLabel: "日本NEWS" },
     { iconHTML: `<span class="launcher-emoji" aria-hidden="true">🌐</span>`, label: "海外ニュース", dataGo: "news-world", ariaLabel: "海外ニュース" },
     { iconHTML: PORTFOLIO_LAUNCHER_ICON_SVG, label: "ポートフォリオ", dataGo: "portfolio", ariaLabel: "ポートフォリオ" },
+    { iconHTML: CALENDAR_APP_LAUNCHER_ICON_SVG, label: "カレンダー", dataGo: "calendar", ariaLabel: "カレンダー" },
   ];
   return `
     <div class="news-card ms-cert-card home-launcher-card" id="home-launcher-card">
@@ -1652,8 +1666,23 @@ function gcalGenId(prefix){
 // 見ていた月を保持するため、モジュール変数として保持する（初回のみ今月）
 let gcalViewY = null, gcalViewM = null;
 
-function googleCalendarCardHTML(){
-  return `<div class="gcal-card" id="gcal-card"></div>`;
+// ホーム画面：直近1週間だけのコンパクトな確認用ウィジェット
+function gcalWeekWidgetHTML(){
+  return `<div class="gcal-card" id="gcal-week-card"></div>`;
+}
+
+// 「カレンダー」画面：連携設定・カレンダー切替・1ヶ月フル表示をまとめて行う
+function gcalMonthCardHTML(){
+  return `<div class="gcal-card" id="gcal-month-card"></div>`;
+}
+
+// Google連携済み・未連携どちらの状態変化でも、現在画面に出ている方（週
+// ウィジェット／月カード）だけを再描画する共通ディスパッチャ。ホーム画面
+// とカレンダー画面のどちらから呼ばれたかをGoogle連携系の関数側が意識
+// しなくて済むようにするための薄いラッパー
+function renderGcalActiveView(){
+  if(document.getElementById("gcal-week-card")) renderGcalWeekWidget();
+  if(document.getElementById("gcal-month-card")) renderGcalMonthCard();
 }
 
 /* ================= Google カレンダー本体との連携 =================
@@ -1675,11 +1704,24 @@ let gcalGoogleAccessToken = null;
 let gcalGoogleConnecting = false;
 let gcalGoogleAutoTried = false;
 let gcalGoogleError = null;
-let gcalGoogleCalendars = null;   // [{id,name,color,primary}] / 未取得ならnull
-let gcalGoogleEventsCache = {};   // "<calId>|<y>-<m>" -> { dateKey: [{id,title}] }
+let gcalGoogleCalendars = null;       // [{id,name,color,primary}] / 未取得ならnull
+let gcalGoogleEventsCache = {};       // "<calId>|<y>-<m>" -> { dateKey: [{id,title}] }（カレンダー画面の月表示用）
+let gcalGoogleWeekEventsCache = {};   // "<calId>|week|<週初め日曜のdateKey>" -> { dateKey: [{id,title}] }（ホームの週表示用）
 
 function gcalGoogleIsConfigured(){
   return !!GCAL_GOOGLE_CLIENT_ID && !GCAL_GOOGLE_CLIENT_ID.startsWith("YOUR_");
+}
+
+// 前回連携済みだった場合、ページ再読み込み時に一度だけサイレント再ログインを
+// 試みる（Googleの同意画面は出さず、有効なセッションがあれば自動復帰）。
+// ホーム画面の週ウィジェット／カレンダー画面の月カード、どちらが先に
+// マウントされても一度しか実行されないよう gcalGoogleAutoTried で guard する
+function gcalMaybeAutoReconnect(){
+  if(gcalGoogleAccessToken || gcalGoogleConnecting || gcalGoogleAutoTried) return;
+  gcalGoogleAutoTried = true;
+  let wasConnected = false;
+  try{ wasConnected = localStorage.getItem(GCAL_GOOGLE_CONNECTED_KEY) === "1"; }catch(e){}
+  if(wasConnected && gcalGoogleIsConfigured()) gcalWaitForGis(() => gcalConnectGoogle(""), 10);
 }
 
 function gcalWaitForGis(cb, triesLeft){
@@ -1702,16 +1744,17 @@ function gcalGoogleEnsureTokenClient(){
         try{ localStorage.setItem(GCAL_GOOGLE_CONNECTED_KEY, "1"); }catch(e){}
         gcalGoogleCalendars = null;
         gcalGoogleEventsCache = {};
+        gcalGoogleWeekEventsCache = {};
         gcalRefreshGoogleCalendars();
       } else {
         gcalGoogleError = "Googleへのログインに失敗しました。もう一度お試しください。";
-        renderGcalCard();
+        renderGcalActiveView();
       }
     },
     error_callback: () => {
       gcalGoogleConnecting = false;
       gcalGoogleError = "Googleへのログインがキャンセルされました。";
-      renderGcalCard();
+      renderGcalActiveView();
     },
   });
   return gcalGoogleTokenClient;
@@ -1720,23 +1763,23 @@ function gcalGoogleEnsureTokenClient(){
 function gcalConnectGoogle(promptType){
   if(!gcalGoogleIsConfigured()){
     gcalGoogleError = "Google連携がまだ設定されていません（開発者にOAuthクライアントIDの登録を依頼してください）。";
-    renderGcalCard();
+    renderGcalActiveView();
     return;
   }
   const client = gcalGoogleEnsureTokenClient();
   if(!client){
     gcalGoogleConnecting = true;
-    renderGcalCard();
+    renderGcalActiveView();
     gcalWaitForGis(() => {
       const c2 = gcalGoogleEnsureTokenClient();
       if(c2){ c2.requestAccessToken({ prompt: promptType===undefined ? "consent" : promptType }); }
-      else { gcalGoogleConnecting = false; gcalGoogleError = "Google連携の読み込みに失敗しました。時間をおいて再度お試しください。"; renderGcalCard(); }
+      else { gcalGoogleConnecting = false; gcalGoogleError = "Google連携の読み込みに失敗しました。時間をおいて再度お試しください。"; renderGcalActiveView(); }
     }, 10);
     return;
   }
   gcalGoogleConnecting = true;
   gcalGoogleError = null;
-  renderGcalCard();
+  renderGcalActiveView();
   client.requestAccessToken({ prompt: promptType===undefined ? "consent" : promptType });
 }
 
@@ -1745,12 +1788,13 @@ function gcalDisconnectGoogle(){
   gcalGoogleAccessToken = null;
   gcalGoogleCalendars = null;
   gcalGoogleEventsCache = {};
+  gcalGoogleWeekEventsCache = {};
   gcalGoogleError = null;
   try{ localStorage.removeItem(GCAL_GOOGLE_CONNECTED_KEY); localStorage.removeItem(GCAL_GOOGLE_ACTIVE_KEY); }catch(e){}
   if(token && window.google && window.google.accounts && window.google.accounts.oauth2){
     window.google.accounts.oauth2.revoke(token, () => {});
   }
-  renderGcalCard();
+  renderGcalActiveView();
 }
 
 async function gcalGoogleApiFetch(path, options){
@@ -1787,11 +1831,28 @@ async function gcalRefreshGoogleCalendars(){
     if(!gcalGoogleError) gcalGoogleError = "カレンダー一覧の取得に失敗しました。";
     gcalGoogleCalendars = [];
   }
-  renderGcalCard();
+  renderGcalActiveView();
+}
+
+// Google Calendar APIのevents.listレスポンスを dateKey -> [{id,title}] の
+// マップに変換する共通処理（月表示・週表示の両方から使う）
+function gcalMapGoogleEventItems(items){
+  const map = {};
+  (items || []).forEach(ev => {
+    if(ev.status === "cancelled") return;
+    const startStr = (ev.start && (ev.start.date || ev.start.dateTime)) || null;
+    if(!startStr) return;
+    const d = new Date(startStr);
+    const dk = newsDateKey(d.getFullYear(), d.getMonth(), d.getDate());
+    if(!map[dk]) map[dk] = [];
+    map[dk].push({ id: ev.id, title: ev.summary || "(タイトルなし)" });
+  });
+  return map;
 }
 
 function gcalGoogleEventsCacheKey(calId, y, m){ return `${calId}|${y}-${m}`; }
 
+// カレンダー画面（月表示）用：指定の年月ぶんのイベントを取得
 async function gcalRefreshGoogleEvents(calId, y, m){
   const key = gcalGoogleEventsCacheKey(calId, y, m);
   try{
@@ -1799,22 +1860,30 @@ async function gcalRefreshGoogleEvents(calId, y, m){
     const timeMax = new Date(y, m+1, 1).toISOString();
     const params = new URLSearchParams({ timeMin, timeMax, singleEvents: "true", maxResults: "250", orderBy: "startTime" });
     const data = await gcalGoogleApiFetch(`calendars/${encodeURIComponent(calId)}/events?${params.toString()}`);
-    const map = {};
-    (data.items || []).forEach(ev => {
-      if(ev.status === "cancelled") return;
-      const startStr = (ev.start && (ev.start.date || ev.start.dateTime)) || null;
-      if(!startStr) return;
-      const d = new Date(startStr);
-      const dk = newsDateKey(d.getFullYear(), d.getMonth(), d.getDate());
-      if(!map[dk]) map[dk] = [];
-      map[dk].push({ id: ev.id, title: ev.summary || "(タイトルなし)" });
-    });
-    gcalGoogleEventsCache[key] = map;
+    gcalGoogleEventsCache[key] = gcalMapGoogleEventItems(data.items);
   }catch(e){
     if(!gcalGoogleError) gcalGoogleError = "予定の取得に失敗しました。";
     gcalGoogleEventsCache[key] = {};
   }
-  renderGcalCard();
+  renderGcalMonthCard();
+}
+
+function gcalGoogleWeekCacheKey(calId, weekStartKey){ return `${calId}|week|${weekStartKey}`; }
+
+// ホーム画面（週表示）用：weekStart（日曜日）から7日ぶんのイベントを取得
+async function gcalRefreshGoogleWeekEvents(calId, weekStart){
+  const weekKey = newsDateKey(weekStart.getFullYear(), weekStart.getMonth(), weekStart.getDate());
+  const cacheKey = gcalGoogleWeekCacheKey(calId, weekKey);
+  try{
+    const weekEnd = new Date(weekStart.getFullYear(), weekStart.getMonth(), weekStart.getDate() + 7);
+    const params = new URLSearchParams({ timeMin: weekStart.toISOString(), timeMax: weekEnd.toISOString(), singleEvents: "true", maxResults: "250", orderBy: "startTime" });
+    const data = await gcalGoogleApiFetch(`calendars/${encodeURIComponent(calId)}/events?${params.toString()}`);
+    gcalGoogleWeekEventsCache[cacheKey] = gcalMapGoogleEventItems(data.items);
+  }catch(e){
+    if(!gcalGoogleError) gcalGoogleError = "予定の取得に失敗しました。";
+    gcalGoogleWeekEventsCache[cacheKey] = {};
+  }
+  renderGcalWeekWidget();
 }
 
 async function gcalCreateGoogleEvent(calId, y, m, d, title){
@@ -1879,25 +1948,117 @@ function gcalDayCellsHTML(y, m, evMap, todayKey, color){
   return cells.join("");
 }
 
-// カレンダーカードの中身を描画し直す（ホーム画面全体の再描画を伴わない、
-// このカード単体の更新用。カレンダー切り替え・月移動・予定の増減のたびに呼ぶ）。
+// baseDateを含む週（日曜始まり）の7日分をDateの配列で返す
+function gcalWeekDates(baseDate){
+  const start = new Date(baseDate.getFullYear(), baseDate.getMonth(), baseDate.getDate() - baseDate.getDay());
+  const days = [];
+  for(let i=0;i<7;i++){
+    days.push(new Date(start.getFullYear(), start.getMonth(), start.getDate() + i));
+  }
+  return days;
+}
+
+// ホーム画面の週表示ウィジェット用セル（曜日＋日付を1つのボタンにまとめた
+// コンパクト表示）。週内の日付は月をまたぐことがあるため、月表示のセルとは
+// 別に、各セルへ年月日をdata属性で個別に持たせる
+function gcalWeekCellsHTML(weekDates, evMap, todayKey, color){
+  return weekDates.map(dt => {
+    const y = dt.getFullYear(), m = dt.getMonth(), d = dt.getDate();
+    const key = newsDateKey(y, m, d);
+    const cls = ["gcal-week-cell"];
+    if(key === todayKey) cls.push("today");
+    const hasEvents = (evMap[key]||[]).length > 0;
+    return `<button type="button" class="${cls.join(" ")}" data-gy="${y}" data-gm="${m}" data-gday="${d}">
+      <span class="gcal-week-dow">${NEWS_WEEKDAYS[dt.getDay()]}</span>
+      <span class="gcal-week-num">${d}</span>
+      ${hasEvents?`<span class="gcal-cell-dot" style="background:${esc(color)}"></span>`:""}
+    </button>`;
+  }).join("");
+}
+
+// ホーム画面：直近1週間ぶんだけを表示するコンパクトなウィジェット。
+// 連携設定・カレンダー切替・追加・共有はすべて「カレンダー」画面（月表示）
+// 側に集約したため、ここでは選択中カレンダーの週表示と予定確認のみを行う
+function renderGcalWeekWidget(){
+  const root = document.getElementById("gcal-week-card");
+  if(!root) return;
+  gcalMaybeAutoReconnect();
+
+  const now = new Date();
+  const todayKey = newsDateKey(now.getFullYear(), now.getMonth(), now.getDate());
+  const weekDates = gcalWeekDates(now);
+  const weekStart = weekDates[0];
+  const weekRangeLabel = `${weekDates[0].getMonth()+1}/${weekDates[0].getDate()} 〜 ${weekDates[6].getMonth()+1}/${weekDates[6].getDate()}`;
+
+  if(gcalGoogleAccessToken){
+    if(gcalGoogleCalendars === null){
+      root.innerHTML = `<div class="gcal-box gcal-week-box"><div class="gcal-google-loading">読み込み中…</div></div>`;
+      gcalRefreshGoogleCalendars();
+      return;
+    }
+    if(!gcalGoogleCalendars.length){
+      root.innerHTML = `<div class="gcal-box gcal-week-box"><div class="gcal-google-loading">連携できるカレンダーが見つかりませんでした。</div></div>`;
+      return;
+    }
+    let activeId = null;
+    try{ activeId = localStorage.getItem(GCAL_GOOGLE_ACTIVE_KEY); }catch(e){}
+    const active = gcalGoogleCalendars.find(c => c.id === activeId) || gcalGoogleCalendars[0];
+    const weekKey = newsDateKey(weekStart.getFullYear(), weekStart.getMonth(), weekStart.getDate());
+    const cacheKey = gcalGoogleWeekCacheKey(active.id, weekKey);
+    const evMap = gcalGoogleWeekEventsCache[cacheKey];
+
+    root.innerHTML = `
+      <div class="gcal-box gcal-week-box">
+        <div class="gcal-week-title">${esc(active.name)}・${weekRangeLabel}</div>
+        <div class="gcal-week-row">${evMap ? gcalWeekCellsHTML(weekDates, evMap, todayKey, active.color) : ""}</div>
+        ${evMap ? "" : `<div class="gcal-google-loading">予定を読み込み中…</div>`}
+      </div>`;
+
+    if(!evMap){
+      gcalRefreshGoogleWeekEvents(active.id, weekStart);
+    } else {
+      root.querySelectorAll("[data-gday]").forEach(b => b.onclick = () => {
+        openGcalEventModal({
+          mode: "google", calId: active.id, color: active.color, name: active.name,
+          getEventsMap: () => gcalGoogleWeekEventsCache[cacheKey] || {},
+          refresh: () => gcalRefreshGoogleWeekEvents(active.id, weekStart),
+        }, parseInt(b.dataset.gy, 10), parseInt(b.dataset.gm, 10), parseInt(b.dataset.gday, 10));
+      });
+    }
+    return;
+  }
+
+  // ---------------- ローカル（デモ）モード ----------------
+  const store = loadGcalStore();
+  const active = store.calendars.find(c => c.id === store.activeId) || store.calendars[0];
+  const evMap = store.events[active.id] || {};
+
+  root.innerHTML = `
+    <div class="gcal-box gcal-week-box">
+      <div class="gcal-week-title">${esc(active.name)}・${weekRangeLabel}</div>
+      <div class="gcal-week-row">${gcalWeekCellsHTML(weekDates, evMap, todayKey, active.color)}</div>
+    </div>`;
+
+  root.querySelectorAll("[data-gday]").forEach(b => b.onclick = () => {
+    openGcalEventModal({
+      mode: "local", calId: active.id, color: active.color, name: active.name,
+      getEventsMap: () => (loadGcalStore().events[active.id] || {}),
+      refresh: () => renderGcalWeekWidget(),
+    }, parseInt(b.dataset.gy, 10), parseInt(b.dataset.gm, 10), parseInt(b.dataset.gday, 10));
+  });
+}
+
+// 「カレンダー」画面の中身を描画し直す（画面単体の更新用。カレンダー
+// 切り替え・月移動・予定の増減・Google連携状態の変化のたびに呼ぶ）。
 // Google連携済みなら本物のGoogleカレンダーのデータを表示し、未連携なら
 // 従来通りローカル保存のデモ用カレンダーにフォールバックする
-function renderGcalCard(){
-  const root = document.getElementById("gcal-card");
+function renderGcalMonthCard(){
+  const root = document.getElementById("gcal-month-card");
   if(!root) return;
   const now = new Date();
   if(gcalViewY === null){ gcalViewY = now.getFullYear(); gcalViewM = now.getMonth(); }
   const todayKey = newsDateKey(now.getFullYear(), now.getMonth(), now.getDate());
-
-  // 前回連携済みだった場合、ページ再読み込み時に一度だけサイレント再ログイン
-  // を試みる（Googleの同意画面は出さず、有効なセッションがあれば自動復帰）
-  if(!gcalGoogleAccessToken && !gcalGoogleConnecting && !gcalGoogleAutoTried){
-    gcalGoogleAutoTried = true;
-    let wasConnected = false;
-    try{ wasConnected = localStorage.getItem(GCAL_GOOGLE_CONNECTED_KEY) === "1"; }catch(e){}
-    if(wasConnected && gcalGoogleIsConfigured()) gcalWaitForGis(() => gcalConnectGoogle(""), 10);
-  }
+  gcalMaybeAutoReconnect();
 
   const errorHTML = gcalGoogleError ? `<div class="gcal-google-error">${esc(gcalGoogleError)}</div>` : "";
 
@@ -1961,16 +2122,20 @@ function renderGcalCard(){
     gcalBindConnectBar(root);
     root.querySelectorAll("[data-gcal]").forEach(b => b.onclick = () => {
       try{ localStorage.setItem(GCAL_GOOGLE_ACTIVE_KEY, b.dataset.gcal); }catch(e){}
-      renderGcalCard();
+      renderGcalMonthCard();
     });
-    root.querySelector("#gcal-prev").onclick = () => { gcalViewM--; if(gcalViewM<0){ gcalViewM=11; gcalViewY--; } renderGcalCard(); };
-    root.querySelector("#gcal-next").onclick = () => { gcalViewM++; if(gcalViewM>11){ gcalViewM=0; gcalViewY++; } renderGcalCard(); };
+    root.querySelector("#gcal-prev").onclick = () => { gcalViewM--; if(gcalViewM<0){ gcalViewM=11; gcalViewY--; } renderGcalMonthCard(); };
+    root.querySelector("#gcal-next").onclick = () => { gcalViewM++; if(gcalViewM>11){ gcalViewM=0; gcalViewY++; } renderGcalMonthCard(); };
 
     if(!evOfActive){
       gcalRefreshGoogleEvents(active.id, gcalViewY, gcalViewM);
     } else {
       root.querySelectorAll("[data-gday]").forEach(b => b.onclick = () => {
-        openGcalEventModal({ mode: "google", calId: active.id, color: active.color, name: active.name }, gcalViewY, gcalViewM, parseInt(b.dataset.gday, 10));
+        openGcalEventModal({
+          mode: "google", calId: active.id, color: active.color, name: active.name,
+          getEventsMap: () => gcalGoogleEventsCache[evKey] || {},
+          refresh: () => gcalRefreshGoogleEvents(active.id, gcalViewY, gcalViewM),
+        }, gcalViewY, gcalViewM, parseInt(b.dataset.gday, 10));
       });
     }
     return;
@@ -2011,7 +2176,7 @@ function renderGcalCard(){
     const s2 = loadGcalStore();
     s2.activeId = b.dataset.cal;
     saveGcalStore(s2);
-    renderGcalCard();
+    renderGcalMonthCard();
   });
   root.querySelectorAll("[data-share]").forEach(b => b.onclick = (e) => {
     e.stopPropagation();
@@ -2021,20 +2186,31 @@ function renderGcalCard(){
   if(addCalBtn) addCalBtn.onclick = () => openGcalAddCalendarModal();
   root.querySelector("#gcal-prev").onclick = () => {
     gcalViewM--; if(gcalViewM<0){ gcalViewM=11; gcalViewY--; }
-    renderGcalCard();
+    renderGcalMonthCard();
   };
   root.querySelector("#gcal-next").onclick = () => {
     gcalViewM++; if(gcalViewM>11){ gcalViewM=0; gcalViewY++; }
-    renderGcalCard();
+    renderGcalMonthCard();
   };
   root.querySelectorAll("[data-gday]").forEach(b => b.onclick = () => {
-    openGcalEventModal({ mode: "local", calId: active.id, color: active.color, name: active.name }, gcalViewY, gcalViewM, parseInt(b.dataset.gday, 10));
+    openGcalEventModal({
+      mode: "local", calId: active.id, color: active.color, name: active.name,
+      getEventsMap: () => (loadGcalStore().events[active.id] || {}),
+      refresh: () => renderGcalMonthCard(),
+    }, gcalViewY, gcalViewM, parseInt(b.dataset.gday, 10));
   });
 }
 
 // 日付セルタップで開く、その日の予定の確認・追加・削除ポップアップ。
 // src.mode==="google" なら本物のGoogle Calendar APIを、"local" なら
 // 従来通りlocalStorageのデモ用データを読み書きする
+// 日付セルタップで開く、その日の予定の確認・追加・削除ポップアップ。
+// src.mode==="google" なら本物のGoogle Calendar APIを、"local" なら
+// 従来通りlocalStorageのデモ用データを読み書きする。src.getEventsMap()は
+// 呼び出し元（週ウィジェット／月カード）が持つ最新のイベントmapを返す
+// 関数、src.refresh()は追加・削除後にそのmapを更新して呼び出し元の
+// 表示を再描画する関数 —— この2つを差し替えるだけで、同じモーダルを
+// 週表示・月表示のどちらからでも共通して使える
 function openGcalEventModal(src, y, m, d){
   const dateKey = newsDateKey(y, m, d);
   const ov = document.createElement("div");
@@ -2042,14 +2218,7 @@ function openGcalEventModal(src, y, m, d){
   const close = () => { try{ ov.remove(); }catch(e){} };
   let busy = false;
 
-  const getEvents = () => {
-    if(src.mode === "google"){
-      const map = gcalGoogleEventsCache[gcalGoogleEventsCacheKey(src.calId, y, m)] || {};
-      return map[dateKey] || [];
-    }
-    const store = loadGcalStore();
-    return (store.events[src.calId] && store.events[src.calId][dateKey]) || [];
-  };
+  const getEvents = () => src.getEventsMap()[dateKey] || [];
 
   const draw = (msg) => {
     const events = getEvents();
@@ -2081,7 +2250,7 @@ function openGcalEventModal(src, y, m, d){
         busy = true; draw();
         try{
           await gcalDeleteGoogleEvent(src.calId, evId);
-          await gcalRefreshGoogleEvents(src.calId, y, m);
+          await src.refresh();
           busy = false; draw();
         }catch(e){
           busy = false; draw("削除に失敗しました。もう一度お試しください。");
@@ -2093,8 +2262,8 @@ function openGcalEventModal(src, y, m, d){
         s2.events[src.calId][dateKey] = s2.events[src.calId][dateKey].filter(ev => ev.id !== evId);
         saveGcalStore(s2);
       }
+      src.refresh();
       draw();
-      renderGcalCard();
     });
 
     const input = ov.querySelector("#gcal-ev-input");
@@ -2106,7 +2275,7 @@ function openGcalEventModal(src, y, m, d){
         busy = true; draw();
         try{
           await gcalCreateGoogleEvent(src.calId, y, m, d, title);
-          await gcalRefreshGoogleEvents(src.calId, y, m);
+          await src.refresh();
           busy = false; draw();
         }catch(e){
           busy = false; draw("追加に失敗しました。もう一度お試しください。");
@@ -2118,8 +2287,8 @@ function openGcalEventModal(src, y, m, d){
       if(!s2.events[src.calId][dateKey]) s2.events[src.calId][dateKey] = [];
       s2.events[src.calId][dateKey].push({ id: gcalGenId("e"), title });
       saveGcalStore(s2);
+      src.refresh();
       draw();
-      renderGcalCard();
     };
     ov.querySelector("#gcal-ev-add").onclick = submit;
     if(!busy){
@@ -2221,7 +2390,7 @@ function openGcalAddCalendarModal(){
       store.activeId = id;
       saveGcalStore(store);
       close();
-      renderGcalCard();
+      renderGcalMonthCard();
     };
   };
 
@@ -2233,7 +2402,7 @@ function openGcalAddCalendarModal(){
 export function renderSelect(){
   app.innerHTML = `
     ${weatherCardHTML()}
-    ${googleCalendarCardHTML()}
+    ${gcalWeekWidgetHTML()}
     ${homeLauncherCardHTML()}
     ${msCertLauncherHTML()}
     ${state.currentUser
@@ -2244,7 +2413,20 @@ export function renderSelect(){
   const lo=app.querySelector("[data-logout]"); if(lo)lo.onclick=()=>logout();
   const li=app.querySelector("[data-login]"); if(li)li.onclick=()=>{ state.guestMode=false; state.authMode="login"; render(); };
   loadWeatherCard();
-  renderGcalCard();
+  renderGcalWeekWidget();
+  window.scrollTo(0,0);
+}
+
+// 「カレンダー」メニューボタンから遷移する専用画面。ニュース画面と同じ
+// q-head（← ホーム＋タイトル）の構成に統一し、Google連携の設定と
+// 1ヶ月フル表示のカレンダー管理をここに集約する
+export function renderCalendarScreen(){
+  app.innerHTML = `
+    <div class="q-head"><button class="quit" data-go="select">← ホーム</button><span class="q-count">📅 カレンダー</span></div>
+    ${gcalMonthCardHTML()}
+  `;
+  app.querySelectorAll("[data-go]").forEach(b=>b.onclick=()=>go(b.dataset.go));
+  renderGcalMonthCard();
   window.scrollTo(0,0);
 }
 
