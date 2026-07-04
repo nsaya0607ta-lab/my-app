@@ -383,10 +383,10 @@ h1.title{font-size:34px;line-height:1.05;font-weight:800;margin:8px 0 0;letter-s
 .weather-card{margin-bottom:14px;padding-top:16px;padding-bottom:15px;}
 
 /* カードを左（時計／天気＋降水確率の曲線グラフ）：右（簡易予定表）＝
-   2：1の比率で左右分割する */
-.weather-body{display:flex;align-items:stretch;gap:10px;}
-.weather-left{flex:2;min-width:0;display:flex;flex-direction:column;gap:8px;}
-.weather-left-top{display:flex;align-items:center;gap:10px;}
+   2.4：1の比率で左右分割する */
+.weather-body{display:flex;align-items:stretch;gap:8px;}
+.weather-left{flex:2.4;min-width:0;display:flex;flex-direction:column;gap:8px;}
+.weather-left-top{display:flex;align-items:center;gap:6px;}
 
 /* 左上段・左：日付＋秒まで動くデジタル時計。日付は一回り大きく・太く強調する */
 .weather-datetime{flex:none;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;}
@@ -395,23 +395,41 @@ h1.title{font-size:34px;line-height:1.05;font-weight:800;margin:8px 0 0;letter-s
   font-variant-numeric:tabular-nums;white-space:nowrap;line-height:1;}
 .weather-time-sec{font-size:11px;font-weight:700;color:var(--muted);opacity:.8;font-variant-numeric:tabular-nums;}
 
-/* 左上段・右：地名・基準時間・天気アイコン・気温 */
-.weather-info{flex:none;min-width:0;max-width:96px;display:flex;flex-direction:column;gap:3px;}
-.weather-city{font-size:11px;font-weight:700;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
-.weather-asof{font-size:9px;font-weight:600;color:var(--muted);opacity:.85;letter-spacing:.02em;white-space:nowrap;}
-.weather-main{display:flex;align-items:center;gap:5px;}
-.weather-icon{font-size:21px;line-height:1;}
-.weather-temp{font-size:17px;font-weight:800;color:var(--text);font-variant-numeric:tabular-nums;}
+/* 左上段・中：地名・基準時間・天気アイコン・気温。時計との間に縦の区切り線を
+   入れ、「日付・時刻」と「天気」の情報グループを視覚的に分ける */
+.weather-info{flex:none;min-width:0;max-width:76px;border-left:1px solid var(--line);padding-left:7px;
+  display:flex;flex-direction:column;gap:3px;}
+.weather-city{font-size:10.5px;font-weight:700;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.weather-asof{font-size:8.5px;font-weight:600;color:var(--muted);opacity:.85;letter-spacing:.02em;white-space:nowrap;}
+.weather-main{display:flex;align-items:center;gap:4px;}
+.weather-icon{font-size:20px;line-height:1;}
+.weather-temp{font-size:16px;font-weight:800;color:var(--text);font-variant-numeric:tabular-nums;}
 
-/* 左下段：降水確率の推移を示す滑らかな曲線グラフ。数値の縦並びリストは廃止し、
-   曲線の下に対応する時刻だけを小さく添える */
+/* 左上段・右：明日の天気（今日より一回り小さいアイコン・予想気温） */
+.weather-tomorrow{flex:none;min-width:0;max-width:56px;display:flex;flex-direction:column;gap:3px;}
+.weather-tomorrow-label{font-size:8px;font-weight:800;color:var(--muted);letter-spacing:.02em;}
+.weather-tomorrow-main{display:flex;align-items:center;gap:3px;}
+.weather-tomorrow-icon{font-size:14px;line-height:1;}
+.weather-tomorrow-temp{font-size:9.5px;font-weight:700;color:var(--muted);font-variant-numeric:tabular-nums;white-space:nowrap;}
+
+/* 左下段：降水確率の推移を示す滑らかな曲線グラフ。1時間ごとの点をドットとして
+   打ち、縦軸（0〜100%の目盛り）・横軸（3時間ごとの時刻ラベル）を添える。
+   単位（%・時）はそれぞれ縦軸の一番上／横軸の一番右端に1回だけ表示する */
 .weather-pop-chart{flex:1;min-width:0;display:flex;flex-direction:column;justify-content:flex-end;}
+.pop-axis-yunit{align-self:flex-start;width:13px;font-size:7px;font-weight:700;color:var(--muted);line-height:1;margin-bottom:1px;}
+.weather-pop-chart-row{display:flex;align-items:stretch;gap:3px;}
+.pop-axis-ycol{flex:none;width:13px;}
+.pop-axis-yticks{display:flex;flex-direction:column;justify-content:space-between;align-items:flex-end;}
+.pop-axis-yticks span{font-size:7px;font-weight:600;color:var(--muted);line-height:1;font-variant-numeric:tabular-nums;}
+.weather-pop-chart-plot{flex:1;min-width:0;}
 .weather-pop-chart-svg{display:block;width:100%;height:32px;}
-.weather-pop-chart-labels{display:flex;justify-content:space-between;margin-top:2px;}
-.weather-pop-chart-labels span{font-size:8.5px;font-weight:600;color:var(--muted);white-space:nowrap;}
+.weather-pop-chart-xrow{display:flex;align-items:baseline;gap:3px;margin-top:2px;}
+.weather-pop-chart-labels{flex:1;min-width:0;display:flex;justify-content:space-between;}
+.weather-pop-chart-labels span{font-size:8px;font-weight:600;color:var(--muted);white-space:nowrap;}
+.pop-axis-xunit{flex:none;font-size:7.5px;font-weight:700;color:var(--muted);white-space:nowrap;}
 
 /* 右：簡易予定表（ダミー表示。予定管理機能は未実装） */
-.weather-schedule{flex:1;min-width:0;border-left:1px solid var(--line);padding-left:10px;display:flex;flex-direction:column;gap:3px;}
+.weather-schedule{flex:1;min-width:0;border-left:1px solid var(--line);padding-left:8px;display:flex;flex-direction:column;gap:3px;}
 .weather-schedule-title{font-size:9.5px;font-weight:800;color:var(--muted);letter-spacing:.04em;}
 .weather-schedule-item{font-size:10px;font-weight:600;color:var(--text);line-height:1.4;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
 

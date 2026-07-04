@@ -789,7 +789,7 @@ export function renderTransfer(){
 /* SC-300: Microsoft Identity and Access Administrator（IDとアクセスの管理）*/
 
 /* お天気カード：資格一覧画面の上部。左から「日付＋デジタル時計」
-   「天気（地名・気温・降水確率）」「簡易予定表」の3カラム構成。
+   「天気（地名・気温・降水確率）」「明日の天気」「簡易予定表」の4カラム構成。
    位置情報が取得できない場合はデフォルト地点（東京）にフォールバックし、
    取得できないことを隠さずラベルで示す。天気データ自体が取得できない
    場合は「取得できませんでした」の案内を表示し、実データのように見える
@@ -799,9 +799,9 @@ let clockTimer = null;
 let weatherRefreshTimer = null;
 const WEATHER_REFRESH_MS = 20 * 60 * 1000; // 20分ごとに天気を自動で再フェッチする
 
-// カードは左（比率2）＝「日付＋デジタル時計／天気（地名・アイコン・気温）」
-// ＋その下の降水確率の推移を示す滑らかな曲線グラフ、右（比率1）＝簡易予定表
-// （ダミー表示。予定管理機能は未実装）の2エリア構成。
+// カードは左（比率2.4）＝「日付＋デジタル時計｜天気（地名・アイコン・気温）｜
+// 明日の天気」＋その下の降水確率の推移を示す滑らかな曲線グラフ、
+// 右（比率1）＝簡易予定表（ダミー表示。予定管理機能は未実装）の2エリア構成。
 function weatherCardHTML(){
   return `
     <div class="news-card weather-card" id="weather-card">
@@ -820,6 +820,13 @@ function weatherCardHTML(){
               <div class="weather-main">
                 <span class="weather-icon" id="weather-icon">🌡️</span>
                 <span class="weather-temp" id="weather-temp"></span>
+              </div>
+            </div>
+            <div class="weather-tomorrow" id="weather-tomorrow">
+              <div class="weather-tomorrow-label">明日</div>
+              <div class="weather-tomorrow-main">
+                <span class="weather-tomorrow-icon" id="weather-tomorrow-icon">-</span>
+                <span class="weather-tomorrow-temp" id="weather-tomorrow-temp"></span>
               </div>
             </div>
           </div>
@@ -857,10 +864,10 @@ function startClock(){
   clockTimer = setInterval(updateClock, 1000);
 }
 
-// 予報時刻(ISO文字列)を軸ラベル用の「H時」の短い表記に整形する
-// （降水確率の折れ線グラフの下に小さく添える時刻ラベル用）
+// 予報時刻(ISO文字列)を軸ラベル用の「時」の数字だけに整形する（単位の「時」は
+// 軸全体で右端に1回だけ表示するため、ラベル自体には付けない）
 function formatPopChartHour(isoTime){
-  return `${new Date(isoTime).getHours()}時`;
+  return `${new Date(isoTime).getHours()}`;
 }
 
 // 点列を通る滑らかな曲線（Catmull-Rom→3次ベジェ変換）のSVGパスを組み立てる。
@@ -884,15 +891,19 @@ function catmullRomSmoothPath(points){
 }
 
 const POP_CHART_W = 220, POP_CHART_H = 40, POP_CHART_PAD = 4;
+const POP_CHART_Y_TICKS = [100, 80, 60, 40, 20, 0]; // 縦軸目盛り（上→下）
+const POP_CHART_LABEL_EVERY = 3; // 横軸の数字は3時間ごとにのみ表示する
 
-// 降水確率の推移（今＋6時間おき4点）を、数値の縦並びリストではなく
-// 滑らかな曲線グラフとして描画する。曲線のすぐ下に対応する時刻を
-// 小さく1行で添える
+// 降水確率の推移（今＋1時間おき24点）を、数値の縦並びリストではなく
+// 滑らかな曲線グラフとして描画する。1時間ごとの点をそのままドットとして
+// 打ち、横軸の数字ラベルは3時間ごとにのみ間引いて表示する。縦軸には
+// 0〜100%の目盛りを添え、単位（%）は縦軸の一番上、単位（時）は横軸の
+// 一番右端にそれぞれ1回だけ表示する
 function renderWeatherPopChart(w){
   const el = document.getElementById("weather-pop-chart");
   if(!el) return;
   const points = (w && typeof w.pop === "number")
-    ? [{ label:"今", pop:w.pop }, ...(w.hourly6||[]).map(h => ({ label: formatPopChartHour(h.time), pop:h.pop }))]
+    ? [{ label:"今", pop:w.pop }, ...(w.hourly||[]).map(h => ({ label: formatPopChartHour(h.time), pop:h.pop }))]
     : [];
   if(points.length < 2){ el.innerHTML = ""; return; }
   const n = points.length;
@@ -903,14 +914,33 @@ function renderWeatherPopChart(w){
     y: POP_CHART_PAD + innerH - (Math.max(0,Math.min(100,p.pop))/100)*innerH,
   }));
   const pathD = catmullRomSmoothPath(coords);
-  const dots = coords.map(c => `<circle cx="${c.x.toFixed(1)}" cy="${c.y.toFixed(1)}" r="2.2" fill="var(--accent)"></circle>`).join("");
-  const labels = points.map(p => `<span>${esc(p.label)}</span>`).join("");
+  const dots = coords.map(c => `<circle cx="${c.x.toFixed(1)}" cy="${c.y.toFixed(1)}" r="1.7" fill="var(--accent)"></circle>`).join("");
+  const gridlines = POP_CHART_Y_TICKS.map(v => {
+    const y = POP_CHART_PAD + innerH - (v/100)*innerH;
+    return `<line x1="${POP_CHART_PAD}" y1="${y.toFixed(1)}" x2="${POP_CHART_W - POP_CHART_PAD}" y2="${y.toFixed(1)}" stroke="var(--line)" stroke-width="1" opacity=".5"></line>`;
+  }).join("");
+  const yTicks = POP_CHART_Y_TICKS.map(v => `<span>${v}</span>`).join("");
+  // 横軸の数字ラベルは3時間ごと（今＝0時間後を含む）にのみ間引く。
+  // 元データが1時間おきの等間隔のため、間引いた後も均等割り付けで軸と揃う
+  const labelPoints = points.filter((_,i) => i % POP_CHART_LABEL_EVERY === 0);
+  const labels = labelPoints.map(p => `<span>${esc(p.label)}</span>`).join("");
   el.innerHTML = `
-    <svg class="weather-pop-chart-svg" viewBox="0 0 ${POP_CHART_W} ${POP_CHART_H}" preserveAspectRatio="none">
-      <path d="${pathD}" fill="none" stroke="var(--accent)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"></path>
-      ${dots}
-    </svg>
-    <div class="weather-pop-chart-labels">${labels}</div>`;
+    <div class="pop-axis-yunit">%</div>
+    <div class="weather-pop-chart-row">
+      <div class="pop-axis-ycol pop-axis-yticks">${yTicks}</div>
+      <div class="weather-pop-chart-plot">
+        <svg class="weather-pop-chart-svg" viewBox="0 0 ${POP_CHART_W} ${POP_CHART_H}" preserveAspectRatio="none">
+          ${gridlines}
+          <path d="${pathD}" fill="none" stroke="var(--accent)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"></path>
+          ${dots}
+        </svg>
+      </div>
+    </div>
+    <div class="weather-pop-chart-xrow">
+      <div class="pop-axis-ycol pop-axis-yspacer"></div>
+      <div class="weather-pop-chart-labels">${labels}</div>
+      <div class="pop-axis-xunit">時</div>
+    </div>`;
 }
 
 // 天気情報を取得してカードを再描画する。ホーム画面から離れて weather-card が
@@ -925,6 +955,8 @@ async function refreshWeatherCard(){
   const asofEl = document.getElementById("weather-asof");
   const iconEl = document.getElementById("weather-icon");
   const tempEl = document.getElementById("weather-temp");
+  const tomorrowIconEl = document.getElementById("weather-tomorrow-icon");
+  const tomorrowTempEl = document.getElementById("weather-tomorrow-temp");
   const w = await getWeather();
   if(!document.getElementById("weather-card")) return; // フェッチ中に画面遷移した場合は描画しない
   if(!w){
@@ -932,6 +964,8 @@ async function refreshWeatherCard(){
     if(asofEl) asofEl.textContent = "";
     if(iconEl) iconEl.textContent = "🌡️";
     if(tempEl) tempEl.textContent = "";
+    if(tomorrowIconEl) tomorrowIconEl.textContent = "-";
+    if(tomorrowTempEl) tomorrowTempEl.textContent = "";
     renderWeatherPopChart(null);
     return;
   }
@@ -947,6 +981,8 @@ async function refreshWeatherCard(){
   }
   if(iconEl) iconEl.textContent = w.icon;
   if(tempEl) tempEl.textContent = `${w.temp}℃`;
+  if(tomorrowIconEl) tomorrowIconEl.textContent = w.tomorrow ? w.tomorrow.icon : "-";
+  if(tomorrowTempEl) tomorrowTempEl.textContent = w.tomorrow ? `${w.tomorrow.tempMax}/${w.tomorrow.tempMin}℃` : "";
   renderWeatherPopChart(w);
 }
 
