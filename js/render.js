@@ -1656,18 +1656,28 @@ function googleCalendarCardHTML(){
   return `<div class="gcal-card" id="gcal-card"></div>`;
 }
 
+// 前月・翌月にはみ出す先頭・末尾のマスは完全な空白にせず、実際のGoogle
+// カレンダーと同様に前後の月の日付を薄く添えることで、グリッドが1行分
+// 欠けたような不自然な空白に見えないようにする（クリックはできない）
 function gcalDayCellsHTML(y, m, evMap, todayKey, color){
   const first = new Date(y, m, 1);
   const startWeekday = first.getDay();
   const daysInMonth = new Date(y, m+1, 0).getDate();
+  const prevDaysInMonth = new Date(y, m, 0).getDate();
   const cells = [];
-  for(let i=0;i<startWeekday;i++) cells.push(`<span class="gcal-cell empty"></span>`);
+  for(let i=startWeekday-1; i>=0; i--){
+    cells.push(`<span class="gcal-cell empty">${prevDaysInMonth - i}</span>`);
+  }
   for(let d=1; d<=daysInMonth; d++){
     const key = newsDateKey(y, m, d);
     const cls = ["gcal-cell"];
     if(key===todayKey) cls.push("today");
     const hasEvents = (evMap[key]||[]).length > 0;
     cells.push(`<button type="button" class="${cls.join(" ")}" data-gday="${d}">${d}${hasEvents?`<span class="gcal-cell-dot" style="background:${esc(color)}"></span>`:""}</button>`);
+  }
+  const trailing = (7 - ((startWeekday + daysInMonth) % 7)) % 7;
+  for(let d=1; d<=trailing; d++){
+    cells.push(`<span class="gcal-cell empty">${d}</span>`);
   }
   return cells.join("");
 }
