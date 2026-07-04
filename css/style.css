@@ -483,7 +483,11 @@ h1.title{font-size:34px;line-height:1.05;font-weight:800;margin:8px 0 0;letter-s
 .gcal-cell{min-width:0;width:100%;aspect-ratio:1;border:none;border-radius:10px;background:transparent;color:var(--text);
   font-size:12.5px;font-weight:600;cursor:pointer;position:relative;display:flex;align-items:center;justify-content:center;}
 .gcal-cell:active{background:var(--bg2);}
-.gcal-cell.empty{cursor:default;color:var(--muted);opacity:.4;font-weight:500;}
+/* グローバルな .empty,.loading（padding:50px 0など、他画面の
+   「データなし」プレースホルダー用ルール）とクラス名が偶然重複しており、
+   そのpaddingがこのセルにも適用されて行の高さが不揃いになっていたため、
+   ここで明示的に打ち消してaspect-ratio通りの正方形セルに戻す */
+.gcal-cell.empty{cursor:default;color:var(--muted);opacity:.4;font-weight:500;padding:0;line-height:normal;}
 .gcal-cell.today{color:var(--accent);font-weight:800;box-shadow:inset 0 0 0 1.5px var(--accent);}
 .gcal-cell-dot{position:absolute;bottom:3px;left:50%;transform:translateX(-50%);width:5px;height:5px;border-radius:50%;}
 
