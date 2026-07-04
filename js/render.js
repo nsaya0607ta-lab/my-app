@@ -2116,18 +2116,41 @@ function gcalShiftDailyDate(deltaDays){
 }
 
 // 1日ぶんの予定を時系列（左：時間、右：登録者名＋タスク内容）で並べる
-// タイムライン表示。予定は開始時刻の昇順に並べ、終日予定は先頭にまとめる
-function gcalDayEventsListHTML(events){
+// タイムライン表示。予定は開始時刻の昇順に並べ、終日予定は先頭にまとめる。
+// isSharedは表示中のカレンダーが共有カレンダーかどうか（共有相手がいる
+// ローカルカレンダー、またはGoogle連携で自分のプライマリ以外のカレンダー）
+// で、trueのときだけ登録者名を表示する。時間・本文はそれぞれ1行に収め、
+// カード幅に収まらない場合はgcalApplyMarquee()が自動横スクロールを付与する
+function gcalDayEventsListHTML(events, isShared){
   if(!events.length) return `<div class="gcal-day-empty">この日の予定はまだありません。</div>`;
   const sorted = [...events].sort((a, b) => (a.start||"").localeCompare(b.start||""));
-  return sorted.map(ev => `
+  return sorted.map(ev => {
+    const timeText = ev.start ? (ev.end ? `${ev.start} ~ ${ev.end}` : ev.start) : "終日";
+    const authorHTML = (isShared && ev.author) ? `<span class="gcal-day-event-author">(${esc(ev.author)})</span> ` : "";
+    return `
     <div class="gcal-day-event">
-      <div class="gcal-day-event-time">${ev.start ? `${esc(ev.start)}${ev.end?`<br>〜${esc(ev.end)}`:""}` : "終日"}</div>
-      <div class="gcal-day-event-main">
-        ${ev.author ? `<span class="gcal-day-event-author">(${esc(ev.author)})</span> ` : ""}<span class="gcal-day-event-title">${esc(ev.title)}</span>
-      </div>
+      <div class="gcal-day-event-time"><span class="gcal-marquee-track">${esc(timeText)}</span></div>
+      <div class="gcal-day-event-main"><span class="gcal-marquee-track">${authorHTML}<span class="gcal-day-event-title">${esc(ev.title)}</span></span></div>
       <button type="button" class="gcal-day-event-del" data-del="${esc(ev.id)}" aria-label="この予定を削除">×</button>
-    </div>`).join("");
+    </div>`;
+  }).join("");
+}
+
+// gcalDayEventsListHTML()が描画した各予定カードの時間・本文について、
+// カード幅に収まりきらないものだけを自動検出し、右→左へループして流れる
+// マーキー表示（CSSアニメーション）を付与する。DOM挿入直後に呼び出す想定
+function gcalApplyMarquee(root){
+  root.querySelectorAll(".gcal-day-event-time, .gcal-day-event-main").forEach(el => {
+    el.classList.remove("gcal-marquee");
+    el.style.removeProperty("--gcal-marquee-duration");
+    const track = el.querySelector(".gcal-marquee-track");
+    if(!track) return;
+    if(track.scrollWidth - el.clientWidth > 2){
+      const distance = el.clientWidth + track.scrollWidth;
+      el.style.setProperty("--gcal-marquee-duration", `${Math.max(3, distance / 40)}s`);
+      el.classList.add("gcal-marquee");
+    }
+  });
 }
 
 function gcalTodoListHTML(todos){
@@ -2239,8 +2262,9 @@ function renderGcalDailyWidget(){
       refresh: () => gcalRefreshGoogleDayEvents(active.id, gcalDailyY, gcalDailyM, gcalDailyD),
     };
 
-    root.innerHTML = shellHTML(evMap ? gcalDayEventsListHTML(evMap[dateKey] || []) : `<div class="gcal-google-loading">予定を読み込み中…</div>`);
+    root.innerHTML = shellHTML(evMap ? gcalDayEventsListHTML(evMap[dateKey] || [], !active.primary) : `<div class="gcal-google-loading">予定を読み込み中…</div>`);
     bindShared(root, src);
+    gcalApplyMarquee(root);
     if(!evMap){
       gcalRefreshGoogleDayEvents(active.id, gcalDailyY, gcalDailyM, gcalDailyD);
     } else {
@@ -2267,8 +2291,10 @@ function renderGcalDailyWidget(){
     refresh: () => renderGcalDailyWidget(),
   };
 
-  root.innerHTML = shellHTML(gcalDayEventsListHTML(events));
+  const isShared = !!(active.shared && active.shared.length);
+  root.innerHTML = shellHTML(gcalDayEventsListHTML(events, isShared));
   bindShared(root, src);
+  gcalApplyMarquee(root);
   root.querySelectorAll("[data-del]").forEach(btn => btn.onclick = () => {
     const s2 = loadGcalStore();
     if(s2.events[active.id] && s2.events[active.id][dateKey]){
