@@ -408,11 +408,74 @@ h1.title{font-size:34px;line-height:1.05;font-weight:800;margin:8px 0 0;letter-s
 .weather-schedule-item{font-size:10px;font-weight:600;color:var(--text);line-height:1.4;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
 
 /* ホーム画面：お天気カードの直下・統合起動カードの真上に置く、1ヶ月表示の
-   カレンダーカード（Googleカレンダー連携を想定したUI）。カレンダー本体
-   （背景・角丸・シャドウを含む）はニュース画面と共通の.njp-calをそのまま
-   流用するため、.gcal-cardは単なる位置合わせ用のラッパーで独自の背景は持たない */
+   カレンダーカード。タイトル文言は持たず、上段のカレンダー切り替え
+   スイッチャー（＋共有ユーザー設定ボタン）と下段の月表示グリッドのみで
+   構成する。日付セルをタップすると予定の確認・追加・削除ポップアップを開く */
 .gcal-card{margin-top:14px;}
-.gcal-label{font-size:11px;font-weight:800;color:var(--muted);letter-spacing:.04em;margin-bottom:8px;}
+.gcal-box{background:var(--surface);border:1px solid var(--line);border-radius:16px;padding:14px;
+  box-shadow:0 4px 14px rgba(15,23,42,.04);}
+
+.gcal-switcher{display:flex;align-items:center;gap:8px;overflow-x:auto;-webkit-overflow-scrolling:touch;
+  padding-bottom:12px;margin-bottom:12px;border-bottom:1px solid var(--line);}
+.gcal-chip-wrap{flex:none;display:flex;align-items:center;gap:1px;background:var(--bg2);border-radius:99px;padding:3px 4px 3px 5px;}
+.gcal-chip{flex:none;display:flex;align-items:center;gap:6px;border:none;background:none;padding:6px 4px;
+  border-radius:99px;font-size:12px;font-weight:700;color:var(--text);cursor:pointer;white-space:nowrap;}
+.gcal-chip-dot{width:8px;height:8px;border-radius:50%;flex:none;background:var(--chip-color,var(--accent));}
+.gcal-chip.active{color:var(--accent);}
+.gcal-chip-wrap.active{background:var(--surface);box-shadow:inset 0 0 0 1.5px var(--accent);}
+.gcal-share-btn{flex:none;width:24px;height:24px;border-radius:50%;border:none;background:none;
+  color:var(--muted);font-size:12px;display:flex;align-items:center;justify-content:center;cursor:pointer;}
+.gcal-share-btn:active{background:var(--surface2);}
+.gcal-add-cal-btn{flex:none;width:26px;height:26px;border-radius:50%;border:1px dashed var(--line);
+  background:none;color:var(--muted);font-size:15px;font-weight:700;line-height:1;
+  display:flex;align-items:center;justify-content:center;cursor:pointer;}
+.gcal-add-cal-btn:active{background:var(--bg2);}
+
+.gcal-cal-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;}
+.gcal-nav-btn{flex:none;width:26px;height:26px;border-radius:50%;border:none;background:var(--bg2);
+  color:var(--text);font-size:13px;font-weight:700;display:flex;align-items:center;justify-content:center;cursor:pointer;}
+.gcal-nav-btn:active{background:var(--surface2);}
+.gcal-cal-title{font-size:13px;font-weight:800;color:var(--text);}
+
+.gcal-grid{display:grid;grid-template-columns:repeat(7,1fr);gap:4px;}
+.gcal-grid.gcal-weekdays{margin-bottom:6px;}
+.gcal-weekdays span{font-size:10px;font-weight:700;color:var(--muted);text-align:center;}
+.gcal-cell{aspect-ratio:1;border:none;border-radius:10px;background:transparent;color:var(--text);
+  font-size:12.5px;font-weight:600;cursor:pointer;position:relative;display:flex;align-items:center;justify-content:center;}
+.gcal-cell:active{background:var(--bg2);}
+.gcal-cell.empty{cursor:default;}
+.gcal-cell.today{color:var(--accent);font-weight:800;box-shadow:inset 0 0 0 1.5px var(--accent);}
+.gcal-cell-dot{position:absolute;bottom:3px;left:50%;transform:translateX(-50%);width:5px;height:5px;border-radius:50%;}
+
+/* 日付タップで開く予定ポップアップ・共有ユーザー設定ポップアップ・
+   カレンダー追加ポップアップ（いずれも.modal-ov/.modalを土台に使う） */
+.gcal-modal-sub{font-size:12.5px;color:var(--muted);margin-bottom:12px;}
+.gcal-ev-list{display:flex;flex-direction:column;gap:8px;margin-bottom:12px;max-height:240px;overflow-y:auto;}
+.gcal-ev-item{display:flex;align-items:center;gap:9px;background:var(--bg2);border-radius:10px;padding:9px 8px 9px 12px;}
+.gcal-ev-dot{width:8px;height:8px;border-radius:50%;flex:none;}
+.gcal-ev-title{flex:1;min-width:0;font-size:13px;font-weight:600;color:var(--text);word-break:break-word;}
+.gcal-ev-del{flex:none;width:24px;height:24px;border-radius:50%;border:none;background:none;
+  color:var(--bad);font-size:16px;font-weight:800;line-height:1;cursor:pointer;}
+.gcal-ev-del:active{background:var(--surface2);}
+.gcal-ev-empty{font-size:12.5px;color:var(--muted);text-align:center;padding:12px 0;}
+.gcal-ev-form{display:flex;gap:8px;}
+.gcal-ev-input{flex:1;min-width:0;padding:11px 12px;border:1px solid var(--line);border-radius:12px;
+  background:var(--surface);color:var(--text);font-size:13px;}
+.gcal-newcal-input{width:100%;margin-bottom:12px;}
+.gcal-ev-add-btn{flex:none;padding:0 16px;border-radius:12px;border:1px solid var(--accent);
+  background:var(--accent);color:#ffffff;font-weight:700;font-size:13px;cursor:pointer;}
+.gcal-ev-add-btn:active{filter:brightness(.95);}
+
+.gcal-share-list{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:12px;}
+.gcal-share-tag{display:flex;align-items:center;gap:4px;background:var(--bg2);border-radius:99px;
+  padding:6px 6px 6px 12px;font-size:12px;font-weight:600;color:var(--text);}
+.gcal-share-tag button{border:none;background:none;color:var(--muted);font-size:14px;font-weight:800;cursor:pointer;padding:2px 6px;}
+.gcal-share-empty{font-size:12.5px;color:var(--muted);margin-bottom:4px;}
+.gcal-share-note{font-size:11px;color:var(--muted);line-height:1.6;margin-top:10px;}
+
+.gcal-color-row{display:flex;gap:9px;flex-wrap:wrap;margin-bottom:16px;}
+.gcal-color-dot{width:28px;height:28px;border-radius:50%;border:2px solid transparent;cursor:pointer;padding:0;}
+.gcal-color-dot.selected{border-color:var(--text);}
 
 /* ============ MARKET WATCH（株価ティッカー） ============
    ニュースカードと同じ .news-card / .news-card-head / .news-badge /
