@@ -371,22 +371,23 @@ h1.title{font-size:34px;line-height:1.05;font-weight:800;margin:8px 0 0;letter-s
 .news-arrow{width:24px;height:24px;flex:none;border-radius:50%;border:1px solid var(--line);background:rgba(255,255,255,.7);color:var(--muted);font-size:15px;line-height:1;cursor:pointer;display:flex;align-items:center;justify-content:center;padding:0;}
 .news-arrow:active{transform:scale(.9);}
 /* ヘッダーバッジ無しのミニマル構成。上下のパディングをやや広げ、
-   4カラムをカード全体の上下中央に据えた余白バランスにする */
+   左右2エリアをカード全体の上下中央に据えた余白バランスにする */
 .weather-card{margin-bottom:14px;padding-top:16px;padding-bottom:15px;}
 
-/* 4要素（時計／天気／降水確率／予定）を、真ん中に偏った余白ができないよう
-   justify-content:space-between で等間隔に分散配置する。各要素はflex:noneで
-   中身の幅に自然にフィットさせ、余ったスペースだけを均等な隙間に回す */
-.weather-body{display:flex;align-items:center;justify-content:space-between;gap:8px;}
+/* カードを左（時計／天気＋降水確率の曲線グラフ）：右（簡易予定表）＝
+   2：1の比率で左右分割する */
+.weather-body{display:flex;align-items:stretch;gap:10px;}
+.weather-left{flex:2;min-width:0;display:flex;flex-direction:column;gap:8px;}
+.weather-left-top{display:flex;align-items:center;gap:10px;}
 
-/* 左：日付＋秒まで動くデジタル時計。日付は一回り大きく・太く強調する */
+/* 左上段・左：日付＋秒まで動くデジタル時計。日付は一回り大きく・太く強調する */
 .weather-datetime{flex:none;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;}
 .weather-date{font-size:12.5px;font-weight:800;color:var(--text);letter-spacing:.01em;white-space:nowrap;}
 .weather-time{display:flex;align-items:baseline;font-size:17px;font-weight:800;color:var(--text);
   font-variant-numeric:tabular-nums;white-space:nowrap;line-height:1;}
 .weather-time-sec{font-size:11px;font-weight:700;color:var(--muted);opacity:.8;font-variant-numeric:tabular-nums;}
 
-/* 中央：地名・基準時間・天気アイコン・気温 */
+/* 左上段・右：地名・基準時間・天気アイコン・気温 */
 .weather-info{flex:none;min-width:0;max-width:96px;display:flex;flex-direction:column;gap:3px;}
 .weather-city{font-size:11px;font-weight:700;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
 .weather-asof{font-size:9px;font-weight:600;color:var(--muted);opacity:.85;letter-spacing:.02em;white-space:nowrap;}
@@ -394,21 +395,24 @@ h1.title{font-size:34px;line-height:1.05;font-weight:800;margin:8px 0 0;letter-s
 .weather-icon{font-size:21px;line-height:1;}
 .weather-temp{font-size:17px;font-weight:800;color:var(--text);font-variant-numeric:tabular-nums;}
 
-/* 中央〜右：降水確率のミニ予報。見出しの直下に「今」のリアルタイム行、
-   続けて6時間おき（4段）の予報。他のテキストよりさらに小さく控えめに */
-.weather-hourly6{flex:none;display:flex;flex-direction:column;gap:2px;border-left:1px solid var(--line);padding-left:8px;}
-.weather-hourly6-title{font-size:10px;font-weight:800;color:var(--muted);white-space:nowrap;margin-bottom:2px;}
-.weather-hourly6-row{display:flex;align-items:baseline;justify-content:space-between;gap:6px;}
-.weather-hourly6-time{font-size:10px;font-weight:600;color:var(--muted);white-space:nowrap;font-variant-numeric:tabular-nums;}
-.weather-hourly6-pop{font-size:10px;font-weight:700;color:var(--muted);white-space:nowrap;}
-/* 「今」の行だけアクセント色でそっと強調し、現況と予報を区別する */
-.weather-hourly6-row.now .weather-hourly6-time,
-.weather-hourly6-row.now .weather-hourly6-pop{color:var(--accent);font-weight:800;}
+/* 左下段：降水確率の推移を示す滑らかな曲線グラフ。数値の縦並びリストは廃止し、
+   曲線の下に対応する時刻だけを小さく添える */
+.weather-pop-chart{flex:1;min-width:0;display:flex;flex-direction:column;justify-content:flex-end;}
+.weather-pop-chart-svg{display:block;width:100%;height:32px;}
+.weather-pop-chart-labels{display:flex;justify-content:space-between;margin-top:2px;}
+.weather-pop-chart-labels span{font-size:8.5px;font-weight:600;color:var(--muted);white-space:nowrap;}
 
 /* 右：簡易予定表（ダミー表示。予定管理機能は未実装） */
-.weather-schedule{flex:none;width:78px;border-left:1px solid var(--line);padding-left:8px;display:flex;flex-direction:column;gap:3px;}
+.weather-schedule{flex:1;min-width:0;border-left:1px solid var(--line);padding-left:10px;display:flex;flex-direction:column;gap:3px;}
 .weather-schedule-title{font-size:9.5px;font-weight:800;color:var(--muted);letter-spacing:.04em;}
 .weather-schedule-item{font-size:10px;font-weight:600;color:var(--text);line-height:1.4;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+
+/* ホーム画面：お天気カードの直下・統合起動カードの真上に置く、1ヶ月表示の
+   カレンダーカード（Googleカレンダー連携を想定したUI）。カレンダー本体
+   （背景・角丸・シャドウを含む）はニュース画面と共通の.njp-calをそのまま
+   流用するため、.gcal-cardは単なる位置合わせ用のラッパーで独自の背景は持たない */
+.gcal-card{margin-top:14px;}
+.gcal-label{font-size:11px;font-weight:800;color:var(--muted);letter-spacing:.04em;margin-bottom:8px;}
 
 /* ============ MARKET WATCH（株価ティッカー） ============
    ニュースカードと同じ .news-card / .news-card-head / .news-badge /
