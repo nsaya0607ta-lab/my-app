@@ -1610,19 +1610,286 @@ function homeLauncherCardHTML(){
     </div>`;
 }
 
-// お天気カードと統合起動カードの間に置く、1ヶ月表示のカレンダーカード
-// （Googleカレンダー連携を想定したUI）。カレンダーの描画自体はニュース画面と
-// 共通のnewsCalendarHTML()をそのまま再利用し、今日の日付だけを強調表示する
-// （選択・日別ニュース表示など、ニュース画面固有の機能はここでは持たない）
+/* お天気カードと統合起動カードの間に置く、1ヶ月表示のカレンダーカード。
+   タイトル文言は持たず、カレンダーUIそのものだけを表示する。
+   ・上段：表示するカレンダー（自分／共有相手のカレンダーなど）をワンタップ
+     で切り替えるスイッチャー。各カレンダーの横に共有ユーザー設定ボタンを
+     配置し、＋ボタンでカレンダーを追加できる
+   ・下段：月表示グリッド。日付セルをタップすると、その日の予定を確認・
+     追加・削除できるポップアップを開く
+   データはこの端末のlocalStorageに保存する簡易実装（他ユーザーへの実際の
+   共有・同期は行わない） */
+const GCAL_STORE_KEY = "gcal_store_v1";
+const GCAL_COLORS = ["#0284c7","#16a34a","#d97706","#dc2626","#7c3aed","#0d9488","#db2777","#65a30d"];
+
+function loadGcalStore(){
+  let store = null;
+  try{ store = JSON.parse(localStorage.getItem(GCAL_STORE_KEY) || "null"); }catch(e){}
+  if(!store || !Array.isArray(store.calendars) || !store.calendars.length){
+    store = {
+      calendars: [{ id: "self", name: "自分のカレンダー", color: GCAL_COLORS[0], shared: [] }],
+      activeId: "self",
+      events: {},
+    };
+  }
+  if(!store.events) store.events = {};
+  store.calendars.forEach(c => { if(!Array.isArray(c.shared)) c.shared = []; });
+  if(!store.activeId || !store.calendars.some(c => c.id === store.activeId)){
+    store.activeId = store.calendars[0].id;
+  }
+  return store;
+}
+
+function saveGcalStore(store){
+  try{ localStorage.setItem(GCAL_STORE_KEY, JSON.stringify(store)); }catch(e){}
+}
+
+function gcalGenId(prefix){
+  return `${prefix}${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`;
+}
+
+// 表示中の年月。renderSelect()によるホーム画面全体の再描画をまたいでも
+// 見ていた月を保持するため、モジュール変数として保持する（初回のみ今月）
+let gcalViewY = null, gcalViewM = null;
+
 function googleCalendarCardHTML(){
+  return `<div class="gcal-card" id="gcal-card"></div>`;
+}
+
+function gcalDayCellsHTML(y, m, evMap, todayKey, color){
+  const first = new Date(y, m, 1);
+  const startWeekday = first.getDay();
+  const daysInMonth = new Date(y, m+1, 0).getDate();
+  const cells = [];
+  for(let i=0;i<startWeekday;i++) cells.push(`<span class="gcal-cell empty"></span>`);
+  for(let d=1; d<=daysInMonth; d++){
+    const key = newsDateKey(y, m, d);
+    const cls = ["gcal-cell"];
+    if(key===todayKey) cls.push("today");
+    const hasEvents = (evMap[key]||[]).length > 0;
+    cells.push(`<button type="button" class="${cls.join(" ")}" data-gday="${d}">${d}${hasEvents?`<span class="gcal-cell-dot" style="background:${esc(color)}"></span>`:""}</button>`);
+  }
+  return cells.join("");
+}
+
+// カレンダーカードの中身を描画し直す（ホーム画面全体の再描画を伴わない、
+// このカード単体の更新用。カレンダー切り替え・月移動・予定の増減のたびに呼ぶ）
+function renderGcalCard(){
+  const root = document.getElementById("gcal-card");
+  if(!root) return;
   const now = new Date();
-  const y = now.getFullYear(), m = now.getMonth();
-  const todayKey = newsDateKey(y, m, now.getDate());
-  return `
-    <div class="gcal-card">
-      <div class="gcal-label">📅 Google カレンダー</div>
-      ${newsCalendarHTML(y, m, null, new Set(), todayKey)}
+  if(gcalViewY === null){ gcalViewY = now.getFullYear(); gcalViewM = now.getMonth(); }
+  const store = loadGcalStore();
+  const active = store.calendars.find(c => c.id === store.activeId) || store.calendars[0];
+  const todayKey = newsDateKey(now.getFullYear(), now.getMonth(), now.getDate());
+  const evOfActive = store.events[active.id] || {};
+
+  const switcherHTML = store.calendars.map(c => {
+    const isActive = c.id === store.activeId;
+    return `
+      <div class="gcal-chip-wrap${isActive?" active":""}">
+        <button type="button" class="gcal-chip${isActive?" active":""}" data-cal="${esc(c.id)}" style="--chip-color:${esc(c.color)}">
+          <span class="gcal-chip-dot"></span>${esc(c.name)}
+        </button>
+        <button type="button" class="gcal-share-btn" data-share="${esc(c.id)}" aria-label="${esc(c.name)}の共有ユーザー設定" title="共有ユーザー設定">👥</button>
+      </div>`;
+  }).join("") + `<button type="button" class="gcal-add-cal-btn" id="gcal-add-cal" aria-label="カレンダーを追加" title="カレンダーを追加">＋</button>`;
+
+  root.innerHTML = `
+    <div class="gcal-box">
+      <div class="gcal-switcher">${switcherHTML}</div>
+      <div class="gcal-cal-head">
+        <button type="button" class="gcal-nav-btn" id="gcal-prev" aria-label="前の月">‹</button>
+        <div class="gcal-cal-title">${gcalViewY}年${gcalViewM+1}月</div>
+        <button type="button" class="gcal-nav-btn" id="gcal-next" aria-label="次の月">›</button>
+      </div>
+      <div class="gcal-grid gcal-weekdays">${NEWS_WEEKDAYS.map(w=>`<span>${w}</span>`).join("")}</div>
+      <div class="gcal-grid">${gcalDayCellsHTML(gcalViewY, gcalViewM, evOfActive, todayKey, active.color)}</div>
     </div>`;
+
+  root.querySelectorAll("[data-cal]").forEach(b => b.onclick = () => {
+    const s2 = loadGcalStore();
+    s2.activeId = b.dataset.cal;
+    saveGcalStore(s2);
+    renderGcalCard();
+  });
+  root.querySelectorAll("[data-share]").forEach(b => b.onclick = (e) => {
+    e.stopPropagation();
+    openGcalShareModal(b.dataset.share);
+  });
+  const addCalBtn = root.querySelector("#gcal-add-cal");
+  if(addCalBtn) addCalBtn.onclick = () => openGcalAddCalendarModal();
+  root.querySelector("#gcal-prev").onclick = () => {
+    gcalViewM--; if(gcalViewM<0){ gcalViewM=11; gcalViewY--; }
+    renderGcalCard();
+  };
+  root.querySelector("#gcal-next").onclick = () => {
+    gcalViewM++; if(gcalViewM>11){ gcalViewM=0; gcalViewY++; }
+    renderGcalCard();
+  };
+  root.querySelectorAll("[data-gday]").forEach(b => b.onclick = () => {
+    openGcalEventModal(active.id, gcalViewY, gcalViewM, parseInt(b.dataset.gday, 10));
+  });
+}
+
+// 日付セルタップで開く、その日の予定の確認・追加・削除ポップアップ
+function openGcalEventModal(calId, y, m, d){
+  const dateKey = newsDateKey(y, m, d);
+  const ov = document.createElement("div");
+  ov.className = "modal-ov";
+  const close = () => { try{ ov.remove(); }catch(e){} };
+
+  const draw = () => {
+    const store = loadGcalStore();
+    const cal = store.calendars.find(c => c.id === calId);
+    if(!cal){ close(); return; }
+    const events = (store.events[calId] && store.events[calId][dateKey]) || [];
+    ov.innerHTML = `
+      <div class="modal">
+        <div class="modal-title" style="color:var(--text)">📅 ${m+1}月${d}日の予定</div>
+        <div class="gcal-modal-sub">${esc(cal.name)}</div>
+        <div class="gcal-ev-list">
+          ${events.length ? events.map(ev => `
+            <div class="gcal-ev-item">
+              <span class="gcal-ev-dot" style="background:${esc(cal.color)}"></span>
+              <span class="gcal-ev-title">${esc(ev.title)}</span>
+              <button type="button" class="gcal-ev-del" data-del="${esc(ev.id)}" aria-label="この予定を削除">×</button>
+            </div>`).join("") : `<div class="gcal-ev-empty">この日の予定はまだありません。</div>`}
+        </div>
+        <div class="gcal-ev-form">
+          <input type="text" class="gcal-ev-input" id="gcal-ev-input" placeholder="予定を入力">
+          <button type="button" class="gcal-ev-add-btn" id="gcal-ev-add">追加</button>
+        </div>
+        <button class="ghost" id="gcal-ev-close" style="margin-top:12px">閉じる</button>
+      </div>`;
+
+    ov.querySelector("#gcal-ev-close").onclick = close;
+    ov.querySelectorAll("[data-del]").forEach(btn => btn.onclick = () => {
+      const s2 = loadGcalStore();
+      if(s2.events[calId] && s2.events[calId][dateKey]){
+        s2.events[calId][dateKey] = s2.events[calId][dateKey].filter(ev => ev.id !== btn.dataset.del);
+        saveGcalStore(s2);
+      }
+      draw();
+      renderGcalCard();
+    });
+    const input = ov.querySelector("#gcal-ev-input");
+    const submit = () => {
+      const title = (input.value||"").trim();
+      if(!title){ input.focus(); return; }
+      const s2 = loadGcalStore();
+      if(!s2.events[calId]) s2.events[calId] = {};
+      if(!s2.events[calId][dateKey]) s2.events[calId][dateKey] = [];
+      s2.events[calId][dateKey].push({ id: gcalGenId("e"), title });
+      saveGcalStore(s2);
+      draw();
+      renderGcalCard();
+    };
+    ov.querySelector("#gcal-ev-add").onclick = submit;
+    input.onkeydown = (e) => { if(e.key === "Enter") submit(); };
+    input.focus();
+  };
+
+  document.body.appendChild(ov);
+  ov.addEventListener("click", (e) => { if(e.target === ov) close(); });
+  draw();
+}
+
+// カレンダー横の👥ボタンから開く、共有ユーザー（メールアドレス）の設定
+// ポップアップ。実際の通知・同期は行わない端末内限定の設定
+function openGcalShareModal(calId){
+  const ov = document.createElement("div");
+  ov.className = "modal-ov";
+  const close = () => { try{ ov.remove(); }catch(e){} };
+
+  const draw = () => {
+    const store = loadGcalStore();
+    const cal = store.calendars.find(c => c.id === calId);
+    if(!cal){ close(); return; }
+    ov.innerHTML = `
+      <div class="modal">
+        <div class="modal-title" style="color:var(--text)">👥 共有ユーザー設定</div>
+        <div class="gcal-modal-sub">${esc(cal.name)}</div>
+        <div class="gcal-share-list">
+          ${cal.shared.length ? cal.shared.map(email => `
+            <span class="gcal-share-tag">${esc(email)}<button type="button" data-rm="${esc(email)}" aria-label="共有を解除">×</button></span>`).join("")
+            : `<div class="gcal-share-empty">まだ共有相手はいません。</div>`}
+        </div>
+        <div class="gcal-ev-form">
+          <input type="email" class="gcal-ev-input" id="gcal-share-input" placeholder="共有相手のメールアドレス">
+          <button type="button" class="gcal-ev-add-btn" id="gcal-share-add">追加</button>
+        </div>
+        <div class="gcal-share-note">※このカレンダーの共有相手をこの端末に登録するだけの簡易設定です。相手への招待通知や実際のデータ同期は行われません。</div>
+        <button class="ghost" id="gcal-share-close" style="margin-top:12px">閉じる</button>
+      </div>`;
+
+    ov.querySelector("#gcal-share-close").onclick = close;
+    ov.querySelectorAll("[data-rm]").forEach(btn => btn.onclick = () => {
+      const s2 = loadGcalStore();
+      const c2 = s2.calendars.find(c => c.id === calId);
+      if(c2) c2.shared = c2.shared.filter(e => e !== btn.dataset.rm);
+      saveGcalStore(s2);
+      draw();
+    });
+    const input = ov.querySelector("#gcal-share-input");
+    const submit = () => {
+      const email = (input.value||"").trim();
+      if(!email){ input.focus(); return; }
+      const s2 = loadGcalStore();
+      const c2 = s2.calendars.find(c => c.id === calId);
+      if(c2 && !c2.shared.includes(email)) c2.shared.push(email);
+      saveGcalStore(s2);
+      draw();
+    };
+    ov.querySelector("#gcal-share-add").onclick = submit;
+    input.onkeydown = (e) => { if(e.key === "Enter") submit(); };
+  };
+
+  document.body.appendChild(ov);
+  ov.addEventListener("click", (e) => { if(e.target === ov) close(); });
+  draw();
+}
+
+// スイッチャー右端の＋ボタンから開く、表示カレンダーの新規追加ポップアップ
+function openGcalAddCalendarModal(){
+  const ov = document.createElement("div");
+  ov.className = "modal-ov";
+  const close = () => { try{ ov.remove(); }catch(e){} };
+  let selectedColor = GCAL_COLORS[0];
+  let nameValue = "";
+
+  const draw = () => {
+    ov.innerHTML = `
+      <div class="modal">
+        <div class="modal-title" style="color:var(--text)">📅 カレンダーを追加</div>
+        <input type="text" class="gcal-ev-input gcal-newcal-input" id="gcal-newcal-name" placeholder="カレンダー名（例：家族の予定）" value="${esc(nameValue)}">
+        <div class="gcal-color-row">
+          ${GCAL_COLORS.map(c => `<button type="button" class="gcal-color-dot${c===selectedColor?" selected":""}" data-color="${c}" style="background:${c}" aria-label="この色を選択"></button>`).join("")}
+        </div>
+        <button class="cta" id="gcal-newcal-save">追加する</button>
+        <button class="ghost" id="gcal-newcal-cancel" style="margin-top:8px">キャンセル</button>
+      </div>`;
+    const nameInput = ov.querySelector("#gcal-newcal-name");
+    nameInput.oninput = () => { nameValue = nameInput.value; };
+    nameInput.focus();
+    ov.querySelectorAll("[data-color]").forEach(btn => btn.onclick = () => { selectedColor = btn.dataset.color; draw(); });
+    ov.querySelector("#gcal-newcal-cancel").onclick = close;
+    ov.querySelector("#gcal-newcal-save").onclick = () => {
+      const name = (nameInput.value||"").trim();
+      if(!name){ nameInput.focus(); return; }
+      const store = loadGcalStore();
+      const id = gcalGenId("c");
+      store.calendars.push({ id, name, color: selectedColor, shared: [] });
+      store.activeId = id;
+      saveGcalStore(store);
+      close();
+      renderGcalCard();
+    };
+  };
+
+  document.body.appendChild(ov);
+  ov.addEventListener("click", (e) => { if(e.target === ov) close(); });
+  draw();
 }
 
 export function renderSelect(){
@@ -1639,6 +1906,7 @@ export function renderSelect(){
   const lo=app.querySelector("[data-logout]"); if(lo)lo.onclick=()=>logout();
   const li=app.querySelector("[data-login]"); if(li)li.onclick=()=>{ state.guestMode=false; state.authMode="login"; render(); };
   loadWeatherCard();
+  renderGcalCard();
   window.scrollTo(0,0);
 }
 
