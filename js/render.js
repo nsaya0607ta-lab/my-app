@@ -798,29 +798,32 @@ let clockTimer = null;
 let weatherRefreshTimer = null;
 const WEATHER_REFRESH_MS = 20 * 60 * 1000; // 20分ごとに天気を自動で再フェッチする
 
-// カード内は左から「日付＋デジタル時計」「天気（地名・アイコン・気温・降水確率）」
-// 「6時間おきの降水確率（4段）」「簡易予定表」の4カラム構成。
-// 予定表は現時点ではダミー表示（予定管理機能は未実装）
-// ヘッダーバッジは置かず、4カラムをカード全体で上下中央に据えるミニマル構成
+// カードは左（比率2）＝「日付＋デジタル時計／天気（地名・アイコン・気温）」
+// ＋その下の降水確率の推移を示す滑らかな曲線グラフ、右（比率1）＝簡易予定表
+// （ダミー表示。予定管理機能は未実装）の2エリア構成。
 function weatherCardHTML(){
   return `
     <div class="news-card weather-card" id="weather-card">
       <div class="weather-body">
-        <div class="weather-datetime">
-          <div class="weather-date" id="weather-clock-date"></div>
-          <div class="weather-time">
-            <span id="weather-clock-time"></span><span class="weather-time-sec" id="weather-clock-sec"></span>
+        <div class="weather-left">
+          <div class="weather-left-top">
+            <div class="weather-datetime">
+              <div class="weather-date" id="weather-clock-date"></div>
+              <div class="weather-time">
+                <span id="weather-clock-time"></span><span class="weather-time-sec" id="weather-clock-sec"></span>
+              </div>
+            </div>
+            <div class="weather-info" id="weather-info">
+              <div class="weather-city" id="weather-city">取得中…</div>
+              <div class="weather-asof" id="weather-asof"></div>
+              <div class="weather-main">
+                <span class="weather-icon" id="weather-icon">🌡️</span>
+                <span class="weather-temp" id="weather-temp"></span>
+              </div>
+            </div>
           </div>
+          <div class="weather-pop-chart" id="weather-pop-chart"></div>
         </div>
-        <div class="weather-info" id="weather-info">
-          <div class="weather-city" id="weather-city">取得中…</div>
-          <div class="weather-asof" id="weather-asof"></div>
-          <div class="weather-main">
-            <span class="weather-icon" id="weather-icon">🌡️</span>
-            <span class="weather-temp" id="weather-temp"></span>
-          </div>
-        </div>
-        <div class="weather-hourly6" id="weather-hourly6"></div>
         <div class="weather-schedule">
           <div class="weather-schedule-title">予定</div>
           <div class="weather-schedule-item">15:00 勉強会</div>
@@ -845,9 +848,6 @@ function updateClock(){
   if(timeEl) timeEl.textContent = `${pad(now.getHours())}:${pad(now.getMinutes())}`;
   const secEl = document.getElementById("weather-clock-sec");
   if(secEl) secEl.textContent = `:${pad(now.getSeconds())}`;
-  // 降水確率リスト先頭の「今」の行の時刻もリアルタイムに追従させる
-  const nowTimeEl = document.getElementById("weather-hourly6-now-time");
-  if(nowTimeEl) nowTimeEl.textContent = `${pad(now.getHours())}:${pad(now.getMinutes())}`;
 }
 
 function startClock(){
@@ -856,36 +856,60 @@ function startClock(){
   clockTimer = setInterval(updateClock, 1000);
 }
 
-// 予報時刻(ISO文字列)を「M/D H:MM」形式に整形する。日付をまたぐ場合も
-// 一目でわかるよう、常に月日を時刻の前に付ける
-function formatHourly6Time(isoTime){
-  const d = new Date(isoTime);
-  const md = `${d.getMonth()+1}/${d.getDate()}`;
-  const hm = `${String(d.getHours()).padStart(2,"0")}:${String(d.getMinutes()).padStart(2,"0")}`;
-  return `${md} ${hm}`;
+// 予報時刻(ISO文字列)を軸ラベル用の「H時」の短い表記に整形する
+// （降水確率の折れ線グラフの下に小さく添える時刻ラベル用）
+function formatPopChartHour(isoTime){
+  return `${new Date(isoTime).getHours()}時`;
 }
 
-// 「☔ 降水確率」の見出しの直下に「今」のリアルタイム降水確率を1行、続けて
-// 6時間おき（6・12・18・24時間後）の予報を「日付 時刻」「確率(%)」の行として
-// 縦に表示する。現在の状況と今後の予測をひと目で比較できるミニ予報
-function renderWeatherHourly6(w){
-  const el = document.getElementById("weather-hourly6");
+// 点列を通る滑らかな曲線（Catmull-Rom→3次ベジェ変換）のSVGパスを組み立てる。
+// 折れ線をそのまま描くとカクカクするため、各区間を前後の点も考慮した
+// ベジェ曲線に変換し、視覚的に滑らかな推移として見せる
+function catmullRomSmoothPath(points){
+  if(points.length < 2) return `M ${points[0].x} ${points[0].y}`;
+  let d = `M ${points[0].x} ${points[0].y}`;
+  for(let i=0; i<points.length-1; i++){
+    const p0 = points[i-1] || points[i];
+    const p1 = points[i];
+    const p2 = points[i+1];
+    const p3 = points[i+2] || p2;
+    const cp1x = p1.x + (p2.x - p0.x)/6;
+    const cp1y = p1.y + (p2.y - p0.y)/6;
+    const cp2x = p2.x - (p3.x - p1.x)/6;
+    const cp2y = p2.y - (p3.y - p1.y)/6;
+    d += ` C ${cp1x.toFixed(1)} ${cp1y.toFixed(1)}, ${cp2x.toFixed(1)} ${cp2y.toFixed(1)}, ${p2.x.toFixed(1)} ${p2.y.toFixed(1)}`;
+  }
+  return d;
+}
+
+const POP_CHART_W = 220, POP_CHART_H = 40, POP_CHART_PAD = 4;
+
+// 降水確率の推移（今＋6時間おき4点）を、数値の縦並びリストではなく
+// 滑らかな曲線グラフとして描画する。曲線のすぐ下に対応する時刻を
+// 小さく1行で添える
+function renderWeatherPopChart(w){
+  const el = document.getElementById("weather-pop-chart");
   if(!el) return;
-  const title = `<div class="weather-hourly6-title">☔ 降水確率</div>`;
-  if(!w){ el.innerHTML = title; return; }
-  const now = new Date();
-  const nowHM = `${String(now.getHours()).padStart(2,"0")}:${String(now.getMinutes()).padStart(2,"0")}`;
-  const nowRow = (typeof w.pop === "number") ? `
-    <div class="weather-hourly6-row now">
-      <span class="weather-hourly6-time">今 <span id="weather-hourly6-now-time">${nowHM}</span></span>
-      <span class="weather-hourly6-pop">${w.pop}%</span>
-    </div>` : "";
-  const rows = (w.hourly6 || []).map(h => `
-    <div class="weather-hourly6-row">
-      <span class="weather-hourly6-time">${formatHourly6Time(h.time)}</span>
-      <span class="weather-hourly6-pop">${h.pop}%</span>
-    </div>`).join("");
-  el.innerHTML = title + nowRow + rows;
+  const points = (w && typeof w.pop === "number")
+    ? [{ label:"今", pop:w.pop }, ...(w.hourly6||[]).map(h => ({ label: formatPopChartHour(h.time), pop:h.pop }))]
+    : [];
+  if(points.length < 2){ el.innerHTML = ""; return; }
+  const n = points.length;
+  const innerW = POP_CHART_W - POP_CHART_PAD*2;
+  const innerH = POP_CHART_H - POP_CHART_PAD*2;
+  const coords = points.map((p,i) => ({
+    x: POP_CHART_PAD + (i/(n-1))*innerW,
+    y: POP_CHART_PAD + innerH - (Math.max(0,Math.min(100,p.pop))/100)*innerH,
+  }));
+  const pathD = catmullRomSmoothPath(coords);
+  const dots = coords.map(c => `<circle cx="${c.x.toFixed(1)}" cy="${c.y.toFixed(1)}" r="2.2" fill="var(--accent)"></circle>`).join("");
+  const labels = points.map(p => `<span>${esc(p.label)}</span>`).join("");
+  el.innerHTML = `
+    <svg class="weather-pop-chart-svg" viewBox="0 0 ${POP_CHART_W} ${POP_CHART_H}" preserveAspectRatio="none">
+      <path d="${pathD}" fill="none" stroke="var(--accent)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"></path>
+      ${dots}
+    </svg>
+    <div class="weather-pop-chart-labels">${labels}</div>`;
 }
 
 // 天気情報を取得してカードを再描画する。ホーム画面から離れて weather-card が
@@ -907,7 +931,7 @@ async function refreshWeatherCard(){
     if(asofEl) asofEl.textContent = "";
     if(iconEl) iconEl.textContent = "🌡️";
     if(tempEl) tempEl.textContent = "";
-    renderWeatherHourly6(null);
+    renderWeatherPopChart(null);
     return;
   }
   if(cityEl) cityEl.textContent = w.isDefaultLocation ? `${w.city}（現在地未取得）` : w.city;
@@ -922,7 +946,7 @@ async function refreshWeatherCard(){
   }
   if(iconEl) iconEl.textContent = w.icon;
   if(tempEl) tempEl.textContent = `${w.temp}℃`;
-  renderWeatherHourly6(w);
+  renderWeatherPopChart(w);
 }
 
 function startWeatherRefresh(){
@@ -1586,9 +1610,25 @@ function homeLauncherCardHTML(){
     </div>`;
 }
 
+// お天気カードと統合起動カードの間に置く、1ヶ月表示のカレンダーカード
+// （Googleカレンダー連携を想定したUI）。カレンダーの描画自体はニュース画面と
+// 共通のnewsCalendarHTML()をそのまま再利用し、今日の日付だけを強調表示する
+// （選択・日別ニュース表示など、ニュース画面固有の機能はここでは持たない）
+function googleCalendarCardHTML(){
+  const now = new Date();
+  const y = now.getFullYear(), m = now.getMonth();
+  const todayKey = newsDateKey(y, m, now.getDate());
+  return `
+    <div class="gcal-card">
+      <div class="gcal-label">📅 Google カレンダー</div>
+      ${newsCalendarHTML(y, m, null, new Set(), todayKey)}
+    </div>`;
+}
+
 export function renderSelect(){
   app.innerHTML = `
     ${weatherCardHTML()}
+    ${googleCalendarCardHTML()}
     ${homeLauncherCardHTML()}
     ${msCertLauncherHTML()}
     ${state.currentUser
