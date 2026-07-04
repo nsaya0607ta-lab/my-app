@@ -12,8 +12,16 @@
   --text:#0f172a;      /* メインテキスト (slate-900) */
   --muted:#64748b;     /* サブテキスト (slate-500) */
 }
-*{box-sizing:border-box;-webkit-tap-highlight-color:transparent;}
+/* touch-action:manipulationで、ダブルタップによるブラウザ標準の
+   拡大ズームとタップ時の300ms遅延を全要素で無効化する（ピンチズーム
+   自体は残るため、アクセシビリティ上の拡大手段は奪わない） */
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent;touch-action:manipulation;}
 html,body{margin:0;padding:0;}
+/* iOS Safariはフォーカスした input/select/textarea の文字サイズが
+   16px未満だと自動でズームインしてしまう。予定追加フォームなど、
+   font-sizeを16px未満に指定している箇所が各所にあるため、!important付きの
+   全体ルールで確実に上書きし、モーダルを開いた際の意図しないズームを防ぐ */
+input, select, textarea{font-size:16px !important;}
 body{
   font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","Hiragino Sans","Yu Gothic UI",sans-serif;
   /* 上部から明るい青空のようなグラデーションが広がる清潔感のある背景 */

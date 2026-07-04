@@ -2210,7 +2210,7 @@ function renderGcalDailyWidget(){
           <div class="gcal-day-todo-title">本日のタスク</div>
           <div class="gcal-day-todo-list">${gcalTodoListHTML(todos)}</div>
           <div class="gcal-day-todo-form">
-            <input type="text" id="gcal-todo-input" class="gcal-todo-input" placeholder="タスクを入力" maxlength="60">
+            <input type="text" id="gcal-todo-input" class="gcal-todo-input" placeholder="タスク" maxlength="60">
             <button type="button" id="gcal-todo-add" class="gcal-todo-add-btn" aria-label="タスクを追加">＋</button>
           </div>
         </div>
@@ -2547,7 +2547,7 @@ function openGcalEventModal(src, y, m, d, opts){
         try{
           await gcalCreateGoogleEvent(src.calId, y, m, d, title, start, end, author);
           await src.refresh();
-          busy = false; draw();
+          close(); // 登録に成功したら手動で閉じなくても自動でモーダルを閉じる
         }catch(e){
           busy = false; draw("追加に失敗しました。もう一度お試しください。");
         }
@@ -2559,7 +2559,7 @@ function openGcalEventModal(src, y, m, d, opts){
       s2.events[src.calId][dateKey].push({ id: gcalGenId("e"), title, start, end, author });
       saveGcalStore(s2);
       src.refresh();
-      draw();
+      close(); // 登録に成功したら手動で閉じなくても自動でモーダルを閉じる
     };
     ov.querySelector("#gcal-ev-add").onclick = submit;
     if(!busy){
