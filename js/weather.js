@@ -113,8 +113,8 @@ async function reverseGeocode(lat, lon){
   }
 }
 
-const HOURLY_STEP_HOURS = 6; // 6時間おき
-const HOURLY_STEPS = 4;      // 6・12・18・24時間後の4つ
+const HOURLY_STEP_HOURS = 1; // 1時間おき（降水確率グラフのドット間隔）
+const HOURLY_STEPS = 24;     // 1〜24時間後まで（24時間分）
 
 // 現在時刻からの経過時間(ms)に最も近いhourlyの時刻インデックスを探す
 function nearestHourlyIndex(times, targetMs){
@@ -126,15 +126,16 @@ function nearestHourlyIndex(times, targetMs){
   return best;
 }
 
-// 現在の気温・天気・降水確率・6時間おき（4つ）の降水確率を取得する
+// 現在の気温・天気・1時間おき（24個）の降水確率・翌日の天気概要を取得する
 async function fetchForecast(lat, lon){
   const params = new URLSearchParams({
     latitude: String(lat),
     longitude: String(lon),
     current: "temperature_2m,weather_code",
     hourly: "precipitation_probability",
+    daily: "weather_code,temperature_2m_max,temperature_2m_min",
     timezone: "auto",
-    forecast_days: "2", // 24時間後まで含めるため2日分取得する
+    forecast_days: "2", // 翌日分・24時間後まで含めるため2日分取得する
   });
   const url = `https://api.open-meteo.com/v1/forecast?${params.toString()}`;
   const res = await fetchDirectOrProxied(url, { timeoutMs: FETCH_TIMEOUT_MS });
@@ -157,22 +158,33 @@ async function fetchForecast(lat, lon){
     if(typeof pops[idx] === "number") pop = pops[idx];
   }
 
-  // 6時間おき（6・12・18・24時間後）の降水確率
-  const hourly6 = [];
+  // 1時間おき（1〜24時間後）の降水確率。グラフの横軸ドットに使う
+  const hourly = [];
   if(times.length && pops.length){
     const nowMs = Date.now();
     for(let step = 1; step <= HOURLY_STEPS; step++){
       const targetMs = nowMs + step * HOURLY_STEP_HOURS * 60 * 60 * 1000;
       const i = nearestHourlyIndex(times, targetMs);
       if(i >= 0 && typeof pops[i] === "number"){
-        hourly6.push({ time: times[i], pop: pops[i] });
+        hourly.push({ time: times[i], pop: pops[i] });
       }
     }
   }
 
+  // 翌日（daily配列のインデックス1）の天気アイコン・最高/最低気温
+  let tomorrow = null;
+  const dailyTimes = data.daily?.time || [];
+  const dailyCodes = data.daily?.weather_code || [];
+  const dailyMax = data.daily?.temperature_2m_max || [];
+  const dailyMin = data.daily?.temperature_2m_min || [];
+  if(dailyTimes.length > 1 && typeof dailyMax[1] === "number" && typeof dailyMin[1] === "number"){
+    const d = describeWeatherCode(dailyCodes[1]);
+    tomorrow = { icon: d.icon, label: d.label, tempMax: Math.round(dailyMax[1]), tempMin: Math.round(dailyMin[1]) };
+  }
+
   // currentTime: この観測値がいつ時点のものか（timezone=autoにより現地時刻の
   // ISO文字列が返る）。表示側で「HH:MM時点」ラベルに使う
-  return { temp, icon, label, pop, hourly6, currentTime: data.current.time || null };
+  return { temp, icon, label, pop, hourly, tomorrow, currentTime: data.current.time || null };
 }
 
 // wttr.inのweather[]（日ごとの3時間刻み予報）から、Open-Meteoと同じ形式の
@@ -195,8 +207,9 @@ function wttrTimesAndPops(weatherDays){
 // Open-Meteo（直接fetch＋CORSプロキシ）が軒並み失敗した場合の予備プロバイダ。
 // wttr.inは緯度経度を直接パスに指定でき、CORSも許可されている無料API。
 // 降水確率は current_condition には含まれないため（temp/天気のみ）、
-// weather[].hourly[]（3時間刻み）から現在時刻・6時間おきに最も近い値を
-// Open-Meteoと同じロジック（nearestHourlyIndex）で拾う
+// weather[].hourly[]（3時間刻み）から現在時刻・1時間おきに最も近い値を
+// Open-Meteoと同じロジック（nearestHourlyIndex）で拾う（3時間刻みデータの
+// ため、隣接する時間帯では同じ値が続くことがある近似表示になる）
 async function fetchWttrFallback(lat, lon){
   const url = `https://wttr.in/${lat},${lon}?format=j1`;
   const res = await fetchDirectOrProxied(url, { timeoutMs: FETCH_TIMEOUT_MS });
@@ -216,19 +229,29 @@ async function fetchWttrFallback(lat, lon){
     if(idx >= 0 && typeof pops[idx] === "number") pop = pops[idx];
   }
 
-  const hourly6 = [];
+  const hourly = [];
   if(times.length && pops.length){
     const nowMs = Date.now();
     for(let step = 1; step <= HOURLY_STEPS; step++){
       const targetMs = nowMs + step * HOURLY_STEP_HOURS * 60 * 60 * 1000;
       const i = nearestHourlyIndex(times, targetMs);
       if(i >= 0 && typeof pops[i] === "number"){
-        hourly6.push({ time: times[i], pop: pops[i] });
+        hourly.push({ time: times[i], pop: pops[i] });
       }
     }
   }
 
-  return { temp, icon, label, pop, hourly6, currentTime: null };
+  // 翌日（data.weather[1]）の最高/最低気温・天気アイコン。天気アイコンは
+  // 正午（3時間刻みhourly配列のインデックス4 ≒ 12:00）のコードを代表値として使う
+  let tomorrow = null;
+  const tomorrowDay = data.weather && data.weather[1];
+  if(tomorrowDay && typeof tomorrowDay.maxtempC !== "undefined" && typeof tomorrowDay.mintempC !== "undefined"){
+    const noonCode = tomorrowDay.hourly?.[4]?.weatherCode;
+    const d = describeWttrCode(noonCode);
+    tomorrow = { icon: d.icon, label: d.label, tempMax: Math.round(parseFloat(tomorrowDay.maxtempC)), tempMin: Math.round(parseFloat(tomorrowDay.mintempC)) };
+  }
+
+  return { temp, icon, label, pop, hourly, tomorrow, currentTime: null };
 }
 
 function loadCache(){
