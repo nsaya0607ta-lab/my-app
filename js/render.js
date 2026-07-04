@@ -2144,12 +2144,11 @@ async function gcalRefreshGoogleDayEvents(calId, y, m, d){
   renderGcalDailyWidget();
 }
 
-// start/endは"HH:MM"（未入力なら終日予定として扱う）。authorは登録者名
-// （タイトル先頭に"(名前) "として埋め込む）
-async function gcalCreateGoogleEvent(calId, y, m, d, title, start, end, author){
+// start/endは"HH:MM"（未入力なら終日予定として扱う）
+async function gcalCreateGoogleEvent(calId, y, m, d, title, start, end){
   const pad = (n) => String(n).padStart(2, "0");
   const dateStr = `${y}-${pad(m+1)}-${pad(d)}`;
-  const summary = author ? `(${author}) ${title}` : title;
+  const summary = title;
   let body;
   if(start){
     const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
@@ -2736,11 +2735,10 @@ function openGcalEventModal(src, y, m, d, opts){
       const start = startInput.value || "";
       const end = endInput.value || "";
       if(start && end && end <= start){ draw("終了時刻は開始時刻より後にしてください。"); return; }
-      const author = gcalLoadAuthorName();
       if(src.mode === "google"){
         busy = true; draw();
         try{
-          await gcalCreateGoogleEvent(src.calId, y, m, d, title, start, end, author);
+          await gcalCreateGoogleEvent(src.calId, y, m, d, title, start, end);
           await src.refresh();
           close(); // 登録に成功したら手動で閉じなくても自動でモーダルを閉じる
         }catch(e){
@@ -2748,6 +2746,7 @@ function openGcalEventModal(src, y, m, d, opts){
         }
         return;
       }
+      const author = gcalLoadAuthorName();
       const s2 = loadGcalStore();
       if(!s2.events[src.calId]) s2.events[src.calId] = {};
       if(!s2.events[src.calId][dateKey]) s2.events[src.calId][dateKey] = [];
