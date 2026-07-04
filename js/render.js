@@ -2128,7 +2128,7 @@ function gcalDayEventsListHTML(events, isShared){
     const timeText = ev.start ? (ev.end ? `${ev.start} ~ ${ev.end}` : ev.start) : "終日";
     const authorHTML = (isShared && ev.author) ? `<span class="gcal-day-event-author">(${esc(ev.author)})</span> ` : "";
     return `
-    <div class="gcal-day-event">
+    <div class="gcal-day-event" data-start="${esc(ev.start||"")}" data-end="${esc(ev.end||"")}">
       <div class="gcal-day-event-time"><span class="gcal-marquee-track">${esc(timeText)}</span></div>
       <div class="gcal-day-event-main"><span class="gcal-marquee-track">${authorHTML}<span class="gcal-day-event-title">${esc(ev.title)}</span></span></div>
       <button type="button" class="gcal-day-event-del" data-del="${esc(ev.id)}" aria-label="この予定を削除">×</button>
@@ -2153,6 +2153,46 @@ function gcalApplyMarquee(root){
   });
 }
 
+// 予定エリアの高さ固定・スクロール位置の制御を行う。DOM挿入直後に呼び出す想定
+// ・予定が5件以上あるときは最初の4件ぶんの高さに固定し、5件目以降は
+//   overflow-y:autoの手動スワイプで見えるようにする
+// ・直前と同じ日付／カレンダーの再描画（ToDo操作や予定の追加削除など）
+//   ならユーザーがスクロールした位置をそのまま保つ
+// ・日付やカレンダーが変わった直後（初回表示・前後日への移動）は、
+//   終了時刻（なければ開始時刻）がまだ過ぎていない最初の予定が先頭に
+//   来るよう自動でスクロール位置を計算し直す（終日予定は「過ぎていない」
+//   扱いとし、それより後ろへは自動スクロールしない）
+function gcalSetupDayEventsScroll(root, scrollKey, y, m, d, now, prevKey, prevScrollTop){
+  const container = root.querySelector(".gcal-day-events");
+  if(!container) return;
+  container.style.removeProperty("height");
+  const cards = [...container.querySelectorAll(".gcal-day-event")];
+
+  if(cards.length >= 5){
+    const gap = parseFloat(getComputedStyle(container).rowGap) || 0;
+    let h = 0;
+    for(let i=0; i<4; i++){ h += cards[i].offsetHeight + (i>0 ? gap : 0); }
+    container.style.height = `${h}px`;
+  }
+
+  if(scrollKey === prevKey && prevScrollTop !== null){
+    container.scrollTop = prevScrollTop;
+    return;
+  }
+
+  let targetIndex = cards.length ? cards.length - 1 : 0;
+  for(let i=0; i<cards.length; i++){
+    const ref = cards[i].dataset.end || cards[i].dataset.start;
+    if(!ref || new Date(y, m, d, ...ref.split(":").map(Number)) > now){ targetIndex = i; break; }
+  }
+  const target = cards[targetIndex];
+  if(target){
+    const contRect = container.getBoundingClientRect();
+    const targetRect = target.getBoundingClientRect();
+    container.scrollTop += (targetRect.top - contRect.top);
+  }
+}
+
 function gcalTodoListHTML(todos){
   if(!todos.length) return `<div class="gcal-todo-empty">タスクはありません</div>`;
   return todos.map(t => `
@@ -2172,6 +2212,10 @@ function renderGcalDailyWidget(){
   const root = document.getElementById("gcal-day-card");
   if(!root) return;
   gcalMaybeAutoReconnect();
+
+  const prevEventsEl = root.querySelector(".gcal-day-events");
+  const prevScrollTop = prevEventsEl ? prevEventsEl.scrollTop : null;
+  const prevScrollKey = root.dataset.dayScrollKey || null;
 
   const now = new Date();
   if(gcalDailyY === null){ gcalDailyY = now.getFullYear(); gcalDailyM = now.getMonth(); gcalDailyD = now.getDate(); }
@@ -2265,6 +2309,9 @@ function renderGcalDailyWidget(){
     root.innerHTML = shellHTML(evMap ? gcalDayEventsListHTML(evMap[dateKey] || [], !active.primary) : `<div class="gcal-google-loading">予定を読み込み中…</div>`);
     bindShared(root, src);
     gcalApplyMarquee(root);
+    const googleScrollKey = `g|${active.id}|${dateKey}`;
+    gcalSetupDayEventsScroll(root, googleScrollKey, gcalDailyY, gcalDailyM, gcalDailyD, now, prevScrollKey, prevScrollTop);
+    root.dataset.dayScrollKey = googleScrollKey;
     if(!evMap){
       gcalRefreshGoogleDayEvents(active.id, gcalDailyY, gcalDailyM, gcalDailyD);
     } else {
@@ -2295,6 +2342,9 @@ function renderGcalDailyWidget(){
   root.innerHTML = shellHTML(gcalDayEventsListHTML(events, isShared));
   bindShared(root, src);
   gcalApplyMarquee(root);
+  const localScrollKey = `l|${active.id}|${dateKey}`;
+  gcalSetupDayEventsScroll(root, localScrollKey, gcalDailyY, gcalDailyM, gcalDailyD, now, prevScrollKey, prevScrollTop);
+  root.dataset.dayScrollKey = localScrollKey;
   root.querySelectorAll("[data-del]").forEach(btn => btn.onclick = () => {
     const s2 = loadGcalStore();
     if(s2.events[active.id] && s2.events[active.id][dateKey]){
