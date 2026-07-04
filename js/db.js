@@ -1,7 +1,7 @@
   import { initializeApp } from "https://www.gstatic.com/firebasejs/10.0.0/firebase-app.js";
   import { getFirestore, doc, setDoc, getDoc, deleteDoc, onSnapshot, collection, query, where, orderBy, limit, getDocs, getCountFromServer, writeBatch, increment } from "https://www.gstatic.com/firebasejs/10.0.0/firebase-firestore.js";
   import { getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword, signOut, onAuthStateChanged, deleteUser, reauthenticateWithCredential, EmailAuthProvider } from "https://www.gstatic.com/firebasejs/10.0.0/firebase-auth.js";
-import { applyCloud, commit, publishLeaderboard, saveCoins, seedCloudFromLocal, totalBP } from './core.js';
+import { applyCloud, applyCloudSkins, commit, publishLeaderboard, saveCoins, seedCloudFromLocal, totalBP } from './core.js';
 import { app, applyCloudGcal, applyCloudPortfolio, logout, render } from './render.js';
 import { S, state } from './state.js';
 
@@ -139,6 +139,10 @@ import { S, state } from './state.js';
             // カレンダーのデモ予定・ToDo・登録者名も同様にこの端末へ反映
             // （アクセストークン・選択中カレンダーIDはgcal同期の対象外のまま）
             if (data.gcal) applyCloudGcal(data.gcal);
+            // 背景スキン（所持リスト・適用中）もこの端末へ反映。ログインユーザー
+            // 本人のドキュメントのみ購読しているため、他ユーザーのスキンが
+            // 混ざることはない
+            if (data.currentSkin || data.ownedSkins) applyCloudSkins(data);
             // 旧形式（資格未対応の {bp,wrong,history}）→ certs.az900 へ一度だけ移行
             if (!data.certs && data.bp !== undefined) {
               setDoc(doc(state.db, "users", state.currentUserId), {

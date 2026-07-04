@@ -1,6 +1,6 @@
 import { CERTS } from './data/certs.js';
 import { DC_PHASES, L, REGIONS } from './data/constants.js';
-import { CONCEPTS, DRAW, PASS, Q, TIERS, applySkin, certById, certStat, commit, correctSet, dcCount, dcPhase, dcTitle, esc, exportCode, fmt, getBP, getProfileName, grade, importCode, isAdminAccount, isMulti, loadHist, loadReviewStats, loadWrong, overallLevel, overallStat, pick, pts, publishLeaderboard, purchaseSkin, saveCoins, saveToCloud, selectCert, setBP, setProfileName, stars, start, startReview, totalBP } from './core.js';
+import { CONCEPTS, DRAW, PASS, Q, TIERS, applySkin, certById, certStat, commit, correctSet, dcCount, dcPhase, dcTitle, esc, exportCode, fmt, getBP, getProfileName, grade, importCode, isAdminAccount, isMulti, loadHist, loadReviewStats, loadWrong, overallLevel, overallStat, pick, pts, publishLeaderboard, purchaseSkin, saveCoins, saveToCloud, selectCert, setBP, setProfileName, skinHandleIdentityChange, stars, start, startReview, totalBP } from './core.js';
 import { getLiveStocks, getLiveStocksJP } from './stocks.js';
 import { getWeather } from './weather.js';
 import { SKIN_DATA } from './data/skins.js';
@@ -112,6 +112,7 @@ function updateHeaderTitle(){
 
 export function render(){
   gcalHandleIdentityChange(); // ログインユーザーの切替を検知し、前の人のGoogle連携状態を破棄
+  skinHandleIdentityChange(); // ログインユーザーの切替を検知し、前の人のスキン状態を読み直す
   renderStatusBar();   // 画面が変わっても常に最新の Lv/BP/AC を反映
   updateHeaderNav(false); // デフォルトは非表示。表示すべき画面側で個別に true にする
   updateHeaderTitle();

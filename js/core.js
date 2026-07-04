@@ -137,21 +137,42 @@ export function loadCoins(){ const v=parseInt(localStorage.getItem("coins")||"0"
 
 export function saveCoins(v){ try{ localStorage.setItem("coins", String(v||0)); }catch(e){} }
 
-/* ===== スキン（背景テーマ）の永続化：端末ローカルに保存 ===== */
+/* ===== スキン（背景テーマ）の永続化：端末ローカルに保存 =====
+   ログインユーザーごとにキーを分けて保存する（同じ端末を複数アカウントで
+   使っても、他人が購入・適用したスキンが自分の画面に表示されないように） */
+function skinStorageKey(base){
+  const uid = (state && state.currentUserId) ? state.currentUserId : "guest";
+  return `${base}::${uid}`;
+}
 export function saveSkins(){
   try{
-    localStorage.setItem("currentSkin", S.currentSkin || "default");
-    localStorage.setItem("ownedSkins", JSON.stringify(S.ownedSkins || ["default"]));
+    localStorage.setItem(skinStorageKey("currentSkin"), S.currentSkin || "default");
+    localStorage.setItem(skinStorageKey("ownedSkins"), JSON.stringify(S.ownedSkins || ["default"]));
   }catch(e){}
 }
 export function loadSkins(){
+  let cur = null, own = null;
   try{
-    const cur = localStorage.getItem("currentSkin");
-    const own = JSON.parse(localStorage.getItem("ownedSkins") || "null");
-    if(cur) S.currentSkin = cur;
-    if(Array.isArray(own) && own.length) S.ownedSkins = own;
-    if(!S.ownedSkins.includes("default")) S.ownedSkins.unshift("default");
+    cur = localStorage.getItem(skinStorageKey("currentSkin"));
+    own = JSON.parse(localStorage.getItem(skinStorageKey("ownedSkins")) || "null");
   }catch(e){}
+  S.currentSkin = cur || "default";
+  S.ownedSkins = (Array.isArray(own) && own.length) ? own : ["default"];
+  if(!S.ownedSkins.includes("default")) S.ownedSkins.unshift("default");
+}
+
+// ログイン中のユーザーが切り替わった（ログイン／ログアウト／別アカウントへの
+// 切替）ことを検知し、直前のユーザーのスキン状態が新しいユーザーの画面に一瞬
+// でも残らないよう、そのユーザー専用のローカル保存領域を読み直す。
+// render()の先頭から毎回呼ばれる軽量なチェック（gcalの識別子切替と同じ方式）
+let skinIdentityToken;
+export function skinHandleIdentityChange(){
+  const uid = (state && state.currentUserId) ? state.currentUserId : "guest";
+  if(skinIdentityToken === uid) return;
+  const isFirstRun = skinIdentityToken === undefined;
+  skinIdentityToken = uid;
+  if(isFirstRun) return; // 初回描画は起動時のloadSkins()で読み込み済み
+  loadSkins();
 }
 
 export function skinByKey(key){ return SKIN_DATA.find(s=>s.key===key) || null; }
@@ -347,6 +368,7 @@ export function applyCloudSkins(data){
   if(Array.isArray(data.ownedSkins) && data.ownedSkins.length) S.ownedSkins = data.ownedSkins;
   if(!S.ownedSkins.includes("default")) S.ownedSkins.unshift("default");
   saveSkins();
+  render();
 }
 
 // 新規アカウント時：この端末にあるローカルの各資格データをクラウドへ初期投入
