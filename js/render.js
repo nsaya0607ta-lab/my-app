@@ -1050,7 +1050,7 @@ function portfolioStorageKey(){
   return `${PORTFOLIO_KEY}::${uid}`;
 }
 
-function loadPortfolio(){
+export function loadPortfolio(){
   try{
     const p = JSON.parse(localStorage.getItem(portfolioStorageKey()) || "{}");
     return (p && typeof p === "object" && !Array.isArray(p)) ? p : {};
@@ -1058,6 +1058,30 @@ function loadPortfolio(){
 }
 function savePortfolio(p){
   try{ localStorage.setItem(portfolioStorageKey(), JSON.stringify(p)); }catch(e){}
+}
+
+// ポートフォリオ（保有株）をFirestoreの users/{uid} ドキュメントへ同期する。
+// certs/coinsと同じ merge:true の部分更新で、portfolioフィールドだけを
+// 書き換える（他ユーザーのドキュメントには一切触れない＝currentUserId自身の
+// パスにしか書き込まないためユーザー間の混入は起きない）
+function syncPortfolioToCloud(pf){
+  if(!state.db || !state.currentUserId || !window.FirebaseSync) return;
+  try{
+    window.FirebaseSync.setDoc(window.FirebaseSync.doc(state.db, "users", state.currentUserId), {
+      portfolio: pf,
+      updatedAt: new Date().toISOString()
+    }, { merge: true });
+  }catch(e){ console.error("portfolio cloud sync failed:", e); }
+}
+
+// クラウド（Firestoreの users/{uid}.portfolio）から届いた保有株データを
+// この端末のローカル保存へ反映する。db.jsのonSnapshotから、ログイン中の
+// 本人のドキュメントが更新されるたびに呼ばれる（他人のデータは購読して
+// いないため混入しない）。ポートフォリオ画面を表示中なら即座に描画し直す
+export function applyCloudPortfolio(pf){
+  if(!pf || typeof pf !== "object" || Array.isArray(pf)) return;
+  savePortfolio(pf);
+  if(S.screen === "portfolio") renderPortfolio();
 }
 
 function round2(n){ return Math.round(n*100)/100; }
@@ -1424,6 +1448,7 @@ function executeTrade(mode, stocks, ticker, qty){
   }
   saveCoins(S.coins);
   savePortfolio(pf);
+  syncPortfolioToCloud(pf);
   try{ saveToCloud(getBP(), loadWrong(), loadHist()); }catch(e){}
   renderStatusBar(); // 画面上部のAC残高へ即時反映
   return { ok:true, amount };
