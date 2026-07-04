@@ -2,7 +2,7 @@
   import { getFirestore, doc, setDoc, getDoc, deleteDoc, onSnapshot, collection, query, where, orderBy, limit, getDocs, getCountFromServer, writeBatch, increment } from "https://www.gstatic.com/firebasejs/10.0.0/firebase-firestore.js";
   import { getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword, signOut, onAuthStateChanged, deleteUser, reauthenticateWithCredential, EmailAuthProvider } from "https://www.gstatic.com/firebasejs/10.0.0/firebase-auth.js";
 import { applyCloud, commit, publishLeaderboard, saveCoins, seedCloudFromLocal, totalBP } from './core.js';
-import { app, applyCloudPortfolio, logout, render } from './render.js';
+import { app, applyCloudGcal, applyCloudPortfolio, logout, render } from './render.js';
 import { S, state } from './state.js';
 
   const firebaseConfig = {
@@ -136,6 +136,9 @@ import { S, state } from './state.js';
             // 保有株（ポートフォリオ）をこの端末へ反映。他ユーザーのドキュメントは
             // 購読していないため、ここに届くのは必ずログイン中の本人のデータのみ
             if (data.portfolio) applyCloudPortfolio(data.portfolio);
+            // カレンダーのデモ予定・ToDo・登録者名も同様にこの端末へ反映
+            // （アクセストークン・選択中カレンダーIDはgcal同期の対象外のまま）
+            if (data.gcal) applyCloudGcal(data.gcal);
             // 旧形式（資格未対応の {bp,wrong,history}）→ certs.az900 へ一度だけ移行
             if (!data.certs && data.bp !== undefined) {
               setDoc(doc(state.db, "users", state.currentUserId), {

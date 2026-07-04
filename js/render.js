@@ -1725,7 +1725,47 @@ function gcalHandleIdentityChange(){
   gcalGoogleAutoTried = false;
 }
 
-function loadGcalStore(){
+// カレンダー機能のうち「デモカレンダーの予定」「ToDo」「登録者名」の3つを
+// Firestoreの users/{uid}.gcal へ同期し、別端末でも引き継げるようにする。
+// GoogleのOAuthアクセストークンと選択中カレンダーIDは、各端末でのGoogle
+// 連携そのものに紐づく情報のため、あえて同期対象に含めずローカル限定
+// のままにする（同期しても他端末では改めて連携が必要になり、トークンの
+// ようなセンシティブな情報をクラウドへ置くリスクだけが増えるため）
+function syncGcalToCloud(){
+  if(!state.db || !state.currentUserId || !window.FirebaseSync) return;
+  try{
+    window.FirebaseSync.setDoc(window.FirebaseSync.doc(state.db, "users", state.currentUserId), {
+      gcal: {
+        store: loadGcalStore(),
+        todos: loadGcalTodoStore(),
+        authorName: gcalLoadAuthorName()
+      },
+      updatedAt: new Date().toISOString()
+    }, { merge: true });
+  }catch(e){ console.error("gcal cloud sync failed:", e); }
+}
+
+// クラウド（Firestoreの users/{uid}.gcal）から届いたデータをこの端末の
+// localStorageへ反映する。db.jsのonSnapshotから呼ばれる。ここではsave〇〇()
+// ではなく直接localStorageへ書き込む（save〇〇()はsyncGcalToCloud()を
+// 呼び出すため、そちらを使うと反映のたびにクラウドへ書き戻してしまい、
+// onSnapshotとの間で無限ループになってしまう）
+export function applyCloudGcal(gcal){
+  if(!gcal || typeof gcal !== "object") return;
+  let changed = false;
+  if(gcal.store && typeof gcal.store === "object" && !Array.isArray(gcal.store) && Array.isArray(gcal.store.calendars) && gcal.store.calendars.length){
+    try{ localStorage.setItem(gcalStorageKey(GCAL_STORE_KEY), JSON.stringify(gcal.store)); changed = true; }catch(e){}
+  }
+  if(gcal.todos && typeof gcal.todos === "object" && !Array.isArray(gcal.todos)){
+    try{ localStorage.setItem(gcalStorageKey(GCAL_TODO_STORE_KEY), JSON.stringify(gcal.todos)); changed = true; }catch(e){}
+  }
+  if(typeof gcal.authorName === "string" && gcal.authorName.trim()){
+    try{ localStorage.setItem(gcalStorageKey(GCAL_AUTHOR_NAME_KEY), gcal.authorName.trim()); changed = true; }catch(e){}
+  }
+  if(changed) renderGcalActiveView();
+}
+
+export function loadGcalStore(){
   let store = null;
   try{ store = JSON.parse(localStorage.getItem(gcalStorageKey(GCAL_STORE_KEY)) || "null"); }catch(e){}
   if(!store || !Array.isArray(store.calendars) || !store.calendars.length){
@@ -1745,6 +1785,7 @@ function loadGcalStore(){
 
 function saveGcalStore(store){
   try{ localStorage.setItem(gcalStorageKey(GCAL_STORE_KEY), JSON.stringify(store)); }catch(e){}
+  syncGcalToCloud();
 }
 
 function gcalGenId(prefix){
@@ -1761,12 +1802,13 @@ let gcalViewY = null, gcalViewM = null;
    以後は予定の登録者表示に使う。localStorageで独立管理する */
 const GCAL_AUTHOR_NAME_KEY = "gcal_author_name";
 
-function gcalLoadAuthorName(){
+export function gcalLoadAuthorName(){
   try{ return (localStorage.getItem(gcalStorageKey(GCAL_AUTHOR_NAME_KEY)) || "").trim(); }catch(e){ return ""; }
 }
 
 function gcalSaveAuthorName(name){
   try{ localStorage.setItem(gcalStorageKey(GCAL_AUTHOR_NAME_KEY), (name||"").trim()); }catch(e){}
+  syncGcalToCloud();
 }
 
 // 登録者名が未設定なら設定用モーダルを開いてから、設定済みならすぐに
@@ -1812,12 +1854,13 @@ function openGcalAuthorNameModal(onSaved){
    この端末のlocalStorageで日付ごとに独立管理する簡易ToDoリスト ---- */
 const GCAL_TODO_STORE_KEY = "gcal_todo_store_v1"; // { dateKey: [{id,text,done}] }
 
-function loadGcalTodoStore(){
+export function loadGcalTodoStore(){
   try{ return JSON.parse(localStorage.getItem(gcalStorageKey(GCAL_TODO_STORE_KEY)) || "{}"); }catch(e){ return {}; }
 }
 
 function saveGcalTodoStore(store){
   try{ localStorage.setItem(gcalStorageKey(GCAL_TODO_STORE_KEY), JSON.stringify(store)); }catch(e){}
+  syncGcalToCloud();
 }
 
 // ホーム画面：本日（表示中の1日）だけのコンパクトな確認用ウィジェット
