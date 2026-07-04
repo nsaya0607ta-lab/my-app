@@ -398,7 +398,7 @@ h1.title{font-size:34px;line-height:1.05;font-weight:800;margin:8px 0 0;letter-s
 /* 左上段・中：地名・基準時間・天気アイコン・気温。時計との間、および
    天気情報グループの右側にも縦の区切り線を入れ、「日付・時刻」と「天気」の
    情報グループを視覚的に分ける */
-.weather-info{flex:none;min-width:0;max-width:76px;border-left:1px solid var(--line);border-right:1px solid var(--line);padding-left:7px;padding-right:7px;
+.weather-info{flex:none;min-width:0;max-width:88px;border-left:1px solid var(--line);border-right:1px solid var(--line);padding-left:7px;padding-right:7px;
   display:flex;flex-direction:column;gap:3px;}
 .weather-city{font-size:10.5px;font-weight:700;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
 .weather-asof{font-size:8.5px;font-weight:600;color:var(--muted);opacity:.85;letter-spacing:.02em;white-space:nowrap;}
