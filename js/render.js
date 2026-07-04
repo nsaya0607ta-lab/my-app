@@ -1696,8 +1696,11 @@ function renderGcalActiveView(){
    フォールバックする */
 const GCAL_GOOGLE_CLIENT_ID = "989248012630-eouubhdevjm057iub24r8lojnjn1lres.apps.googleusercontent.com";
 const GCAL_GOOGLE_SCOPES = "https://www.googleapis.com/auth/calendar.events https://www.googleapis.com/auth/calendar.calendarlist.readonly";
-const GCAL_GOOGLE_CONNECTED_KEY = "gcal_google_connected";
+const GCAL_GOOGLE_TOKEN_KEY = "gcal_google_token_v1";
 const GCAL_GOOGLE_ACTIVE_KEY = "gcal_google_active_id";
+// アクセストークンの有効期限のこのぶん手前から「期限切れ間近」とみなし、
+// 使う前にサイレント再ログインへ回す（期限ぎりぎりでAPIが401を返すのを防ぐ）
+const GCAL_GOOGLE_EXPIRY_BUFFER_MS = 2 * 60 * 1000;
 
 let gcalGoogleTokenClient = null;
 let gcalGoogleAccessToken = null;
@@ -1712,16 +1715,55 @@ function gcalGoogleIsConfigured(){
   return !!GCAL_GOOGLE_CLIENT_ID && !GCAL_GOOGLE_CLIENT_ID.startsWith("YOUR_");
 }
 
-// 前回連携済みだった場合、ページ再読み込み時に一度だけサイレント再ログインを
-// 試みる（Googleの同意画面は出さず、有効なセッションがあれば自動復帰）。
-// ホーム画面の週ウィジェット／カレンダー画面の月カード、どちらが先に
-// マウントされても一度しか実行されないよう gcalGoogleAutoTried で guard する
+/* ---- アクセストークンの永続化 ----
+   このアプリはバックエンドを持たない静的サイトのため、クライアント
+   シークレットが必要な「認可コードフロー」（refresh_tokenの発行元）は
+   使えない。GISのトークンクライアント（インプリシット系フロー）が
+   発行するのはアクセストークンのみで、これは1時間程度で失効する。
+   そこで、
+   　1) 取得済みのアクセストークンと有効期限をlocalStorageに保存し、
+   　   次回訪問時に有効期限内ならネットワーク往復なしで即座に復元する
+   　2) 有効期限が切れている／切れかけている場合は、Googleの同意画面を
+   　   出さない「サイレント再ログイン」（prompt:''）を自動で試み、
+   　   ユーザー操作なしで新しいアクセストークンに更新する
+   という2段構えで「refresh_tokenがなくても実質再ログイン不要」を実現する。
+   サイレント再ログインは有効なGoogleセッション（ブラウザ側のCookie）が
+   前提のため、それも失敗した場合のみ「連携」ボタンでの再認証を促す */
+function gcalSaveGoogleToken(accessToken, expiresInSec){
+  const expiresAt = Date.now() + (Number(expiresInSec || 0) * 1000);
+  try{ localStorage.setItem(GCAL_GOOGLE_TOKEN_KEY, JSON.stringify({ access_token: accessToken, expires_at: expiresAt })); }catch(e){}
+}
+
+function gcalLoadGoogleToken(){
+  try{
+    const data = JSON.parse(localStorage.getItem(GCAL_GOOGLE_TOKEN_KEY) || "null");
+    if(!data || !data.access_token || !data.expires_at) return null;
+    return data;
+  }catch(e){ return null; }
+}
+
+function gcalClearGoogleToken(){
+  try{ localStorage.removeItem(GCAL_GOOGLE_TOKEN_KEY); }catch(e){}
+}
+
+// ページ読み込み時に一度だけ実行する自動ログイン復元。ホーム画面の週
+// ウィジェット／カレンダー画面の月カード、どちらが先にマウントされても
+// 一度しか実行されないよう gcalGoogleAutoTried で guard する
 function gcalMaybeAutoReconnect(){
   if(gcalGoogleAccessToken || gcalGoogleConnecting || gcalGoogleAutoTried) return;
   gcalGoogleAutoTried = true;
-  let wasConnected = false;
-  try{ wasConnected = localStorage.getItem(GCAL_GOOGLE_CONNECTED_KEY) === "1"; }catch(e){}
-  if(wasConnected && gcalGoogleIsConfigured()) gcalWaitForGis(() => gcalConnectGoogle(""), 10);
+  if(!gcalGoogleIsConfigured()) return;
+  const token = gcalLoadGoogleToken();
+  if(!token) return;
+  if(token.expires_at - Date.now() > GCAL_GOOGLE_EXPIRY_BUFFER_MS){
+    // まだ有効期限内：通信なしで即座にログイン状態を復元する。
+    // カレンダー一覧の取得は、この直後に呼び出し元（週ウィジェット／月
+    // カード）がgcalGoogleCalendars===nullを検知して自動的に行う
+    gcalGoogleAccessToken = token.access_token;
+    return;
+  }
+  // 期限切れ・期限間近：同意画面を出さないサイレント再ログインを試みる
+  gcalWaitForGis(() => gcalConnectGoogle(""), 10);
 }
 
 function gcalWaitForGis(cb, triesLeft){
@@ -1741,7 +1783,7 @@ function gcalGoogleEnsureTokenClient(){
       if(resp && resp.access_token){
         gcalGoogleAccessToken = resp.access_token;
         gcalGoogleError = null;
-        try{ localStorage.setItem(GCAL_GOOGLE_CONNECTED_KEY, "1"); }catch(e){}
+        gcalSaveGoogleToken(resp.access_token, resp.expires_in);
         gcalGoogleCalendars = null;
         gcalGoogleEventsCache = {};
         gcalGoogleWeekEventsCache = {};
@@ -1790,11 +1832,25 @@ function gcalDisconnectGoogle(){
   gcalGoogleEventsCache = {};
   gcalGoogleWeekEventsCache = {};
   gcalGoogleError = null;
-  try{ localStorage.removeItem(GCAL_GOOGLE_CONNECTED_KEY); localStorage.removeItem(GCAL_GOOGLE_ACTIVE_KEY); }catch(e){}
+  gcalClearGoogleToken();
+  try{ localStorage.removeItem(GCAL_GOOGLE_ACTIVE_KEY); }catch(e){}
   if(token && window.google && window.google.accounts && window.google.accounts.oauth2){
     window.google.accounts.oauth2.revoke(token, () => {});
   }
   renderGcalActiveView();
+}
+
+// 401（認証切れ）を検知したときの共通処理：保存済みトークンを破棄した上で、
+// 同意画面を出さないサイレント再ログインをバックグラウンドで自動的に
+// 試みる。それでも復帰できない場合にだけ「連携」ボタンでの再認証が必要
+// になる（ユーザーには一旦エラーメッセージを表示しつつ、裏では自動復旧を
+// 試みる「スマートな再認証」の形）
+function gcalHandleUnauthorized(){
+  gcalGoogleAccessToken = null;
+  gcalClearGoogleToken();
+  gcalGoogleError = "Googleとの接続が切れました。自動で再接続を試みています…";
+  renderGcalActiveView();
+  if(gcalGoogleIsConfigured()) gcalWaitForGis(() => gcalConnectGoogle(""), 10);
 }
 
 async function gcalGoogleApiFetch(path, options){
@@ -1802,8 +1858,7 @@ async function gcalGoogleApiFetch(path, options){
     headers: Object.assign({ "Authorization": `Bearer ${gcalGoogleAccessToken}` }, (options && options.headers) || {}),
   }));
   if(res.status === 401){
-    gcalGoogleAccessToken = null;
-    gcalGoogleError = "Googleとの接続が切れました。もう一度ログインしてください。";
+    gcalHandleUnauthorized();
     throw new Error("gcal-unauthorized");
   }
   if(!res.ok) throw new Error(`gcal-api-error-${res.status}`);
