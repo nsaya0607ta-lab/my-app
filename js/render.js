@@ -886,8 +886,38 @@ function catmullRomSmoothPath(points){
 }
 
 const POP_CHART_W = 220, POP_CHART_H = 40, POP_CHART_PAD = 4;
-const POP_CHART_Y_TICKS = [100, 80, 60, 40, 20, 0]; // 縦軸目盛り（上→下）
+const POP_CHART_Y_TICKS = [100, 80, 60, 40, 20, 0]; // 縦軸目盛り・％（左軸、上→下）
+// 縦軸目盛り・降水量mm（右軸、上→下）。天気アプリでよく使われる区切り
+// （弱い雨〜激しい雨の目安）に合わせているため値の間隔は不均等だが、
+// 目盛り線自体はPOP_CHART_Y_TICKSと同じ6段に均等割りして共有する
+const PRECIP_Y_TICKS = [25, 15, 10, 6, 3, 0];
 const POP_CHART_LABEL_EVERY = 3; // 横軸の数字は3時間ごとにのみ表示する
+
+// 目盛りのインデックス位置（0=一番上、tickCount-1=一番下）をSVGのY座標に変換する。
+// 端（インデックス0・最後）ではストローク幅の半分がSVG表示範囲の外に出て
+// 消えてしまうため、半径0.5分だけ内側にクランプする
+function axisTickY(index, tickCount){
+  const raw = (index / (tickCount - 1)) * POP_CHART_H;
+  return Math.min(POP_CHART_H - 0.5, Math.max(0.5, raw));
+}
+
+// 降水量(mm)を、PRECIP_Y_TICKS の目盛り間隔（不等間隔）に沿って0(下端)〜
+// 1(上端)の比率に変換する。目盛りの間は線形補間するため、棒グラフの高さが
+// 対応する目盛り線の位置にちょうど揃う
+function precipValueToFrac(mm){
+  const ticksAsc = [...PRECIP_Y_TICKS].reverse(); // [0,3,6,10,15,25]
+  const bands = ticksAsc.length - 1;
+  const max = ticksAsc[bands];
+  const v = Math.max(0, Math.min(max, mm));
+  for(let i=0; i<bands; i++){
+    const lo = ticksAsc[i], hi = ticksAsc[i+1];
+    if(v <= hi || i === bands - 1){
+      const frac = hi > lo ? (v - lo) / (hi - lo) : 0;
+      return (i + frac) / bands;
+    }
+  }
+  return 0;
+}
 
 // 降水確率の推移（今＋1時間おき24点）を、数値の縦並びリストではなく
 // 滑らかな曲線グラフとして描画する。1時間ごとの点をそのままドットとして
@@ -898,7 +928,7 @@ function renderWeatherPopChart(w){
   const el = document.getElementById("weather-pop-chart");
   if(!el) return;
   const points = (w && typeof w.pop === "number")
-    ? [{ label:"今", pop:w.pop }, ...(w.hourly||[]).map(h => ({ label: formatPopChartHour(h.time), pop:h.pop }))]
+    ? [{ label:"今", pop:w.pop, precip:w.precip }, ...(w.hourly||[]).map(h => ({ label: formatPopChartHour(h.time), pop:h.pop, precip:h.precip }))]
     : [];
   if(points.length < 2){ el.innerHTML = ""; return; }
   const n = points.length;
@@ -910,31 +940,53 @@ function renderWeatherPopChart(w){
   }));
   const pathD = catmullRomSmoothPath(coords);
   const dots = coords.map(c => `<circle cx="${c.x.toFixed(1)}" cy="${c.y.toFixed(1)}" r="1.7" fill="var(--accent)"></circle>`).join("");
-  const gridlines = POP_CHART_Y_TICKS.map(v => {
-    const y = POP_CHART_PAD + innerH - (v/100)*innerH;
-    return `<line x1="${POP_CHART_PAD}" y1="${y.toFixed(1)}" x2="${POP_CHART_W - POP_CHART_PAD}" y2="${y.toFixed(1)}" stroke="var(--line)" stroke-width="1" opacity=".5"></line>`;
+
+  // 降水量(mm)のヒストグラム。折れ線と同じx座標(coords)に、点の間隔の半分の
+  // 太さの棒を中心にして立てる。棒は折れ線より奥（背面）に描く
+  const barW = Math.max(1.2, (innerW / (n - 1)) * 0.5);
+  const bars = points.map((p, i) => {
+    const mm = Math.max(0, typeof p.precip === "number" ? p.precip : 0);
+    const barH = precipValueToFrac(mm) * POP_CHART_H;
+    const x = coords[i].x;
+    return `<rect x="${(x - barW/2).toFixed(1)}" y="${(POP_CHART_H - barH).toFixed(1)}" width="${barW.toFixed(1)}" height="${barH.toFixed(1)}" fill="var(--precip)" opacity=".85" rx=".6"></rect>`;
   }).join("");
-  const yTicks = POP_CHART_Y_TICKS.map(v => `<span>${v}</span>`).join("");
+
+  // 目盛り線とラベルを同じY座標式で位置決めする（別々のflex配置に頼らない）。
+  // ％軸（左）とmm軸（右）は目盛りの本数が同じ(6本)なので、線そのものは
+  // 共有し、ラベルの数字だけ左右で意味（％ / mm）を変える
+  const gridlines = POP_CHART_Y_TICKS.map((_, i) => {
+    const y = axisTickY(i, POP_CHART_Y_TICKS.length);
+    return `<line x1="0" y1="${y.toFixed(1)}" x2="${POP_CHART_W}" y2="${y.toFixed(1)}" stroke="var(--line)" stroke-width="1" opacity=".5"></line>`;
+  }).join("");
+  const yTicks = POP_CHART_Y_TICKS.map((v, i) => `<span style="top:${(axisTickY(i, POP_CHART_Y_TICKS.length)/POP_CHART_H*100).toFixed(2)}%">${v}</span>`).join("");
+  const mmTicks = PRECIP_Y_TICKS.map((v, i) => `<span style="top:${(axisTickY(i, PRECIP_Y_TICKS.length)/POP_CHART_H*100).toFixed(2)}%">${v}</span>`).join("");
+
   // 横軸の数字ラベルは3時間ごと（今＝0時間後を含む）にのみ間引く。
   // 元データが1時間おきの等間隔のため、間引いた後も均等割り付けで軸と揃う
   const labelPoints = points.filter((_,i) => i % POP_CHART_LABEL_EVERY === 0);
   const labels = labelPoints.map(p => `<span>${esc(p.label)}</span>`).join("");
   el.innerHTML = `
-    <div class="pop-axis-yunit">%</div>
+    <div class="weather-pop-chart-units">
+      <div class="pop-axis-yunit">%</div>
+      <div class="pop-axis-yunit-right">mm</div>
+    </div>
     <div class="weather-pop-chart-row">
       <div class="pop-axis-ycol pop-axis-yticks">${yTicks}</div>
       <div class="weather-pop-chart-plot">
         <svg class="weather-pop-chart-svg" viewBox="0 0 ${POP_CHART_W} ${POP_CHART_H}" preserveAspectRatio="none">
+          ${bars}
           ${gridlines}
           <path d="${pathD}" fill="none" stroke="var(--accent)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"></path>
           ${dots}
         </svg>
       </div>
+      <div class="pop-axis-ycol pop-axis-yticks-right">${mmTicks}</div>
     </div>
     <div class="weather-pop-chart-xrow">
       <div class="pop-axis-ycol pop-axis-yspacer"></div>
       <div class="weather-pop-chart-labels">${labels}</div>
       <div class="pop-axis-xunit">時</div>
+      <div class="pop-axis-ycol pop-axis-yspacer"></div>
     </div>`;
 }
 

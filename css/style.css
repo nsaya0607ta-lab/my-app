@@ -6,6 +6,7 @@
   --surface2:#e2e8f0;  /* ホバー時やアクティブ時のグレー (slate-200) */
   --line:#cbd5e1;      /* 境界線 (slate-300) */
   --accent:#0284c7;    /* プライマリ・アクセント青 (sky-600) */
+  --precip:#7dd3fc;    /* 降水量ヒストグラムの水色 (sky-300) */
   --good:#16a34a;      /* 正解・成功の緑 (green-600) */
   --gold:#d97706;      /* 警告・ゴールド (amber-600) */
   --bad:#dc2626;       /* 不正解・警告の赤 (red-600) */
@@ -406,15 +407,23 @@ h1.title{font-size:34px;line-height:1.05;font-weight:800;margin:8px 0 0;letter-s
 .weather-icon{font-size:20px;line-height:1;}
 .weather-temp{font-size:16px;font-weight:800;color:var(--text);font-variant-numeric:tabular-nums;}
 
-/* 左下段：降水確率の推移を示す滑らかな曲線グラフ。1時間ごとの点をドットとして
-   打ち、縦軸（0〜100%の目盛り）・横軸（3時間ごとの時刻ラベル）を添える。
-   単位（%・時）はそれぞれ縦軸の一番上／横軸の一番右端に1回だけ表示する */
+/* 左下段：降水確率の推移を示す滑らかな曲線グラフ＋降水量(mm)のヒストグラムの
+   重ね合わせ。1時間ごとの点をドットとして打ち、縦軸は左（0〜100%の目盛り）・
+   右（0,3,6,10,15,25mmの目盛り。値の間隔は不均等だが目盛り線自体は左軸と
+   共有し等間隔に配置する）の2軸、横軸（3時間ごとの時刻ラベル）を添える。
+   単位（%・mm・時）はそれぞれ縦軸の一番上（左右）／横軸の一番右端に
+   1回だけ表示する */
 .weather-pop-chart{flex:1;min-width:0;display:flex;flex-direction:column;justify-content:flex-end;}
-.pop-axis-yunit{align-self:flex-start;width:13px;font-size:7px;font-weight:700;color:var(--muted);line-height:1;margin-bottom:1px;}
+.weather-pop-chart-units{display:flex;justify-content:space-between;margin-bottom:1px;}
+.pop-axis-yunit{width:13px;font-size:7px;font-weight:700;color:var(--muted);line-height:1;}
+.pop-axis-yunit-right{width:13px;font-size:7px;font-weight:700;color:var(--muted);line-height:1;text-align:right;}
 .weather-pop-chart-row{display:flex;align-items:stretch;gap:3px;}
 .pop-axis-ycol{flex:none;width:13px;}
-.pop-axis-yticks{display:flex;flex-direction:column;justify-content:space-between;align-items:flex-end;}
-.pop-axis-yticks span{font-size:7px;font-weight:600;color:var(--muted);line-height:1;font-variant-numeric:tabular-nums;}
+.pop-axis-yticks,.pop-axis-yticks-right{position:relative;}
+.pop-axis-yticks span{position:absolute;right:0;transform:translateY(-50%);
+  font-size:7px;font-weight:600;color:var(--muted);line-height:1;font-variant-numeric:tabular-nums;white-space:nowrap;}
+.pop-axis-yticks-right span{position:absolute;left:0;transform:translateY(-50%);
+  font-size:7px;font-weight:600;color:var(--muted);line-height:1;font-variant-numeric:tabular-nums;white-space:nowrap;}
 .weather-pop-chart-plot{flex:1;min-width:0;}
 .weather-pop-chart-svg{display:block;width:100%;height:32px;}
 .weather-pop-chart-xrow{display:flex;align-items:baseline;gap:3px;margin-top:2px;}
