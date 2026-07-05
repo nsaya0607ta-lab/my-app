@@ -1778,7 +1778,8 @@ function syncGcalToCloud(){
       gcal: {
         store: loadGcalStore(),
         todos: loadGcalTodoStore(),
-        authorName: gcalLoadAuthorName()
+        authorName: gcalLoadAuthorName(),
+        calNameOverrides: gcalLoadCalNameOverrides()
       },
       updatedAt: new Date().toISOString()
     }, { merge: true });
@@ -1801,6 +1802,15 @@ export function applyCloudGcal(gcal){
   }
   if(typeof gcal.authorName === "string" && gcal.authorName.trim()){
     try{ localStorage.setItem(gcalStorageKey(GCAL_AUTHOR_NAME_KEY), gcal.authorName.trim()); changed = true; }catch(e){}
+  }
+  if(gcal.calNameOverrides && typeof gcal.calNameOverrides === "object" && !Array.isArray(gcal.calNameOverrides)){
+    try{
+      localStorage.setItem(gcalStorageKey(GCAL_CAL_NAME_OVERRIDE_KEY), JSON.stringify(gcal.calNameOverrides));
+      changed = true;
+      // 取得済みのGoogleカレンダー一覧が既にメモリ上にあるなら、再取得を
+      // 待たずに表示名だけその場で反映する
+      if(gcalGoogleCalendars) gcalGoogleCalendars.forEach(c => { if(gcal.calNameOverrides[c.id]) c.name = gcal.calNameOverrides[c.id]; });
+    }catch(e){}
   }
   if(changed) renderGcalActiveView();
 }
@@ -1894,6 +1904,28 @@ function openGcalAuthorNameModal(onSaved){
   ov.querySelector("#gcal-author-save").onclick = submit;
   input.onkeydown = (e) => { if(e.key === "Enter") submit(); };
   input.focus();
+}
+
+/* ---- Googleカレンダーの表示名の上書き ----
+   Google側のカレンダー名（プライマリカレンダーならGmailアドレスがそのまま
+   表示される）を、この端末（ログイン中ユーザー）専用の好きな表示名に
+   置き換えるための上書き設定。Google側の実際のカレンダー名は変更しない、
+   あくまでこのアプリ内の表示だけを差し替える簡易実装 */
+const GCAL_CAL_NAME_OVERRIDE_KEY = "gcal_cal_name_override_v1"; // { [calId]: customName }
+
+export function gcalLoadCalNameOverrides(){
+  try{
+    const data = JSON.parse(localStorage.getItem(gcalStorageKey(GCAL_CAL_NAME_OVERRIDE_KEY)) || "{}");
+    return (data && typeof data === "object" && !Array.isArray(data)) ? data : {};
+  }catch(e){ return {}; }
+}
+
+function gcalSaveCalNameOverride(calId, name){
+  const overrides = gcalLoadCalNameOverrides();
+  const trimmed = (name||"").trim();
+  if(trimmed) overrides[calId] = trimmed; else delete overrides[calId];
+  try{ localStorage.setItem(gcalStorageKey(GCAL_CAL_NAME_OVERRIDE_KEY), JSON.stringify(overrides)); }catch(e){}
+  syncGcalToCloud();
 }
 
 /* ---- 本日のタスク（ToDo）。Googleカレンダー連携の有無に関わらず、常に
@@ -2188,9 +2220,10 @@ async function gcalRefreshGoogleCalendars(){
     // ダーが一覧にすら出ず、予定も取得できていなかった。freeBusyReader（予定の
     // 有無しか分からない権限）はタイトル等を取得できないためこれまで通り除外する
     const data = await gcalGoogleApiFetch("users/me/calendarList?minAccessRole=reader");
+    const nameOverrides = gcalLoadCalNameOverrides();
     gcalGoogleCalendars = (data.items || []).map((c, i) => ({
       id: c.id,
-      name: c.summaryOverride || c.summary || c.id,
+      name: nameOverrides[c.id] || c.summaryOverride || c.summary || c.id,
       color: c.backgroundColor || GCAL_COLORS[i % GCAL_COLORS.length],
       primary: !!c.primary,
       accessRole: c.accessRole || "reader",
@@ -2287,6 +2320,19 @@ function gcalMergeEventMaps(maps){
     merged[dk] = Array.from(seen.values());
   });
   return merged;
+}
+
+// 連携中の全カレンダーぶんをまとめて保持しているイベントmapから、指定
+// カレンダーID（スイッチャーで選択中のカレンダー）の予定だけを取り出す。
+// これによりカレンダーの切替（タブ）が「新しい予定の追加先」だけでなく
+// 「グリッドの●印・下の予定一覧に表示する対象」も切り替える仕様になる
+function gcalFilterMapByCal(map, calId){
+  const out = {};
+  Object.keys(map).forEach(dk => {
+    const evs = map[dk].filter(ev => ev.calId === calId);
+    if(evs.length) out[dk] = evs;
+  });
+  return out;
 }
 
 // 連携中の全カレンダー（自分のプライマリ＋他アカウントから共有された
@@ -2811,11 +2857,9 @@ function renderGcalMonthCard(){
         <div class="gcal-box">
           ${gcalConnectBarHTML()}
           ${errorHTML}
-          ${gcalAuthorRowHTML()}
           <div class="gcal-google-loading">カレンダー一覧を読み込み中…</div>
         </div>`;
       gcalBindConnectBar(root);
-      gcalBindAuthorRow(root);
       gcalRefreshGoogleCalendars();
       return;
     }
@@ -2824,11 +2868,9 @@ function renderGcalMonthCard(){
         <div class="gcal-box">
           ${gcalConnectBarHTML()}
           ${errorHTML}
-          ${gcalAuthorRowHTML()}
           <div class="gcal-google-loading">書き込み可能なカレンダーが見つかりませんでした。</div>
         </div>`;
       gcalBindConnectBar(root);
-      gcalBindAuthorRow(root);
       return;
     }
 
@@ -2843,20 +2885,24 @@ function renderGcalMonthCard(){
           <button type="button" class="gcal-chip${isActive?" active":""}" data-gcal="${esc(c.id)}" style="--chip-color:${esc(c.color)}">
             <span class="gcal-chip-dot"></span>${esc(c.name)}
           </button>
+          <button type="button" class="gcal-rename-btn" data-rename="${esc(c.id)}" aria-label="${esc(c.name)}の表示名を変更" title="表示名を変更">✎</button>
         </div>`;
     }).join("");
 
-    // グリッド・予定一覧には連携中の全カレンダー（他アカウントから共有された
-    // サブカレンダーを含む）ぶんの予定をまとめて表示する。スイッチャーは
-    // 「新しい予定をどのカレンダーへ追加するか」を選ぶ用途として残す
+    // スイッチャーで選んだカレンダーが「アクティブなカレンダー」となり、
+    // 新しい予定の追加先になるだけでなく、グリッドの●印・下の予定一覧も
+    // そのカレンダー単体の予定だけに絞り込む（＝カレンダーの切替）。
+    // 取得自体は連携中の全カレンダー（共有カレンダーを含む）ぶんを一度に
+    // まとめて行い、切替のたびに再取得しなくて済むようキャッシュ済みの
+    // マージ済みマップからクライアント側でカレンダーIDによる絞り込みを行う
     const evKey = gcalEventsCacheKey(gcalViewY, gcalViewM);
     const evMerged = gcalGoogleEventsCache[evKey];
+    const evActive = evMerged ? gcalFilterMapByCal(evMerged, active.id) : null;
 
     root.innerHTML = `
       <div class="gcal-box">
         ${gcalConnectBarHTML()}
         ${errorHTML}
-        ${gcalAuthorRowHTML()}
         <div class="gcal-switcher">${switcherHTML}</div>
         <div class="gcal-cal-head">
           <button type="button" class="gcal-nav-btn" id="gcal-prev" aria-label="前の月">‹</button>
@@ -2865,19 +2911,22 @@ function renderGcalMonthCard(){
         </div>
         <div class="gcal-grid-wrap">
           <div class="gcal-grid gcal-weekdays">${NEWS_WEEKDAYS.map(w=>`<span class="gcal-wd-cell">${w}</span>`).join("")}</div>
-          <div class="gcal-grid">${evMerged ? gcalDayCellsHTML(gcalViewY, gcalViewM, evMerged, todayKey, active.color, gcalSelectedDay) : ""}</div>
+          <div class="gcal-grid">${evActive ? gcalDayCellsHTML(gcalViewY, gcalViewM, evActive, todayKey, active.color, gcalSelectedDay) : ""}</div>
         </div>
-        ${evMerged ? "" : `<div class="gcal-google-loading">予定を読み込み中…</div>`}
-        ${evMerged && gcalSelectedDay !== null ? gcalSelectedDaySectionHTML(gcalViewY, gcalViewM, gcalSelectedDay, evMerged[newsDateKey(gcalViewY, gcalViewM, gcalSelectedDay)] || []) : ""}
+        ${evActive ? "" : `<div class="gcal-google-loading">予定を読み込み中…</div>`}
+        ${evActive && gcalSelectedDay !== null ? gcalSelectedDaySectionHTML(gcalViewY, gcalViewM, gcalSelectedDay, evActive[newsDateKey(gcalViewY, gcalViewM, gcalSelectedDay)] || []) : ""}
         <div class="gcal-google-note">カレンダーの追加・共有設定は<a href="https://calendar.google.com/" target="_blank" rel="noopener noreferrer">Googleカレンダー</a>側で行ってください。</div>
       </div>`;
 
     gcalBindConnectBar(root);
-    gcalBindAuthorRow(root);
     root.querySelectorAll("[data-gcal]").forEach(b => b.onclick = () => {
       try{ localStorage.setItem(gcalStorageKey(GCAL_GOOGLE_ACTIVE_KEY), b.dataset.gcal); }catch(e){}
       gcalSelDayError = null;
       renderGcalMonthCard();
+    });
+    root.querySelectorAll("[data-rename]").forEach(b => b.onclick = (e) => {
+      e.stopPropagation();
+      openGcalRenameCalendarModal(b.dataset.rename);
     });
     root.querySelector("#gcal-prev").onclick = () => { gcalViewM--; if(gcalViewM<0){ gcalViewM=11; gcalViewY--; } gcalSelDayError = null; renderGcalMonthCard(); };
     root.querySelector("#gcal-next").onclick = () => { gcalViewM++; if(gcalViewM>11){ gcalViewM=0; gcalViewY++; } gcalSelDayError = null; renderGcalMonthCard(); };
@@ -2895,7 +2944,7 @@ function renderGcalMonthCard(){
       if(gcalSelectedDay !== null){
         gcalBindSelectedDaySection(root, {
           mode: "google", calId: active.id, color: active.color, name: active.name,
-          getEventsMap: () => gcalGoogleEventsCache[evKey] || {},
+          getEventsMap: () => gcalFilterMapByCal(gcalGoogleEventsCache[evKey] || {}, active.id),
           refresh: () => gcalRefreshGoogleEvents(gcalViewY, gcalViewM),
         }, gcalViewY, gcalViewM, gcalSelectedDay);
         gcalApplyMarquee(root);
@@ -2924,7 +2973,6 @@ function renderGcalMonthCard(){
     <div class="gcal-box">
       ${gcalConnectBarHTML()}
       ${errorHTML}
-      ${gcalAuthorRowHTML()}
       <div class="gcal-switcher">${switcherHTML}</div>
       <div class="gcal-cal-head">
         <button type="button" class="gcal-nav-btn" id="gcal-prev" aria-label="前の月">‹</button>
@@ -2939,7 +2987,6 @@ function renderGcalMonthCard(){
     </div>`;
 
   gcalBindConnectBar(root);
-  gcalBindAuthorRow(root);
   root.querySelectorAll("[data-cal]").forEach(b => b.onclick = () => {
     const s2 = loadGcalStore();
     s2.activeId = b.dataset.cal;
@@ -2978,20 +3025,6 @@ function renderGcalMonthCard(){
     }, gcalViewY, gcalViewM, gcalSelectedDay);
     gcalApplyMarquee(root);
   }
-}
-
-function gcalAuthorRowHTML(){
-  const name = gcalLoadAuthorName();
-  return `
-    <div class="gcal-author-row">
-      <span class="gcal-author-label">予定の登録者名：<b>${name ? esc(name) : "未設定"}</b></span>
-      <button type="button" class="gcal-author-edit-btn" id="gcal-author-edit">${name ? "変更" : "設定"}</button>
-    </div>`;
-}
-
-function gcalBindAuthorRow(root){
-  const btn = root.querySelector("#gcal-author-edit");
-  if(btn) btn.onclick = () => openGcalAuthorNameModal(() => renderGcalMonthCard());
 }
 
 // 日付セルタップで開く、その日の予定の確認・追加・削除ポップアップ。
@@ -3208,6 +3241,42 @@ function openGcalAddCalendarModal(){
   document.body.appendChild(ov);
   ov.addEventListener("click", (e) => { if(e.target === ov) close(); });
   draw();
+}
+
+// スイッチャーの✎ボタンから開く、Googleカレンダーの表示名をこのアプリ内
+// だけ好きな名前に変更するポップアップ。Google側の実際のカレンダー名
+// （プライマリカレンダーならGmailアドレス）は変更せず、表示だけを上書きする
+function openGcalRenameCalendarModal(calId){
+  const cal = (gcalGoogleCalendars || []).find(c => c.id === calId);
+  if(!cal) return;
+  const ov = document.createElement("div");
+  ov.className = "modal-ov";
+  const close = () => { try{ ov.remove(); }catch(e){} };
+
+  ov.innerHTML = `
+    <div class="modal">
+      <div class="modal-title" style="color:var(--text)">✎ 表示名を変更</div>
+      <div class="gcal-modal-sub">${esc(cal.name)}</div>
+      <input type="text" class="gcal-ev-input gcal-newcal-input" id="gcal-rename-input" placeholder="表示名（例：自分の予定）" maxlength="40" value="${esc(cal.name)}">
+      <button class="cta" id="gcal-rename-save">保存する</button>
+      <button class="ghost" id="gcal-rename-cancel" style="margin-top:8px">キャンセル</button>
+    </div>`;
+
+  const input = ov.querySelector("#gcal-rename-input");
+  ov.querySelector("#gcal-rename-cancel").onclick = close;
+  ov.querySelector("#gcal-rename-save").onclick = () => {
+    const name = (input.value||"").trim();
+    if(!name){ input.focus(); return; }
+    gcalSaveCalNameOverride(calId, name);
+    cal.name = name;
+    close();
+    renderGcalMonthCard();
+  };
+
+  document.body.appendChild(ov);
+  ov.addEventListener("click", (e) => { if(e.target === ov) close(); });
+  input.focus();
+  input.select();
 }
 
 export function renderSelect(){
