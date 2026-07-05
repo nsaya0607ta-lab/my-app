@@ -2245,7 +2245,7 @@ function gcalMapGoogleEventItems(items, calMeta){
     const { author, title } = gcalParseAuthorTitle(ev.summary);
     if(!map[dk]) map[dk] = [];
     map[dk].push({
-      id: ev.id, title, start, end, author,
+      id: ev.id, iCalUID: ev.iCalUID, title, start, end, author,
       calId: calMeta ? calMeta.id : undefined,
       calColor: calMeta ? calMeta.color : undefined,
       calName: calMeta ? calMeta.name : undefined,
@@ -2255,6 +2255,18 @@ function gcalMapGoogleEventItems(items, calMeta){
   return map;
 }
 
+// 同じ予定が複数カレンダーから重複して届いた場合の判定キー。
+// カレンダー共有と招待（ゲスト追加）を両方行うと、同一の予定が
+// 共有カレンダー側と自分のプライマリカレンダー側の両方から取得され、
+// 画面に2件ずつ表示されてしまう。iCalUIDは同一予定なら参加者全員の
+// カレンダーで共通なので、これを優先キーにし、無ければidで、
+// それも無ければタイトル・開始・終了時刻の組み合わせで判定する
+function gcalEventDedupeKey(ev){
+  if(ev.iCalUID) return `uid:${ev.iCalUID}`;
+  if(ev.id) return `id:${ev.id}`;
+  return `t:${ev.title}|${ev.start}|${ev.end}`;
+}
+
 function gcalMergeEventMaps(maps){
   const merged = {};
   maps.forEach(m => {
@@ -2262,6 +2274,17 @@ function gcalMergeEventMaps(maps){
       if(!merged[dk]) merged[dk] = [];
       merged[dk].push(...m[dk]);
     });
+  });
+  Object.keys(merged).forEach(dk => {
+    const seen = new Map();
+    merged[dk].forEach(ev => {
+      const key = gcalEventDedupeKey(ev);
+      const existing = seen.get(key);
+      // 同じ予定の重複コピーが複数あるときは、プライマリカレンダー側の
+      // コピーを優先して残す（編集権限や表示上の整合性のため）
+      if(!existing || (!existing.calPrimary && ev.calPrimary)) seen.set(key, ev);
+    });
+    merged[dk] = Array.from(seen.values());
   });
   return merged;
 }
