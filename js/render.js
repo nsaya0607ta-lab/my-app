@@ -3142,6 +3142,11 @@ export function renderSelect(){
 // q-head（← ホーム＋タイトル）の構成に統一し、Google連携の設定と
 // 1ヶ月フル表示のカレンダー管理をここに集約する
 export function renderCalendarScreen(){
+  // カレンダー名の変更やGoogle側での共有設定変更が、この端末で開きっぱなしの
+  // セッションにも反映されるよう、画面を開くたびにカレンダー一覧を取得し直す
+  // （一度取得した一覧はメモリにキャッシュされ、識別情報が変わるかGoogle連携を
+  // やり直すまで再取得されない仕組みのため、ここで明示的に破棄する）
+  if(gcalGoogleAccessToken) gcalGoogleCalendars = null;
   app.innerHTML = `
     <div class="q-head"><button class="quit" data-go="select">← ホーム</button><span class="q-count">📅 カレンダー</span></div>
     ${gcalMonthCardHTML()}
