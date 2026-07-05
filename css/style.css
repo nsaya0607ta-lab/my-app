@@ -407,13 +407,17 @@ h1.title{font-size:34px;line-height:1.05;font-weight:800;margin:8px 0 0;letter-s
 .weather-icon{font-size:20px;line-height:1;}
 .weather-temp{font-size:16px;font-weight:800;color:var(--text);font-variant-numeric:tabular-nums;}
 
-/* 左上段・右：直近1時間の降水量(mm)と、その量に応じた注意喚起テキスト。
+/* 左上段・右：直近1時間の降水量(mm)と、その量に応じた注意喚起コメント。
    weather-info・weather-datetimeがともにflex:noneで幅が伸びないため、
-   weather-left-top内の残り幅をここが埋める。文言が幅に収まらない場合は
+   weather-left-top内の残り幅をここが埋める。上段「現在 ◯mm/h」は数値を
+   青字にして常に静止表示、下段のコメントだけ文言が幅に収まらない場合に
    横スクロール（右→左に流れるマーキー）で全文を見せる */
-.weather-precip-alert{flex:1;min-width:0;overflow:hidden;height:100%;display:flex;align-items:center;}
-.weather-precip-alert-track{display:inline-block;white-space:nowrap;font-size:10.5px;font-weight:700;color:var(--text);}
-.weather-precip-alert-track.weather-precip-marquee{position:relative;left:100%;
+.weather-precip-alert{flex:1;min-width:0;display:flex;flex-direction:column;justify-content:center;gap:2px;}
+.weather-precip-now{font-size:10.5px;font-weight:700;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.weather-precip-now-value{color:var(--accent);}
+.weather-precip-comment{overflow:hidden;}
+.weather-precip-comment-track{display:inline-block;white-space:nowrap;font-size:10.5px;font-weight:700;color:var(--text);}
+.weather-precip-comment-track.weather-precip-marquee{position:relative;left:100%;
   animation-name:weather-precip-marquee;animation-timing-function:linear;animation-iteration-count:infinite;}
 @keyframes weather-precip-marquee{
   from{ transform:translateX(0); }
