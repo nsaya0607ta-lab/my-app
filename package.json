@@ -7,5 +7,10 @@
   },
   "dependencies": {
     "firebase-admin": "^14.1.0"
+  },
+  "overrides": {
+    "jwks-rsa": {
+      "jose": "^5.10.0"
+    }
   }
 }
