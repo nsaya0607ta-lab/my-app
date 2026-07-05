@@ -1809,7 +1809,7 @@ export function applyCloudGcal(gcal){
       changed = true;
       // 取得済みのGoogleカレンダー一覧が既にメモリ上にあるなら、再取得を
       // 待たずに表示名だけその場で反映する
-      if(gcalGoogleCalendars) gcalGoogleCalendars.forEach(c => { if(gcal.calNameOverrides[c.id]) c.name = gcal.calNameOverrides[c.id]; });
+      if(gcalGoogleCalendars) gcalGoogleCalendars.forEach(c => { if(gcal.calNameOverrides[c.id]){ c.name = gcal.calNameOverrides[c.id]; c.renamed = true; } });
     }catch(e){}
   }
   if(changed) renderGcalActiveView();
@@ -1865,6 +1865,19 @@ export function gcalLoadAuthorName(){
 function gcalSaveAuthorName(name){
   try{ localStorage.setItem(gcalStorageKey(GCAL_AUTHOR_NAME_KEY), (name||"").trim()); }catch(e){}
   syncGcalToCloud();
+  gcalPublishOwnName();
+}
+
+// 「今アプリを使っている本人」が登録した表示名（カレンダー専用の登録者名、
+// 無ければアプリのユーザー名）を、Google連携メールアドレスをキーにした公開
+// ディレクトリへ発行する。共有カレンダーの相手側が、自分の予定一覧の見出し
+// にGmailアドレスではなくこの登録名を表示できるようにするため。Google連携
+// 済みで名前が決まっているときだけ発行し、ローカル（デモ）モードや連携前は
+// 発行しようがないため何もしない
+function gcalPublishOwnName(){
+  const email = gcalOwnGoogleEmail();
+  const name = gcalLoadAuthorName() || getProfileName();
+  if(email && name && window.GcalNames) window.GcalNames.publish(email, name).catch(() => {});
 }
 
 // 登録者名が未設定なら設定用モーダルを開いてから、設定済みならすぐに
@@ -2247,6 +2260,7 @@ async function gcalRefreshGoogleCalendars(){
       color: c.backgroundColor || GCAL_COLORS[i % GCAL_COLORS.length],
       primary: !!c.primary,
       accessRole: c.accessRole || "reader",
+      renamed: !!nameOverrides[c.id],
     }));
     let activeId = null;
     try{ activeId = localStorage.getItem(gcalStorageKey(GCAL_GOOGLE_ACTIVE_KEY)); }catch(e){}
@@ -2255,6 +2269,10 @@ async function gcalRefreshGoogleCalendars(){
       activeId = (primary || gcalGoogleCalendars[0] || {}).id || null;
     }
     if(activeId){ try{ localStorage.setItem(gcalStorageKey(GCAL_GOOGLE_ACTIVE_KEY), activeId); }catch(e){} }
+    // カレンダー連携が確認できたタイミングで、既存ユーザーが名前を編集して
+    // いなくても自分の登録名を公開ディレクトリへ発行しておく（相手側が
+    // 開くたびに毎回発行されるだけで、内容が同じなら実質的に無害な上書き）
+    gcalPublishOwnName();
   }catch(e){
     if(!gcalGoogleError) gcalGoogleError = "カレンダー一覧の取得に失敗しました。";
     gcalGoogleCalendars = [];
@@ -2308,6 +2326,7 @@ function gcalMapGoogleEventItems(items, calMeta){
       calColor: calMeta ? calMeta.color : undefined,
       calName: calMeta ? calMeta.name : undefined,
       calPrimary: calMeta ? !!calMeta.primary : undefined,
+      calRenamed: calMeta ? !!calMeta.renamed : undefined,
     });
   });
   return map;
@@ -2637,15 +2656,43 @@ function gcalIsOwnEvent(ev){
   return !own || ev.creatorEmail === own;
 }
 
+// 「共有カレンダー経由で見えている他ユーザー」がこのアプリ自身に登録した
+// 名前を、Google連携メールアドレス→登録名の公開ディレクトリ（gcalNames
+// コレクション）からキャッシュ付きで引く。一度取得（または「登録なし」と
+// 判明）したメールアドレスは再問い合わせしない。取得中・未取得はnullを返し
+// （その間は呼び出し元がcreatorName等へフォールバックする）、取得が完了した
+// 時点でrenderGcalActiveView()により表示中の予定一覧を登録名へ更新する
+const gcalNameDirectory = {};
+const gcalNameDirectoryPending = new Set();
+function gcalLookupRegisteredName(email){
+  const key = (email || "").trim().toLowerCase();
+  if(!key || !window.GcalNames) return null;
+  if(Object.prototype.hasOwnProperty.call(gcalNameDirectory, key)) return gcalNameDirectory[key];
+  if(!gcalNameDirectoryPending.has(key)){
+    gcalNameDirectoryPending.add(key);
+    window.GcalNames.lookup(key)
+      .then(name => { gcalNameDirectory[key] = name || null; })
+      .catch(() => { gcalNameDirectory[key] = null; })
+      .finally(() => { gcalNameDirectoryPending.delete(key); renderGcalActiveView(); });
+  }
+  return null;
+}
+
 // 予定1件の「作成者ラベル」を決定する。手動入力の登録者名(author)を最優先、
 // 次に本人自身の予定なら「アプリに登録したユーザー名」（呼び出し元が渡す
-// fallback）、それ以外（共有カレンダー経由の他ユーザーの予定）はGoogle
-// カレンダー本来の作成者情報(creatorName)、それも無ければ取得元カレンダー名
+// fallback）を使う。それ以外（共有カレンダー経由の他ユーザーの予定）は、
+// その相手が自分自身でこのアプリに登録した名前（公開ディレクトリ）を最優先
+// する。次点として「カレンダーの表示名を変更」（✎）でこちら側が登録した名前
+// (calRenamed && calName)、それも無ければGoogleカレンダー本来の作成者情報
+// (creatorName。多くの場合Gmailアドレスそのまま)、最後に取得元カレンダー名
 // (calName)を使う
 function gcalEventUserLabel(ev, fallback){
   const author = (ev.author || "").trim();
   if(author) return author;
   if(gcalIsOwnEvent(ev)) return fallback || "予定";
+  const registered = ev.creatorEmail ? gcalLookupRegisteredName(ev.creatorEmail) : null;
+  if(registered) return registered;
+  if(ev.calRenamed && ev.calName) return ev.calName;
   if(ev.creatorName) return ev.creatorName;
   if(ev.calName) return ev.calName;
   return fallback || "予定";
@@ -3565,6 +3612,7 @@ function openGcalRenameCalendarModal(calId){
     if(!name){ input.focus(); return; }
     gcalSaveCalNameOverride(calId, name);
     cal.name = name;
+    cal.renamed = true;
     close();
     renderGcalMonthCard();
   };
