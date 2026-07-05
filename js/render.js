@@ -962,9 +962,13 @@ function renderWeatherPopChart(w){
   const mmTicks = PRECIP_Y_TICKS.map((v, i) => `<span style="top:${(axisTickY(i, PRECIP_Y_TICKS.length)/POP_CHART_H*100).toFixed(2)}%">${v}</span>`).join("");
 
   // 横軸の数字ラベルは3時間ごと（今＝0時間後を含む）にのみ間引く。
-  // 元データが1時間おきの等間隔のため、間引いた後も均等割り付けで軸と揃う
-  const labelPoints = points.filter((_,i) => i % POP_CHART_LABEL_EVERY === 0);
-  const labels = labelPoints.map(p => `<span>${esc(p.label)}</span>`).join("");
+  // 折れ線・棒グラフと同じx座標(coords)を使って絶対配置することで、
+  // 数字の真下にその時刻の点・棒がくるようにする（flexの均等割りに頼らない）
+  const labels = points
+    .map((p, i) => ({ p, i }))
+    .filter(({ i }) => i % POP_CHART_LABEL_EVERY === 0)
+    .map(({ p, i }) => `<span style="left:${(coords[i].x / POP_CHART_W * 100).toFixed(2)}%">${esc(p.label)}</span>`)
+    .join("");
   el.innerHTML = `
     <div class="weather-pop-chart-units">
       <div class="pop-axis-yunit">%</div>
@@ -985,8 +989,7 @@ function renderWeatherPopChart(w){
     <div class="weather-pop-chart-xrow">
       <div class="pop-axis-ycol pop-axis-yspacer"></div>
       <div class="weather-pop-chart-labels">${labels}</div>
-      <div class="pop-axis-xunit">時</div>
-      <div class="pop-axis-ycol pop-axis-yspacer"></div>
+      <div class="pop-axis-ycol pop-axis-xunit">時</div>
     </div>`;
 }
 
