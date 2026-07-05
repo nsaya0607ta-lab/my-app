@@ -2656,6 +2656,28 @@ function gcalIsOwnEvent(ev){
   return !own || ev.creatorEmail === own;
 }
 
+// 「共有カレンダー経由で見えている他ユーザー」の表示名を、自分だけの見た目
+// としてこの端末上で上書きする設定（Google連携メールアドレス→自分で付けた
+// 呼び方）。ローカル（デモ）の登録者名やGoogle Calendar本体とは無関係の、
+// 完全にこのアプリ内・この端末限定の表示上書きであり、Firestoreなど
+// データベースへは一切書き込まない（syncGcalToCloud()を呼ばない）
+const GCAL_OTHER_NAME_KEY = "gcal_other_name_overrides_v1"; // { [emailLower]: customName }
+
+function gcalLoadOtherNameOverrides(){
+  try{
+    const data = JSON.parse(localStorage.getItem(gcalStorageKey(GCAL_OTHER_NAME_KEY)) || "{}");
+    return (data && typeof data === "object" && !Array.isArray(data)) ? data : {};
+  }catch(e){ return {}; }
+}
+
+function gcalSaveOtherNameOverride(email, name){
+  const key = (email || "").trim().toLowerCase();
+  if(!key) return;
+  const overrides = gcalLoadOtherNameOverrides();
+  overrides[key] = (name || "").trim();
+  try{ localStorage.setItem(gcalStorageKey(GCAL_OTHER_NAME_KEY), JSON.stringify(overrides)); }catch(e){}
+}
+
 // 「共有カレンダー経由で見えている他ユーザー」がこのアプリ自身に登録した
 // 名前を、Google連携メールアドレス→登録名の公開ディレクトリ（gcalNames
 // コレクション）からキャッシュ付きで引く。一度取得（または「登録なし」と
@@ -2681,8 +2703,10 @@ function gcalLookupRegisteredName(email){
 // 予定1件の「作成者ラベル」を決定する。手動入力の登録者名(author)を最優先、
 // 次に本人自身の予定なら「アプリに登録したユーザー名」（呼び出し元が渡す
 // fallback）を使う。それ以外（共有カレンダー経由の他ユーザーの予定）は、
-// その相手が自分自身でこのアプリに登録した名前（公開ディレクトリ）を最優先
-// する。次点として「カレンダーの表示名を変更」（✎）でこちら側が登録した名前
+// まずこちら側がこの端末だけで付けた呼び方（gcalLoadOtherNameOverrides、
+// データベースには保存されないローカル専用の表示上書き）を最優先する。
+// 次にその相手が自分自身でこのアプリに登録した名前（公開ディレクトリ）、
+// 次点として「カレンダーの表示名を変更」（✎）でこちら側が登録した名前
 // (calRenamed && calName)、それも無ければGoogleカレンダー本来の作成者情報
 // (creatorName。多くの場合Gmailアドレスそのまま)、最後に取得元カレンダー名
 // (calName)を使う
@@ -2690,6 +2714,11 @@ function gcalEventUserLabel(ev, fallback){
   const author = (ev.author || "").trim();
   if(author) return author;
   if(gcalIsOwnEvent(ev)) return fallback || "予定";
+  const emailKey = (ev.creatorEmail || "").trim().toLowerCase();
+  if(emailKey){
+    const localOverride = gcalLoadOtherNameOverrides()[emailKey];
+    if(localOverride) return localOverride;
+  }
   const registered = ev.creatorEmail ? gcalLookupRegisteredName(ev.creatorEmail) : null;
   if(registered) return registered;
   if(ev.calRenamed && ev.calName) return ev.calName;
@@ -2699,18 +2728,27 @@ function gcalEventUserLabel(ev, fallback){
 }
 
 // 予定一覧を作成者ラベルごとにグループ化する。グループ内は開始時刻の
-// 昇順、グループ自体はラベル名の五十音/辞書順に並べる。手動入力の登録者名も
-// 無く本人自身の予定と判定できたグループにはeditable:trueを付け、見出し
-// タップで「アプリに登録したユーザー名」の表示を変更できるようにする
+// 昇順、グループ自体はラベル名の五十音/辞書順に並べる。
+// editKind:"own" は本人自身の予定グループ（見出しタップで「アプリに登録した
+// ユーザー名」を変更）、editKind:"other"（editEmailにその相手のメールアドレス
+// を保持）は他ユーザーの予定グループ（見出しタップでこの端末だけの呼び方を
+// 設定）。同じグループ内に異なるメールアドレスの予定が混在してしまった場合は
+// どちらの表示名を編集すべきか特定できないため編集不可にする
 function gcalGroupEventsByUser(events, fallback){
   const order = [];
   const groups = new Map();
   events.forEach(ev => {
     const label = gcalEventUserLabel(ev, fallback);
-    const editableHere = !(ev.author || "").trim() && gcalIsOwnEvent(ev);
-    if(!groups.has(label)){ groups.set(label, { label, color: null, editable: false, events: [] }); order.push(label); }
+    if(!groups.has(label)){ groups.set(label, { label, color: null, editKind: null, editEmail: null, events: [] }); order.push(label); }
     const g = groups.get(label);
-    if(editableHere) g.editable = true;
+    const author = (ev.author || "").trim();
+    if(!author && gcalIsOwnEvent(ev)){
+      g.editKind = "own";
+    } else if(!author && ev.creatorEmail && g.editKind !== "own"){
+      const email = ev.creatorEmail.trim().toLowerCase();
+      if(g.editKind === null){ g.editKind = "other"; g.editEmail = email; }
+      else if(g.editKind === "other" && g.editEmail !== email){ g.editKind = null; g.editEmail = null; }
+    }
     if(!g.color && ev.calColor) g.color = ev.calColor;
     g.events.push(ev);
   });
@@ -2727,22 +2765,68 @@ function gcalGroupEventsByUser(events, fallback){
 function gcalDayEventsListHTML(events, fallback){
   if(!events.length) return `<div class="gcal-day-empty">この日の予定はまだありません。</div>`;
   const groups = gcalGroupEventsByUser(events, fallback);
-  return groups.map(g => `
+  return groups.map(g => {
+    const editable = g.editKind === "own" || g.editKind === "other";
+    const editAttr = g.editKind === "own" ? ' data-gcal-name-edit="1"'
+      : g.editKind === "other" ? ` data-gcal-other-name-edit="${esc(g.editEmail)}"` : "";
+    return `
     <div class="gcal-user-group">
-      <div class="gcal-user-group-title${g.editable?" gcal-user-group-title-edit":""}"${g.editable?' data-gcal-name-edit="1" role="button" tabindex="0" aria-label="表示名を編集"':""}>${g.color?`<span class="gcal-user-group-dot" style="background:${esc(g.color)}"></span>`:""}${esc(g.label)}${g.editable?'<span class="gcal-user-group-edit-icon" aria-hidden="true">✏️</span>':""}</div>
+      <div class="gcal-user-group-title${editable?" gcal-user-group-title-edit":""}"${editable?editAttr+' role="button" tabindex="0" aria-label="表示名を編集"':""}>${g.color?`<span class="gcal-user-group-dot" style="background:${esc(g.color)}"></span>`:""}${esc(g.label)}${editable?'<span class="gcal-user-group-edit-icon" aria-hidden="true">✏️</span>':""}</div>
       <div class="gcal-user-group-events">${g.events.map(gcalEventRowHTML).join("")}</div>
-    </div>`).join("");
+    </div>`;
+  }).join("");
 }
 
-// gcalDayEventsListHTML()が出力した「自分自身」のグループ見出し
-// （data-gcal-name-edit）をタップ／Enterで押すと、カレンダーで使う名前の
-// 変更モーダルを開く。保存後はonSavedで呼び出し元の画面を再描画させる
+// gcalDayEventsListHTML()が出力したグループ見出しをタップ／Enterで押すと、
+// 表示名の変更モーダルを開く。「自分自身」（data-gcal-name-edit）なら
+// カレンダーで使う名前（アプリに登録したユーザー名）を、「他ユーザー」
+// （data-gcal-other-name-edit、値はそのメールアドレス）ならこの端末だけの
+// 呼び方（データベースには保存しないローカル専用の表示上書き）を変更する。
+// 保存後はonSavedで呼び出し元の画面を再描画させる
 function gcalBindNameEditHeadings(root, onSaved){
   root.querySelectorAll("[data-gcal-name-edit]").forEach(el => {
     const open = () => openGcalAuthorNameModal(() => { if(onSaved) onSaved(); }, { allowCancel: true });
     el.onclick = open;
     el.onkeydown = (e) => { if(e.key === "Enter" || e.key === " "){ e.preventDefault(); open(); } };
   });
+  root.querySelectorAll("[data-gcal-other-name-edit]").forEach(el => {
+    const email = el.dataset.gcalOtherNameEdit;
+    const open = () => openGcalOtherNameModal(email, () => { if(onSaved) onSaved(); });
+    el.onclick = open;
+    el.onkeydown = (e) => { if(e.key === "Enter" || e.key === " "){ e.preventDefault(); open(); } };
+  });
+}
+
+// 「他ユーザー」の予定グループ見出しをタップしたときに開く、この端末だけの
+// 呼び方を設定するモーダル。gcalSaveOtherNameOverride()はlocalStorageのみを
+// 使い、Firestore等のデータベースには一切書き込まない（相手や他の閲覧者の
+// 画面には影響しない、完全に自分の見た目だけの変更であることをsub文言で明示する）
+function openGcalOtherNameModal(email, onSaved){
+  const ov = document.createElement("div");
+  ov.className = "modal-ov";
+  const current = gcalLoadOtherNameOverrides()[(email || "").trim().toLowerCase()] || "";
+  const close = () => { try{ ov.remove(); }catch(e){} };
+  ov.innerHTML = `
+    <div class="modal">
+      <div class="modal-title" style="color:var(--text)">✎ 表示名を変更</div>
+      <div class="gcal-modal-sub">${esc(email)}<br>この端末・このアカウントだけの表示です。相手や他の人の画面には影響しません。</div>
+      <input type="text" class="gcal-ev-input gcal-newcal-input" id="gcal-other-name-input" placeholder="例：お母さん" maxlength="40" value="${esc(current)}">
+      <button class="cta" id="gcal-other-name-save">保存する</button>
+      <button class="ghost" id="gcal-other-name-cancel" style="margin-top:8px">キャンセル</button>
+    </div>`;
+  document.body.appendChild(ov);
+  ov.addEventListener("click", (e) => { if(e.target === ov) close(); });
+  ov.querySelector("#gcal-other-name-cancel").onclick = close;
+  const input = ov.querySelector("#gcal-other-name-input");
+  ov.querySelector("#gcal-other-name-save").onclick = () => {
+    const name = (input.value || "").trim();
+    if(!name){ input.focus(); return; }
+    gcalSaveOtherNameOverride(email, name);
+    close();
+    if(onSaved) onSaved(name);
+  };
+  input.onkeydown = (e) => { if(e.key === "Enter") ov.querySelector("#gcal-other-name-save").click(); };
+  input.focus();
 }
 
 // gcalDayEventsListHTML()が描画した各予定カードの時間・本文について、
