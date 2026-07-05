@@ -825,7 +825,8 @@ function weatherCardHTML(){
               </div>
             </div>
             <div class="weather-precip-alert" id="weather-precip-alert">
-              <div class="weather-precip-now" id="weather-precip-now">現在　<span class="weather-precip-now-value" id="weather-precip-now-value"></span>mm/h</div>
+              <div class="weather-precip-label">現在</div>
+              <div class="weather-precip-now" id="weather-precip-now"><span class="weather-precip-now-value" id="weather-precip-now-value"></span>mm/h</div>
               <div class="weather-precip-comment" id="weather-precip-comment">
                 <span class="weather-precip-comment-track" id="weather-precip-comment-track"></span>
               </div>
