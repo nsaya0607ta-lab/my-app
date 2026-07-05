@@ -825,7 +825,10 @@ function weatherCardHTML(){
               </div>
             </div>
             <div class="weather-precip-alert" id="weather-precip-alert">
-              <span class="weather-precip-alert-track" id="weather-precip-alert-track"></span>
+              <div class="weather-precip-now" id="weather-precip-now">現在　<span class="weather-precip-now-value" id="weather-precip-now-value"></span>mm/h</div>
+              <div class="weather-precip-comment" id="weather-precip-comment">
+                <span class="weather-precip-comment-track" id="weather-precip-comment-track"></span>
+              </div>
             </div>
           </div>
           <div class="weather-pop-chart" id="weather-pop-chart"></div>
@@ -910,17 +913,21 @@ function precipCautionText(mm){
 }
 
 // 直近1時間の降水量が0mmの場合は雨が降っていない旨を表示する
-function precipAlertText(mm){
-  if(!(mm > 0)) return "直近1時間の降水量 0mm・雨は降っていません";
-  const label = Number.isInteger(mm) ? String(mm) : mm.toFixed(1);
-  return `直近1時間の降水量 ${label}mm・${precipCautionText(mm)}`;
+function precipCommentText(mm){
+  if(!(mm > 0)) return "雨は降っていません";
+  return precipCautionText(mm);
 }
 
-// テキストが表示枠に収まりきらない場合のみ、右→左へ流れるマーキー表示にする。
-// 収まる場合は静止表示のままにして、無用なアニメーションを避ける
+function precipMmLabel(mm){
+  const v = Math.max(0, mm);
+  return Number.isInteger(v) ? String(v) : v.toFixed(1);
+}
+
+// コメント欄のテキストが表示枠に収まりきらない場合のみ、右→左へ流れる
+// マーキー表示にする。収まる場合は静止表示のままにして、無用なアニメーションを避ける
 function updatePrecipAlertMarquee(){
-  const container = document.getElementById("weather-precip-alert");
-  const track = document.getElementById("weather-precip-alert-track");
+  const container = document.getElementById("weather-precip-comment");
+  const track = document.getElementById("weather-precip-comment-track");
   if(!container || !track) return;
   track.classList.remove("weather-precip-marquee");
   track.style.removeProperty("--weather-precip-marquee-distance");
@@ -1049,7 +1056,8 @@ async function refreshWeatherCard(){
   const asofEl = document.getElementById("weather-asof");
   const iconEl = document.getElementById("weather-icon");
   const tempEl = document.getElementById("weather-temp");
-  const precipAlertTrackEl = document.getElementById("weather-precip-alert-track");
+  const precipNowValueEl = document.getElementById("weather-precip-now-value");
+  const precipCommentTrackEl = document.getElementById("weather-precip-comment-track");
   const w = await getWeather();
   if(!document.getElementById("weather-card")) return; // フェッチ中に画面遷移した場合は描画しない
   if(!w){
@@ -1057,7 +1065,8 @@ async function refreshWeatherCard(){
     if(asofEl) asofEl.textContent = "";
     if(iconEl) iconEl.textContent = "🌡️";
     if(tempEl) tempEl.textContent = "";
-    if(precipAlertTrackEl) precipAlertTrackEl.textContent = "";
+    if(precipNowValueEl) precipNowValueEl.textContent = "-";
+    if(precipCommentTrackEl) precipCommentTrackEl.textContent = "";
     updatePrecipAlertMarquee();
     renderWeatherPopChart(null);
     return;
@@ -1074,7 +1083,9 @@ async function refreshWeatherCard(){
   }
   if(iconEl) iconEl.textContent = w.icon;
   if(tempEl) tempEl.textContent = `${w.temp}℃`;
-  if(precipAlertTrackEl) precipAlertTrackEl.textContent = precipAlertText(typeof w.precip === "number" ? w.precip : 0);
+  const precipMm = typeof w.precip === "number" ? w.precip : 0;
+  if(precipNowValueEl) precipNowValueEl.textContent = precipMmLabel(precipMm);
+  if(precipCommentTrackEl) precipCommentTrackEl.textContent = precipCommentText(precipMm);
   updatePrecipAlertMarquee();
   renderWeatherPopChart(w);
 }
