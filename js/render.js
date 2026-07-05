@@ -910,13 +910,15 @@ function renderWeatherPopChart(w){
   }));
   const pathD = catmullRomSmoothPath(coords);
   const dots = coords.map(c => `<circle cx="${c.x.toFixed(1)}" cy="${c.y.toFixed(1)}" r="1.7" fill="var(--accent)"></circle>`).join("");
-  // 目盛り線は左の数字ラベル（space-betweenで上下端いっぱいに均等配置）と
-  // 高さを揃えるため、曲線用のPOP_CHART_PADは使わず0〜100%（上端〜下端）に配置する
+  // 目盛り線とラベルを同じY座標式で位置決めする（別々のflex配置に頼らない）。
+  // 端（0%・100%）ではストローク幅の半分がSVG表示範囲の外に出て消えてしまう
+  // ため、半径0.5分だけ内側にクランプして必ず描画されるようにする
+  const tickY = v => Math.min(POP_CHART_H - 0.5, Math.max(0.5, POP_CHART_H - (v/100)*POP_CHART_H));
   const gridlines = POP_CHART_Y_TICKS.map(v => {
-    const y = POP_CHART_H - (v/100)*POP_CHART_H;
+    const y = tickY(v);
     return `<line x1="0" y1="${y.toFixed(1)}" x2="${POP_CHART_W}" y2="${y.toFixed(1)}" stroke="var(--line)" stroke-width="1" opacity=".5"></line>`;
   }).join("");
-  const yTicks = POP_CHART_Y_TICKS.map(v => `<span>${v}</span>`).join("");
+  const yTicks = POP_CHART_Y_TICKS.map(v => `<span style="top:${(tickY(v)/POP_CHART_H*100).toFixed(2)}%">${v}</span>`).join("");
   // 横軸の数字ラベルは3時間ごと（今＝0時間後を含む）にのみ間引く。
   // 元データが1時間おきの等間隔のため、間引いた後も均等割り付けで軸と揃う
   const labelPoints = points.filter((_,i) => i % POP_CHART_LABEL_EVERY === 0);
