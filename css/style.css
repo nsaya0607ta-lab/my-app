@@ -545,6 +545,14 @@ h1.title{font-size:34px;line-height:1.05;font-weight:800;margin:8px 0 0;letter-s
 .gcal-user-group-events{display:flex;flex-direction:column;gap:6px;}
 .gcal-user-group + .gcal-user-group{margin-top:10px;}
 
+/* 「自分自身」のグループ見出しはタップで表示名を編集できる。押しやすい
+   ヒット領域を確保しつつ、タップ可能であることが分かるよう鉛筆アイコンと
+   ホバー/押下時のフィードバックを付与する */
+.gcal-user-group-title-edit{cursor:pointer;padding:3px 6px;margin:-3px -6px 4px -6px;border-radius:6px;}
+.gcal-user-group-title-edit:hover,.gcal-user-group-title-edit:focus-visible{background:var(--surface2);outline:none;}
+.gcal-user-group-title-edit:active{opacity:.7;}
+.gcal-user-group-edit-icon{font-size:9px;opacity:.7;}
+
 .gcal-day-event{display:flex;align-items:center;gap:6px;background:var(--bg2);border-radius:10px;padding:7px 6px 7px 9px;}
 .gcal-day-event-time{flex:none;max-width:80px;font-size:10px;font-weight:700;color:var(--muted);line-height:1.35;
   overflow:hidden;white-space:nowrap;position:relative;}
