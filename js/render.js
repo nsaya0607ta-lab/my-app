@@ -824,6 +824,9 @@ function weatherCardHTML(){
                 <span class="weather-temp" id="weather-temp"></span>
               </div>
             </div>
+            <div class="weather-precip-alert" id="weather-precip-alert">
+              <span class="weather-precip-alert-track" id="weather-precip-alert-track"></span>
+            </div>
           </div>
           <div class="weather-pop-chart" id="weather-pop-chart"></div>
         </div>
@@ -893,6 +896,45 @@ const POP_CHART_Y_TICKS = [100, 80, 60, 40, 20, 0]; // 縦軸目盛り・％（�
 const PRECIP_Y_TICKS = [15, 10, 5, 3, 1, 0];
 const PRECIP_DANGER_MM = 20; // これを超えたら棒を警告色にする
 const POP_CHART_LABEL_EVERY = 3; // 横軸の数字は3時間ごとにのみ表示する
+
+// 直近1時間の降水量(mm)に応じた注意喚起の文言（気象庁の階級区分・
+// 体感の目安を参考にした簡易的な区分）
+function precipCautionText(mm){
+  if(mm < 1) return "傘がなくてもなんとか歩けるレベル";
+  if(mm < 2) return "シトシト降る雨。少し歩くなら傘が欲しくなります";
+  if(mm < 3) return "ほとんどの人が「傘が必要」と感じる強さです";
+  if(mm < 10) return "本降りの雨。傘は絶対に必要です";
+  if(mm < 20) return "気象庁の「やや強い雨」。地面一面に水たまりができます";
+  if(mm < 30) return "気象庁の「強い雨」。傘をさしていても濡れます";
+  return "気象庁の「激しい雨」。道路が川のようになるおそれがあります";
+}
+
+// 直近1時間の降水量が0mmの場合は雨が降っていない旨を表示する
+function precipAlertText(mm){
+  if(!(mm > 0)) return "直近1時間の降水量 0mm・雨は降っていません";
+  const label = Number.isInteger(mm) ? String(mm) : mm.toFixed(1);
+  return `直近1時間の降水量 ${label}mm・${precipCautionText(mm)}`;
+}
+
+// テキストが表示枠に収まりきらない場合のみ、右→左へ流れるマーキー表示にする。
+// 収まる場合は静止表示のままにして、無用なアニメーションを避ける
+function updatePrecipAlertMarquee(){
+  const container = document.getElementById("weather-precip-alert");
+  const track = document.getElementById("weather-precip-alert-track");
+  if(!container || !track) return;
+  track.classList.remove("weather-precip-marquee");
+  track.style.removeProperty("--weather-precip-marquee-distance");
+  track.style.animationDuration = "";
+  const containerW = container.clientWidth;
+  const trackW = track.scrollWidth;
+  if(trackW > containerW){
+    const distance = containerW + trackW;
+    const duration = Math.max(6, distance / 45); // 45px/秒の速さでスクロールする
+    track.style.setProperty("--weather-precip-marquee-distance", `${distance}px`);
+    track.style.animationDuration = `${duration}s`;
+    track.classList.add("weather-precip-marquee");
+  }
+}
 
 // 目盛りのインデックス位置（0=一番上、tickCount-1=一番下）をSVGのY座標に変換する。
 // 端（インデックス0・最後）ではストローク幅の半分がSVG表示範囲の外に出て
@@ -1007,6 +1049,7 @@ async function refreshWeatherCard(){
   const asofEl = document.getElementById("weather-asof");
   const iconEl = document.getElementById("weather-icon");
   const tempEl = document.getElementById("weather-temp");
+  const precipAlertTrackEl = document.getElementById("weather-precip-alert-track");
   const w = await getWeather();
   if(!document.getElementById("weather-card")) return; // フェッチ中に画面遷移した場合は描画しない
   if(!w){
@@ -1014,6 +1057,8 @@ async function refreshWeatherCard(){
     if(asofEl) asofEl.textContent = "";
     if(iconEl) iconEl.textContent = "🌡️";
     if(tempEl) tempEl.textContent = "";
+    if(precipAlertTrackEl) precipAlertTrackEl.textContent = "";
+    updatePrecipAlertMarquee();
     renderWeatherPopChart(null);
     return;
   }
@@ -1029,6 +1074,8 @@ async function refreshWeatherCard(){
   }
   if(iconEl) iconEl.textContent = w.icon;
   if(tempEl) tempEl.textContent = `${w.temp}℃`;
+  if(precipAlertTrackEl) precipAlertTrackEl.textContent = precipAlertText(typeof w.precip === "number" ? w.precip : 0);
+  updatePrecipAlertMarquee();
   renderWeatherPopChart(w);
 }
 
