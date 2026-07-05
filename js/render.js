@@ -1876,21 +1876,25 @@ function gcalEnsureAuthorName(cb){
   openGcalAuthorNameModal(cb);
 }
 
-function openGcalAuthorNameModal(onSaved){
+function openGcalAuthorNameModal(onSaved, opts){
   const ov = document.createElement("div");
   ov.className = "modal-ov";
   const current = gcalLoadAuthorName();
+  // 未保存（初回）の場合は「アプリに登録したユーザー名」をそのままの
+  // デフォルト値として入力欄に表示する（見出しタップでの編集時も同様）
+  const prefill = current || getProfileName() || "";
+  const allowCancel = opts && typeof opts.allowCancel === "boolean" ? opts.allowCancel : !!current;
   ov.innerHTML = `
     <div class="modal">
       <div class="modal-title" style="color:var(--text)">✏️ カレンダーで使う名前</div>
       <div class="gcal-modal-sub">予定の登録者として表示される名前です。アプリのログイン名とは別に、カレンダー専用の名前として保存されます。</div>
-      <input type="text" class="gcal-ev-input gcal-newcal-input" id="gcal-author-input" placeholder="例：山田太郎" maxlength="20" value="${esc(current)}">
+      <input type="text" class="gcal-ev-input gcal-newcal-input" id="gcal-author-input" placeholder="例：山田太郎" maxlength="20" value="${esc(prefill)}">
       <button class="cta" id="gcal-author-save">保存する</button>
-      ${current ? `<button class="ghost" id="gcal-author-cancel" style="margin-top:8px">キャンセル</button>` : ""}
+      ${allowCancel ? `<button class="ghost" id="gcal-author-cancel" style="margin-top:8px">キャンセル</button>` : ""}
     </div>`;
   document.body.appendChild(ov);
   const close = () => { try{ ov.remove(); }catch(e){} };
-  if(current) ov.addEventListener("click", (e) => { if(e.target === ov) close(); });
+  if(allowCancel) ov.addEventListener("click", (e) => { if(e.target === ov) close(); });
   const cancelBtn = ov.querySelector("#gcal-author-cancel");
   if(cancelBtn) cancelBtn.onclick = close;
   const input = ov.querySelector("#gcal-author-input");
@@ -2615,27 +2619,51 @@ function gcalEventRowHTML(ev){
     </div>`;
 }
 
+// 連携中のGoogleアカウント自身のメールアドレス（プライマリカレンダーの
+// IDは常にそのアカウントのメールアドレスと一致する）。未連携・未取得なら null
+function gcalOwnGoogleEmail(){
+  const primary = (gcalGoogleCalendars || []).find(c => c.primary);
+  return primary ? primary.id : null;
+}
+
+// その予定が「今アプリを使っている本人」自身の予定かどうかを判定する。
+// ローカル（デモ）モードの予定にはGoogle本来の作成者情報が無いため常に
+// 本人の予定として扱う。Google連携中は、予定のcreator.emailが自分の
+// プライマリカレンダーのメールアドレスと一致する場合だけ本人の予定とする
+// （共有カレンダー経由で見えている他アカウントの予定と区別するため）
+function gcalIsOwnEvent(ev){
+  if(!ev.creatorEmail) return true;
+  const own = gcalOwnGoogleEmail();
+  return !own || ev.creatorEmail === own;
+}
+
 // 予定1件の「作成者ラベル」を決定する。手動入力の登録者名(author)を最優先、
-// 無ければGoogleカレンダー本来の作成者情報(creatorName)、それも無ければ
-// 取得元カレンダー名(calName)を使う。いずれも無い場合（ローカルのデモ
-// カレンダーで登録者名が未設定など）は呼び出し元が渡したfallbackを使う
+// 次に本人自身の予定なら「アプリに登録したユーザー名」（呼び出し元が渡す
+// fallback）、それ以外（共有カレンダー経由の他ユーザーの予定）はGoogle
+// カレンダー本来の作成者情報(creatorName)、それも無ければ取得元カレンダー名
+// (calName)を使う
 function gcalEventUserLabel(ev, fallback){
   const author = (ev.author || "").trim();
   if(author) return author;
+  if(gcalIsOwnEvent(ev)) return fallback || "予定";
   if(ev.creatorName) return ev.creatorName;
   if(ev.calName) return ev.calName;
   return fallback || "予定";
 }
 
 // 予定一覧を作成者ラベルごとにグループ化する。グループ内は開始時刻の
-// 昇順、グループ自体はラベル名の五十音/辞書順に並べる
+// 昇順、グループ自体はラベル名の五十音/辞書順に並べる。手動入力の登録者名も
+// 無く本人自身の予定と判定できたグループにはeditable:trueを付け、見出し
+// タップで「アプリに登録したユーザー名」の表示を変更できるようにする
 function gcalGroupEventsByUser(events, fallback){
   const order = [];
   const groups = new Map();
   events.forEach(ev => {
     const label = gcalEventUserLabel(ev, fallback);
-    if(!groups.has(label)){ groups.set(label, { label, color: null, events: [] }); order.push(label); }
+    const editableHere = !(ev.author || "").trim() && gcalIsOwnEvent(ev);
+    if(!groups.has(label)){ groups.set(label, { label, color: null, editable: false, events: [] }); order.push(label); }
     const g = groups.get(label);
+    if(editableHere) g.editable = true;
     if(!g.color && ev.calColor) g.color = ev.calColor;
     g.events.push(ev);
   });
@@ -2654,9 +2682,20 @@ function gcalDayEventsListHTML(events, fallback){
   const groups = gcalGroupEventsByUser(events, fallback);
   return groups.map(g => `
     <div class="gcal-user-group">
-      <div class="gcal-user-group-title">${g.color?`<span class="gcal-user-group-dot" style="background:${esc(g.color)}"></span>`:""}${esc(g.label)}</div>
+      <div class="gcal-user-group-title${g.editable?" gcal-user-group-title-edit":""}"${g.editable?' data-gcal-name-edit="1" role="button" tabindex="0" aria-label="表示名を編集"':""}>${g.color?`<span class="gcal-user-group-dot" style="background:${esc(g.color)}"></span>`:""}${esc(g.label)}${g.editable?'<span class="gcal-user-group-edit-icon" aria-hidden="true">✏️</span>':""}</div>
       <div class="gcal-user-group-events">${g.events.map(gcalEventRowHTML).join("")}</div>
     </div>`).join("");
+}
+
+// gcalDayEventsListHTML()が出力した「自分自身」のグループ見出し
+// （data-gcal-name-edit）をタップ／Enterで押すと、カレンダーで使う名前の
+// 変更モーダルを開く。保存後はonSavedで呼び出し元の画面を再描画させる
+function gcalBindNameEditHeadings(root, onSaved){
+  root.querySelectorAll("[data-gcal-name-edit]").forEach(el => {
+    const open = () => openGcalAuthorNameModal(() => { if(onSaved) onSaved(); }, { allowCancel: true });
+    el.onclick = open;
+    el.onkeydown = (e) => { if(e.key === "Enter" || e.key === " "){ e.preventDefault(); open(); } };
+  });
 }
 
 // gcalDayEventsListHTML()が描画した各予定カードの時間・本文について、
@@ -2853,8 +2892,9 @@ function renderGcalDailyWidget(){
       refresh: () => gcalRefreshGoogleDayEvents(gcalDailyY, gcalDailyM, gcalDailyD),
     };
 
-    root.innerHTML = shellHTML(evMap ? gcalDayEventsListHTML(evMap[dateKey] || [], gcalLoadAuthorName() || active.name) : `<div class="gcal-google-loading">予定を読み込み中…</div>`);
+    root.innerHTML = shellHTML(evMap ? gcalDayEventsListHTML(evMap[dateKey] || [], gcalLoadAuthorName() || getProfileName() || active.name) : `<div class="gcal-google-loading">予定を読み込み中…</div>`);
     bindShared(root, src);
+    gcalBindNameEditHeadings(root, renderGcalDailyWidget);
     gcalApplyMarquee(root);
     const googleScrollKey = `g|${dateKey}`;
     gcalSetupDayEventsScroll(root, googleScrollKey, gcalDailyY, gcalDailyM, gcalDailyD, now, prevScrollKey, prevScrollTop);
@@ -2886,8 +2926,9 @@ function renderGcalDailyWidget(){
     refresh: () => renderGcalDailyWidget(),
   };
 
-  root.innerHTML = shellHTML(gcalDayEventsListHTML(events, gcalLoadAuthorName() || active.name));
+  root.innerHTML = shellHTML(gcalDayEventsListHTML(events, gcalLoadAuthorName() || getProfileName() || active.name));
   bindShared(root, src);
+  gcalBindNameEditHeadings(root, renderGcalDailyWidget);
   gcalApplyMarquee(root);
   const localScrollKey = `l|${active.id}|${dateKey}`;
   gcalSetupDayEventsScroll(root, localScrollKey, gcalDailyY, gcalDailyM, gcalDailyD, now, prevScrollKey, prevScrollTop);
@@ -2930,7 +2971,10 @@ function gcalSelectedDaySectionHTML(y, m, d, events, fallback){
 // 予定入力欄の「過去の予定から引用」サジェスト用の候補プールを作る。
 // 履歴全体をAPIへ毎回問い合わせるのは重いため、ローカル（デモ）カレンダー
 // に保存済みの予定と、このセッション中に既に画面表示のため取得済みの
-// Googleカレンダーの予定（キャッシュ済み分のみ）を対象にした軽量な実装
+// Googleカレンダーの予定（キャッシュ済み分のみ）を対象にした軽量な実装。
+// 共有カレンダー経由で見えている他ユーザーの予定が紛れ込まないよう、
+// gcalIsOwnEvent()で「今この予定を登録しようとしている本人」自身の
+// 過去の予定だけに絞り込む
 function gcalSuggestPool(){
   const seen = new Map();
   const add = (title, start, end) => {
@@ -2941,11 +2985,11 @@ function gcalSuggestPool(){
   };
   const store = loadGcalStore();
   Object.values(store.events || {}).forEach(byDate => {
-    Object.values(byDate || {}).forEach(list => (list||[]).forEach(ev => add(ev.title, ev.start, ev.end)));
+    Object.values(byDate || {}).forEach(list => (list||[]).forEach(ev => { if(gcalIsOwnEvent(ev)) add(ev.title, ev.start, ev.end); }));
   });
   [gcalGoogleEventsCache, gcalGoogleDayEventsCache].forEach(cache => {
     Object.values(cache).forEach(byDate => {
-      Object.values(byDate || {}).forEach(list => (list||[]).forEach(ev => add(ev.title, ev.start, ev.end)));
+      Object.values(byDate || {}).forEach(list => (list||[]).forEach(ev => { if(gcalIsOwnEvent(ev)) add(ev.title, ev.start, ev.end); }));
     });
   });
   return [...seen.values()];
@@ -2988,6 +3032,8 @@ function gcalBindSuggest(input, box, startInput, endInput){
 // 全体を再描画し直すことで、グリッドの●印・一覧の両方を最新状態に保つ
 function gcalBindSelectedDaySection(root, src, y, m, d){
   const dateKey = newsDateKey(y, m, d);
+
+  gcalBindNameEditHeadings(root, renderGcalMonthCard);
 
   root.querySelectorAll(".gcal-selday-events [data-del]").forEach(btn => btn.onclick = async () => {
     if(gcalSelDayBusy) return;
@@ -3155,7 +3201,7 @@ function renderGcalMonthCard(){
           <div class="gcal-grid">${evActive ? gcalDayCellsHTML(gcalViewY, gcalViewM, evActive, todayKey, active.color, gcalSelectedDay) : ""}</div>
         </div>
         ${evActive ? "" : `<div class="gcal-google-loading">予定を読み込み中…</div>`}
-        ${evActive && gcalSelectedDay !== null ? gcalSelectedDaySectionHTML(gcalViewY, gcalViewM, gcalSelectedDay, evActive[newsDateKey(gcalViewY, gcalViewM, gcalSelectedDay)] || [], gcalLoadAuthorName() || active.name) : ""}
+        ${evActive && gcalSelectedDay !== null ? gcalSelectedDaySectionHTML(gcalViewY, gcalViewM, gcalSelectedDay, evActive[newsDateKey(gcalViewY, gcalViewM, gcalSelectedDay)] || [], gcalLoadAuthorName() || getProfileName() || active.name) : ""}
         <div class="gcal-google-note">カレンダーの追加・共有設定は<a href="https://calendar.google.com/" target="_blank" rel="noopener noreferrer">Googleカレンダー</a>側で行ってください。</div>
       </div>`;
 
@@ -3229,7 +3275,7 @@ function renderGcalMonthCard(){
         <div class="gcal-grid gcal-weekdays">${NEWS_WEEKDAYS.map(w=>`<span class="gcal-wd-cell">${w}</span>`).join("")}</div>
         <div class="gcal-grid">${gcalDayCellsHTML(gcalViewY, gcalViewM, evOfActive, todayKey, active.color, gcalSelectedDay)}</div>
       </div>
-      ${gcalSelectedDay !== null ? gcalSelectedDaySectionHTML(gcalViewY, gcalViewM, gcalSelectedDay, evOfActive[newsDateKey(gcalViewY, gcalViewM, gcalSelectedDay)] || [], gcalLoadAuthorName() || active.name) : ""}
+      ${gcalSelectedDay !== null ? gcalSelectedDaySectionHTML(gcalViewY, gcalViewM, gcalSelectedDay, evOfActive[newsDateKey(gcalViewY, gcalViewM, gcalSelectedDay)] || [], gcalLoadAuthorName() || getProfileName() || active.name) : ""}
     </div>`;
 
   gcalBindConnectBar(root);
