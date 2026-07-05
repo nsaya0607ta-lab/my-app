@@ -1836,6 +1836,12 @@ function gcalGenId(prefix){
 // 見ていた月を保持するため、モジュール変数として保持する（初回のみ今月）
 let gcalViewY = null, gcalViewM = null;
 
+// 「カレンダー」画面の月グリッドでタップして選んでいる日（グリッド真下の
+// 予定一覧エリアに表示する対象日）。初回は今日を初期値にする
+let gcalSelectedDay = null;
+let gcalSelDayBusy = false;
+let gcalSelDayError = null;
+
 /* ---- 予定の「登録者名」（このカレンダー機能専用のプロフィール名） ----
    アプリのログインアカウントのユーザー名（getProfileName()）とは完全に
    別物として、カレンダー機能に初めて触れた時に一度だけ設定してもらい、
@@ -2324,7 +2330,7 @@ function gcalConnectBarHTML(){
 // 前月・翌月にはみ出す先頭・末尾のマスは完全な空白にせず、実際のGoogle
 // カレンダーと同様に前後の月の日付を薄く添えることで、グリッドが1行分
 // 欠けたような不自然な空白に見えないようにする（クリックはできない）
-function gcalDayCellsHTML(y, m, evMap, todayKey, color){
+function gcalDayCellsHTML(y, m, evMap, todayKey, color, selectedDay){
   const first = new Date(y, m, 1);
   const startWeekday = first.getDay();
   const daysInMonth = new Date(y, m+1, 0).getDate();
@@ -2337,6 +2343,7 @@ function gcalDayCellsHTML(y, m, evMap, todayKey, color){
     const key = newsDateKey(y, m, d);
     const cls = ["gcal-cell"];
     if(key===todayKey) cls.push("today");
+    if(d===selectedDay) cls.push("selected");
     const hasEvents = (evMap[key]||[]).length > 0;
     cells.push(`<button type="button" class="${cls.join(" ")}" data-gday="${d}">${d}${hasEvents?`<span class="gcal-cell-dot" style="background:${esc(color)}"></span>`:""}</button>`);
   }
@@ -2600,6 +2607,95 @@ function renderGcalDailyWidget(){
   });
 }
 
+// 「カレンダー」画面：月グリッドの真下に置く、選択中の日の予定一覧＋
+// 追加フォーム。予定の確認・追加・削除はここで完結し、モーダルは開かない
+function gcalSelectedDaySectionHTML(y, m, d, events){
+  const weekday = NEWS_WEEKDAYS[new Date(y, m, d).getDay()];
+  const now = new Date();
+  const isToday = newsDateKey(y, m, d) === newsDateKey(now.getFullYear(), now.getMonth(), now.getDate());
+  return `
+    <div class="gcal-selday-section">
+      <div class="gcal-selday-title">${m+1}月${d}日(${weekday})${isToday?"・今日":""}の予定</div>
+      ${gcalSelDayError ? `<div class="gcal-google-error">${esc(gcalSelDayError)}</div>` : ""}
+      <div class="gcal-day-events gcal-selday-events">${gcalDayEventsListHTML(events, true)}</div>
+      <div class="gcal-ev-form">
+        <input type="text" class="gcal-ev-input" id="gcal-selday-input" placeholder="予定を入力"${gcalSelDayBusy?" disabled":""}>
+      </div>
+      <div class="gcal-ev-time-row">
+        <input type="time" class="gcal-ev-time-input" id="gcal-selday-start" aria-label="開始時刻"${gcalSelDayBusy?" disabled":""}>
+        <span class="gcal-ev-time-sep">〜</span>
+        <input type="time" class="gcal-ev-time-input" id="gcal-selday-end" aria-label="終了時刻"${gcalSelDayBusy?" disabled":""}>
+        <button type="button" class="gcal-ev-add-btn" id="gcal-selday-add"${gcalSelDayBusy?" disabled":""}>追加</button>
+      </div>
+    </div>`;
+}
+
+// src.mode==="google"なら本物のGoogle Calendar APIを、"local"ならlocalStorage
+// のデモ用データを読み書きする。処理後は毎回renderGcalMonthCard()で画面
+// 全体を再描画し直すことで、グリッドの●印・一覧の両方を最新状態に保つ
+function gcalBindSelectedDaySection(root, src, y, m, d){
+  const dateKey = newsDateKey(y, m, d);
+
+  root.querySelectorAll(".gcal-selday-events [data-del]").forEach(btn => btn.onclick = async () => {
+    if(gcalSelDayBusy) return;
+    const evId = btn.dataset.del;
+    if(src.mode === "google"){
+      gcalSelDayBusy = true; gcalSelDayError = null; renderGcalMonthCard();
+      try{
+        await gcalDeleteGoogleEvent(src.calId, evId);
+        await src.refresh();
+      }catch(e){
+        gcalSelDayError = "削除に失敗しました。もう一度お試しください。";
+      }
+      gcalSelDayBusy = false; renderGcalMonthCard();
+      return;
+    }
+    const s2 = loadGcalStore();
+    if(s2.events[src.calId] && s2.events[src.calId][dateKey]){
+      s2.events[src.calId][dateKey] = s2.events[src.calId][dateKey].filter(ev => ev.id !== evId);
+      saveGcalStore(s2);
+    }
+    src.refresh();
+    renderGcalMonthCard();
+  });
+
+  const input = root.querySelector("#gcal-selday-input");
+  const startInput = root.querySelector("#gcal-selday-start");
+  const endInput = root.querySelector("#gcal-selday-end");
+  const submit = async () => {
+    if(gcalSelDayBusy) return;
+    const title = (input.value||"").trim();
+    if(!title){ input.focus(); return; }
+    const start = startInput.value || "";
+    const end = endInput.value || "";
+    if(start && end && end <= start){ gcalSelDayError = "終了時刻は開始時刻より後にしてください。"; renderGcalMonthCard(); return; }
+    if(src.mode === "google"){
+      gcalSelDayBusy = true; gcalSelDayError = null; renderGcalMonthCard();
+      try{
+        await gcalCreateGoogleEvent(src.calId, y, m, d, title, start, end);
+        await src.refresh();
+        gcalSelDayBusy = false; renderGcalMonthCard();
+      }catch(e){
+        gcalSelDayBusy = false; gcalSelDayError = "追加に失敗しました。もう一度お試しください。"; renderGcalMonthCard();
+      }
+      return;
+    }
+    const author = gcalLoadAuthorName();
+    const s2 = loadGcalStore();
+    if(!s2.events[src.calId]) s2.events[src.calId] = {};
+    if(!s2.events[src.calId][dateKey]) s2.events[src.calId][dateKey] = [];
+    s2.events[src.calId][dateKey].push({ id: gcalGenId("e"), title, start, end, author });
+    saveGcalStore(s2);
+    gcalSelDayError = null;
+    src.refresh();
+    renderGcalMonthCard();
+  };
+  root.querySelector("#gcal-selday-add").onclick = submit;
+  if(!gcalSelDayBusy){
+    input.onkeydown = (e) => { if(e.key === "Enter") submit(); };
+  }
+}
+
 // 「カレンダー」画面の中身を描画し直す（画面単体の更新用。カレンダー
 // 切り替え・月移動・予定の増減・Google連携状態の変化のたびに呼ぶ）。
 // Google連携済みなら本物のGoogleカレンダーのデータを表示し、未連携なら
@@ -2610,6 +2706,13 @@ function renderGcalMonthCard(){
   const now = new Date();
   if(gcalViewY === null){ gcalViewY = now.getFullYear(); gcalViewM = now.getMonth(); }
   const todayKey = newsDateKey(now.getFullYear(), now.getMonth(), now.getDate());
+  if(gcalSelectedDay === null && gcalViewY === now.getFullYear() && gcalViewM === now.getMonth()){
+    gcalSelectedDay = now.getDate();
+  }
+  if(gcalSelectedDay !== null){
+    const daysInViewMonth = new Date(gcalViewY, gcalViewM+1, 0).getDate();
+    if(gcalSelectedDay > daysInViewMonth) gcalSelectedDay = daysInViewMonth;
+  }
   gcalMaybeAutoReconnect();
 
   const errorHTML = gcalGoogleError ? `<div class="gcal-google-error">${esc(gcalGoogleError)}</div>` : "";
@@ -2670,9 +2773,12 @@ function renderGcalMonthCard(){
           <div class="gcal-cal-title">${gcalViewY}年${gcalViewM+1}月</div>
           <button type="button" class="gcal-nav-btn" id="gcal-next" aria-label="次の月">›</button>
         </div>
-        <div class="gcal-grid gcal-weekdays">${NEWS_WEEKDAYS.map(w=>`<span>${w}</span>`).join("")}</div>
-        <div class="gcal-grid">${evOfActive ? gcalDayCellsHTML(gcalViewY, gcalViewM, evOfActive, todayKey, active.color) : ""}</div>
+        <div class="gcal-grid-wrap">
+          <div class="gcal-grid gcal-weekdays">${NEWS_WEEKDAYS.map(w=>`<span class="gcal-wd-cell">${w}</span>`).join("")}</div>
+          <div class="gcal-grid">${evOfActive ? gcalDayCellsHTML(gcalViewY, gcalViewM, evOfActive, todayKey, active.color, gcalSelectedDay) : ""}</div>
+        </div>
         ${evOfActive ? "" : `<div class="gcal-google-loading">予定を読み込み中…</div>`}
+        ${evOfActive && gcalSelectedDay !== null ? gcalSelectedDaySectionHTML(gcalViewY, gcalViewM, gcalSelectedDay, evOfActive[newsDateKey(gcalViewY, gcalViewM, gcalSelectedDay)] || []) : ""}
         <div class="gcal-google-note">カレンダーの追加・共有設定は<a href="https://calendar.google.com/" target="_blank" rel="noopener noreferrer">Googleカレンダー</a>側で行ってください。</div>
       </div>`;
 
@@ -2680,21 +2786,30 @@ function renderGcalMonthCard(){
     gcalBindAuthorRow(root);
     root.querySelectorAll("[data-gcal]").forEach(b => b.onclick = () => {
       try{ localStorage.setItem(gcalStorageKey(GCAL_GOOGLE_ACTIVE_KEY), b.dataset.gcal); }catch(e){}
+      gcalSelDayError = null;
       renderGcalMonthCard();
     });
-    root.querySelector("#gcal-prev").onclick = () => { gcalViewM--; if(gcalViewM<0){ gcalViewM=11; gcalViewY--; } renderGcalMonthCard(); };
-    root.querySelector("#gcal-next").onclick = () => { gcalViewM++; if(gcalViewM>11){ gcalViewM=0; gcalViewY++; } renderGcalMonthCard(); };
+    root.querySelector("#gcal-prev").onclick = () => { gcalViewM--; if(gcalViewM<0){ gcalViewM=11; gcalViewY--; } gcalSelDayError = null; renderGcalMonthCard(); };
+    root.querySelector("#gcal-next").onclick = () => { gcalViewM++; if(gcalViewM>11){ gcalViewM=0; gcalViewY++; } gcalSelDayError = null; renderGcalMonthCard(); };
 
     if(!evOfActive){
       gcalRefreshGoogleEvents(active.id, gcalViewY, gcalViewM);
     } else {
       root.querySelectorAll("[data-gday]").forEach(b => b.onclick = () => {
-        gcalEnsureAuthorName(() => openGcalEventModal({
+        gcalEnsureAuthorName(() => {
+          gcalSelectedDay = parseInt(b.dataset.gday, 10);
+          gcalSelDayError = null;
+          renderGcalMonthCard();
+        });
+      });
+      if(gcalSelectedDay !== null){
+        gcalBindSelectedDaySection(root, {
           mode: "google", calId: active.id, color: active.color, name: active.name,
           getEventsMap: () => gcalGoogleEventsCache[evKey] || {},
           refresh: () => gcalRefreshGoogleEvents(active.id, gcalViewY, gcalViewM),
-        }, gcalViewY, gcalViewM, parseInt(b.dataset.gday, 10)));
-      });
+        }, gcalViewY, gcalViewM, gcalSelectedDay);
+        gcalApplyMarquee(root);
+      }
     }
     return;
   }
@@ -2726,8 +2841,11 @@ function renderGcalMonthCard(){
         <div class="gcal-cal-title">${gcalViewY}年${gcalViewM+1}月</div>
         <button type="button" class="gcal-nav-btn" id="gcal-next" aria-label="次の月">›</button>
       </div>
-      <div class="gcal-grid gcal-weekdays">${NEWS_WEEKDAYS.map(w=>`<span>${w}</span>`).join("")}</div>
-      <div class="gcal-grid">${gcalDayCellsHTML(gcalViewY, gcalViewM, evOfActive, todayKey, active.color)}</div>
+      <div class="gcal-grid-wrap">
+        <div class="gcal-grid gcal-weekdays">${NEWS_WEEKDAYS.map(w=>`<span class="gcal-wd-cell">${w}</span>`).join("")}</div>
+        <div class="gcal-grid">${gcalDayCellsHTML(gcalViewY, gcalViewM, evOfActive, todayKey, active.color, gcalSelectedDay)}</div>
+      </div>
+      ${gcalSelectedDay !== null ? gcalSelectedDaySectionHTML(gcalViewY, gcalViewM, gcalSelectedDay, evOfActive[newsDateKey(gcalViewY, gcalViewM, gcalSelectedDay)] || []) : ""}
     </div>`;
 
   gcalBindConnectBar(root);
@@ -2736,6 +2854,7 @@ function renderGcalMonthCard(){
     const s2 = loadGcalStore();
     s2.activeId = b.dataset.cal;
     saveGcalStore(s2);
+    gcalSelDayError = null;
     renderGcalMonthCard();
   });
   root.querySelectorAll("[data-share]").forEach(b => b.onclick = (e) => {
@@ -2746,19 +2865,29 @@ function renderGcalMonthCard(){
   if(addCalBtn) addCalBtn.onclick = () => openGcalAddCalendarModal();
   root.querySelector("#gcal-prev").onclick = () => {
     gcalViewM--; if(gcalViewM<0){ gcalViewM=11; gcalViewY--; }
+    gcalSelDayError = null;
     renderGcalMonthCard();
   };
   root.querySelector("#gcal-next").onclick = () => {
     gcalViewM++; if(gcalViewM>11){ gcalViewM=0; gcalViewY++; }
+    gcalSelDayError = null;
     renderGcalMonthCard();
   };
   root.querySelectorAll("[data-gday]").forEach(b => b.onclick = () => {
-    gcalEnsureAuthorName(() => openGcalEventModal({
+    gcalEnsureAuthorName(() => {
+      gcalSelectedDay = parseInt(b.dataset.gday, 10);
+      gcalSelDayError = null;
+      renderGcalMonthCard();
+    });
+  });
+  if(gcalSelectedDay !== null){
+    gcalBindSelectedDaySection(root, {
       mode: "local", calId: active.id, color: active.color, name: active.name,
       getEventsMap: () => (loadGcalStore().events[active.id] || {}),
       refresh: () => renderGcalMonthCard(),
-    }, gcalViewY, gcalViewM, parseInt(b.dataset.gday, 10)));
-  });
+    }, gcalViewY, gcalViewM, gcalSelectedDay);
+    gcalApplyMarquee(root);
+  }
 }
 
 function gcalAuthorRowHTML(){
