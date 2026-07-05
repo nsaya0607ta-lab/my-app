@@ -1,23 +1,25 @@
-const admin = require("firebase-admin");
+// レガシーな require("firebase-admin") の名前空間API（admin.apps /
+// admin.initializeApp 等）はVercelのビルド環境でadmin.appsが読めない
+// 事例があったため、公式が推奨するモジュラーAPIを使う
+const { initializeApp, cert, getApps } = require("firebase-admin/app");
+const { getAuth } = require("firebase-admin/auth");
+const { getFirestore } = require("firebase-admin/firestore");
 
 // Firebase Admin SDKの初期化はサーバーレス関数のコールドスタートごとに
-// 一度だけ行えばよい（admin.apps に既存インスタンスがあれば使い回す）。
+// 一度だけ行えばよい（既存インスタンスがあれば使い回す）。
 // サービスアカウントの認証情報はVercelの環境変数から読み込む：
 //   FIREBASE_PROJECT_ID / FIREBASE_CLIENT_EMAIL / FIREBASE_PRIVATE_KEY
 // FIREBASE_PRIVATE_KEY はVercelのUI上で改行がリテラルの "\n" として
 // 保存されがちなため、ここで実際の改行に戻す。
 function getAdmin() {
-  if (!admin.apps.length) {
-    const privateKey = (process.env.FIREBASE_PRIVATE_KEY || "").replace(/\\n/g, "\n");
-    admin.initializeApp({
-      credential: admin.credential.cert({
-        projectId: process.env.FIREBASE_PROJECT_ID,
-        clientEmail: process.env.FIREBASE_CLIENT_EMAIL,
-        privateKey,
-      }),
-    });
-  }
-  return admin;
+  const app = getApps().length ? getApps()[0] : initializeApp({
+    credential: cert({
+      projectId: process.env.FIREBASE_PROJECT_ID,
+      clientEmail: process.env.FIREBASE_CLIENT_EMAIL,
+      privateKey: (process.env.FIREBASE_PRIVATE_KEY || "").replace(/\\n/g, "\n"),
+    }),
+  });
+  return { auth: () => getAuth(app), firestore: () => getFirestore(app) };
 }
 
 // リクエストの Authorization: Bearer <FirebaseのIDトークン> を検証し、
