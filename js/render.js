@@ -1851,6 +1851,7 @@ let gcalViewY = null, gcalViewM = null;
 let gcalSelectedDay = null;
 let gcalSelDayBusy = false;
 let gcalSelDayError = null;
+let gcalDailyDelBusy = false; // ホームの日表示ウィジェットで削除処理が多重実行されるのを防ぐガード
 
 /* ---- 予定の「登録者名」（このカレンダー機能専用のプロフィール名） ----
    アプリのログインアカウントのユーザー名（getProfileName()）とは完全に
@@ -2345,6 +2346,15 @@ function gcalFilterMapByCal(map, calId){
   return out;
 }
 
+// 削除に成功した予定を、対応するキャッシュ（dateKey -> events[]）から
+// その場で取り除く（楽観的アップデート）。await src.refresh()によるサーバー
+// からの再取得を待たずに画面へ反映できるほか、再取得が終わる前に同じ予定の
+// 削除ボタンが再度押されて404になる事態も防げる
+function gcalRemoveEventFromCache(map, dateKey, eventId){
+  if(!map || !map[dateKey]) return;
+  map[dateKey] = map[dateKey].filter(ev => ev.id !== eventId);
+}
+
 // 連携中の全カレンダー（自分のプライマリ＋他アカウントから共有された
 // サブカレンダーすべて）を対象に events.list を並行実行し、1つの
 // dateKey -> events[] マップへ統合する。1つのカレンダーの取得が失敗
@@ -2429,7 +2439,16 @@ async function gcalCreateGoogleEvent(calId, y, m, d, title, start, end){
 }
 
 async function gcalDeleteGoogleEvent(calId, eventId){
-  await gcalGoogleApiFetch(`calendars/${encodeURIComponent(calId)}/events/${encodeURIComponent(eventId)}`, { method: "DELETE" });
+  try{
+    await gcalGoogleApiFetch(`calendars/${encodeURIComponent(calId)}/events/${encodeURIComponent(eventId)}`, { method: "DELETE" });
+  }catch(e){
+    // 404は「その予定は既に存在しない」ことを意味する。共有カレンダー経由で
+    // 同じ予定が重複取得されていたケースの片方を消した直後や、削除ボタンの
+    // 連打などで既に削除済みのeventIdへ再度リクエストが飛んだ場合に発生し、
+    // 呼び出し側から見れば削除済み＝成功と同じなのでエラー扱いにしない
+    if(e && e.message === "gcal-api-error-404") return;
+    throw e;
+  }
 }
 
 function gcalBindConnectBar(root){
@@ -2802,11 +2821,20 @@ function renderGcalDailyWidget(){
       gcalRefreshGoogleDayEvents(gcalDailyY, gcalDailyM, gcalDailyD);
     } else {
       root.querySelectorAll("[data-del]").forEach(btn => btn.onclick = async () => {
+        if(gcalDailyDelBusy) return;
         if(!confirm("この予定を削除しますか？")) return;
+        const evId = btn.dataset.del;
+        gcalDailyDelBusy = true;
         try{
-          await gcalDeleteGoogleEvent(btn.dataset.cal || active.id, btn.dataset.del);
-          await src.refresh();
+          await gcalDeleteGoogleEvent(btn.dataset.cal || active.id, evId);
+          // 楽観的アップデート：サーバーへの再取得を待たず、その場でキャッシュ
+          // と画面から即座に消す
+          gcalRemoveEventFromCache(gcalGoogleDayEventsCache[cacheKey], dateKey, evId);
+          gcalDailyDelBusy = false;
+          renderGcalDailyWidget();
+          src.refresh(); // 裏で最新状態と同期（結果を待つ必要はない）
         }catch(e){
+          gcalDailyDelBusy = false;
           gcalGoogleError = "削除に失敗しました。もう一度お試しください。";
           renderGcalDailyWidget();
         }
@@ -2881,11 +2909,17 @@ function gcalBindSelectedDaySection(root, src, y, m, d){
         // 一覧には複数カレンダー（共有カレンダーを含む）の予定が混在するため、
         // 削除は各予定が実際に属するカレンダー（data-cal）を優先して使う
         await gcalDeleteGoogleEvent(btn.dataset.cal || src.calId, evId);
-        await src.refresh();
+        // 楽観的アップデート：サーバーへの再取得を待たず、その場でキャッシュ
+        // （月表示のマージ済みマップ本体）と画面から即座に消す
+        gcalRemoveEventFromCache(gcalGoogleEventsCache[gcalEventsCacheKey(y, m)], dateKey, evId);
+        gcalSelDayBusy = false;
+        renderGcalMonthCard();
+        src.refresh(); // 裏で最新状態と同期（結果を待つ必要はない）
       }catch(e){
+        gcalSelDayBusy = false;
         gcalSelDayError = "削除に失敗しました。もう一度お試しください。";
+        renderGcalMonthCard();
       }
-      gcalSelDayBusy = false; renderGcalMonthCard();
       return;
     }
     const s2 = loadGcalStore();
@@ -3170,7 +3204,7 @@ function openGcalEventModal(src, y, m, d, opts){
             <div class="gcal-ev-item">
               <div class="gcal-ev-time">${ev.start ? `${esc(ev.start)}${ev.end?`〜${esc(ev.end)}`:""}` : "終日"}</div>
               <div class="gcal-ev-main">${ev.author?`<span class="gcal-ev-author">(${esc(ev.author)})</span> `:""}<span class="gcal-ev-title">${esc(ev.title)}</span></div>
-              <button type="button" class="gcal-ev-del" data-del="${esc(ev.id)}" aria-label="この予定を削除"${busy?" disabled":""}>×</button>
+              <button type="button" class="gcal-ev-del" data-del="${esc(ev.id)}" data-cal="${esc(ev.calId||"")}" aria-label="この予定を削除"${busy?" disabled":""}>×</button>
             </div>`).join("") : `<div class="gcal-ev-empty">この日の予定はまだありません。</div>`}
         </div>` : ""}
         <div class="gcal-ev-form">
@@ -3192,9 +3226,14 @@ function openGcalEventModal(src, y, m, d, opts){
       if(src.mode === "google"){
         busy = true; draw();
         try{
-          await gcalDeleteGoogleEvent(src.calId, evId);
-          await src.refresh();
+          // 一覧には複数カレンダー（共有カレンダーを含む）の予定が混在し得るため、
+          // 削除は各予定が実際に属するカレンダー（data-cal）を優先して使う
+          await gcalDeleteGoogleEvent(btn.dataset.cal || src.calId, evId);
+          // 楽観的アップデート：サーバーへの再取得を待たず、その場でキャッシュ
+          // と画面から即座に消す
+          gcalRemoveEventFromCache(src.getEventsMap(), dateKey, evId);
           busy = false; draw();
+          src.refresh(); // 裏で最新状態と同期（結果を待つ必要はない）
         }catch(e){
           busy = false; draw("削除に失敗しました。もう一度お試しください。");
         }
