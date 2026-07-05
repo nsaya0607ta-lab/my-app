@@ -111,6 +111,29 @@ import { S, state } from './state.js';
       }
     };
 
+    // 予定一覧のグループ見出しを「各ユーザー自身がこのアプリに登録した名前」で
+    // 表示するための公開ディレクトリ（Google連携メールアドレス→登録名）。
+    // 共有カレンダー越しに他ユーザーの予定を見ている側が、その予定の
+    // creator.emailから登録名を引けるようにする。leaderboardの表示名と同様、
+    // 「このアプリで使う表示名は公開情報」という既存の設計方針に合わせている
+    window.GcalNames = {
+      publish: async (email, name) => {
+        const id = (email || "").trim().toLowerCase();
+        const trimmedName = (name || "").trim();
+        if (!id || !trimmedName) return;
+        try {
+          await setDoc(doc(state.db, "gcalNames", id), { name: trimmedName, updatedAt: new Date().toISOString() }, { merge: true });
+        } catch (e) { console.error("gcalNames publish failed:", e); }
+      },
+      lookup: async (email) => {
+        const id = (email || "").trim().toLowerCase();
+        if (!id) return null;
+        try {
+          const d = await getDoc(doc(state.db, "gcalNames", id));
+          return d.exists() ? (d.data().name || null) : null;
+        } catch (e) { return null; }
+      }
+    };
 
     // ログイン状態の監視。ログイン中はそのアカウントのデータをリアルタイム同期
     onAuthStateChanged(auth, (user) => {
