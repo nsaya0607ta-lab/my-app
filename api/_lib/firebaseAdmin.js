@@ -32,11 +32,27 @@ async function verifyFirebaseIdToken(req) {
     err.statusCode = 401;
     throw err;
   }
+
+  // Admin SDKの初期化失敗（環境変数の設定ミス等）は「トークンが不正」とは
+  // 別の問題のため、401ではなく500として区別する。ここを分けないと、環境
+  // 変数の設定ミスがクライアント側には「連携に失敗しました」としか見えず
+  // 原因究明ができなくなる。
+  let adminApp;
   try {
-    const decoded = await getAdmin().auth().verifyIdToken(m[1]);
+    adminApp = getAdmin();
+  } catch (e) {
+    console.error("firebase admin init failed:", e);
+    const err = new Error("server-misconfigured: " + e.message);
+    err.statusCode = 500;
+    throw err;
+  }
+
+  try {
+    const decoded = await adminApp.auth().verifyIdToken(m[1]);
     return decoded.uid;
   } catch (e) {
-    const err = new Error("invalid-id-token");
+    console.error("verifyIdToken failed:", e.message);
+    const err = new Error("invalid-id-token: " + e.message);
     err.statusCode = 401;
     throw err;
   }
