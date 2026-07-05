@@ -886,55 +886,111 @@ function catmullRomSmoothPath(points){
 }
 
 const POP_CHART_W = 220, POP_CHART_H = 40, POP_CHART_PAD = 4;
-const POP_CHART_Y_TICKS = [100, 80, 60, 40, 20, 0]; // 縦軸目盛り（上→下）
-const POP_CHART_LABEL_EVERY = 3; // 横軸の数字は3時間ごとにのみ表示する
+const POP_CHART_Y_TICKS = [100, 80, 60, 40, 20, 0];   // 左軸（降水確率%）目盛り（上→下）
+const POP_CHART_MM_TICKS = [30, 20, 15, 10, 5, 0];    // 右軸（降水量mm）目盛り。左軸と同じ横グリッド線上に割り付ける（上→下）
+const POP_CHART_LABEL_EVERY = 4; // 横軸の数字は4時間ごとにのみ表示する（間隔を広めに取る）
+const POP_LINE_COLOR = "#eab308";         // 降水確率の折れ線・ドットの色（黄色）
+const PRECIP_BAR_COLOR = "#3b82f6";       // 降水量30mm以下の棒の色（青）
+const PRECIP_BAR_COLOR_HEAVY = "#ef4444"; // 降水量30mm超の棒の色（赤）
+
+// 降水量(mm)を、右軸目盛り(0,5,10,15,20,30)が左軸の等間隔グリッド線と同じ
+// 高さに来るよう区分的に(0→1の)高さ比率へ変換する。30mmを超える値は
+// 一番上のグリッド線（30mmの位置）で頭打ちにする
+function precipMmToHeightFrac(mm){
+  const ticksAsc = [0, 5, 10, 15, 20, 30];
+  const v = Math.max(0, mm || 0);
+  const nSeg = ticksAsc.length - 1;
+  for(let i = 0; i < nSeg; i++){
+    const lo = ticksAsc[i], hi = ticksAsc[i+1];
+    if(v <= hi || i === nSeg - 1){
+      const t = hi > lo ? Math.min(1, (v - lo)/(hi - lo)) : 0;
+      return (i + t) / nSeg;
+    }
+  }
+  return 1;
+}
 
 // 降水確率の推移（今＋1時間おき24点）を、数値の縦並びリストではなく
-// 滑らかな曲線グラフとして描画する。1時間ごとの点をそのままドットとして
-// 打ち、横軸の数字ラベルは3時間ごとにのみ間引いて表示する。縦軸には
-// 0〜100%の目盛りを添え、単位（%）は縦軸の一番上、単位（時）は横軸の
-// 一番右端にそれぞれ1回だけ表示する
+// 滑らかな曲線グラフ（黄色）として描画し、同じ横軸に降水量(mm)の棒グラフを
+// 重ねた複合グラフとして表示する。1時間ごとの点をそのままドットとして
+// 打ち、横軸の数字ラベルは4時間ごとに間引いて各データ点の真下（中央）に
+// 揃える。左縦軸は降水確率(0〜100%)、右縦軸は降水量(0,5,10,15,20,30mm)。
+// 単位（%・mm）は縦軸の一番上、単位（時）は横軸の一番右端にそれぞれ
+// 1回だけ表示する
 function renderWeatherPopChart(w){
   const el = document.getElementById("weather-pop-chart");
   if(!el) return;
   const points = (w && typeof w.pop === "number")
-    ? [{ label:"今", pop:w.pop }, ...(w.hourly||[]).map(h => ({ label: formatPopChartHour(h.time), pop:h.pop }))]
+    ? [{ label:"今", pop:w.pop, precip:w.precip||0 }, ...(w.hourly||[]).map(h => ({ label: formatPopChartHour(h.time), pop:h.pop, precip:h.precip||0 }))]
     : [];
   if(points.length < 2){ el.innerHTML = ""; return; }
   const n = points.length;
   const innerW = POP_CHART_W - POP_CHART_PAD*2;
   const innerH = POP_CHART_H - POP_CHART_PAD*2;
+  const baseY = POP_CHART_PAD + innerH;
   const coords = points.map((p,i) => ({
     x: POP_CHART_PAD + (i/(n-1))*innerW,
     y: POP_CHART_PAD + innerH - (Math.max(0,Math.min(100,p.pop))/100)*innerH,
   }));
   const pathD = catmullRomSmoothPath(coords);
-  const dots = coords.map(c => `<circle cx="${c.x.toFixed(1)}" cy="${c.y.toFixed(1)}" r="1.7" fill="var(--accent)"></circle>`).join("");
+  const dots = coords.map(c => `<circle cx="${c.x.toFixed(1)}" cy="${c.y.toFixed(1)}" r="1.7" fill="${POP_LINE_COLOR}"></circle>`).join("");
   const gridlines = POP_CHART_Y_TICKS.map(v => {
     const y = POP_CHART_PAD + innerH - (v/100)*innerH;
     return `<line x1="${POP_CHART_PAD}" y1="${y.toFixed(1)}" x2="${POP_CHART_W - POP_CHART_PAD}" y2="${y.toFixed(1)}" stroke="var(--line)" stroke-width="1" opacity=".5"></line>`;
   }).join("");
-  const yTicks = POP_CHART_Y_TICKS.map(v => `<span>${v}</span>`).join("");
-  // 横軸の数字ラベルは3時間ごと（今＝0時間後を含む）にのみ間引く。
-  // 元データが1時間おきの等間隔のため、間引いた後も均等割り付けで軸と揃う
-  const labelPoints = points.filter((_,i) => i % POP_CHART_LABEL_EVERY === 0);
-  const labels = labelPoints.map(p => `<span>${esc(p.label)}</span>`).join("");
+
+  // 降水量の棒グラフ。30mm以下は青、超える場合は赤。頭打ち処理は
+  // precipMmToHeightFrac 側で行う
+  const barW = Math.max(2, (innerW/(n-1)) * 0.55);
+  const bars = coords.map((c,i) => {
+    const mm = points[i].precip;
+    if(!mm) return "";
+    const barH = precipMmToHeightFrac(mm) * innerH;
+    const y = baseY - barH;
+    const color = mm > 30 ? PRECIP_BAR_COLOR_HEAVY : PRECIP_BAR_COLOR;
+    return `<rect x="${(c.x - barW/2).toFixed(1)}" y="${y.toFixed(1)}" width="${barW.toFixed(1)}" height="${barH.toFixed(1)}" fill="${color}" opacity=".75"></rect>`;
+  }).join("");
+
+  // 縦軸（左）・横軸（下）・右縦軸の枠線をはっきり表示する
+  const axisLines = `
+    <line x1="${POP_CHART_PAD}" y1="${POP_CHART_PAD}" x2="${POP_CHART_PAD}" y2="${baseY}" stroke="var(--text)" stroke-width="1.2"></line>
+    <line x1="${POP_CHART_PAD}" y1="${baseY}" x2="${POP_CHART_W - POP_CHART_PAD}" y2="${baseY}" stroke="var(--text)" stroke-width="1.2"></line>
+    <line x1="${POP_CHART_W - POP_CHART_PAD}" y1="${POP_CHART_PAD}" x2="${POP_CHART_W - POP_CHART_PAD}" y2="${baseY}" stroke="var(--line)" stroke-width="1"></line>`;
+
+  const yTicksLeft = POP_CHART_Y_TICKS.map(v => `<span>${v}</span>`).join("");
+  const yTicksRight = POP_CHART_MM_TICKS.map(v => `<span>${v}</span>`).join("");
+
+  // 横軸の数字ラベルは4時間ごと（今＝0時間後を含む）にのみ間引き、各データ点の
+  // x座標をそのままパーセント換算して絶対配置することで、間引いた後も
+  // データ点の真下（中央）に正しく揃う
+  const labelSpans = points.map((p,i) => {
+    if(i % POP_CHART_LABEL_EVERY !== 0) return "";
+    const pct = ((POP_CHART_PAD + (i/(n-1))*innerW) / POP_CHART_W * 100).toFixed(2);
+    return `<span style="left:${pct}%">${esc(p.label)}</span>`;
+  }).join("");
+
   el.innerHTML = `
-    <div class="pop-axis-yunit">%</div>
+    <div class="weather-pop-chart-units">
+      <div class="pop-axis-yunit">%</div>
+      <div class="pop-axis-yunit pop-axis-yunit-right">mm</div>
+    </div>
     <div class="weather-pop-chart-row">
-      <div class="pop-axis-ycol pop-axis-yticks">${yTicks}</div>
+      <div class="pop-axis-ycol pop-axis-yticks">${yTicksLeft}</div>
       <div class="weather-pop-chart-plot">
         <svg class="weather-pop-chart-svg" viewBox="0 0 ${POP_CHART_W} ${POP_CHART_H}" preserveAspectRatio="none">
           ${gridlines}
-          <path d="${pathD}" fill="none" stroke="var(--accent)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"></path>
+          ${bars}
+          <path d="${pathD}" fill="none" stroke="${POP_LINE_COLOR}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"></path>
           ${dots}
+          ${axisLines}
         </svg>
       </div>
+      <div class="pop-axis-ycol pop-axis-yticks pop-axis-yticks-right">${yTicksRight}</div>
     </div>
     <div class="weather-pop-chart-xrow">
       <div class="pop-axis-ycol pop-axis-yspacer"></div>
-      <div class="weather-pop-chart-labels">${labels}</div>
-      <div class="pop-axis-xunit">時</div>
+      <div class="weather-pop-chart-labels">${labelSpans}</div>
+      <div class="pop-axis-ycol pop-axis-xunit">時</div>
     </div>`;
 }
 
