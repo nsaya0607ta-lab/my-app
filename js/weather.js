@@ -18,7 +18,7 @@ const DEFAULT_LOCATION = { lat: 35.6762, lon: 139.6503 };
 const DEFAULT_CITY = "東京";
 const GEO_TIMEOUT_MS = 8000;
 const FETCH_TIMEOUT_MS = 8000;
-const CACHE_KEY = "weather_cache_v3"; // precip(降水量)追加に伴い旧キャッシュを無効化
+const CACHE_KEY = "weather_cache_v2"; // currentTime追加に伴い旧キャッシュを無効化
 const CACHE_TTL_MS = 15 * 60 * 1000; // 15分キャッシュ
 
 // WMO Weather interpretation code（Open-Meteoが返すweather_code）→ アイコン・日本語表記
@@ -132,7 +132,7 @@ async function fetchForecast(lat, lon){
     latitude: String(lat),
     longitude: String(lon),
     current: "temperature_2m,weather_code",
-    hourly: "precipitation_probability,precipitation",
+    hourly: "precipitation_probability",
     daily: "weather_code,temperature_2m_max,temperature_2m_min",
     timezone: "auto",
     forecast_days: "2", // 翌日分・24時間後まで含めるため2日分取得する
@@ -148,19 +148,17 @@ async function fetchForecast(lat, lon){
 
   const times = data.hourly?.time || [];
   const pops = data.hourly?.precipitation_probability || [];
-  const precs = data.hourly?.precipitation || [];
 
-  // 降水確率・降水量は current には含まれないため、hourly から現在時刻に
-  // 一致（または最も近い）時刻のポイントを探して拾う
-  let pop = null, precip = null;
+  // 降水確率は current には含まれないため、hourly から現在時刻に一致（または
+  // 最も近い）時刻のポイントを探して拾う
+  let pop = null;
   if(times.length && pops.length){
     let idx = times.indexOf(data.current.time);
     if(idx < 0) idx = nearestHourlyIndex(times, Date.now());
     if(typeof pops[idx] === "number") pop = pops[idx];
-    if(typeof precs[idx] === "number") precip = precs[idx];
   }
 
-  // 1時間おき（1〜24時間後）の降水確率・降水量。グラフの横軸ドットに使う
+  // 1時間おき（1〜24時間後）の降水確率。グラフの横軸ドットに使う
   const hourly = [];
   if(times.length && pops.length){
     const nowMs = Date.now();
@@ -168,7 +166,7 @@ async function fetchForecast(lat, lon){
       const targetMs = nowMs + step * HOURLY_STEP_HOURS * 60 * 60 * 1000;
       const i = nearestHourlyIndex(times, targetMs);
       if(i >= 0 && typeof pops[i] === "number"){
-        hourly.push({ time: times[i], pop: pops[i], precip: typeof precs[i] === "number" ? precs[i] : 0 });
+        hourly.push({ time: times[i], pop: pops[i] });
       }
     }
   }
@@ -186,14 +184,14 @@ async function fetchForecast(lat, lon){
 
   // currentTime: この観測値がいつ時点のものか（timezone=autoにより現地時刻の
   // ISO文字列が返る）。表示側で「HH:MM時点」ラベルに使う
-  return { temp, icon, label, pop, precip, hourly, tomorrow, currentTime: data.current.time || null };
+  return { temp, icon, label, pop, hourly, tomorrow, currentTime: data.current.time || null };
 }
 
 // wttr.inのweather[]（日ごとの3時間刻み予報）から、Open-Meteoと同じ形式の
 // 時刻配列・降水確率配列を組み立てる。各hourly要素のtimeは"0","300",...,
 // "2100"のようなHHMM形式の文字列（3時間おき）
 function wttrTimesAndPops(weatherDays){
-  const times = [], pops = [], precs = [];
+  const times = [], pops = [];
   (weatherDays || []).forEach(day => {
     (day.hourly || []).forEach(h => {
       const t = parseInt(h.time, 10) || 0;
@@ -201,10 +199,9 @@ function wttrTimesAndPops(weatherDays){
       const mm = String(t % 100).padStart(2, "0");
       times.push(`${day.date}T${hh}:${mm}`);
       pops.push(parseInt(h.chanceofrain, 10) || 0);
-      precs.push(parseFloat(h.precipMM) || 0);
     });
   });
-  return { times, pops, precs };
+  return { times, pops };
 }
 
 // Open-Meteo（直接fetch＋CORSプロキシ）が軒並み失敗した場合の予備プロバイダ。
@@ -224,13 +221,12 @@ async function fetchWttrFallback(lat, lon){
   const temp = Math.round(parseFloat(cur.temp_C));
   const { icon, label } = describeWttrCode(cur.weatherCode);
 
-  const { times, pops, precs } = wttrTimesAndPops(data.weather);
+  const { times, pops } = wttrTimesAndPops(data.weather);
 
-  let pop = null, precip = null;
+  let pop = null;
   if(times.length && pops.length){
     const idx = nearestHourlyIndex(times, Date.now());
     if(idx >= 0 && typeof pops[idx] === "number") pop = pops[idx];
-    if(idx >= 0 && typeof precs[idx] === "number") precip = precs[idx];
   }
 
   const hourly = [];
@@ -240,7 +236,7 @@ async function fetchWttrFallback(lat, lon){
       const targetMs = nowMs + step * HOURLY_STEP_HOURS * 60 * 60 * 1000;
       const i = nearestHourlyIndex(times, targetMs);
       if(i >= 0 && typeof pops[i] === "number"){
-        hourly.push({ time: times[i], pop: pops[i], precip: typeof precs[i] === "number" ? precs[i] : 0 });
+        hourly.push({ time: times[i], pop: pops[i] });
       }
     }
   }
@@ -255,7 +251,7 @@ async function fetchWttrFallback(lat, lon){
     tomorrow = { icon: d.icon, label: d.label, tempMax: Math.round(parseFloat(tomorrowDay.maxtempC)), tempMin: Math.round(parseFloat(tomorrowDay.mintempC)) };
   }
 
-  return { temp, icon, label, pop, precip, hourly, tomorrow, currentTime: null };
+  return { temp, icon, label, pop, hourly, tomorrow, currentTime: null };
 }
 
 function loadCache(){
