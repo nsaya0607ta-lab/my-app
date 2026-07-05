@@ -910,9 +910,11 @@ function renderWeatherPopChart(w){
   }));
   const pathD = catmullRomSmoothPath(coords);
   const dots = coords.map(c => `<circle cx="${c.x.toFixed(1)}" cy="${c.y.toFixed(1)}" r="1.7" fill="var(--accent)"></circle>`).join("");
+  // 目盛り線は左の数字ラベル（space-betweenで上下端いっぱいに均等配置）と
+  // 高さを揃えるため、曲線用のPOP_CHART_PADは使わず0〜100%（上端〜下端）に配置する
   const gridlines = POP_CHART_Y_TICKS.map(v => {
-    const y = POP_CHART_PAD + innerH - (v/100)*innerH;
-    return `<line x1="${POP_CHART_PAD}" y1="${y.toFixed(1)}" x2="${POP_CHART_W - POP_CHART_PAD}" y2="${y.toFixed(1)}" stroke="var(--line)" stroke-width="1" opacity=".5"></line>`;
+    const y = POP_CHART_H - (v/100)*POP_CHART_H;
+    return `<line x1="0" y1="${y.toFixed(1)}" x2="${POP_CHART_W}" y2="${y.toFixed(1)}" stroke="var(--line)" stroke-width="1" opacity=".5"></line>`;
   }).join("");
   const yTicks = POP_CHART_Y_TICKS.map(v => `<span>${v}</span>`).join("");
   // 横軸の数字ラベルは3時間ごと（今＝0時間後を含む）にのみ間引く。
