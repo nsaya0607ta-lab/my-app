@@ -462,6 +462,9 @@ h1.title{font-size:34px;line-height:1.05;font-weight:800;margin:8px 0 0;letter-s
 .gcal-share-btn{flex:none;width:24px;height:24px;border-radius:50%;border:none;background:none;
   color:var(--muted);font-size:12px;display:flex;align-items:center;justify-content:center;cursor:pointer;}
 .gcal-share-btn:active{background:var(--surface2);}
+.gcal-rename-btn{flex:none;width:24px;height:24px;border-radius:50%;border:none;background:none;
+  color:var(--muted);font-size:12px;display:flex;align-items:center;justify-content:center;cursor:pointer;}
+.gcal-rename-btn:active{background:var(--surface2);}
 .gcal-add-cal-btn{flex:none;width:26px;height:26px;border-radius:50%;border:1px dashed var(--line);
   background:none;color:var(--muted);font-size:15px;font-weight:700;line-height:1;
   display:flex;align-items:center;justify-content:center;cursor:pointer;}
@@ -565,16 +568,6 @@ h1.title{font-size:34px;line-height:1.05;font-weight:800;margin:8px 0 0;letter-s
 .gcal-todo-add-btn{flex:none;width:26px;border-radius:8px;border:1px solid var(--accent);
   background:var(--accent);color:#ffffff;font-weight:700;font-size:13px;cursor:pointer;}
 .gcal-todo-add-btn:active{filter:brightness(.95);}
-
-/* カレンダー画面：予定の登録者名（アプリのログイン名とは別管理）の
-   表示・変更バー */
-.gcal-author-row{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:10px;
-  padding:8px 10px;background:var(--bg2);border-radius:10px;}
-.gcal-author-label{font-size:11.5px;color:var(--muted);}
-.gcal-author-label b{color:var(--text);}
-.gcal-author-edit-btn{flex:none;padding:4px 10px;border-radius:99px;border:1px solid var(--line);
-  background:var(--surface);color:var(--accent);font-size:11px;font-weight:700;cursor:pointer;}
-.gcal-author-edit-btn:active{background:var(--surface2);}
 
 /* 日付タップで開く予定ポップアップ・共有ユーザー設定ポップアップ・
    カレンダー追加ポップアップ（いずれも.modal-ov/.modalを土台に使う） */
