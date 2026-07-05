@@ -1871,13 +1871,26 @@ function gcalSaveAuthorName(name){
 // 「今アプリを使っている本人」が登録した表示名（カレンダー専用の登録者名、
 // 無ければアプリのユーザー名）を、Google連携メールアドレスをキーにした公開
 // ディレクトリへ発行する。共有カレンダーの相手側が、自分の予定一覧の見出し
-// にGmailアドレスではなくこの登録名を表示できるようにするため。Google連携
-// 済みで名前が決まっているときだけ発行し、ローカル（デモ）モードや連携前は
-// 発行しようがないため何もしない
+// にGmailアドレスではなくこの登録名を表示できるようにするため。
+// 書き込みは/api/google/publish-nameに任せる：クライアントから直接
+// gcalNamesへ書き込めてしまうと、認証済みユーザーなら誰でも任意のメール
+// アドレスの表示名を上書きできてしまうため（Firestoreルールだけでは
+// 「本人が実際にそのメールアドレスでGoogle連携しているか」を検証できない）、
+// サーバー側でGoogleの連携情報からメールアドレスを確定させてから書き込む。
+// ローカル（デモ）モードや連携前はサーバー側が404を返すだけで何もしない
 function gcalPublishOwnName(){
-  const email = gcalOwnGoogleEmail();
   const name = gcalLoadAuthorName() || getProfileName();
-  if(email && name && window.GcalNames) window.GcalNames.publish(email, name).catch(() => {});
+  if(!name || state.guestMode || !state.currentUser) return;
+  (async () => {
+    try{
+      const idToken = await state.currentUser.getIdToken();
+      await fetch("/api/google/publish-name", {
+        method: "POST",
+        headers: { Authorization: `Bearer ${idToken}`, "Content-Type": "application/json" },
+        body: JSON.stringify({ name }),
+      });
+    }catch(e){}
+  })();
 }
 
 // 登録者名が未設定なら設定用モーダルを開いてから、設定済みならすぐに

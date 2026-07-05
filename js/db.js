@@ -115,16 +115,11 @@ import { S, state } from './state.js';
     // 表示するための公開ディレクトリ（Google連携メールアドレス→登録名）。
     // 共有カレンダー越しに他ユーザーの予定を見ている側が、その予定の
     // creator.emailから登録名を引けるようにする。leaderboardの表示名と同様、
-    // 「このアプリで使う表示名は公開情報」という既存の設計方針に合わせている
+    // 「このアプリで使う表示名は公開情報」という既存の設計方針に合わせている。
+    // 書き込みはFirestoreルールで禁止しており、/api/google/publish-name経由
+    // でのみ行う（本人が実際に連携しているメールアドレスをサーバー側で検証
+    // するため。詳細はrender.jsのgcalPublishOwnName参照）
     window.GcalNames = {
-      publish: async (email, name) => {
-        const id = (email || "").trim().toLowerCase();
-        const trimmedName = (name || "").trim();
-        if (!id || !trimmedName) return;
-        try {
-          await setDoc(doc(state.db, "gcalNames", id), { name: trimmedName, updatedAt: new Date().toISOString() }, { merge: true });
-        } catch (e) { console.error("gcalNames publish failed:", e); }
-      },
       lookup: async (email) => {
         const id = (email || "").trim().toLowerCase();
         if (!id) return null;
