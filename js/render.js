@@ -890,7 +890,8 @@ const POP_CHART_Y_TICKS = [100, 80, 60, 40, 20, 0]; // 縦軸目盛り・％（�
 // 縦軸目盛り・降水量mm（右軸、上→下）。天気アプリでよく使われる区切り
 // （弱い雨〜激しい雨の目安）に合わせているため値の間隔は不均等だが、
 // 目盛り線自体はPOP_CHART_Y_TICKSと同じ6段に均等割りして共有する
-const PRECIP_Y_TICKS = [25, 15, 10, 6, 3, 0];
+const PRECIP_Y_TICKS = [15, 10, 5, 3, 1, 0];
+const PRECIP_DANGER_MM = 20; // これを超えたら棒を警告色にする
 const POP_CHART_LABEL_EVERY = 3; // 横軸の数字は3時間ごとにのみ表示する
 
 // 目盛りのインデックス位置（0=一番上、tickCount-1=一番下）をSVGのY座標に変換する。
@@ -948,7 +949,8 @@ function renderWeatherPopChart(w){
     const mm = Math.max(0, typeof p.precip === "number" ? p.precip : 0);
     const barH = precipValueToFrac(mm) * POP_CHART_H;
     const x = coords[i].x;
-    return `<rect x="${(x - barW/2).toFixed(1)}" y="${(POP_CHART_H - barH).toFixed(1)}" width="${barW.toFixed(1)}" height="${barH.toFixed(1)}" fill="var(--precip)" opacity=".85" rx=".6"></rect>`;
+    const fill = mm > PRECIP_DANGER_MM ? "var(--bad)" : "var(--precip)";
+    return `<rect x="${(x - barW/2).toFixed(1)}" y="${(POP_CHART_H - barH).toFixed(1)}" width="${barW.toFixed(1)}" height="${barH.toFixed(1)}" fill="${fill}" opacity=".85" rx=".6"></rect>`;
   }).join("");
 
   // 目盛り線とラベルを同じY座標式で位置決めする（別々のflex配置に頼らない）。
