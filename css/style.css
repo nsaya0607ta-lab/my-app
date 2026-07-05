@@ -381,7 +381,7 @@ h1.title{font-size:34px;line-height:1.05;font-weight:800;margin:8px 0 0;letter-s
 .news-arrow:active{transform:scale(.9);}
 /* ヘッダーバッジ無しのミニマル構成。上下のパディングをやや広げ、
    左右2エリアをカード全体の上下中央に据えた余白バランスにする */
-.weather-card{margin-bottom:14px;padding-top:16px;padding-bottom:15px;}
+.weather-card{margin-bottom:14px;padding-top:16px;padding-bottom:8px;}
 
 /* カードを左（時計／天気＋降水確率の曲線グラフ）：右（簡易予定表）＝
    2.4：1の比率で左右分割する */
@@ -425,7 +425,7 @@ h1.title{font-size:34px;line-height:1.05;font-weight:800;margin:8px 0 0;letter-s
 .pop-axis-yticks-right span{position:absolute;left:0;transform:translateY(-50%);
   font-size:7px;font-weight:600;color:var(--muted);line-height:1;font-variant-numeric:tabular-nums;white-space:nowrap;}
 .weather-pop-chart-plot{flex:1;min-width:0;}
-.weather-pop-chart-svg{display:block;width:100%;height:32px;}
+.weather-pop-chart-svg{display:block;width:100%;height:40px;}
 .weather-pop-chart-xrow{display:flex;gap:3px;margin-top:2px;}
 .weather-pop-chart-labels{flex:1;min-width:0;position:relative;height:10px;}
 .weather-pop-chart-labels span{position:absolute;top:0;transform:translateX(-50%);
