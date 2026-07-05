@@ -471,10 +471,20 @@ h1.title{font-size:34px;line-height:1.05;font-weight:800;margin:8px 0 0;letter-s
 .gcal-add-cal-btn:active{background:var(--bg2);}
 
 .gcal-cal-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;}
+.gcal-cal-head-right{flex:none;display:flex;align-items:center;gap:6px;}
 .gcal-nav-btn{flex:none;width:26px;height:26px;border-radius:50%;border:none;background:var(--bg2);
   color:var(--text);font-size:13px;font-weight:700;display:flex;align-items:center;justify-content:center;cursor:pointer;}
 .gcal-nav-btn:active{background:var(--surface2);}
 .gcal-cal-title{font-size:17px;font-weight:800;color:var(--text);}
+
+/* 「変更を反映」ボタン（手動リロード）。押している間はgcalDay/MonthReloading
+   がtrueになりspinningクラスが付き、アイコンが回転してローディング状態を示す */
+.gcal-reload-btn{flex:none;width:26px;height:26px;border-radius:50%;border:none;background:var(--bg2);
+  color:var(--text);font-size:12px;display:flex;align-items:center;justify-content:center;cursor:pointer;}
+.gcal-reload-btn:active{background:var(--surface2);}
+.gcal-reload-btn:disabled{opacity:.55;cursor:default;}
+.gcal-reload-btn.spinning{animation:gcal-reload-spin .8s linear infinite;}
+@keyframes gcal-reload-spin{ from{transform:rotate(0deg);} to{transform:rotate(360deg);} }
 
 /* 日付・曜日を格子状（枠線）で区切ったグリッド形式のカレンダー。
    外枠は.gcal-grid-wrapの上辺・左辺で作り、各セルは右辺・下辺の
@@ -516,6 +526,7 @@ h1.title{font-size:34px;line-height:1.05;font-weight:800;margin:8px 0 0;letter-s
    2カラムのコンパクトレイアウト */
 .gcal-day-box{padding:12px 14px;}
 .gcal-day-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;}
+.gcal-day-head-right{flex:none;display:flex;align-items:center;gap:6px;}
 .gcal-day-title{font-size:13px;font-weight:800;color:var(--text);}
 .gcal-day-body{display:flex;gap:10px;align-items:flex-start;}
 
@@ -524,6 +535,16 @@ h1.title{font-size:34px;line-height:1.05;font-weight:800;margin:8px 0 0;letter-s
    render.js側のgcalSetupDayEventsScroll()がheightをインラインで固定し、
    5件目以降を手動の縦スワイプ（overflow-y:auto）で見せる */
 .gcal-day-events{display:flex;flex-direction:column;gap:6px;overflow-y:auto;margin-bottom:8px;}
+
+/* 「ユーザーごとの予定表示（分別）」：予定を作成者ラベルごとにまとめた
+   エリア。見出し（作成者名＋カレンダー色のドット）の下に、そのユーザーの
+   予定カードだけを並べる */
+.gcal-user-group-title{display:flex;align-items:center;gap:5px;font-size:10px;font-weight:800;
+  color:var(--muted);letter-spacing:.02em;margin-bottom:4px;padding-left:2px;}
+.gcal-user-group-dot{width:7px;height:7px;border-radius:50%;flex:none;}
+.gcal-user-group-events{display:flex;flex-direction:column;gap:6px;}
+.gcal-user-group + .gcal-user-group{margin-top:10px;}
+
 .gcal-day-event{display:flex;align-items:center;gap:6px;background:var(--bg2);border-radius:10px;padding:7px 6px 7px 9px;}
 .gcal-day-event-time{flex:none;max-width:80px;font-size:10px;font-weight:700;color:var(--muted);line-height:1.35;
   overflow:hidden;white-space:nowrap;position:relative;}
@@ -587,6 +608,17 @@ h1.title{font-size:34px;line-height:1.05;font-weight:800;margin:8px 0 0;letter-s
 .gcal-ev-input{flex:1;min-width:0;padding:11px 12px;border:1px solid var(--line);border-radius:12px;
   background:var(--surface);color:var(--text);font-size:13px;}
 .gcal-newcal-input{width:100%;margin-bottom:12px;}
+
+/* 過去の予定「引用」サジェスト：タイトル入力欄の下に、部分一致した過去の
+   予定タイトル・時間帯を候補として並べる。何も入力していない間は非表示 */
+.gcal-suggest{display:none;flex-direction:column;gap:4px;margin-top:6px;}
+.gcal-suggest.open{display:flex;}
+.gcal-suggest-item{display:flex;align-items:center;justify-content:space-between;gap:8px;width:100%;
+  padding:8px 10px;border-radius:10px;border:1px solid var(--line);background:var(--bg2);
+  color:var(--text);font-size:12.5px;cursor:pointer;text-align:left;}
+.gcal-suggest-item:active{background:var(--surface2);}
+.gcal-suggest-title{flex:1;min-width:0;font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.gcal-suggest-time{flex:none;font-size:11px;color:var(--muted);}
 .gcal-ev-time-row{display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin-top:8px;}
 .gcal-ev-time-input{flex:1;min-width:96px;padding:9px 8px;border:1px solid var(--line);border-radius:10px;
   background:var(--surface);color:var(--text);font-size:12.5px;}

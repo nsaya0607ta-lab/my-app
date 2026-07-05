@@ -2004,6 +2004,12 @@ let gcalGoogleDayEventsCache = {};    // "<calId>|day|<dateKey>" -> { dateKey: [
 let gcalGoogleSilentRefreshPromise = null; // バックエンド経由リフレッシュの多重実行を防ぐための進行中Promise
 let gcalGoogleAutoRefreshTimerStarted = false;
 
+// 「変更を反映」ボタン（手動リロード）の進行中フラグ。trueの間はボタンを
+// 無効化しつつ回転アイコンでローディング状態を示す。ホーム画面の日
+// ウィジェットとカレンダー画面の月カードはそれぞれ別画面なので別々に持つ
+let gcalDayReloading = false;
+let gcalMonthReloading = false;
+
 // Googleの同意画面から /api/google/callback を経て戻ってきた直後の後処理。
 // URLの ?gcal=connected|error を読み取ってすぐにURLから消し（リロード時の
 // 誤動作・履歴汚染を防ぐ）、失敗時のみメッセージを用意する。成功時は何も
@@ -2286,9 +2292,14 @@ function gcalMapGoogleEventItems(items, calMeta){
     const start = isTimed ? gcalFormatHHMM(startDate) : "";
     const end = (isTimed && endInfo.dateTime) ? gcalFormatHHMM(new Date(endInfo.dateTime)) : "";
     const { author, title } = gcalParseAuthorTitle(ev.summary);
+    // 「ユーザーごとの分別表示」用：手動入力の登録者名(author)が無い予定でも、
+    // Googleカレンダー本来の作成者情報（creator.email/displayName）があれば
+    // それを使って作成者を判別できるようにする
+    const creatorEmail = ev.creator ? ev.creator.email : undefined;
+    const creatorName = ev.creator ? (ev.creator.displayName || ev.creator.email) : undefined;
     if(!map[dk]) map[dk] = [];
     map[dk].push({
-      id: ev.id, iCalUID: ev.iCalUID, title, start, end, author,
+      id: ev.id, iCalUID: ev.iCalUID, title, start, end, author, creatorEmail, creatorName,
       calId: calMeta ? calMeta.id : undefined,
       calColor: calMeta ? calMeta.color : undefined,
       calName: calMeta ? calMeta.name : undefined,
@@ -2591,31 +2602,61 @@ function gcalShiftDailyDate(deltaDays){
   gcalDailyY = d.getFullYear(); gcalDailyM = d.getMonth(); gcalDailyD = d.getDate();
 }
 
-// 1日ぶんの予定を時系列（左：時間、右：登録者名＋タスク内容）で並べる
-// タイムライン表示。予定は開始時刻の昇順に並べ、終日予定は先頭にまとめる。
-// isSharedは表示中のカレンダーが共有カレンダーかどうか（共有相手がいる
-// ローカルカレンダー、またはGoogle連携で自分のプライマリ以外のカレンダー）
-// で、trueのときだけ登録者名を表示する。時間・本文はそれぞれ1行に収め、
+// 予定1件ぶんのタイムラインカードHTML。時間・本文はそれぞれ1行に収め、
 // カード幅に収まらない場合はgcalApplyMarquee()が自動横スクロールを付与する
-function gcalDayEventsListHTML(events, isShared){
-  if(!events.length) return `<div class="gcal-day-empty">この日の予定はまだありません。</div>`;
-  const sorted = [...events].sort((a, b) => (a.start||"").localeCompare(b.start||""));
-  return sorted.map(ev => {
-    const timeText = ev.start ? (ev.end ? `${ev.start} ~ ${ev.end}` : ev.start) : "終日";
-    // 予定ごとに取得元カレンダー（calPrimary）が分かる場合はそちらを優先する
-    // （複数カレンダーの予定をまとめて表示しているため、カレンダー単位の一括
-    // フラグより予定ごとの情報の方が正確）。無ければ従来通り呼び出し元が
-    // 渡したisShared（ローカルのデモカレンダー用）にフォールバックする
-    const evShared = (typeof ev.calPrimary === "boolean") ? !ev.calPrimary : isShared;
-    const authorHTML = (evShared && ev.author) ? `<span class="gcal-day-event-author">(${esc(ev.author)})</span> ` : "";
-    const calDotHTML = ev.calColor ? `<span class="gcal-day-event-caldot" style="background:${esc(ev.calColor)}" title="${esc(ev.calName||"")}"></span>` : "";
-    return `
+function gcalEventRowHTML(ev){
+  const timeText = ev.start ? (ev.end ? `${ev.start} ~ ${ev.end}` : ev.start) : "終日";
+  const calDotHTML = ev.calColor ? `<span class="gcal-day-event-caldot" style="background:${esc(ev.calColor)}" title="${esc(ev.calName||"")}"></span>` : "";
+  return `
     <div class="gcal-day-event" data-start="${esc(ev.start||"")}" data-end="${esc(ev.end||"")}">
       <div class="gcal-day-event-time"><span class="gcal-marquee-track">${esc(timeText)}</span></div>
-      <div class="gcal-day-event-main"><span class="gcal-marquee-track">${calDotHTML}${authorHTML}<span class="gcal-day-event-title">${esc(ev.title)}</span></span></div>
+      <div class="gcal-day-event-main"><span class="gcal-marquee-track">${calDotHTML}<span class="gcal-day-event-title">${esc(ev.title)}</span></span></div>
       <button type="button" class="gcal-day-event-del" data-del="${esc(ev.id)}" data-cal="${esc(ev.calId||"")}" aria-label="この予定を削除">×</button>
     </div>`;
-  }).join("");
+}
+
+// 予定1件の「作成者ラベル」を決定する。手動入力の登録者名(author)を最優先、
+// 無ければGoogleカレンダー本来の作成者情報(creatorName)、それも無ければ
+// 取得元カレンダー名(calName)を使う。いずれも無い場合（ローカルのデモ
+// カレンダーで登録者名が未設定など）は呼び出し元が渡したfallbackを使う
+function gcalEventUserLabel(ev, fallback){
+  const author = (ev.author || "").trim();
+  if(author) return author;
+  if(ev.creatorName) return ev.creatorName;
+  if(ev.calName) return ev.calName;
+  return fallback || "予定";
+}
+
+// 予定一覧を作成者ラベルごとにグループ化する。グループ内は開始時刻の
+// 昇順、グループ自体はラベル名の五十音/辞書順に並べる
+function gcalGroupEventsByUser(events, fallback){
+  const order = [];
+  const groups = new Map();
+  events.forEach(ev => {
+    const label = gcalEventUserLabel(ev, fallback);
+    if(!groups.has(label)){ groups.set(label, { label, color: null, events: [] }); order.push(label); }
+    const g = groups.get(label);
+    if(!g.color && ev.calColor) g.color = ev.calColor;
+    g.events.push(ev);
+  });
+  return order.map(label => groups.get(label))
+    .map(g => ({ ...g, events: g.events.slice().sort((a,b)=>(a.start||"").localeCompare(b.start||"")) }))
+    .sort((a,b) => a.label.localeCompare(b.label, "ja"));
+}
+
+// 1日ぶんの予定を「ユーザーごと」にエリアを分けたタイムライン表示にする。
+// どの予定がどのユーザー（アカウント）の登録かを一目で分別できるよう、
+// gcalGroupEventsByUser()でグループ化してから、グループ見出し＋予定
+// カードの順に描画する。fallbackは作成者を判別できない予定に使うラベル
+// （通常はこのカレンダーの登録者名、または取得元カレンダー名）
+function gcalDayEventsListHTML(events, fallback){
+  if(!events.length) return `<div class="gcal-day-empty">この日の予定はまだありません。</div>`;
+  const groups = gcalGroupEventsByUser(events, fallback);
+  return groups.map(g => `
+    <div class="gcal-user-group">
+      <div class="gcal-user-group-title">${g.color?`<span class="gcal-user-group-dot" style="background:${esc(g.color)}"></span>`:""}${esc(g.label)}</div>
+      <div class="gcal-user-group-events">${g.events.map(gcalEventRowHTML).join("")}</div>
+    </div>`).join("");
 }
 
 // gcalDayEventsListHTML()が描画した各予定カードの時間・本文について、
@@ -2685,6 +2726,21 @@ function gcalTodoListHTML(todos){
     </div>`).join("");
 }
 
+// 「変更を反映」ボタン：ホーム画面の日ウィジェットが表示中の1日ぶんの
+// 予定を、キャッシュを使わず裏から取り直して画面に反映する。Google連携
+// 中のみ実際のAPI再取得を行い、未連携（ローカルのデモモード）のときは
+// localStorageの最新状態を読み直すだけの軽い再描画になる
+async function gcalReloadDay(){
+  if(gcalDayReloading) return;
+  gcalDayReloading = true;
+  renderGcalDailyWidget();
+  if(gcalGoogleAccessToken){
+    await gcalRefreshGoogleDayEvents(gcalDailyY, gcalDailyM, gcalDailyD);
+  }
+  gcalDayReloading = false;
+  renderGcalDailyWidget();
+}
+
 // ホーム画面：本日（表示中の1日）だけを表示するコンパクトなウィジェット。
 // 左に時間帯つきの予定タイムライン、右にその日のToDoリストを並べる。
 // 連携設定・カレンダー切替・追加カレンダー・共有はすべて「カレンダー」
@@ -2713,6 +2769,8 @@ function renderGcalDailyWidget(){
   const bindShared = (root, src) => {
     root.querySelector("#gcal-day-prev").onclick = () => { gcalShiftDailyDate(-1); renderGcalDailyWidget(); };
     root.querySelector("#gcal-day-next").onclick = () => { gcalShiftDailyDate(1); renderGcalDailyWidget(); };
+    const reloadBtn = root.querySelector("#gcal-day-reload");
+    if(reloadBtn && !gcalDayReloading) reloadBtn.onclick = () => gcalReloadDay();
     const addBtn = root.querySelector("#gcal-day-add");
     if(addBtn) addBtn.onclick = () => gcalEnsureAuthorName(() => openGcalEventModal(src, gcalDailyY, gcalDailyM, gcalDailyD, { showList: false }));
 
@@ -2749,7 +2807,10 @@ function renderGcalDailyWidget(){
       <div class="gcal-day-head">
         <button type="button" class="gcal-nav-btn" id="gcal-day-prev" aria-label="前の日">‹</button>
         <div class="gcal-day-title">${esc(dateLabel)}</div>
-        <button type="button" class="gcal-nav-btn" id="gcal-day-next" aria-label="次の日">›</button>
+        <div class="gcal-day-head-right">
+          <button type="button" class="gcal-reload-btn${gcalDayReloading?" spinning":""}" id="gcal-day-reload" aria-label="変更を反映（最新の予定を再取得）" title="変更を反映"${gcalDayReloading?" disabled":""}>🔄</button>
+          <button type="button" class="gcal-nav-btn" id="gcal-day-next" aria-label="次の日">›</button>
+        </div>
       </div>
       <div class="gcal-day-body">
         <div class="gcal-day-timeline">
@@ -2792,7 +2853,7 @@ function renderGcalDailyWidget(){
       refresh: () => gcalRefreshGoogleDayEvents(gcalDailyY, gcalDailyM, gcalDailyD),
     };
 
-    root.innerHTML = shellHTML(evMap ? gcalDayEventsListHTML(evMap[dateKey] || [], false) : `<div class="gcal-google-loading">予定を読み込み中…</div>`);
+    root.innerHTML = shellHTML(evMap ? gcalDayEventsListHTML(evMap[dateKey] || [], gcalLoadAuthorName() || active.name) : `<div class="gcal-google-loading">予定を読み込み中…</div>`);
     bindShared(root, src);
     gcalApplyMarquee(root);
     const googleScrollKey = `g|${dateKey}`;
@@ -2825,8 +2886,7 @@ function renderGcalDailyWidget(){
     refresh: () => renderGcalDailyWidget(),
   };
 
-  const isShared = !!(active.shared && active.shared.length);
-  root.innerHTML = shellHTML(gcalDayEventsListHTML(events, isShared));
+  root.innerHTML = shellHTML(gcalDayEventsListHTML(events, gcalLoadAuthorName() || active.name));
   bindShared(root, src);
   gcalApplyMarquee(root);
   const localScrollKey = `l|${active.id}|${dateKey}`;
@@ -2845,7 +2905,7 @@ function renderGcalDailyWidget(){
 
 // 「カレンダー」画面：月グリッドの真下に置く、選択中の日の予定一覧＋
 // 追加フォーム。予定の確認・追加・削除はここで完結し、モーダルは開かない
-function gcalSelectedDaySectionHTML(y, m, d, events){
+function gcalSelectedDaySectionHTML(y, m, d, events, fallback){
   const weekday = NEWS_WEEKDAYS[new Date(y, m, d).getDay()];
   const now = new Date();
   const isToday = newsDateKey(y, m, d) === newsDateKey(now.getFullYear(), now.getMonth(), now.getDate());
@@ -2853,10 +2913,11 @@ function gcalSelectedDaySectionHTML(y, m, d, events){
     <div class="gcal-selday-section">
       <div class="gcal-selday-title">${m+1}月${d}日(${weekday})${isToday?"・今日":""}の予定</div>
       ${gcalSelDayError ? `<div class="gcal-google-error">${esc(gcalSelDayError)}</div>` : ""}
-      <div class="gcal-day-events gcal-selday-events">${gcalDayEventsListHTML(events, true)}</div>
+      <div class="gcal-day-events gcal-selday-events">${gcalDayEventsListHTML(events, fallback)}</div>
       <div class="gcal-ev-form">
-        <input type="text" class="gcal-ev-input" id="gcal-selday-input" placeholder="予定を入力"${gcalSelDayBusy?" disabled":""}>
+        <input type="text" class="gcal-ev-input" id="gcal-selday-input" placeholder="予定を入力（過去の予定から候補を検索）" autocomplete="off"${gcalSelDayBusy?" disabled":""}>
       </div>
+      <div class="gcal-suggest" id="gcal-selday-suggest"></div>
       <div class="gcal-ev-time-row">
         <input type="time" class="gcal-ev-time-input" id="gcal-selday-start" aria-label="開始時刻"${gcalSelDayBusy?" disabled":""}>
         <span class="gcal-ev-time-sep">〜</span>
@@ -2864,6 +2925,62 @@ function gcalSelectedDaySectionHTML(y, m, d, events){
         <button type="button" class="gcal-ev-add-btn" id="gcal-selday-add"${gcalSelDayBusy?" disabled":""}>追加</button>
       </div>
     </div>`;
+}
+
+// 予定入力欄の「過去の予定から引用」サジェスト用の候補プールを作る。
+// 履歴全体をAPIへ毎回問い合わせるのは重いため、ローカル（デモ）カレンダー
+// に保存済みの予定と、このセッション中に既に画面表示のため取得済みの
+// Googleカレンダーの予定（キャッシュ済み分のみ）を対象にした軽量な実装
+function gcalSuggestPool(){
+  const seen = new Map();
+  const add = (title, start, end) => {
+    const t = (title || "").trim();
+    if(!t) return;
+    const key = `${t}|${start||""}|${end||""}`;
+    if(!seen.has(key)) seen.set(key, { title: t, start: start||"", end: end||"" });
+  };
+  const store = loadGcalStore();
+  Object.values(store.events || {}).forEach(byDate => {
+    Object.values(byDate || {}).forEach(list => (list||[]).forEach(ev => add(ev.title, ev.start, ev.end)));
+  });
+  [gcalGoogleEventsCache, gcalGoogleDayEventsCache].forEach(cache => {
+    Object.values(cache).forEach(byDate => {
+      Object.values(byDate || {}).forEach(list => (list||[]).forEach(ev => add(ev.title, ev.start, ev.end)));
+    });
+  });
+  return [...seen.values()];
+}
+
+// タイトル入力欄(input)・開始/終了時刻入力欄(startInput/endInput)・候補を
+// 表示するコンテナ(box)を受け取り、入力のたびに過去の予定タイトルを部分
+// 一致（前方一致を含む）で絞り込んで表示する。候補をクリックするとタイトル
+// ・開始・終了時刻を入力欄へ自動補完する。入力が空のときは何も表示しない
+function gcalBindSuggest(input, box, startInput, endInput){
+  if(!input || !box) return;
+  const hide = () => { box.innerHTML = ""; box.classList.remove("open"); };
+  input.oninput = () => {
+    const q = input.value.trim();
+    if(!q){ hide(); return; }
+    const matches = gcalSuggestPool().filter(p => p.title.includes(q)).slice(0, 5);
+    if(!matches.length){ hide(); return; }
+    box.innerHTML = matches.map((m, i) => `
+      <button type="button" class="gcal-suggest-item" data-si="${i}">
+        <span class="gcal-suggest-title">${esc(m.title)}</span>
+        <span class="gcal-suggest-time">${m.start ? (m.end ? `${esc(m.start)}〜${esc(m.end)}` : esc(m.start)) : "終日"}</span>
+      </button>`).join("");
+    box.classList.add("open");
+    box.querySelectorAll("[data-si]").forEach(btn => btn.onclick = () => {
+      const m = matches[parseInt(btn.dataset.si, 10)];
+      input.value = m.title;
+      if(startInput) startInput.value = m.start || "";
+      if(endInput) endInput.value = m.end || "";
+      hide();
+      input.focus();
+    });
+  };
+  // 候補クリック(mousedown→click)より先にblurでhide()してしまうと選択が
+  // 反映されないため、クリック処理が先に走るよう一呼吸遅らせて閉じる
+  input.onblur = () => { setTimeout(hide, 150); };
 }
 
 // src.mode==="google"なら本物のGoogle Calendar APIを、"local"ならlocalStorage
@@ -2900,6 +3017,7 @@ function gcalBindSelectedDaySection(root, src, y, m, d){
   const input = root.querySelector("#gcal-selday-input");
   const startInput = root.querySelector("#gcal-selday-start");
   const endInput = root.querySelector("#gcal-selday-end");
+  gcalBindSuggest(input, root.querySelector("#gcal-selday-suggest"), startInput, endInput);
   const submit = async () => {
     if(gcalSelDayBusy) return;
     const title = (input.value||"").trim();
@@ -2932,6 +3050,21 @@ function gcalBindSelectedDaySection(root, src, y, m, d){
   if(!gcalSelDayBusy){
     input.onkeydown = (e) => { if(e.key === "Enter") submit(); };
   }
+}
+
+// 「変更を反映」ボタン：カレンダー画面が表示中の月ぶんの予定を、
+// キャッシュを使わず裏から取り直して画面に反映する。Google連携中のみ
+// 実際のAPI再取得を行い、未連携（ローカルのデモモード）のときは
+// localStorageの最新状態を読み直すだけの軽い再描画になる
+async function gcalReloadMonth(){
+  if(gcalMonthReloading) return;
+  gcalMonthReloading = true;
+  renderGcalMonthCard();
+  if(gcalGoogleAccessToken){
+    await gcalRefreshGoogleEvents(gcalViewY, gcalViewM);
+  }
+  gcalMonthReloading = false;
+  renderGcalMonthCard();
 }
 
 // 「カレンダー」画面の中身を描画し直す（画面単体の更新用。カレンダー
@@ -3012,18 +3145,23 @@ function renderGcalMonthCard(){
         <div class="gcal-cal-head">
           <button type="button" class="gcal-nav-btn" id="gcal-prev" aria-label="前の月">‹</button>
           <div class="gcal-cal-title">${gcalViewY}年${gcalViewM+1}月</div>
-          <button type="button" class="gcal-nav-btn" id="gcal-next" aria-label="次の月">›</button>
+          <div class="gcal-cal-head-right">
+            <button type="button" class="gcal-reload-btn${gcalMonthReloading?" spinning":""}" id="gcal-month-reload" aria-label="変更を反映（最新の予定を再取得）" title="変更を反映"${gcalMonthReloading?" disabled":""}>🔄</button>
+            <button type="button" class="gcal-nav-btn" id="gcal-next" aria-label="次の月">›</button>
+          </div>
         </div>
         <div class="gcal-grid-wrap">
           <div class="gcal-grid gcal-weekdays">${NEWS_WEEKDAYS.map(w=>`<span class="gcal-wd-cell">${w}</span>`).join("")}</div>
           <div class="gcal-grid">${evActive ? gcalDayCellsHTML(gcalViewY, gcalViewM, evActive, todayKey, active.color, gcalSelectedDay) : ""}</div>
         </div>
         ${evActive ? "" : `<div class="gcal-google-loading">予定を読み込み中…</div>`}
-        ${evActive && gcalSelectedDay !== null ? gcalSelectedDaySectionHTML(gcalViewY, gcalViewM, gcalSelectedDay, evActive[newsDateKey(gcalViewY, gcalViewM, gcalSelectedDay)] || []) : ""}
+        ${evActive && gcalSelectedDay !== null ? gcalSelectedDaySectionHTML(gcalViewY, gcalViewM, gcalSelectedDay, evActive[newsDateKey(gcalViewY, gcalViewM, gcalSelectedDay)] || [], gcalLoadAuthorName() || active.name) : ""}
         <div class="gcal-google-note">カレンダーの追加・共有設定は<a href="https://calendar.google.com/" target="_blank" rel="noopener noreferrer">Googleカレンダー</a>側で行ってください。</div>
       </div>`;
 
     gcalBindConnectBar(root);
+    const monthReloadBtn = root.querySelector("#gcal-month-reload");
+    if(monthReloadBtn && !gcalMonthReloading) monthReloadBtn.onclick = () => gcalReloadMonth();
     root.querySelectorAll("[data-gcal]").forEach(b => b.onclick = () => {
       try{ localStorage.setItem(gcalStorageKey(GCAL_GOOGLE_ACTIVE_KEY), b.dataset.gcal); }catch(e){}
       gcalSelDayError = null;
@@ -3082,16 +3220,21 @@ function renderGcalMonthCard(){
       <div class="gcal-cal-head">
         <button type="button" class="gcal-nav-btn" id="gcal-prev" aria-label="前の月">‹</button>
         <div class="gcal-cal-title">${gcalViewY}年${gcalViewM+1}月</div>
-        <button type="button" class="gcal-nav-btn" id="gcal-next" aria-label="次の月">›</button>
+        <div class="gcal-cal-head-right">
+          <button type="button" class="gcal-reload-btn${gcalMonthReloading?" spinning":""}" id="gcal-month-reload" aria-label="変更を反映（最新の予定を再取得）" title="変更を反映"${gcalMonthReloading?" disabled":""}>🔄</button>
+          <button type="button" class="gcal-nav-btn" id="gcal-next" aria-label="次の月">›</button>
+        </div>
       </div>
       <div class="gcal-grid-wrap">
         <div class="gcal-grid gcal-weekdays">${NEWS_WEEKDAYS.map(w=>`<span class="gcal-wd-cell">${w}</span>`).join("")}</div>
         <div class="gcal-grid">${gcalDayCellsHTML(gcalViewY, gcalViewM, evOfActive, todayKey, active.color, gcalSelectedDay)}</div>
       </div>
-      ${gcalSelectedDay !== null ? gcalSelectedDaySectionHTML(gcalViewY, gcalViewM, gcalSelectedDay, evOfActive[newsDateKey(gcalViewY, gcalViewM, gcalSelectedDay)] || []) : ""}
+      ${gcalSelectedDay !== null ? gcalSelectedDaySectionHTML(gcalViewY, gcalViewM, gcalSelectedDay, evOfActive[newsDateKey(gcalViewY, gcalViewM, gcalSelectedDay)] || [], gcalLoadAuthorName() || active.name) : ""}
     </div>`;
 
   gcalBindConnectBar(root);
+  const monthReloadBtnLocal = root.querySelector("#gcal-month-reload");
+  if(monthReloadBtnLocal && !gcalMonthReloading) monthReloadBtnLocal.onclick = () => gcalReloadMonth();
   root.querySelectorAll("[data-cal]").forEach(b => b.onclick = () => {
     const s2 = loadGcalStore();
     s2.activeId = b.dataset.cal;
@@ -3174,8 +3317,9 @@ function openGcalEventModal(src, y, m, d, opts){
             </div>`).join("") : `<div class="gcal-ev-empty">この日の予定はまだありません。</div>`}
         </div>` : ""}
         <div class="gcal-ev-form">
-          <input type="text" class="gcal-ev-input" id="gcal-ev-input" placeholder="予定を入力"${busy?" disabled":""}>
+          <input type="text" class="gcal-ev-input" id="gcal-ev-input" placeholder="予定を入力（過去の予定から候補を検索）" autocomplete="off"${busy?" disabled":""}>
         </div>
+        <div class="gcal-suggest" id="gcal-ev-suggest"></div>
         <div class="gcal-ev-time-row">
           <input type="time" class="gcal-ev-time-input" id="gcal-ev-start" aria-label="開始時刻"${busy?" disabled":""}>
           <span class="gcal-ev-time-sep">〜</span>
@@ -3212,6 +3356,7 @@ function openGcalEventModal(src, y, m, d, opts){
     const input = ov.querySelector("#gcal-ev-input");
     const startInput = ov.querySelector("#gcal-ev-start");
     const endInput = ov.querySelector("#gcal-ev-end");
+    gcalBindSuggest(input, ov.querySelector("#gcal-ev-suggest"), startInput, endInput);
     const submit = async () => {
       if(busy) return;
       const title = (input.value||"").trim();
