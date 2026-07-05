@@ -407,6 +407,19 @@ h1.title{font-size:34px;line-height:1.05;font-weight:800;margin:8px 0 0;letter-s
 .weather-icon{font-size:20px;line-height:1;}
 .weather-temp{font-size:16px;font-weight:800;color:var(--text);font-variant-numeric:tabular-nums;}
 
+/* 左上段・右：直近1時間の降水量(mm)と、その量に応じた注意喚起テキスト。
+   weather-info・weather-datetimeがともにflex:noneで幅が伸びないため、
+   weather-left-top内の残り幅をここが埋める。文言が幅に収まらない場合は
+   横スクロール（右→左に流れるマーキー）で全文を見せる */
+.weather-precip-alert{flex:1;min-width:0;overflow:hidden;height:100%;display:flex;align-items:center;}
+.weather-precip-alert-track{display:inline-block;white-space:nowrap;font-size:10.5px;font-weight:700;color:var(--text);}
+.weather-precip-alert-track.weather-precip-marquee{position:relative;left:100%;
+  animation-name:weather-precip-marquee;animation-timing-function:linear;animation-iteration-count:infinite;}
+@keyframes weather-precip-marquee{
+  from{ transform:translateX(0); }
+  to{ transform:translateX(calc(-1 * var(--weather-precip-marquee-distance, 100%))); }
+}
+
 /* 左下段：降水確率の推移を示す滑らかな曲線グラフ＋降水量(mm)のヒストグラムの
    重ね合わせ。1時間ごとの点をドットとして打ち、縦軸は左（0〜100%の目盛り）・
    右（0,3,6,10,15,25mmの目盛り。値の間隔は不均等だが目盛り線自体は左軸と
