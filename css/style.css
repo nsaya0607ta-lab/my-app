@@ -497,7 +497,8 @@ h1.title{font-size:34px;line-height:1.05;font-weight:800;margin:8px 0 0;letter-s
   padding:0;line-height:normal;}
 .gcal-cell.today{color:var(--accent);font-weight:800;box-shadow:inset 0 0 0 1.5px var(--accent);}
 .gcal-cell.selected{background:var(--accent);color:#ffffff;font-weight:800;box-shadow:none;}
-.gcal-cell-dot{position:absolute;bottom:3px;left:50%;transform:translateX(-50%);width:5px;height:5px;border-radius:50%;}
+.gcal-cell-dots{position:absolute;bottom:3px;left:50%;transform:translateX(-50%);display:flex;gap:2px;}
+.gcal-cell-dot{width:5px;height:5px;border-radius:50%;}
 .gcal-cell.selected .gcal-cell-dot{background:#ffffff !important;}
 
 /* 「カレンダー」画面：月グリッドの真下（一番下）に置く、選択中の日の
@@ -524,6 +525,7 @@ h1.title{font-size:34px;line-height:1.05;font-weight:800;margin:8px 0 0;letter-s
 .gcal-day-event-main{flex:1;min-width:0;font-size:12px;font-weight:600;color:var(--text);line-height:1.4;
   overflow:hidden;white-space:nowrap;position:relative;}
 .gcal-day-event-author{color:var(--muted);font-weight:600;}
+.gcal-day-event-caldot{display:inline-block;width:7px;height:7px;border-radius:50%;margin-right:5px;vertical-align:middle;}
 
 /* 時間・タイトルなどがカード幅に収まらない場合だけJS（gcalApplyMarquee）
    が.gcal-marquee-trackを持つ親に.gcal-marqueeを付与し、右→左へ
