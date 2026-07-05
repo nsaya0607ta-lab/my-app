@@ -1,0 +1,39 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    match /users/{uid} {
+      allow read, write: if request.auth != null && request.auth.uid == uid;
+    }
+
+    match /leaderboard/{uid} {
+      allow read: if true;
+      allow write: if request.auth != null && request.auth.uid == uid;
+    }
+
+    match /qstats/{id} {
+      allow read, write: if request.auth != null;
+    }
+
+    // gcalNamesは「Google連携メールアドレス→登録名」の公開ディレクトリ。
+    // request.auth.token.emailはアプリのFirebase Authログインメール
+    // （Google連携メールとは別物）のため、Firestoreルールだけでは
+    // 「本人が実際にそのメールアドレスでGoogle連携しているか」を検証
+    // できない。そのためクライアントからの直接書き込みは禁止し、
+    // /api/google/publish-name（サーバー側でGoogle連携情報からメール
+    // アドレスを確定させてから書き込む）経由に限定する
+    match /gcalNames/{email} {
+      allow read: if true;
+      allow write: if false;
+    }
+
+    // refresh_token・OAuth状態はサーバー(Admin SDK)専用。
+    // Admin SDKはルールを迂回するため、クライアントからは完全にブロックしてよい
+    match /google_tokens/{uid} {
+      allow read, write: if false;
+    }
+    match /oauth_states/{id} {
+      allow read, write: if false;
+    }
+  }
+}
