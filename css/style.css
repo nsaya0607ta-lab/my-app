@@ -499,6 +499,8 @@ h1.title{font-size:34px;line-height:1.05;font-weight:800;margin:8px 0 0;letter-s
 .gcal-cell.empty{cursor:default;color:var(--muted);opacity:.4;font-weight:500;background:var(--bg2);
   padding:0;line-height:normal;}
 .gcal-cell.today{color:var(--accent);font-weight:800;box-shadow:inset 0 0 0 1.5px var(--accent);}
+.gcal-cell.sat{color:#2563eb;}
+.gcal-cell.holiday{color:#dc2626;}
 .gcal-cell.selected{background:var(--accent);color:#ffffff;font-weight:800;box-shadow:none;}
 .gcal-cell-dots{position:absolute;bottom:3px;left:50%;transform:translateX(-50%);display:flex;gap:2px;}
 .gcal-cell-dot{width:5px;height:5px;border-radius:50%;}

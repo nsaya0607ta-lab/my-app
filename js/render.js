@@ -2212,6 +2212,16 @@ async function gcalGoogleApiFetch(path, options){
   return res.json();
 }
 
+// Googleカレンダーの「日本の祝日」購読カレンダー（ja.japanese#holiday@…）を
+// 判定する。このカレンダーはタブ／予定一覧には出さず、祝日判定は
+// gcalComputeJapanHolidays()側の計算結果を使う（Google側の購読解除有無に
+// 左右されず、ローカル（未連携）モードでも同じ祝日色を出せるようにするため）
+function gcalIsJapanHolidayCalendar(c){
+  const id = c.id || "";
+  const name = c.summaryOverride || c.summary || "";
+  return id.endsWith("#holiday@group.v.calendar.google.com") && (id.startsWith("ja.") || name.includes("祝日"));
+}
+
 async function gcalRefreshGoogleCalendars(){
   try{
     // minAccessRole="reader"：閲覧のみ許可された共有カレンダー（他アカウントから
@@ -2221,7 +2231,7 @@ async function gcalRefreshGoogleCalendars(){
     // 有無しか分からない権限）はタイトル等を取得できないためこれまで通り除外する
     const data = await gcalGoogleApiFetch("users/me/calendarList?minAccessRole=reader");
     const nameOverrides = gcalLoadCalNameOverrides();
-    gcalGoogleCalendars = (data.items || []).map((c, i) => ({
+    gcalGoogleCalendars = (data.items || []).filter(c => !gcalIsJapanHolidayCalendar(c)).map((c, i) => ({
       id: c.id,
       name: nameOverrides[c.id] || c.summaryOverride || c.summary || c.id,
       color: c.backgroundColor || GCAL_COLORS[i % GCAL_COLORS.length],
@@ -2446,11 +2456,101 @@ function gcalConnectBarHTML(){
 // 前月・翌月にはみ出す先頭・末尾のマスは完全な空白にせず、実際のGoogle
 // カレンダーと同様に前後の月の日付を薄く添えることで、グリッドが1行分
 // 欠けたような不自然な空白に見えないようにする（クリックはできない）
+const JAPAN_HOLIDAY_CACHE = {};
+
+function gcalPad2(n){ return String(n).padStart(2, "0"); }
+function gcalYmd(y, m, d){ return `${y}-${gcalPad2(m+1)}-${gcalPad2(d)}`; }
+
+// year年のmonth月（0始まり）における第n◯曜日（ここでは月曜固定）の日付を返す
+function gcalNthMondayOfMonth(year, month, n){
+  const first = new Date(year, month, 1);
+  const firstMonday = 1 + ((8 - first.getDay()) % 7);
+  return firstMonday + (n - 1) * 7;
+}
+
+// 春分の日・秋分の日は天文計算で年ごとに変わるため、1980〜2099年の範囲で
+// 実用上ずれのない近似式（国立天文台の暦要項に基づく一般的な近似式）で算出する
+function gcalEquinoxDay(year, isAutumn){
+  const base = isAutumn
+    ? 23.2488 + 0.242194 * (year - 1980) - Math.floor((year - 1980) / 4)
+    : 20.8431 + 0.242194 * (year - 1980) - Math.floor((year - 1980) / 4);
+  return Math.floor(base);
+}
+
+// 日本の祝日一覧（"YYYY-MM-DD"のSet）をyear年ぶん計算する。祝日ボタンは
+// 廃止しつつも「土曜は青・日曜と祝日は赤」の配色判定にはこの祝日データを
+// 裏側で使う。固定日・ハッピーマンデー・春分秋分に加え、振替休日・
+// 国民の休日（前後を祝日に挟まれた平日）も反映する。2020・2021年は東京
+// オリンピック開催に伴う祝日移動（海の日・スポーツの日・山の日）を個別に反映する
+function gcalComputeJapanHolidays(year){
+  if(JAPAN_HOLIDAY_CACHE[year]) return JAPAN_HOLIDAY_CACHE[year];
+  const base = new Map();
+  const add = (m, d) => base.set(gcalYmd(year, m, d), true);
+
+  add(0, 1); // 元日
+  add(0, gcalNthMondayOfMonth(year, 0, 2)); // 成人の日
+  add(1, 11); // 建国記念の日
+  if(year >= 2020) add(1, 23); // 天皇誕生日
+  add(2, gcalEquinoxDay(year, false)); // 春分の日
+  add(3, 29); // 昭和の日
+  add(4, 3); add(4, 4); add(4, 5); // 憲法記念日・みどりの日・こどもの日
+
+  if(year === 2020){
+    add(6, 23); add(6, 24); add(7, 10); // 海の日・スポーツの日・山の日（五輪特例）
+  } else if(year === 2021){
+    add(6, 22); add(6, 23); add(7, 8); // 海の日・スポーツの日・山の日（五輪特例）
+  } else {
+    add(6, gcalNthMondayOfMonth(year, 6, 3)); // 海の日
+    add(9, gcalNthMondayOfMonth(year, 9, 2)); // スポーツの日
+    if(year >= 2016) add(7, 11); // 山の日
+  }
+
+  add(8, gcalNthMondayOfMonth(year, 8, 3)); // 敬老の日
+  add(8, gcalEquinoxDay(year, true)); // 秋分の日
+  add(10, 3); // 文化の日
+  add(10, 23); // 勤労感謝の日
+
+  const has = (y2, m2, d2) => base.has(gcalYmd(y2, m2, d2));
+
+  // 国民の休日：前後を祝日に挟まれた平日（日曜を除く）は休日になる
+  const bridged = new Map(base);
+  for(let m=0; m<12; m++){
+    const days = new Date(year, m+1, 0).getDate();
+    for(let d=1; d<=days; d++){
+      const key = gcalYmd(year, m, d);
+      if(base.has(key)) continue;
+      if(new Date(year, m, d).getDay() === 0) continue;
+      const prev = new Date(year, m, d - 1);
+      const next = new Date(year, m, d + 1);
+      if(has(prev.getFullYear(), prev.getMonth(), prev.getDate()) && has(next.getFullYear(), next.getMonth(), next.getDate())){
+        bridged.set(key, true);
+      }
+    }
+  }
+
+  // 振替休日：祝日が日曜日の場合、その直後の「祝日でない最初の日」を休日にする
+  const result = new Map(bridged);
+  bridged.forEach((_, key) => {
+    const [yy, mm, dd] = key.split("-").map(Number);
+    if(new Date(yy, mm-1, dd).getDay() !== 0) return;
+    let cursor = new Date(yy, mm-1, dd+1);
+    while(result.has(gcalYmd(cursor.getFullYear(), cursor.getMonth(), cursor.getDate()))){
+      cursor = new Date(cursor.getFullYear(), cursor.getMonth(), cursor.getDate()+1);
+    }
+    result.set(gcalYmd(cursor.getFullYear(), cursor.getMonth(), cursor.getDate()), true);
+  });
+
+  const set = new Set(result.keys());
+  JAPAN_HOLIDAY_CACHE[year] = set;
+  return set;
+}
+
 function gcalDayCellsHTML(y, m, evMap, todayKey, color, selectedDay){
   const first = new Date(y, m, 1);
   const startWeekday = first.getDay();
   const daysInMonth = new Date(y, m+1, 0).getDate();
   const prevDaysInMonth = new Date(y, m, 0).getDate();
+  const holidays = gcalComputeJapanHolidays(y);
   const cells = [];
   for(let i=startWeekday-1; i>=0; i--){
     cells.push(`<span class="gcal-cell empty">${prevDaysInMonth - i}</span>`);
@@ -2460,6 +2560,11 @@ function gcalDayCellsHTML(y, m, evMap, todayKey, color, selectedDay){
     const cls = ["gcal-cell"];
     if(key===todayKey) cls.push("today");
     if(d===selectedDay) cls.push("selected");
+    // 土曜は青、日曜・祝日は赤（「日本の祝日」タブは廃止したが、配色判定
+    // には引き続き裏側で祝日データを使う）
+    const dow = new Date(y, m, d).getDay();
+    if(dow === 6) cls.push("sat");
+    if(dow === 0 || holidays.has(key)) cls.push("holiday");
     const dayEvents = evMap[key] || [];
     // 予定が複数カレンダー由来のときは、その日にある予定のカレンダーの色を
     // 重複なく（最大4つまで）並べて表示し、どのカレンダーの予定があるかを
