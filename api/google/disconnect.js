@@ -10,7 +10,7 @@ module.exports = async (req, res) => {
   try {
     uid = await verifyFirebaseIdToken(req);
   } catch (e) {
-    res.status(e.statusCode || 401).json({ error: e.message });
+    res.status(e.statusCode || 500).json({ error: e.message });
     return;
   }
 
