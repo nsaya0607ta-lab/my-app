@@ -14,9 +14,16 @@ export const app = document.getElementById("app");
 // ランク表示が残ってしまうバグを防ぐ（ステータスバーの再描画は
 // S.cert の値を見て個別資格行の要否を判断しているため）。
 export function go(s){
-  if(s === "certs" || s === "select") S.cert = null;
+  if(s === "certs" || s === "lpic-certs" || s === "select") S.cert = null;
   S.screen = s;
   render();
+}
+
+// 個別資格の画面（home/quiz/result等）から「← 資格選択」で戻る先。
+// 選択中の資格がLPIC系ならLPICの資格一覧へ、それ以外はMicrosoftの資格一覧へ戻す。
+function certsBackTarget(){
+  const c = S.cert ? certById(S.cert) : null;
+  return (c && c.vendor === "lpic") ? "lpic-certs" : "certs";
 }
 
 // 最上段の共通ステータスバー：render()のたびに最新化。表示する画面ごとに
@@ -43,7 +50,7 @@ export function renderStatusBar(){
 
   // 個別資格の画面（select/certs以外）でのみ、総合ランクの下に個別資格ランクを追加する
   let certRow = "";
-  if(screen !== "select" && screen !== "certs" && S.cert){
+  if(screen !== "select" && screen !== "certs" && screen !== "lpic-certs" && S.cert){
     const c = certById(S.cert) || {};
     const bp = getBP();
     const lvl = dcCount(bp);
@@ -79,7 +86,7 @@ export function renderStatusBar(){
 // render()末尾の分岐と同じ優先順位で判定する）ため、ヘッダー周りの表示制御は
 // この「実際に描画される画面名」を使って判断する。
 function resolveScreen(){
-  const noCertScreens = ["ranking","profile","settings","skins","analytics","certs","schedule","portfolio","news-japan","news-world","calendar"];
+  const noCertScreens = ["ranking","profile","settings","skins","analytics","certs","lpic-certs","schedule","portfolio","news-japan","news-world","calendar"];
   if(noCertScreens.includes(S.screen)) return S.screen;
   if(S.screen==="select" || !S.cert) return "select";
   return S.screen; // home/quiz/result/review/dict/transfer/history
@@ -134,6 +141,7 @@ export function render(){
   if(S.screen==="skins") return renderSkinShop();
   if(S.screen==="analytics") return renderAnalytics();
   if(S.screen==="certs") return renderCertList();
+  if(S.screen==="lpic-certs") return renderLpicList();
   if(S.screen==="schedule") return renderSchedule();
   if(S.screen==="portfolio") return renderPortfolio();
   if(S.screen==="news-japan") return renderNewsJapan();
@@ -334,7 +342,7 @@ export function renderHome(){
 
   app.innerHTML = `
     <div class="q-head" style="margin-bottom:14px">
-      <button class="quit" data-go="certs">← 資格選択</button>
+      <button class="quit" data-go="${certsBackTarget()}">← 資格選択</button>
       <span class="q-count" style="color:${c.accent||'var(--accent)'}">${esc(c.code||"")}</span>
     </div>
 
@@ -1739,8 +1747,8 @@ export function renderPortfolio(){
 // アイコン＋その下のテキストの1組。テキストは最大9文字までは静止表示、
 // それを超える場合は電光掲示板風に右から左へ無限ループでスライドする。
 // アイコン・テキストのどちらをタップしても指定画面へ遷移する。
-// Microsoft認定試験カード・ホーム画面の統合起動カードの両方で共有する
-// 最小単位のパーツ（launcherCardHTML／homeLauncherCardHTMLの両方から使う）
+// Microsoft/LPICの資格起動カード・ホーム画面の統合起動カードの両方で共有する
+// 最小単位のパーツ（vendorCertLauncherRowHTML／homeLauncherCardHTMLの両方から使う）
 const LAUNCHER_LABEL_MAX_CHARS = 9;
 
 function launcherItemHTML({ iconHTML, label, dataGo, ariaLabel }){
@@ -1763,30 +1771,29 @@ function launcherItemHTML({ iconHTML, label, dataGo, ariaLabel }){
     </div>`;
 }
 
-// launcherItemHTML1組を、お天気・株価カードと同じ .news-card
-// （白背景・角丸・薄いシャドウ）に内包した独立カードとして表示する。
-// 現在はMicrosoft認定試験カードのみがこの単独カード形式を使う
-function launcherCardHTML({ cardId, cardClass, iconHTML, label, dataGo, ariaLabel }){
-  return `
-    <div class="news-card ms-cert-card${cardClass ? " " + cardClass : ""}" id="${cardId}">
-      ${launcherItemHTML({ iconHTML, label, dataGo, ariaLabel })}
-    </div>`;
-}
-
 // Microsoftロゴ（4色の田の字）をイメージした丸型ボタン。タップで資格選択画面へ
-function msCertLauncherHTML(){
-  return launcherCardHTML({
-    cardId: "ms-cert-card",
-    iconHTML: `<span class="ms-logo-grid">
+const MS_LOGO_ICON_HTML = `<span class="ms-logo-grid">
       <span class="ms-logo-sq r"></span>
       <span class="ms-logo-sq g"></span>
       <span class="ms-logo-sq b"></span>
       <span class="ms-logo-sq y"></span>
-    </span>`,
-    label: "Microsoft認定試験",
-    dataGo: "certs",
-    ariaLabel: "資格を選ぶ",
-  });
+    </span>`;
+
+// LPIC（Linux技術者認定）をイメージしたペンギン（Linuxの象徴）アイコン。プレースホルダー的な絵文字表現。
+const LPIC_LOGO_ICON_HTML = `<span class="launcher-emoji" aria-hidden="true">🐧</span>`;
+
+// 「Microsoft認定試験」「LPIC」の2つの起動ボタンを1枚のカードに横並びで表示する。
+// 見た目はMicrosoft単体カードだった頃と同じ .ms-cert-card を流用し、中身だけ
+// launcherItemHTMLを2個並べたものに差し替えている（画像の「Microsoft認定資格」
+// の右隣に「LPIC」を配置したいという要望に対応）
+function vendorCertLauncherRowHTML(){
+  return `
+    <div class="news-card ms-cert-card vendor-cert-card" id="vendor-cert-card">
+      <div class="vendor-launcher-row">
+        ${launcherItemHTML({ iconHTML: MS_LOGO_ICON_HTML, label: "Microsoft認定試験", dataGo: "certs", ariaLabel: "Microsoft認定資格を選ぶ" })}
+        ${launcherItemHTML({ iconHTML: LPIC_LOGO_ICON_HTML, label: "LPIC", dataGo: "lpic-certs", ariaLabel: "LPIC資格を選ぶ" })}
+      </div>
+    </div>`;
 }
 
 // 「予定管理」「日本NEWS」「海外ニュース」「ポートフォリオ」の4項目を
@@ -3828,7 +3835,7 @@ export function renderSelect(){
     ${weatherCardHTML()}
     ${gcalDayWidgetHTML()}
     ${homeLauncherCardHTML()}
-    ${msCertLauncherHTML()}
+    ${vendorCertLauncherRowHTML()}
     ${state.currentUser
       ? `<div class="acct-bar">👤 ${esc(state.currentUser.email||"ログイン中")}<button class="link2" data-logout>ログアウト</button></div>`
       : (state.guestMode ? `<div class="acct-bar">ゲストモード（この端末のみ・同期なし）<button class="link2" data-login>ログイン / 新規登録</button></div>` : "")}
@@ -4095,12 +4102,14 @@ export const renderNewsWorld = createNewsScreen({
   marketWatch: worldMarketWatch,
 });
 
-/* 「資格を選ぶ」CTAボタンから遷移する専用画面：総合レベルと資格カード一覧 */
+/* 「資格を選ぶ」CTAボタンから遷移する専用画面：総合レベルと資格カード一覧
+   vendorで「microsoft」「lpic」を切り替え、同じUI・レベリングの仕組みを
+   ベンダーごとの資格一覧として使い回す */
 
-export function renderCertList(){
+function renderCertListByVendor(vendor, eyebrow){
   updateHeaderNav(true);
   const ov = overallStat();
-  const cards = CERTS.map(c=>{
+  const cards = CERTS.filter(c=>(c.vendor||"microsoft")===vendor).map(c=>{
     if(c.status!=="ready"){
       return `<div class="cert-card locked">
         <div class="cert-top"><span class="cert-code">${esc(c.code)}</span><span class="cert-soon">🔒 近日公開</span></div>
@@ -4128,7 +4137,7 @@ export function renderCertList(){
       <span class="q-count" style="color:var(--accent)">資格を選ぶ</span>
     </div>
     <div class="sel-head">
-      <span class="eyebrow">MICROSOFT 認定対策</span>
+      <span class="eyebrow">${esc(eyebrow)}</span>
       <h2 class="sel-title">資格を選ぶ</h2>
       <p class="sel-sub">学習したい資格を選んでください。資格ごとにスコア・BP・復習データは別々に保存されます。</p>
     </div>
@@ -4150,6 +4159,9 @@ export function renderCertList(){
   window.scrollTo(0,0);
 }
 
+export function renderCertList(){ renderCertListByVendor("microsoft", "MICROSOFT 認定対策"); }
+export function renderLpicList(){ renderCertListByVendor("lpic", "LPIC 認定対策"); }
+
 /* ======================= プロフィール／ランキング ======================= */
 
 export function renderProfile(){
@@ -4160,7 +4172,7 @@ export function renderProfile(){
     return `<div class="pf-cert"><span style="color:${c.accent}">${esc(c.code)}</span><span class="pf-cn">${esc(c.name)}</span><span class="pf-cl">Lv.${st.lvl} ・ 最高 ${st.best}</span></div>`;
   }).join("");
   app.innerHTML = `
-    <div class="q-head"><button class="quit" data-go="certs">← 資格選択</button><span class="q-count">プロフィール</span></div>
+    <div class="q-head"><button class="quit" data-go="${certsBackTarget()}">← 資格選択</button><span class="q-count">プロフィール</span></div>
     <div class="me-hero">
       <div class="me-lab">総合エンジニアレベル</div>
       <div class="me-lvrow"><span class="me-lv">Lv.${ov.lv}</span><span class="me-title">${esc(ov.title)}</span></div>
@@ -4206,7 +4218,7 @@ export function renderProfile(){
 
 export function renderRanking(){
   app.innerHTML = `
-    <div class="q-head"><button class="quit" data-go="certs">← 資格選択</button><span class="q-count">ランキング</span></div>
+    <div class="q-head"><button class="quit" data-go="${certsBackTarget()}">← 資格選択</button><span class="q-count">ランキング</span></div>
     <div id="lb-body"><div class="loading">読み込み中…</div></div>
   `;
   app.querySelectorAll("[data-go]").forEach(b=>b.onclick=()=>go(b.dataset.go));
