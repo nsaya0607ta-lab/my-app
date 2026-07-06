@@ -855,6 +855,12 @@ h1.title{font-size:34px;line-height:1.05;font-weight:800;margin:8px 0 0;letter-s
 .home-launcher-row .ms-cert-static,
 .home-launcher-row .ms-cert-marquee-item{font-size:9.5px;}
 
+/* 「Microsoft認定試験」「LPIC」の2項目を1枚のカードに横並びで表示する行。
+   外枠は.ms-cert-cardを流用し、中身だけ.launcher-item2個を等間隔で
+   中央に並べたものに差し替えている */
+.vendor-launcher-row{display:flex;width:100%;justify-content:center;align-items:flex-start;gap:56px;}
+.vendor-launcher-row .launcher-item{flex:none;}
+
 /* テキスト部分：9文字までは中央揃えで静止、超える場合は電光掲示板風に無限スライド */
 .ms-cert-link{border:none;background:none;padding:0;cursor:pointer;font-family:inherit;display:block;}
 .ms-cert-textwrap{display:block;width:100px;max-width:100%;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;}
