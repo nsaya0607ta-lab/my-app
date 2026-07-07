@@ -277,9 +277,13 @@ function saveCache(data){
 // フォールバックし、その旨を isDefaultLocation で伝える（実際の現在地の
 // データであるかのように誤認させないため、呼び出し側でラベル表示に使う）。
 // 天気データ自体の取得に失敗した場合は null を返す。
-export async function getWeather(){
-  const cached = loadCache();
-  if(cached) return cached;
+// force=trueの場合はキャッシュを無視して必ず位置情報・天気を取り直す
+// （現在地が取得できなかった時の「再試行」ボタンから呼ばれる）。
+export async function getWeather(force){
+  if(!force){
+    const cached = loadCache();
+    if(cached) return cached;
+  }
 
   const pos = await getCurrentPosition();
   const { lat, lon } = pos || DEFAULT_LOCATION;

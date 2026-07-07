@@ -825,7 +825,10 @@ function weatherCardHTML(){
               </div>
             </div>
             <div class="weather-info" id="weather-info">
-              <div class="weather-city" id="weather-city">取得中…</div>
+              <div class="weather-city-row">
+                <span class="weather-city" id="weather-city">取得中…</span>
+                <button type="button" class="weather-retry-btn" id="weather-retry-loc" title="現在地を再取得" aria-label="現在地を再取得" hidden>⟳</button>
+              </div>
               <div class="weather-asof" id="weather-asof"></div>
               <div class="weather-main">
                 <span class="weather-icon" id="weather-icon">🌡️</span>
@@ -1056,7 +1059,7 @@ function renderWeatherPopChart(w){
 // 天気情報を取得してカードを再描画する。ホーム画面から離れて weather-card が
 // DOM上から消えている場合は、取得結果を無駄に描画せず自動更新タイマーも止める
 // （画面遷移時のクリーンアップ）。
-async function refreshWeatherCard(){
+async function refreshWeatherCard(force){
   if(!document.getElementById("weather-card")){
     if(weatherRefreshTimer){ clearInterval(weatherRefreshTimer); weatherRefreshTimer = null; }
     return;
@@ -1067,7 +1070,8 @@ async function refreshWeatherCard(){
   const tempEl = document.getElementById("weather-temp");
   const precipNowValueEl = document.getElementById("weather-precip-now-value");
   const precipCommentTrackEl = document.getElementById("weather-precip-comment-track");
-  const w = await getWeather();
+  const retryBtnEl = document.getElementById("weather-retry-loc");
+  const w = await getWeather(force);
   if(!document.getElementById("weather-card")) return; // フェッチ中に画面遷移した場合は描画しない
   if(!w){
     if(cityEl) cityEl.textContent = "天気を取得できませんでした";
@@ -1076,11 +1080,13 @@ async function refreshWeatherCard(){
     if(tempEl) tempEl.textContent = "";
     if(precipNowValueEl) precipNowValueEl.textContent = "-";
     if(precipCommentTrackEl) precipCommentTrackEl.textContent = "";
+    if(retryBtnEl) retryBtnEl.hidden = true;
     updatePrecipAlertMarquee();
     renderWeatherPopChart(null);
     return;
   }
   if(cityEl) cityEl.textContent = w.isDefaultLocation ? `${w.city}（現在地未取得）` : w.city;
+  if(retryBtnEl) retryBtnEl.hidden = !w.isDefaultLocation;
   // この天気がいつ時点の観測かをアイコンのすぐ上に明記する
   if(asofEl){
     if(w.currentTime){
@@ -1107,10 +1113,28 @@ function startWeatherRefresh(){
   }, WEATHER_REFRESH_MS);
 }
 
+// 「現在地未取得」時の再試行ボタン：クリックのたびにキャッシュを無視して
+// 位置情報の取得からやり直す（権限設定を変えた直後などに使う想定）
+function bindWeatherRetryButton(){
+  const btn = document.getElementById("weather-retry-loc");
+  if(!btn) return;
+  btn.onclick = async () => {
+    if(btn.disabled) return;
+    btn.disabled = true;
+    btn.classList.add("weather-retry-spin");
+    try{ await refreshWeatherCard(true); }
+    finally{
+      btn.disabled = false;
+      btn.classList.remove("weather-retry-spin");
+    }
+  };
+}
+
 async function loadWeatherCard(){
   const card = document.getElementById("weather-card");
   if(!card) return;
   startClock();
+  bindWeatherRetryButton();
   await refreshWeatherCard(); // 画面を開いた瞬間の即時フェッチ
   startWeatherRefresh();      // 以後20分間隔でバックグラウンド自動更新
 }
