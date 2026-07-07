@@ -401,7 +401,13 @@ h1.title{font-size:34px;line-height:1.05;font-weight:800;margin:8px 0 0;letter-s
    情報グループを視覚的に分ける */
 .weather-info{flex:none;min-width:0;max-width:88px;border-left:1px solid var(--line);border-right:1px solid var(--line);padding-left:7px;padding-right:7px;
   display:flex;flex-direction:column;gap:3px;}
-.weather-city{font-size:10.5px;font-weight:700;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.weather-city-row{display:flex;align-items:center;gap:2px;min-width:0;}
+.weather-city{font-size:10.5px;font-weight:700;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0;}
+.weather-retry-btn{flex:none;width:13px;height:13px;padding:0;border:none;background:none;
+  color:var(--accent);font-size:11px;line-height:1;cursor:pointer;}
+.weather-retry-btn:disabled{cursor:default;opacity:.6;}
+.weather-retry-btn.weather-retry-spin{animation:weather-retry-spin .8s linear infinite;}
+@keyframes weather-retry-spin{from{transform:rotate(0deg);}to{transform:rotate(360deg);}}
 .weather-asof{font-size:8.5px;font-weight:600;color:var(--muted);opacity:.85;letter-spacing:.02em;white-space:nowrap;}
 .weather-main{display:flex;align-items:center;gap:4px;}
 .weather-icon{font-size:20px;line-height:1;}
