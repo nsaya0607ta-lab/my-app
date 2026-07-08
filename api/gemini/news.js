@@ -3,12 +3,12 @@
 // ガードする（クライアント側のisGeminiNewsAdmin()判定はUI表示の制御にすぎず、
 // エンドポイントを直接叩かれた場合の防御にはならないため）：
 //   1) FirebaseのIDトークンを検証し、なりすましを防ぐ
-//   2) 検証済みトークンのemailクレームがadmin@gmail.comと完全一致する
+//   2) 検証済みトークンのemailクレームがfor.administ@gmail.comと完全一致する
 //      場合のみ許可し、それ以外は403で拒否する
 const { verifyFirebaseIdTokenClaims } = require("../_lib/firebaseAdmin");
 
 const MODEL = process.env.GEMINI_MODEL || "gemini-2.5-flash";
-const ADMIN_EMAIL = "admin@gmail.com";
+const ADMIN_EMAIL = "for.administ@gmail.com";
 const MAX_PROMPT_LEN = 500;
 const MAX_ITEMS = 10;
 
