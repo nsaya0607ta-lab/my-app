@@ -1564,12 +1564,30 @@ function geminiScheduleEditFormHTML(m){
 const GEMINI_CONFIRM_TEXT_RE = /^(ok|okay|オーケー|おっけー|はい|うん|了解|りょうかい|お願いします?|よろしく(お願いします?)?|登録(して(ください)?|する)?|それで(お願いします?)?)[!!。、\s]*$/i;
 const GEMINI_CANCEL_TEXT_RE = /^(キャンセル(します?)?|やめ(る|て|ます)?|中止(します?)?|いいえ|いや|やっぱ(り)?(やめ(ます)?)?)[!!。、\s]*$/;
 
+// ストリーミング中のテキスト断片が届くたび毎回render()すると無駄が多いため、
+// アニメーションフレームごとに最大1回だけrender()するよう間引く
+let geminiStreamRenderScheduled = false;
+function scheduleGeminiStreamRender(){
+  if(geminiStreamRenderScheduled) return;
+  geminiStreamRenderScheduled = true;
+  requestAnimationFrame(() => {
+    geminiStreamRenderScheduled = false;
+    render();
+  });
+}
+
 export function renderGeminiChat(){
   const messages = geminiChat.messages;
   const msgsHTML = messages.length
     ? messages.map(geminiMessageBubbleHTML).join("")
     : `<div class="gemini-empty">✨ Azureやこのアプリの資格勉強について、Geminiに気軽に質問してみましょう。<br>「7月9日16時から17時で面接を入れて」のように話しかけると、確認カードが表示され、内容を確定すると予定を登録できます。</div>`;
-  const busyHTML = geminiChat.busy ? `<div class="gemini-bubble gemini-bubble-model gemini-bubble-busy">…考え中</div>` : "";
+  // ストリーミングで既に届いているテキストがあれば「考え中」の代わりに
+  // それをそのまま吹き出しとして表示し、生成中でも進捗が見えるようにする
+  const busyHTML = geminiChat.busy
+    ? (geminiChat.streamingText
+        ? `<div class="gemini-bubble gemini-bubble-model">${esc(geminiChat.streamingText).replace(/\n/g, "<br>")}</div>`
+        : `<div class="gemini-bubble gemini-bubble-model gemini-bubble-busy">…考え中</div>`)
+    : "";
   const errorHTML = geminiChat.error ? `<div class="gemini-error">${esc(geminiChat.error)}</div>` : "";
 
   app.innerHTML = `
@@ -1645,8 +1663,11 @@ export function renderGeminiChat(){
 
     // sendGeminiMessageは最初のawait（fetch）に達するまで同期的に実行される
     // ため、この呼び出し直後にrender()すれば「送信したメッセージ＋考え中」を
-    // 即座に画面へ反映できる（完了を待ってからのrenderは応答受信後）
-    const p = sendGeminiMessage(text);
+    // 即座に画面へ反映できる（完了を待ってからのrenderは応答受信後）。
+    // ストリーミング中はテキストの断片が届くたびにonChunkが呼ばれるが、
+    // 断片ごとに毎回フルre-renderすると無駄が多いため、アニメーションフレーム
+    // ごとに最大1回だけrender()するよう間引く
+    const p = sendGeminiMessage(text, scheduleGeminiStreamRender);
     render();
     p.then(() => render());
   };

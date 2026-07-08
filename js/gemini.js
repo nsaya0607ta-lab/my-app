@@ -18,6 +18,10 @@ export const geminiChat = {
   messages: [],
   busy: false,
   error: null,
+  // ストリーミング中にサーバーから届いたテキストをここに逐次追加していく。
+  // busy=trueかつこれが空でない間は、レンダー側が「考え中」の代わりに
+  // この内容をそのまま吹き出しとして表示する
+  streamingText: "",
 };
 
 // チャットに積むメッセージ全部に一意なidを振る。確認カードのボタンや
@@ -47,44 +51,127 @@ function currentDateContext(){
   };
 }
 
-export async function sendGeminiMessage(text){
+// register_schedule等の関数呼び出し結果を確認カード／エラーメッセージとして
+// チャットに積む。ストリーミングの functionCall イベント・非ストリーミング
+// フォールバックの両方から共通で呼ばれる
+async function applyFunctionCall(name, args){
+  if(!scheduleHandler){
+    pushGeminiMessage({ role: "model", text: "予定の処理でエラーが発生しました。" });
+    return;
+  }
+  const result = await scheduleHandler(name, args || {});
+  if(result && result.preview){
+    // register_scheduleは即登録せず、確認カードを出すだけに留める。
+    // 実際の登録は、ユーザーがカードのボタン（または「OK」チャット）で
+    // 確定操作をした時点でrender.js側が行う
+    pushGeminiMessage({ role: "model", type: "schedule_confirm", status: "pending", preview: result.preview });
+  } else {
+    pushGeminiMessage({ role: "model", text: (result && result.text) || "予定の処理でエラーが発生しました。" });
+  }
+}
+
+// サーバー（/api/gemini/chat）は改行区切りJSON（NDJSON）でイベントを流す。
+// {"type":"chunk","text":...} を都度onChunkに反映しつつ、"functionCall"/"done"/
+// "error" のいずれかで会話を確定させる
+export async function sendGeminiMessage(text, onChunk){
   const trimmed = (text || "").trim();
   if(!trimmed || geminiChat.busy) return;
 
   pushGeminiMessage({ role: "user", text: trimmed });
   geminiChat.busy = true;
   geminiChat.error = null;
+  geminiChat.streamingText = "";
 
   const history = geminiChat.messages
     .slice(0, -1)
     .slice(-MAX_HISTORY_TURNS)
     .map(m => ({ role: m.role, text: m.text }));
 
-  try{
-    const res = await fetch("/api/gemini/chat", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ message: trimmed, history, today: currentDateContext() }),
-    });
-    const data = await res.json().catch(() => ({}));
-    if(!res.ok) throw new Error((data && data.error) || ("request-failed-" + res.status));
+  const payload = JSON.stringify({ message: trimmed, history, today: currentDateContext() });
+  const doFetch = () => fetch("/api/gemini/chat", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: payload,
+  });
 
-    if(data.functionCall && SCHEDULE_FUNCTION_NAMES.has(data.functionCall.name) && scheduleHandler){
-      const result = await scheduleHandler(data.functionCall.name, data.functionCall.args || {});
-      if(result && result.preview){
-        // register_scheduleは即登録せず、確認カードを出すだけに留める。
-        // 実際の登録は、ユーザーがカードのボタン（または「OK」チャット）で
-        // 確定操作をした時点でrender.js側が行う
-        pushGeminiMessage({ role: "model", type: "schedule_confirm", status: "pending", preview: result.preview });
+  try{
+    let res;
+    try {
+      res = await doFetch();
+    } catch (networkErr) {
+      // 接続確立自体に失敗した場合のみ、瞬断などを想定して一度だけ黙って
+      // 再試行する（サーバー側の応答が始まった後の切断はここでは扱わない）
+      res = await doFetch();
+    }
+
+    if(!res.ok){
+      const data = await res.json().catch(() => ({}));
+      throw new Error((data && data.error) || ("request-failed-" + res.status));
+    }
+
+    if(!res.body){
+      // ストリーミングが使えない環境向けのフォールバック（通常は到達しない）
+      const data = await res.json().catch(() => ({}));
+      if(data.functionCall && SCHEDULE_FUNCTION_NAMES.has(data.functionCall.name)){
+        await applyFunctionCall(data.functionCall.name, data.functionCall.args || {});
       } else {
-        pushGeminiMessage({ role: "model", text: (result && result.text) || "予定の処理でエラーが発生しました。" });
+        pushGeminiMessage({ role: "model", text: data.reply || "" });
       }
-    } else {
-      pushGeminiMessage({ role: "model", text: data.reply || "" });
+      return;
+    }
+
+    const reader = res.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = "";
+    let settled = false;
+
+    while(true){
+      const { done, value } = await reader.read();
+      if(done) break;
+      buffer += decoder.decode(value, { stream: true });
+
+      let nl;
+      while((nl = buffer.indexOf("\n")) !== -1){
+        const line = buffer.slice(0, nl).trim();
+        buffer = buffer.slice(nl + 1);
+        if(!line) continue;
+
+        let evt;
+        try { evt = JSON.parse(line); } catch(_) { continue; }
+
+        if(evt.type === "chunk"){
+          geminiChat.streamingText += evt.text || "";
+          if(onChunk) onChunk();
+        } else if(evt.type === "functionCall"){
+          settled = true;
+          await applyFunctionCall(evt.name, evt.args || {});
+        } else if(evt.type === "done"){
+          settled = true;
+          pushGeminiMessage({ role: "model", text: geminiChat.streamingText || evt.reply || "" });
+        } else if(evt.type === "error"){
+          if(geminiChat.streamingText){
+            // 生成途中で切れただけなら、それまでのテキストは活かして
+            // 「途中で終了した可能性」を添えるだけに留め、全体を失敗にしない
+            pushGeminiMessage({ role: "model", text: `${geminiChat.streamingText}\n\n（通信が不安定なため、回答が途中で終了した可能性があります）` });
+            settled = true;
+          } else {
+            throw new Error(evt.error || "stream-error");
+          }
+        }
+      }
+    }
+
+    if(!settled){
+      if(geminiChat.streamingText){
+        pushGeminiMessage({ role: "model", text: geminiChat.streamingText });
+      } else {
+        throw new Error("stream-incomplete");
+      }
     }
   }catch(e){
     geminiChat.error = "送信に失敗しました。通信環境を確認して、もう一度お試しください。";
   }finally{
+    geminiChat.streamingText = "";
     geminiChat.busy = false;
   }
 }
@@ -93,6 +180,7 @@ export function resetGeminiChat(){
   geminiChat.messages = [];
   geminiChat.busy = false;
   geminiChat.error = null;
+  geminiChat.streamingText = "";
 }
 
 /* =========================================================================
