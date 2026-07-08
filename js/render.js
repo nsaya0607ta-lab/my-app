@@ -476,9 +476,9 @@ export function renderResult(){
     verdictTxt = "演習完了"; verdictPass = ratio>=0.7;
     subLine = `獲得 ${e.score} / ${max} 点（実際の配点合計・部分点込み・小数切り上げ）`;
   } else if(e.mode==="review"){
-    expLine = "復習：点数がそのまま EXP";
-    verdictTxt = "復習完了"; verdictPass = e.score>=PASS;
-    subLine = `獲得 ${e.earned} / ${e.totalPts} 点 → 1000点換算で ${e.score} 点`;
+    expLine = "復習：獲得した配点合計がそのまま EXP";
+    verdictTxt = "復習完了"; verdictPass = ratio>=0.7;
+    subLine = `獲得 ${e.score} / ${max} 点（実際の配点合計・部分点込み・小数切り上げ）`;
   } else { // 試験モード（1000点満点換算・従来どおり）
     expLine = gain>0 ? `試験モード：${e.score}点 × ${e.mult} = ${gain} EXP` : "試験モード：700点未満のため EXP 獲得なし";
     verdictPass = passed; verdictTxt = passed ? "合格！ボーナス EXP 獲得" : "不合格（700点未満）・EXP なし";
