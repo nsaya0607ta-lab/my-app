@@ -44,7 +44,7 @@ export function renderStatusBar(){
              || (!state.guestMode && !state.currentUser)
              || (!state.guestMode && state.currentUser && (!state.profileChecked || !getProfileName()));
   const screen = resolveScreen();
-  const otherScreens = ["ranking","profile","settings","skins","analytics","schedule","portfolio","news-japan","news-world","calendar","gemini"];
+  const otherScreens = ["ranking","profile","settings","skins","analytics","schedule","portfolio","news-japan","news-world","calendar","gemini","gemini-edit-event"];
   if(gated || otherScreens.includes(screen)){ el.classList.remove("show"); el.innerHTML=""; return; }
   const ov = overallStat();          // 総合Lvと次Lvまでの進捗(%)
   const coins = (S.coins||0);
@@ -87,7 +87,7 @@ export function renderStatusBar(){
 // render()末尾の分岐と同じ優先順位で判定する）ため、ヘッダー周りの表示制御は
 // この「実際に描画される画面名」を使って判断する。
 function resolveScreen(){
-  const noCertScreens = ["ranking","profile","settings","skins","analytics","certs","lpic-certs","schedule","portfolio","news-japan","news-world","calendar","gemini"];
+  const noCertScreens = ["ranking","profile","settings","skins","analytics","certs","lpic-certs","schedule","portfolio","news-japan","news-world","calendar","gemini","gemini-edit-event"];
   if(noCertScreens.includes(S.screen)) return S.screen;
   if(S.screen==="select" || !S.cert) return "select";
   return S.screen; // home/quiz/result/review/dict/transfer/history
@@ -155,6 +155,7 @@ export function render(){
   if(S.screen==="news-world") return renderNewsWorld();
   if(S.screen==="calendar") return renderCalendarScreen();
   if(S.screen==="gemini") return renderGeminiChat();
+  if(S.screen==="gemini-edit-event") return renderGeminiEditEvent();
   // 大元：資格選択画面
   if(S.screen==="select" || !S.cert) return renderSelect();
   if(S.screen==="home") return renderHome();
@@ -1882,9 +1883,10 @@ function geminiMessageBubbleHTML(m){
 }
 
 // register_scheduleの結果を出す確認カード。ステータスに応じて、ボタン付きの
-// 未確定表示／編集フォーム／確定済み表示／キャンセル済み表示のいずれかを描画する
+// 未確定表示／確定済み表示／キャンセル済み表示のいずれかを描画する。
+// 「修正する」は専用の予定修正画面（renderGeminiEditEvent）へ画面遷移するため、
+// このカード自体は常にpending/confirmed/cancelledのいずれかの表示のみを持つ
 function geminiScheduleConfirmCardHTML(m){
-  if(m.status === "editing") return geminiScheduleEditFormHTML(m);
   const p = m.preview;
   const warningHTML = p.warning ? `<div class="gemini-schedule-warning">⚠️ ${esc(p.warning)}</div>` : "";
   const relativeNoteHTML = p.relativeNote ? `<div class="gemini-schedule-row">・${esc(p.relativeNote)}</div>` : "";
@@ -1893,8 +1895,10 @@ function geminiScheduleConfirmCardHTML(m){
   const actionsHTML = m.status === "pending"
     ? `<div class="gemini-schedule-actions">
         <button type="button" class="gemini-schedule-btn gemini-schedule-btn-confirm" data-schedule-confirm="${m.id}">この内容で登録する</button>
-        <button type="button" class="gemini-schedule-btn gemini-schedule-btn-edit" data-schedule-edit="${m.id}">修正する</button>
-        <button type="button" class="gemini-schedule-btn gemini-schedule-btn-cancel" data-schedule-cancel="${m.id}">キャンセル</button>
+        <div class="gemini-schedule-actions-row">
+          <button type="button" class="gemini-schedule-btn gemini-schedule-btn-edit" data-schedule-edit="${m.id}">修正する</button>
+          <button type="button" class="gemini-schedule-btn gemini-schedule-btn-cancel" data-schedule-cancel="${m.id}">キャンセル</button>
+        </div>
       </div>`
     : "";
   return `
@@ -1917,7 +1921,6 @@ function geminiScheduleEditFormHTML(m){
   const dateStr = `${a.y}-${String(a.m + 1).padStart(2, "0")}-${String(a.d).padStart(2, "0")}`;
   return `
     <div class="gemini-bubble gemini-bubble-model gemini-schedule-card gemini-schedule-form">
-      <div class="gemini-schedule-title">✏️ 予定を修正</div>
       <label class="gemini-schedule-field">
         <span class="gemini-schedule-field-label">タイトル</span>
         <input type="text" class="gemini-schedule-input" data-field="title" maxlength="200" value="${esc(m.preview.title)}">
@@ -1939,7 +1942,7 @@ function geminiScheduleEditFormHTML(m){
         </label>
       </div>
       <div class="gemini-schedule-form-error" data-form-error hidden></div>
-      <div class="gemini-schedule-actions">
+      <div class="gemini-schedule-actions-row">
         <button type="button" class="gemini-schedule-btn gemini-schedule-btn-confirm" data-schedule-save="${m.id}">この内容で保存（登録）</button>
         <button type="button" class="gemini-schedule-btn gemini-schedule-btn-cancel" data-schedule-edit-cancel="${m.id}">キャンセル</button>
       </div>
@@ -1998,46 +2001,9 @@ export function renderGeminiChat(){
       const id = Number(btn.dataset.scheduleEdit);
       const msg = geminiChat.messages.find(mm => mm.id === id);
       if(!msg || msg.status !== "pending") return;
-      msg.status = "editing";
-      render();
-    };
-  });
-  app.querySelectorAll("[data-schedule-edit-cancel]").forEach(btn => {
-    btn.onclick = () => {
-      const id = Number(btn.dataset.scheduleEditCancel);
-      const msg = geminiChat.messages.find(mm => mm.id === id);
-      if(!msg || msg.status !== "editing") return;
-      msg.status = "pending";
-      render();
-    };
-  });
-  app.querySelectorAll("[data-schedule-save]").forEach(btn => {
-    btn.onclick = async () => {
-      const id = Number(btn.dataset.scheduleSave);
-      const msg = geminiChat.messages.find(mm => mm.id === id);
-      if(!msg || msg.status !== "editing") return;
-      const card = btn.closest(".gemini-schedule-form");
-      if(!card) return;
-      const field = (name) => (card.querySelector(`[data-field="${name}"]`) || {}).value || "";
-      const errorEl = card.querySelector("[data-form-error]");
-      if(errorEl){ errorEl.hidden = true; errorEl.textContent = ""; }
-
-      btn.disabled = true;
-      const result = await geminiApplyScheduleEdits(msg, {
-        title: field("title"),
-        date: field("date"),
-        start: field("start"),
-        end: field("end"),
-      });
-      if(result.error){
-        btn.disabled = false;
-        // バリデーションエラー時は再描画せず、入力途中の値を保持したまま
-        // カード内にエラーだけ表示する
-        if(errorEl){ errorEl.hidden = false; errorEl.textContent = result.error; }
-        return;
-      }
-      // 保存＝修正後の内容でそのまま実際の登録を実行する
-      geminiConfirmSchedule(msg).then(() => render());
+      // チャット内のカード切替ではなく、専用の予定修正画面へ遷移する
+      geminiEditingMessageId = id;
+      go("gemini-edit-event");
     };
   });
 
@@ -2084,6 +2050,73 @@ export function renderGeminiChat(){
   window.scrollTo(0,0);
 }
 
+// renderGeminiEditEvent（予定修正画面）が対象とするメッセージIDを保持する。
+// 画面遷移をまたいで参照できるよう、Gemini相談チャットの内部状態
+// （geminiChat.messages）とは別にモジュールスコープの変数として持たせる
+let geminiEditingMessageId = null;
+
+// 「修正する」ボタン押下で遷移する専用の予定修正画面。チャット内のカード
+// 切替ではなく画面全体を遷移させ、保存・キャンセルどちらの操作でも
+// 完了後は自動的に元のGeminiチャット画面へ戻す
+export function renderGeminiEditEvent(){
+  const msg = geminiChat.messages.find(mm => mm.id === geminiEditingMessageId);
+  if(!msg || msg.status !== "pending"){
+    // 対象の確認カードがすでに確定・取消済み等で存在しない場合はチャットへ戻す
+    geminiEditingMessageId = null;
+    go("gemini");
+    return;
+  }
+
+  const backToChat = () => {
+    geminiEditingMessageId = null;
+    go("gemini");
+  };
+
+  app.innerHTML = `
+    <div class="q-head"><button class="quit" data-schedule-edit-back>← チャットに戻る</button><span class="q-count">✏️ 予定を修正</span></div>
+    <div class="gemini-edit-wrap">
+      ${geminiScheduleEditFormHTML(msg)}
+    </div>
+  `;
+
+  const backBtn = app.querySelector("[data-schedule-edit-back]");
+  if(backBtn) backBtn.onclick = backToChat;
+
+  const cancelBtn = app.querySelector("[data-schedule-edit-cancel]");
+  if(cancelBtn) cancelBtn.onclick = backToChat;
+
+  const saveBtn = app.querySelector("[data-schedule-save]");
+  if(saveBtn){
+    saveBtn.onclick = async () => {
+      const card = saveBtn.closest(".gemini-schedule-form");
+      if(!card) return;
+      const field = (name) => (card.querySelector(`[data-field="${name}"]`) || {}).value || "";
+      const errorEl = card.querySelector("[data-form-error]");
+      if(errorEl){ errorEl.hidden = true; errorEl.textContent = ""; }
+
+      saveBtn.disabled = true;
+      const result = await geminiApplyScheduleEdits(msg, {
+        title: field("title"),
+        date: field("date"),
+        start: field("start"),
+        end: field("end"),
+      });
+      if(result.error){
+        saveBtn.disabled = false;
+        // バリデーションエラー時は画面遷移せず、入力途中の値を保持したまま
+        // フォーム内にエラーだけ表示する
+        if(errorEl){ errorEl.hidden = false; errorEl.textContent = result.error; }
+        return;
+      }
+      // 保存＝修正後の内容でそのまま実際の登録を実行し、完了後にチャットへ戻る
+      await geminiConfirmSchedule(msg);
+      geminiEditingMessageId = null;
+      go("gemini");
+    };
+  }
+
+  window.scrollTo(0,0);
+}
 
 // アイコン＋その下のテキストの1組。テキストは最大9文字までは静止表示、
 // それを超える場合は電光掲示板風に右から左へ無限ループでスライドする。
