@@ -1882,15 +1882,17 @@ function geminiMessageBubbleHTML(m){
 }
 
 // register_scheduleの結果を出す確認カード。ステータスに応じて、ボタン付きの
-// 未確定表示／確定済み表示／キャンセル済み表示のいずれかを描画する
+// 未確定表示／編集フォーム／確定済み表示／キャンセル済み表示のいずれかを描画する
 function geminiScheduleConfirmCardHTML(m){
+  if(m.status === "editing") return geminiScheduleEditFormHTML(m);
   const p = m.preview;
   const warningHTML = p.warning ? `<div class="gemini-schedule-warning">⚠️ ${esc(p.warning)}</div>` : "";
   const statusLabel = m.status === "confirmed" ? "（登録済み）" : m.status === "cancelled" ? "（キャンセル済み）" : "";
   const actionsHTML = m.status === "pending"
     ? `<div class="gemini-schedule-actions">
         <button type="button" class="gemini-schedule-btn gemini-schedule-btn-confirm" data-schedule-confirm="${m.id}">この内容で登録する</button>
-        <button type="button" class="gemini-schedule-btn gemini-schedule-btn-cancel" data-schedule-cancel="${m.id}">キャンセル・修正する</button>
+        <button type="button" class="gemini-schedule-btn gemini-schedule-btn-edit" data-schedule-edit="${m.id}">修正する</button>
+        <button type="button" class="gemini-schedule-btn gemini-schedule-btn-cancel" data-schedule-cancel="${m.id}">キャンセル</button>
       </div>`
     : "";
   return `
@@ -1900,6 +1902,43 @@ function geminiScheduleConfirmCardHTML(m){
       <div class="gemini-schedule-row">・日時：${esc(p.dateLabel)} ${esc(p.timeLabel)}</div>
       ${warningHTML}
       ${actionsHTML}
+    </div>`;
+}
+
+// 「修正する」ボタンで開くGUI編集フォーム。現在のプレビュー値（AIが抽出した
+// タイトル・日付・開始/終了時刻）を初期値として各入力欄にそのまま入れておき、
+// ユーザーは手直ししたい項目だけ書き換えられるようにする
+function geminiScheduleEditFormHTML(m){
+  const a = m.preview.args;
+  const dateStr = `${a.y}-${String(a.m + 1).padStart(2, "0")}-${String(a.d).padStart(2, "0")}`;
+  return `
+    <div class="gemini-bubble gemini-bubble-model gemini-schedule-card gemini-schedule-form">
+      <div class="gemini-schedule-title">✏️ 予定を修正</div>
+      <label class="gemini-schedule-field">
+        <span class="gemini-schedule-field-label">タイトル</span>
+        <input type="text" class="gemini-schedule-input" data-field="title" maxlength="200" value="${esc(m.preview.title)}">
+      </label>
+      <div class="gemini-schedule-field-row">
+        <label class="gemini-schedule-field">
+          <span class="gemini-schedule-field-label">日付</span>
+          <input type="date" class="gemini-schedule-input" data-field="date" value="${esc(dateStr)}">
+        </label>
+      </div>
+      <div class="gemini-schedule-field-row">
+        <label class="gemini-schedule-field">
+          <span class="gemini-schedule-field-label">開始</span>
+          <input type="time" class="gemini-schedule-input" data-field="start" value="${esc(a.start)}">
+        </label>
+        <label class="gemini-schedule-field">
+          <span class="gemini-schedule-field-label">終了</span>
+          <input type="time" class="gemini-schedule-input" data-field="end" value="${esc(a.end)}">
+        </label>
+      </div>
+      <div class="gemini-schedule-form-error" data-form-error hidden></div>
+      <div class="gemini-schedule-actions">
+        <button type="button" class="gemini-schedule-btn gemini-schedule-btn-confirm" data-schedule-save="${m.id}">この内容で保存（登録）</button>
+        <button type="button" class="gemini-schedule-btn gemini-schedule-btn-cancel" data-schedule-edit-cancel="${m.id}">キャンセル</button>
+      </div>
     </div>`;
 }
 
@@ -1948,6 +1987,53 @@ export function renderGeminiChat(){
       if(!msg || msg.status !== "pending") return;
       geminiCancelSchedule(msg);
       render();
+    };
+  });
+  app.querySelectorAll("[data-schedule-edit]").forEach(btn => {
+    btn.onclick = () => {
+      const id = Number(btn.dataset.scheduleEdit);
+      const msg = geminiChat.messages.find(mm => mm.id === id);
+      if(!msg || msg.status !== "pending") return;
+      msg.status = "editing";
+      render();
+    };
+  });
+  app.querySelectorAll("[data-schedule-edit-cancel]").forEach(btn => {
+    btn.onclick = () => {
+      const id = Number(btn.dataset.scheduleEditCancel);
+      const msg = geminiChat.messages.find(mm => mm.id === id);
+      if(!msg || msg.status !== "editing") return;
+      msg.status = "pending";
+      render();
+    };
+  });
+  app.querySelectorAll("[data-schedule-save]").forEach(btn => {
+    btn.onclick = async () => {
+      const id = Number(btn.dataset.scheduleSave);
+      const msg = geminiChat.messages.find(mm => mm.id === id);
+      if(!msg || msg.status !== "editing") return;
+      const card = btn.closest(".gemini-schedule-form");
+      if(!card) return;
+      const field = (name) => (card.querySelector(`[data-field="${name}"]`) || {}).value || "";
+      const errorEl = card.querySelector("[data-form-error]");
+      if(errorEl){ errorEl.hidden = true; errorEl.textContent = ""; }
+
+      btn.disabled = true;
+      const result = await geminiApplyScheduleEdits(msg, {
+        title: field("title"),
+        date: field("date"),
+        start: field("start"),
+        end: field("end"),
+      });
+      if(result.error){
+        btn.disabled = false;
+        // バリデーションエラー時は再描画せず、入力途中の値を保持したまま
+        // カード内にエラーだけ表示する
+        if(errorEl){ errorEl.hidden = false; errorEl.textContent = result.error; }
+        return;
+      }
+      // 保存＝修正後の内容でそのまま実際の登録を実行する
+      geminiConfirmSchedule(msg).then(() => render());
     };
   });
 
@@ -2986,6 +3072,53 @@ async function geminiRegisterSchedule(args){
   return {
     preview: { title, dateLabel, timeLabel, warning, args: { y, m, d, title, start, end } },
   };
+}
+
+// GUI編集フォームの「この内容で保存（登録）」で呼ばれる。フォームの入力値を
+// register_scheduleと同じルールで検証し、問題なければmsg.previewを書き換えた
+// うえでtrueを返す（呼び出し側はこの後geminiConfirmSchedule()で実際に登録する）。
+// 検証エラーの場合はフォームを保持したままエラーメッセージだけ返す
+// （フォームを再描画すると入力途中の値が失われてしまうため）
+async function geminiApplyScheduleEdits(msg, form){
+  const title = (form.title || "").trim().slice(0, 200);
+  if(!title) return { error: "タイトルを入力してください。" };
+
+  const dm = /^(\d{4})-(\d{2})-(\d{2})$/.exec(form.date || "");
+  if(!dm) return { error: "日付を選択してください。" };
+  const y = Number(dm[1]), m = Number(dm[2]) - 1, d = Number(dm[3]);
+  const dateObj = new Date(y, m, d);
+  if(dateObj.getFullYear() !== y || dateObj.getMonth() !== m || dateObj.getDate() !== d){
+    return { error: "日付が正しくありません。" };
+  }
+
+  const timeRe = /^([01]\d|2[0-3]):[0-5]\d$/;
+  const rawStart = form.start || "";
+  const rawEnd = form.end || "";
+  if(rawStart && !timeRe.test(rawStart)) return { error: "開始時刻の形式が正しくありません。" };
+  if(rawEnd && !timeRe.test(rawEnd)) return { error: "終了時刻の形式が正しくありません。" };
+  let start = rawStart;
+  let end = rawEnd;
+  if(start && end && end <= start) return { error: "終了時刻は開始時刻より後にしてください。" };
+  if(start && !end){
+    const endDate = new Date(y, m, d, Number(start.slice(0, 2)), Number(start.slice(3, 5)) + 60);
+    end = `${String(endDate.getHours()).padStart(2, "0")}:${String(endDate.getMinutes()).padStart(2, "0")}`;
+  }
+
+  const dateLabel = `${y}年${m + 1}月${d}日(${NEWS_WEEKDAYS[dateObj.getDay()]})`;
+  const timeLabel = start ? `${start}${end ? `〜${end}` : ""}` : "終日";
+
+  let warning = "";
+  try{
+    const existing = await geminiFetchDayEventsForQuery(y, m, d);
+    const dup = existing.find(ev => gcalTimesOverlap(start, end, ev.start, ev.end));
+    if(dup){
+      const dupTimeLabel = dup.start ? `${dup.start}${dup.end ? `〜${dup.end}` : ""}` : "終日";
+      warning = `${dupTimeLabel}に「${dup.title || "無題"}」の予定があります`;
+    }
+  }catch(e){ /* 重複チェックに失敗しても保存自体は続行する */ }
+
+  msg.preview = { title, dateLabel, timeLabel, warning, args: { y, m, d, title, start, end } };
+  return { ok: true };
 }
 
 // 確認カードの「この内容で登録する」（またはチャットでの「OK」相当の返答）で
