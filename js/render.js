@@ -4235,7 +4235,7 @@ function renderCertListByVendor(vendor, eyebrow){
     <div class="me-hero">
       <div class="me-top">
         <div>
-          <div class="me-lab">総合エンジニアレベル</div>
+          <div class="me-lab">総合レベル</div>
           <div class="me-lvrow"><span class="me-lv">Lv.${ov.lv}</span><span class="me-title">${esc(ov.title)}</span></div>
         </div>
         <div class="me-bp">${ov.tbp.toLocaleString()} BP</div>
@@ -4265,7 +4265,7 @@ export function renderProfile(){
   app.innerHTML = `
     <div class="q-head"><button class="quit" data-go="${certsBackTarget()}">← 資格選択</button><span class="q-count">プロフィール</span></div>
     <div class="me-hero">
-      <div class="me-lab">総合エンジニアレベル</div>
+      <div class="me-lab">総合レベル</div>
       <div class="me-lvrow"><span class="me-lv">Lv.${ov.lv}</span><span class="me-title">${esc(ov.title)}</span></div>
       <div class="me-next" style="margin-top:6px">${ov.tbp.toLocaleString()} BP ・ 学習中 ${ov.active} 資格</div>
     </div>
@@ -4307,12 +4307,22 @@ export function renderProfile(){
   window.scrollTo(0,0);
 }
 
+const RANKING_TABS = [
+  {key:"overall", label:"総合レベル"},
+  ...CERTS.filter(c=>c.status==="ready").map(c=>({key:c.id, label:c.code})),
+];
+
 export function renderRanking(){
+  const activeTab = state.rankingTab || "overall";
   app.innerHTML = `
     <div class="q-head"><button class="quit" data-go="${certsBackTarget()}">← 資格選択</button><span class="q-count">ランキング</span></div>
+    <div class="rank-tabs">
+      ${RANKING_TABS.map(t=>`<button class="rank-tab${activeTab===t.key?" active":""}" data-rtab="${t.key}">${t.label}</button>`).join("")}
+    </div>
     <div id="lb-body"><div class="loading">読み込み中…</div></div>
   `;
   app.querySelectorAll("[data-go]").forEach(b=>b.onclick=()=>go(b.dataset.go));
+  app.querySelectorAll("[data-rtab]").forEach(b=>b.onclick=()=>{ state.rankingTab=b.dataset.rtab; renderRanking(); });
   loadRanking();
   window.scrollTo(0,0);
 }
@@ -4323,31 +4333,43 @@ export async function loadRanking(){
     body.innerHTML=`<div class="empty">ランキングを見るにはログインが必要です。<br>ログインして、プロフィールで表示名を設定すると参加できます。</div>`;
     return;
   }
+  const tab = state.rankingTab || "overall";
+  const cert = tab==="overall" ? null : certById(tab);
+  if(tab!=="overall" && !cert){ state.rankingTab="overall"; return loadRanking(); }
   try{
     // 管理者アカウントはpublishLeaderboard側で書き込み自体を止めているが、
     // それ以前に登録された古いデータが残っている場合に備えて表示側でも
     // 念のため除外する（表示名一致による二重防御）
-    const rows = (await window.LB.top(50)).filter(r => (r.displayName||"").trim().toLowerCase() !== "admin");
+    const rows = (tab==="overall" ? await window.LB.top(50) : await window.LB.topByCert(tab,50))
+      .filter(r => (r.displayName||"").trim().toLowerCase() !== "admin");
     const ov = overallStat();
-    let myRank=null; try{ myRank = await window.LB.myRank(ov.tbp); }catch(e){}
+    const st = cert ? certStat(cert) : null;
+    let myRank=null;
+    try{ myRank = tab==="overall" ? await window.LB.myRank(ov.tbp) : await window.LB.myRankByCert(tab, st.bp); }catch(e){}
+    const label = cert ? cert.code : "総合";
     if(!rows.length){
-      body.innerHTML=`<div class="empty">まだ誰もランキングに登録していません。<br>プロフィールで表示名を設定すると一番乗りで参加できます。</div>`;
+      body.innerHTML=`<div class="empty">まだ誰も${esc(label)}のランキングに登録していません。<br>プロフィールで表示名を設定すると一番乗りで参加できます。</div>`;
       return;
     }
     const myUid=state.currentUserId;
-    const mine = rows.find(r=>r.uid===myUid);
+    const myLv = cert ? st.lvl : ov.lv;
+    const myBp = cert ? st.bp : ov.tbp;
     body.innerHTML = `
-      ${(myRank && !mine || myRank)?`<div class="lb-me">あなた：${myRank?("<b>"+myRank+"位</b>"):"未公開"} ・ 総合Lv.${ov.lv} ・ ${ov.tbp.toLocaleString()} BP${getProfileName()?"":' <button class="link2" data-go="profile">表示名を変更</button>'}</div>`:""}
+      ${myRank?`<div class="lb-me">あなた：<b>${myRank}位</b> ・ ${esc(label)}Lv.${myLv} ・ ${myBp.toLocaleString()} BP${getProfileName()?"":' <button class="link2" data-go="profile">表示名を変更</button>'}</div>`:""}
       <div class="lb-list">
-        ${rows.map((r,i)=>`
+        ${rows.map((r,i)=>{
+          const lv = cert ? ((r.certLevels||{})[tab]||0) : (r.overallLevel||0);
+          const bp = cert ? ((r.certBP||{})[tab]||0) : (r.totalBP||0);
+          return `
           <div class="lb-row ${r.uid===myUid?'me':''}">
             <span class="lb-rank ${i<3?'top':''}">${i+1}</span>
             <div class="lb-info">
               <span class="lb-name">${esc(r.displayName||"名無し")}${r.uid===myUid?' <small>(あなた)</small>':''}</span>
-              <span class="lb-cert">総合Lv.${r.overallLevel||0}${r.title?" ・ "+esc(r.title):""}</span>
+              <span class="lb-cert">${esc(label)}Lv.${lv}${!cert && r.title?" ・ "+esc(r.title):""}</span>
             </div>
-            <span class="lb-bp">${(r.totalBP||0).toLocaleString()}<small> BP</small></span>
-          </div>`).join("")}
+            <span class="lb-bp">${bp.toLocaleString()}<small> BP</small></span>
+          </div>`;
+        }).join("")}
       </div>
       <div class="x-hint" style="margin-top:14px">${getProfileName()?"":'表示名は未設定でも自動で参加中です。<button class="link2" data-go="profile">表示名を変更</button>'}</div>
     `;

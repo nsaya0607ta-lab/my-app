@@ -383,6 +383,9 @@ h1.title{font-size:34px;line-height:1.05;font-weight:800;margin:8px 0 0;letter-s
 .me-actions{display:flex;gap:11px;margin-bottom:18px;}
 .me-btn{flex:1;background:var(--surface);border:1px solid var(--line);border-radius:13px;padding:13px;color:var(--text);font-size:14px;font-weight:700;cursor:pointer;box-shadow:0 2px 5px rgba(0,0,0,.02);}
 .me-btn:active{background:var(--surface2);}
+.rank-tabs{display:flex;gap:6px;margin:14px 0;overflow-x:auto;}
+.rank-tab{flex:0 0 auto;padding:8px 14px;border-radius:99px;border:1px solid var(--line);background:var(--surface);color:var(--muted);font-size:13px;font-weight:700;white-space:nowrap;}
+.rank-tab.active{background:var(--accent);border-color:var(--accent);color:#fff;}
 .lb-me{background:linear-gradient(160deg,var(--surface),var(--bg2));border:1px solid var(--line);border-radius:13px;padding:12px 14px;margin-bottom:14px;font-size:13px;color:var(--text);box-shadow:0 2px 8px rgba(0,0,0,.02);}
 .lb-me b{color:var(--gold);font-size:15px;}
 .lb-list{display:flex;flex-direction:column;gap:8px;}
