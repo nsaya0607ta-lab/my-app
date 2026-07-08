@@ -108,7 +108,7 @@ function updateHeaderTitle(){
   const titleEl = document.querySelector("h1.title");
   if(!topEl || !titleEl) return;
   const screen = resolveScreen();
-  if(screen === "select"){
+  if(screen === "select" || screen === "certs" || screen === "lpic-certs"){
     topEl.style.display = "none";
     return;
   }
@@ -4233,8 +4233,7 @@ export const renderNewsWorld = createNewsScreen({
    ベンダーごとの資格一覧として使い回す */
 
 function renderCertListByVendor(vendor, eyebrow){
-  updateHeaderNav(true);
-  const ov = overallStat();
+  updateHeaderNav(false); // グローバルヘッダーの.topごと非表示にするため、代わりにq-head内へ同じアイコンを描画する
   const cards = CERTS.filter(c=>(c.vendor||"microsoft")===vendor).map(c=>{
     if(c.status!=="ready"){
       return `<div class="cert-card locked">
@@ -4260,23 +4259,20 @@ function renderCertListByVendor(vendor, eyebrow){
   app.innerHTML = `
     <div class="q-head" style="margin-bottom:14px">
       <button class="quit" data-go="select">← ホーム</button>
-      <span class="q-count" style="color:var(--accent)">資格を選ぶ</span>
+      <div class="top-nav">
+        <button type="button" class="hdr-icobtn" data-go="ranking" aria-label="ランキング" title="ランキング">
+          <span class="hdr-icobtn-circle">🏆</span>
+          <span class="hdr-icobtn-lab">ランキング</span>
+        </button>
+        <button type="button" class="hdr-icobtn" data-go="profile" aria-label="プロフィール" title="プロフィール">
+          <span class="hdr-icobtn-circle">👤</span>
+          <span class="hdr-icobtn-lab">プロフ</span>
+        </button>
+      </div>
     </div>
     <div class="sel-head">
       <span class="eyebrow">${esc(eyebrow)}</span>
       <h2 class="sel-title">資格を選ぶ</h2>
-      <p class="sel-sub">学習したい資格を選んでください。資格ごとにスコア・BP・復習データは別々に保存されます。</p>
-    </div>
-    <div class="me-hero">
-      <div class="me-top">
-        <div>
-          <div class="me-lab">総合レベル</div>
-          <div class="me-lvrow"><span class="me-lv">Lv.${ov.lv}</span><span class="me-title">${esc(ov.title)}</span></div>
-        </div>
-        <div class="me-bp">${ov.tbp.toLocaleString()} BP</div>
-      </div>
-      <div class="me-prog"><div class="me-prog-f" style="width:${ov.pct}%"></div></div>
-      <div class="me-next">次のレベルまで ${ov.remain.toLocaleString()} BP ・ 学習中 ${ov.active} 資格 ・ 💰 ${(S.coins||0).toLocaleString()} AC</div>
     </div>
     <div class="cert-list">${cards}</div>
   `;
