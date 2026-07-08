@@ -10,10 +10,20 @@ const WEEKDAY_JA = ["日","月","火","水","木","金","土"];
 const SCHEDULE_FUNCTION_NAMES = new Set(["register_schedule", "update_schedule", "delete_schedule"]);
 
 export const geminiChat = {
-  messages: [],   // {role:"user"|"model", text}[]
+  // {id, role:"user"|"model", text}[] のほか、register_scheduleの結果は
+  // {id, role:"model", type:"schedule_confirm", status:"pending"|"confirmed"|"cancelled", preview}
+  // という確認カード用メッセージとして積まれる（textは持たない）
+  messages: [],
   busy: false,
   error: null,
 };
+
+// チャットに積むメッセージ全部に一意なidを振る。確認カードのボタンや
+// 「OK」チャット入力から対象メッセージを引き直すために使う
+let msgSeq = 0;
+export function pushGeminiMessage(msg){
+  geminiChat.messages.push({ id: ++msgSeq, ...msg });
+}
 
 // 「予定を入れて」「変更して」「消して」のような依頼をGeminiが
 // register_schedule/update_schedule/delete_schedule関数呼び出しとして
@@ -39,7 +49,7 @@ export async function sendGeminiMessage(text){
   const trimmed = (text || "").trim();
   if(!trimmed || geminiChat.busy) return;
 
-  geminiChat.messages.push({ role: "user", text: trimmed });
+  pushGeminiMessage({ role: "user", text: trimmed });
   geminiChat.busy = true;
   geminiChat.error = null;
 
@@ -59,9 +69,16 @@ export async function sendGeminiMessage(text){
 
     if(data.functionCall && SCHEDULE_FUNCTION_NAMES.has(data.functionCall.name) && scheduleHandler){
       const result = await scheduleHandler(data.functionCall.name, data.functionCall.args || {});
-      geminiChat.messages.push({ role: "model", text: (result && result.text) || "予定の処理でエラーが発生しました。" });
+      if(result && result.preview){
+        // register_scheduleは即登録せず、確認カードを出すだけに留める。
+        // 実際の登録は、ユーザーがカードのボタン（または「OK」チャット）で
+        // 確定操作をした時点でrender.js側が行う
+        pushGeminiMessage({ role: "model", type: "schedule_confirm", status: "pending", preview: result.preview });
+      } else {
+        pushGeminiMessage({ role: "model", text: (result && result.text) || "予定の処理でエラーが発生しました。" });
+      }
     } else {
-      geminiChat.messages.push({ role: "model", text: data.reply || "" });
+      pushGeminiMessage({ role: "model", text: data.reply || "" });
     }
   }catch(e){
     geminiChat.error = "送信に失敗しました。通信環境を確認して、もう一度お試しください。";
