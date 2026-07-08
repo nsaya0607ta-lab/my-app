@@ -4407,8 +4407,8 @@ function newsBulkDeleteHTML(){
     </div>`;
 }
 
-// Geminiボタン（簡易）：admin@gmail.com専用。NewsPicksの実在記事だけを
-// Geminiに検索させ、admin@gmail.com自身の依頼プロンプト（例：「本日の
+// Geminiボタン（簡易）：for.administ@gmail.com専用。NewsPicksの実在記事だけを
+// Geminiに検索させ、for.administ@gmail.com自身の依頼プロンプト（例：「本日の
 // 日本のITニュースを5件持ってきて」）に応じて、その日のニュース一覧へ
 // 自動登録する
 function newsGeminiPanelHTML(){
@@ -4464,7 +4464,7 @@ function createNewsScreen({ storeKey, label, icon, seedFn, geminiCategory }){
     const hasNewsSet = new Set(Object.keys(store).filter(k => (store[k]||[]).length));
     const todayKey = newsDateKey(now.getFullYear(), now.getMonth(), now.getDate());
     const admin = isAdminAccount();
-    // Geminiボタン（簡易）はadmin@gmail.com本人のみに限定する、より厳格な判定
+    // Geminiボタン（簡易）はfor.administ@gmail.com本人のみに限定する、より厳格な判定
     // （isAdminAccountの表示名フォールバックは適用しない）
     const geminiAdmin = isGeminiNewsAdmin();
 
