@@ -5,11 +5,39 @@ const MODEL = process.env.GEMINI_MODEL || "gemini-2.5-flash";
 const MAX_MESSAGE_LEN = 2000;
 const MAX_HISTORY_TURNS = 20;
 
-const SYSTEM_INSTRUCTION = [
-  "あなたはIT資格対策アプリ（Microsoft Azure/SC-300、LPICなど）に組み込まれた学習アシスタントです。",
-  "Azure・LPIC・ITインフラ全般や資格試験の学習に関する質問に、初学者にも分かりやすい日本語で簡潔に答えてください。",
-  "雑談程度の話題には常識の範囲で軽く答えて構いませんが、医療・法律・金融など専門外の断定的なアドバイスは避けてください。",
-].join("");
+// ユーザーが「予定を入れて」のように話しかけたとき、Geminiにこの関数を
+// 呼び出させて日付・時刻・タイトルを構造化データとして抽出させる。実際の
+// カレンダーへの書き込みはクライアント側（js/gemini.js経由でrender.js内の
+// 既存のカレンダー登録処理）が行うため、ここでは抽出のみを担当する
+const SCHEDULE_TOOLS = [{
+  functionDeclarations: [{
+    name: "register_schedule",
+    description: "ユーザーが日時とタイトルを指定して予定・スケジュールの登録を明確に依頼したときだけ呼び出す。単なる質問や相談の場合は呼び出さないこと。",
+    parameters: {
+      type: "OBJECT",
+      properties: {
+        date: { type: "STRING", description: "予定の日付。YYYY-MM-DD形式（例:2026-07-09）。「明日」「来週火曜」等の相対表現は、与えられた本日の日付を基準に絶対日付へ変換すること。" },
+        start_time: { type: "STRING", description: "開始時刻。HH:MM形式24時間表記（例:16:00）。指定が無い終日予定の場合は省略。" },
+        end_time: { type: "STRING", description: "終了時刻。HH:MM形式24時間表記（例:17:00）。指定が無い場合は省略。" },
+        title: { type: "STRING", description: "予定のタイトル・内容。" },
+      },
+      required: ["date", "title"],
+    },
+  }],
+}];
+
+function buildSystemInstruction(today){
+  const lines = [
+    "あなたはIT資格対策アプリ（Microsoft Azure/SC-300、LPICなど）に組み込まれた学習アシスタントです。",
+    "Azure・LPIC・ITインフラ全般や資格試験の学習に関する質問に、初学者にも分かりやすい日本語で簡潔に答えてください。",
+    "雑談程度の話題には常識の範囲で軽く答えて構いませんが、医療・法律・金融など専門外の断定的なアドバイスは避けてください。",
+    "このアプリにはカレンダー機能があり、ユーザーが「7月9日16時から17時で予定を入れて」のように予定登録を明確に依頼した場合は、テキストで返答せず register_schedule 関数を呼び出してください。日付・タイトルが不明瞭で判断できない場合のみ、関数を呼ばずに聞き返してください。",
+  ];
+  if(today && today.date){
+    lines.push(`本日の日付は${today.date}${today.weekday ? `（${today.weekday}曜日）` : ""}です。現在時刻は${today.time || "不明"}です。相対的な日付表現はこれを基準に解釈してください。`);
+  }
+  return lines.join("");
+}
 
 module.exports = async (req, res) => {
   if (req.method !== "POST") {
@@ -47,6 +75,14 @@ module.exports = async (req, res) => {
   }
   contents.push({ role: "user", parts: [{ text: message }] });
 
+  // クライアント（ブラウザ）のローカル日時。「明日」「来週」等の相対的な
+  // 日付表現をユーザーの実際のタイムゾーンを基準に解釈させるために使う
+  const today = body.today && typeof body.today === "object" ? {
+    date: typeof body.today.date === "string" ? body.today.date.slice(0, 10) : "",
+    weekday: typeof body.today.weekday === "string" ? body.today.weekday.slice(0, 4) : "",
+    time: typeof body.today.time === "string" ? body.today.time.slice(0, 5) : "",
+  } : null;
+
   try {
     const url = `https://generativelanguage.googleapis.com/v1beta/models/${MODEL}:generateContent?key=${apiKey}`;
     const r = await fetch(url, {
@@ -54,7 +90,8 @@ module.exports = async (req, res) => {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         contents,
-        systemInstruction: { role: "system", parts: [{ text: SYSTEM_INSTRUCTION }] },
+        tools: SCHEDULE_TOOLS,
+        systemInstruction: { role: "system", parts: [{ text: buildSystemInstruction(today) }] },
         generationConfig: { temperature: 0.7, maxOutputTokens: 1024 },
       }),
     });
@@ -66,10 +103,15 @@ module.exports = async (req, res) => {
     }
 
     const candidate = data && data.candidates && data.candidates[0];
-    const reply = candidate && candidate.content && candidate.content.parts
-      ? candidate.content.parts.map((p) => p.text || "").join("")
-      : "";
+    const parts = (candidate && candidate.content && candidate.content.parts) || [];
 
+    const functionCallPart = parts.find((p) => p.functionCall && p.functionCall.name === "register_schedule");
+    if (functionCallPart) {
+      res.status(200).json({ functionCall: { name: "register_schedule", args: functionCallPart.functionCall.args || {} } });
+      return;
+    }
+
+    const reply = parts.map((p) => p.text || "").join("");
     if (!reply) {
       const blocked = data && data.promptFeedback && data.promptFeedback.blockReason;
       res.status(200).json({

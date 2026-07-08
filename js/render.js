@@ -3,7 +3,7 @@ import { DC_PHASES, L, REGIONS } from './data/constants.js';
 import { CONCEPTS, DRAW, PASS, Q, TIERS, applySkin, certById, certStat, commit, correctSet, dcCount, dcPhase, dcTitle, esc, exportCode, fmt, getBP, getProfileName, grade, importCode, isAdminAccount, isMulti, loadHist, loadReviewStats, loadWrong, overallLevel, overallStat, pick, pts, publishLeaderboard, purchaseSkin, saveCoins, saveToCloud, selectCert, setBP, setProfileName, skinHandleIdentityChange, stars, start, startReview, totalBP } from './core.js';
 import { getLiveStocks, getLiveStocksJP } from './stocks.js';
 import { getWeather } from './weather.js';
-import { geminiChat, sendGeminiMessage } from './gemini.js';
+import { geminiChat, sendGeminiMessage, setGeminiScheduleHandler } from './gemini.js';
 import { SKIN_DATA } from './data/skins.js';
 import { S, state } from './state.js';
 
@@ -1884,7 +1884,7 @@ export function renderGeminiChat(){
   const messages = geminiChat.messages;
   const msgsHTML = messages.length
     ? messages.map(geminiMessageBubbleHTML).join("")
-    : `<div class="gemini-empty">✨ Azureやこのアプリの資格勉強について、Geminiに気軽に質問してみましょう。</div>`;
+    : `<div class="gemini-empty">✨ Azureやこのアプリの資格勉強について、Geminiに気軽に質問してみましょう。<br>「7月9日16時から17時で面接を入れて」のように話しかけると、予定も登録できます。</div>`;
   const busyHTML = geminiChat.busy ? `<div class="gemini-bubble gemini-bubble-model gemini-bubble-busy">…考え中</div>` : "";
   const errorHTML = geminiChat.error ? `<div class="gemini-error">${esc(geminiChat.error)}</div>` : "";
 
@@ -2787,6 +2787,67 @@ async function gcalCreateGoogleEvent(calId, y, m, d, title, start, end){
 async function gcalDeleteGoogleEvent(calId, eventId){
   await gcalGoogleApiFetch(`calendars/${encodeURIComponent(calId)}/events/${encodeURIComponent(eventId)}`, { method: "DELETE" });
 }
+
+// Gemini相談チャット（js/gemini.js）が「register_schedule」関数呼び出しを
+// 受け取ったときに呼ばれる。実際の予定作成は既存のカレンダー登録処理
+// （Google連携中ならgcalCreateGoogleEvent、未連携ならローカルのデモ
+// ストレージ）にそのまま乗せる。戻り値のtextはチャット画面にモデルの
+// 発言として表示する確認／エラーメッセージ
+async function geminiRegisterSchedule(args){
+  const title = (args && typeof args.title === "string" ? args.title : "").trim().slice(0, 200);
+  const dateStr = args && typeof args.date === "string" ? args.date : "";
+  const rawStart = args && typeof args.start_time === "string" ? args.start_time : "";
+  const rawEnd = args && typeof args.end_time === "string" ? args.end_time : "";
+
+  const dm = /^(\d{4})-(\d{2})-(\d{2})$/.exec(dateStr);
+  if(!title || !dm){
+    return { text: "予定の日付またはタイトルを認識できませんでした。日付とタイトルを明確にして、もう一度お試しください。" };
+  }
+  const y = Number(dm[1]), m = Number(dm[2]) - 1, d = Number(dm[3]);
+  const dateObj = new Date(y, m, d);
+  if(dateObj.getFullYear() !== y || dateObj.getMonth() !== m || dateObj.getDate() !== d){
+    return { text: "日付を認識できませんでした。もう一度お試しください。" };
+  }
+  const timeRe = /^([01]\d|2[0-3]):[0-5]\d$/;
+  const start = timeRe.test(rawStart) ? rawStart : "";
+  const end = timeRe.test(rawEnd) ? rawEnd : "";
+  if(start && end && end <= start){
+    return { text: "終了時刻は開始時刻より後にしてください。" };
+  }
+
+  const dateLabel = `${y}年${m+1}月${d}日(${NEWS_WEEKDAYS[dateObj.getDay()]})`;
+  const timeLabel = start ? `${start}${end ? `〜${end}` : ""}` : "終日";
+
+  try{
+    if(gcalGoogleAccessToken){
+      if(gcalGoogleCalendars === null) await gcalRefreshGoogleCalendars();
+      const cals = gcalGoogleCalendars || [];
+      if(!cals.length) return { text: "連携できるGoogleカレンダーが見つかりませんでした。" };
+      let activeId = null;
+      try{ activeId = localStorage.getItem(gcalStorageKey(GCAL_GOOGLE_ACTIVE_KEY)); }catch(e){}
+      if(!activeId || !cals.some(c => c.id === activeId)) activeId = cals[0].id;
+      await gcalCreateGoogleEvent(activeId, y, m, d, title, start, end);
+      // このチャット経由の追加は日／月カードのキャッシュを経由しないため、
+      // 次にカレンダー画面を開いたときに確実に反映されるよう、切断時と
+      // 同様にキャッシュを空にして再取得を促す
+      gcalGoogleEventsCache = {};
+      gcalGoogleDayEventsCache = {};
+    } else {
+      const author = gcalLoadAuthorName() || getProfileName() || "";
+      const store = loadGcalStore();
+      const dateKey = newsDateKey(y, m, d);
+      if(!store.events[store.activeId]) store.events[store.activeId] = {};
+      if(!store.events[store.activeId][dateKey]) store.events[store.activeId][dateKey] = [];
+      store.events[store.activeId][dateKey].push({ id: gcalGenId("e"), title, start, end, author });
+      saveGcalStore(store);
+    }
+  }catch(e){
+    return { text: `予定の登録に失敗しました：「${title}」（${dateLabel} ${timeLabel}）。もう一度お試しください。` };
+  }
+
+  return { text: `✅ ${dateLabel} ${timeLabel} に「${title}」を登録しました。` };
+}
+setGeminiScheduleHandler(geminiRegisterSchedule);
 
 function gcalBindConnectBar(root){
   const connectBtn = root.querySelector("#gcal-google-connect");
