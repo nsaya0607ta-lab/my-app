@@ -205,7 +205,7 @@ export const LPIC1_Q = [
 {"Id":204,"imp":3,"q":"cloud-init 実行時に、仮想マシン外部のメタデータサーバーや config-drive から取得して適用される「ユーザー独自の初期設定スクリプトや設定データ」を指す用語はどれですか？","o":["UserData (ユーザーデータ)","MetaData (メタデータ)","VendorData (ベンダーデータ)","CloudConfig"],"a":0,"e":"UserData は、インスタンス作成時にユーザーが指定するシェルスクリプトや #cloud-config 形式のデータであり、cloud-init によって初回起動時に実行されます。"},
 {"Id":205,"imp":3,"q":"VMware環境のLinuxゲストで、ホットプラグ（稼働中のCPUやメモリの動的追加）が発生した際に、カーネルがそれを自動認識して有効化するためのudevルールやエージェントが含まれるツールはどれですか？","o":["open-vm-tools","qemu-guest-agent","cloud-init","vm-hotplugd"],"a":0,"e":"open-vm-tools には、ホストからのメモリ・CPUホットプラグイベントをLinuxカーネルへ通知し動的に有効化する機能が含まれています。"},
 {"Id":206,"imp":4,"q":"Linuxゲストのディスクドライブが /dev/vda と認識されている場合、この仮想ディスクの制御を行っている可能性が最も高い技術構造はどれですか？","o":["KVM/QEMUの VirtIO ブロックデバイス","IDEエミュレーション","SATA（AHCI）エミュレーション","NVMeパススルー"],"a":0,"e":"/dev/vd* というデバイス名は、VirtIO（準仮想化ブロックデバイス）が使用されているLinuxゲスト特有の命名識別子です。"},
-{"Id":207,"imp":3,"q":"KVM/QEMU環境で動作するLinuxゲストにおいて、物理ホストのPCIデバイス（グラフィックカードやNICなど）を仮想化層を回避してダイレクトにゲストへ割り当てる技術はどれですか？","o":["PCI Passthrough (PCIパススルー / SR-IOV)","VirtIO","Bridged Networking","Emulated Device"],"a":0,"e":"PCI Passthrough（またはSR-IOV）を使用すると、ホストの物理PCIデバイスをゲストLinuxから直接操作させ、ネイティブに近いパフォーマンスを得ることができます。"}
+{"Id":207,"imp":3,"q":"KVM/QEMU環境で動作するLinuxゲストにおいて、物理ホストのPCIデバイス（グラフィックカードやNICなど）を仮想化層を回避してダイレクトにゲストへ割り当てる技術はどれですか？","o":["PCI Passthrough (PCIパススルー / SR-IOV)","VirtIO","Bridged Networking","Emulated Device"],"a":0,"e":"PCI Passthrough（またはSR-IOV）を使用すると、ホストの物理PCIデバイスをゲストLinuxから直接操作させ、ネイティブに近いパフォーマンスを得ることができます。"},
 ]
 
 
