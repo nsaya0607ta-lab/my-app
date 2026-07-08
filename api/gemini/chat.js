@@ -1,9 +1,10 @@
 // Gemini APIキーはサーバー側の環境変数（Vercelのプロジェクト設定）でのみ保持し、
 // フロントエンドには一切渡さない。クライアントはこのエンドポイントにメッセージを
 // POSTするだけで、実際のGemini呼び出しはここで行う。
-// gemini-3.5-flashは軽量・低レイテンシ用途向けのモデル。応答速度を優先しつつ、
-// 環境変数で他モデルへの切り替えも可能にしておく。
-const MODEL = process.env.GEMINI_MODEL || "gemini-3.5-flash";
+// 存在しないモデル名を指定するとGemini APIが404/400を返すため、公式に
+// 提供が確認できている軽量・低レイテンシモデルを既定値にする。
+// 環境変数で他モデルへの切り替えも可能。
+const MODEL = process.env.GEMINI_MODEL || "gemini-2.5-flash";
 const MAX_MESSAGE_LEN = 2000;
 const MAX_HISTORY_TURNS = 20;
 const UPSTREAM_TIMEOUT_MS = 25000;
@@ -208,30 +209,39 @@ module.exports = async (req, res) => {
     let replyText = "";
     let functionCallResult = null;
     let blockReason = null;
+    let finishReason = null;
+    let lastRawChunk = null;
     let buffer = "";
     const decoder = new TextDecoder();
     const reader = r.body.getReader();
 
+    // SSEの行区切りは実装によって "\n" と "\r\n" が混在しうるため、二重改行
+    // ("\n\n")での塊単位ではなく1行ずつ処理する。空行やコメント行（":"始まり）
+    // は単に無視すればよく、"data:"行が来た時点で即座にJSONとして処理できる
     while (true) {
       const { done, value } = await reader.read();
       if (done) break;
       buffer += decoder.decode(value, { stream: true });
 
-      // SSEは "data: {...}\n\n" 形式でイベントが区切られて届く
-      let sepIndex;
-      while ((sepIndex = buffer.indexOf("\n\n")) !== -1) {
-        const rawEvent = buffer.slice(0, sepIndex);
-        buffer = buffer.slice(sepIndex + 2);
-        const dataLine = rawEvent.split("\n").find((l) => l.startsWith("data:"));
-        if (!dataLine) continue;
-        const jsonStr = dataLine.slice(5).trim();
+      let nlIndex;
+      while ((nlIndex = buffer.indexOf("\n")) !== -1) {
+        let line = buffer.slice(0, nlIndex);
+        buffer = buffer.slice(nlIndex + 1);
+        if (line.endsWith("\r")) line = line.slice(0, -1);
+        if (!line.startsWith("data:")) continue;
+        const jsonStr = line.slice(5).trim();
         if (!jsonStr || jsonStr === "[DONE]") continue;
 
         let chunk;
-        try { chunk = JSON.parse(jsonStr); } catch (_) { continue; }
+        try { chunk = JSON.parse(jsonStr); } catch (parseErr) {
+          console.error("gemini stream: failed to parse SSE data line:", jsonStr.slice(0, 500));
+          continue;
+        }
+        lastRawChunk = chunk;
 
         const candidate = chunk && chunk.candidates && chunk.candidates[0];
         const parts = (candidate && candidate.content && candidate.content.parts) || [];
+        if (candidate && candidate.finishReason) finishReason = candidate.finishReason;
         for (const p of parts) {
           if (p.functionCall && SCHEDULE_FUNCTION_NAMES.has(p.functionCall.name)) {
             functionCallResult = { name: p.functionCall.name, args: p.functionCall.args || {} };
@@ -249,9 +259,17 @@ module.exports = async (req, res) => {
     if (functionCallResult) {
       send({ type: "functionCall", name: functionCallResult.name, args: functionCallResult.args });
     } else if (!replyText) {
+      // ここに来るのは異常系（モデル未指定/権限エラー以外でテキストが
+      // 一切得られなかった場合）なので、原因調査のため詳細をログに残す
+      console.error(
+        "gemini stream: empty response.",
+        "blockReason=", blockReason,
+        "finishReason=", finishReason,
+        "lastRawChunk=", JSON.stringify(lastRawChunk).slice(0, 1000)
+      );
       send({
         type: "done",
-        reply: blockReason
+        reply: blockReason || (finishReason && finishReason !== "STOP")
           ? "この内容にはお答えできませんでした。別の聞き方でもう一度お試しください。"
           : "回答を生成できませんでした。もう一度お試しください。",
       });
