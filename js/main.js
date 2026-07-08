@@ -42,3 +42,11 @@ render();
 setTimeout(function(){
   if(!state.authReady && !state.guestMode){ state.authReady = true; render(); }
 }, 8000);
+
+/* ===== 起動スプラッシュ（ゴールドの犬アイコン）：固定3秒表示してからフェードアウト ===== */
+setTimeout(function(){
+  const splash = document.getElementById("splash-screen");
+  if(!splash) return;
+  splash.classList.add("splash-hide");
+  setTimeout(function(){ splash.remove(); }, 500);
+}, 3000);
