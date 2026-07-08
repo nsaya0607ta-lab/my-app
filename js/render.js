@@ -388,8 +388,6 @@ export function renderHome(){
 
     ${(loadWrong().length)?`<button class="ghost rev-btn" data-review style="margin-top:12px">🔁 復習モード（間違えた ${loadWrong().length} 問）</button>`:`<div class="x-hint" style="margin-top:12px;text-align:center">復習モード：間違えた問題がここに溜まり、再挑戦できます</div>`}
     <button class="ghost" data-go="dict" style="margin-top:10px">📖 用語辞典</button>
-    <button class="ghost" data-go="analytics" style="margin-top:10px">📊 統計パネル </button>
-    <button class="ghost" data-go="settings" style="margin-top:10px">⚙️ 設定</button>
     ${h.length?`<button class="link" data-go="history">スコア履歴を見る（${h.length}件）</button>`:
       `<div class="install">ヒント：ブラウザの共有メニューから「ホーム画面に追加」すると、アプリのように起動できます。</div>`}
     ${state.currentUser
@@ -560,6 +558,13 @@ export function renderReview(){
 
 // 正答率（%）：correct/attempts×100 を小数第1位（第2位四捨五入）で。データ無しはnull
 
+const HIST_TABS = [
+  {key:"all", label:"すべて"},
+  {key:"practice", label:"演習モード"},
+  {key:"exam", label:"試験モード"},
+  {key:"review", label:"復習モード"},
+];
+
 export function renderHistory(){
   const h=loadHist();
   if(!h.length){
@@ -567,10 +572,16 @@ export function renderHistory(){
       <div class="empty">まだ記録がありません。<br>問題を解くとここにスコアが残ります。</div>`;
     app.querySelector("[data-go]").onclick=()=>go("home"); return;
   }
-  const recent=h.slice(0,12).reverse();
+  const activeTab = state.historyTab || "all";
+  const filtered = activeTab==="all" ? h : h.filter(x=>x.mode===activeTab);
+  const recent=filtered.slice(0,12).reverse();
   const rOf = x => { const mx=x.scoreMax||1000; return mx? Math.min(1, x.score/mx) : 0; };
   app.innerHTML = `
     <div class="q-head"><button class="quit" data-go="home">🏠 ホーム</button><span class="q-count">履歴</span></div>
+    <div class="hist-tabs">
+      ${HIST_TABS.map(t=>`<button class="hist-tab${activeTab===t.key?" active":""}" data-htab="${t.key}">${t.label}</button>`).join("")}
+    </div>
+    ${filtered.length ? `
     <div class="chart">
       ${recent.map(x=>`<div class="chart-col">
         <div class="chart-bar-track"><div class="chart-bar ${rOf(x)>=0.7?"pass":"fail"}" style="height:${rOf(x)*100}%"></div></div>
@@ -578,13 +589,14 @@ export function renderHistory(){
       <div class="chart-passline" style="bottom:70%"><span>70%</span></div>
     </div>
     <div class="hist-list">
-      ${h.map(x=>`<div class="hist-row">
+      ${filtered.map(x=>`<div class="hist-row">
         <div class="hist-left"><span class="hist-mode">${x.modeLabel||"ランダム"}</span><span class="hist-date">${fmt(x.date)}</span></div>
         <div class="hist-right"><span class="hist-score ${rOf(x)>=0.7?"pass":"fail"}">${x.score}<small>/${x.scoreMax||1000}</small></span><span class="hist-correct">${x.correct}/${x.total}</span></div>
       </div>`).join("")}
-    </div>
+    </div>` : `<div class="empty">このモードの履歴はまだありません。</div>`}
   `;
-  app.querySelectorAll("[data-go]").forEach(b=>b.onclick=()=>go("home"));
+  app.querySelector('[data-go="home"]').onclick=()=>go("home");
+  app.querySelectorAll("[data-htab]").forEach(b=>b.onclick=()=>{ state.historyTab=b.dataset.htab; renderHistory(); });
 }
 
 

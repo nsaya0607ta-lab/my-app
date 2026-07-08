@@ -164,7 +164,10 @@ h1.title{font-size:34px;line-height:1.05;font-weight:800;margin:8px 0 0;letter-s
 .chart-val{font-size:10px;color:var(--muted);font-variant-numeric:tabular-nums;}
 .chart-passline{position:absolute;left:0;right:0;border-top:1px dashed rgba(217,119,6,.5);}
 .chart-passline span{position:absolute;right:0;top:-16px;font-size:10px;color:var(--gold);}
-.hist-list{display:flex;flex-direction:column;gap:8px;}
+.hist-tabs{display:flex;gap:6px;margin:14px 0 4px;overflow-x:auto;}
+.hist-tab{flex:0 0 auto;padding:8px 14px;border-radius:99px;border:1px solid var(--line);background:var(--surface);color:var(--muted);font-size:13px;font-weight:700;white-space:nowrap;}
+.hist-tab.active{background:var(--accent);border-color:var(--accent);color:#fff;}
+.hist-list{display:flex;flex-direction:column;gap:8px;margin-top:14px;}
 .hist-row{display:flex;justify-content:space-between;align-items:center;background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:12px 14px;box-shadow:0 2px 5px rgba(0,0,0,.01);}
 .hist-left{display:flex;flex-direction:column;gap:2px;}
 .hist-mode{font-weight:700;font-size:14px;}
