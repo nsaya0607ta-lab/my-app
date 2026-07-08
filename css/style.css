@@ -1140,7 +1140,9 @@ body[class*="sb-theme-"]::before{ content:""; position:fixed; inset:0; backgroun
 .gemini-schedule-title{ font-weight:700; font-size:14.5px; }
 .gemini-schedule-row{ font-size:14px; line-height:1.5; }
 .gemini-schedule-warning{ font-size:13px; color:var(--bad); background:rgba(220,38,38,.08); border-radius:10px; padding:6px 10px; margin-top:2px; }
-.gemini-schedule-actions{ display:flex; gap:8px; margin-top:6px; flex-wrap:wrap; }
+.gemini-schedule-actions{ display:flex; flex-direction:column; gap:8px; margin-top:6px; }
+.gemini-schedule-actions-row{ display:flex; gap:8px; }
+.gemini-schedule-actions-row .gemini-schedule-btn{ flex:1; }
 .gemini-schedule-btn{ flex:none; padding:9px 14px; border-radius:99px; font-size:13px; font-weight:700; cursor:pointer; border:1.5px solid var(--line); background:var(--surface); color:var(--text); transition:transform .1s,opacity .15s; }
 .gemini-schedule-btn:active{ transform:scale(.97); }
 .gemini-schedule-btn:disabled{ opacity:.5; cursor:default; }
@@ -1148,6 +1150,8 @@ body[class*="sb-theme-"]::before{ content:""; position:fixed; inset:0; backgroun
 .gemini-schedule-btn-cancel{ color:var(--muted); }
 .gemini-schedule-btn-edit{ color:var(--accent); border-color:var(--accent); background:transparent; }
 .gemini-schedule-form{ gap:8px; }
+.gemini-edit-wrap{ padding:14px 2px; max-width:480px; margin:0 auto; }
+.gemini-edit-wrap .gemini-schedule-card{ max-width:none; }
 .gemini-schedule-field{ display:flex; flex-direction:column; gap:3px; flex:1; min-width:0; }
 .gemini-schedule-field-label{ font-size:12px; color:var(--muted); font-weight:600; }
 .gemini-schedule-field-row{ display:flex; gap:10px; }
