@@ -338,6 +338,7 @@ export function renderHome(){
   updateHeaderNav(true);
   const h=loadHist();
   const ov=overallStat();
+  const c=S.cert ? certById(S.cert) : null;
 
   // 統計データの集計
   const examHistory = h.filter(x => x.mode === "exam");
@@ -372,6 +373,8 @@ export function renderHome(){
     <div class="q-head" style="margin-bottom:10px">
       <button class="quit" data-go="${certsBackTarget()}">← 資格選択</button>
     </div>
+
+    ${c ? `<div class="cert-badge-row"><span class="cert-badge">${esc(c.code)}</span></div>` : ``}
 
     <div class="stats-dash">
       <div class="stats-dash-head">

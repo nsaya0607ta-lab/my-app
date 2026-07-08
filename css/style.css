@@ -1030,6 +1030,19 @@ body[class*="sb-theme-"]::before{ content:""; position:fixed; inset:0; backgroun
 .an-log-row.ok .an-log-judge{ color:#ffffff; background:var(--good); }
 .an-log-row.ng .an-log-judge{ color:var(--muted); background:rgba(0,0,0,.05); }
 
+/* ============ 追加：資格バッジ（← 資格選択 の下・ダッシュボード左上） ============ */
+.cert-badge-row{ display:flex; margin-bottom:12px; }
+.cert-badge{
+  display:inline-flex; align-items:center; justify-content:center;
+  padding:9px 20px; border-radius:14px;
+  font-size:15px; font-weight:800; letter-spacing:.02em; line-height:1;
+  color:#0c3a66;
+  background:linear-gradient(160deg,rgba(224,242,255,.85),rgba(186,230,253,.55));
+  border:1px solid rgba(56,163,255,.35);
+  box-shadow:0 6px 16px rgba(2,132,199,.14), inset 0 1px 0 rgba(255,255,255,.6);
+  -webkit-backdrop-filter:blur(8px); backdrop-filter:blur(8px);
+}
+
 /* ============ 追加：学習統計ダッシュボード（ホーム 2x2） ============ */
 .stats-dash{
   position:relative; overflow:hidden; margin-bottom:16px; padding:18px 16px 16px;
