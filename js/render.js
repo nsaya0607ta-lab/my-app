@@ -3,7 +3,7 @@ import { DC_PHASES, L, REGIONS } from './data/constants.js';
 import { CONCEPTS, DRAW, PASS, Q, TIERS, applySkin, certById, certStat, commit, correctSet, dcCount, dcPhase, dcTitle, esc, exportCode, fmt, getBP, getProfileName, grade, importCode, isAdminAccount, isMulti, loadHist, loadReviewStats, loadWrong, overallLevel, overallStat, pick, pts, publishLeaderboard, purchaseSkin, saveCoins, saveToCloud, selectCert, setBP, setProfileName, skinHandleIdentityChange, stars, start, startReview, totalBP } from './core.js';
 import { getLiveStocks, getLiveStocksJP } from './stocks.js';
 import { getWeather } from './weather.js';
-import { geminiChat, sendGeminiMessage, setGeminiScheduleHandler } from './gemini.js';
+import { geminiChat, sendGeminiMessage, setGeminiScheduleHandler, pushGeminiMessage } from './gemini.js';
 import { SKIN_DATA } from './data/skins.js';
 import { S, state } from './state.js';
 
@@ -1875,16 +1875,44 @@ export function renderPortfolio(){
 // この画面はその内容を描画するだけ。送信はサーバー側の /api/gemini/chat
 // 経由（APIキーはサーバーのみが保持）で行う。
 function geminiMessageBubbleHTML(m){
+  if(m.type === "schedule_confirm") return geminiScheduleConfirmCardHTML(m);
   const cls = "gemini-bubble " + (m.role === "user" ? "gemini-bubble-user" : "gemini-bubble-model");
   const body = esc(m.text).replace(/\n/g, "<br>");
   return `<div class="${cls}">${body}</div>`;
 }
 
+// register_scheduleの結果を出す確認カード。ステータスに応じて、ボタン付きの
+// 未確定表示／確定済み表示／キャンセル済み表示のいずれかを描画する
+function geminiScheduleConfirmCardHTML(m){
+  const p = m.preview;
+  const warningHTML = p.warning ? `<div class="gemini-schedule-warning">⚠️ ${esc(p.warning)}</div>` : "";
+  const statusLabel = m.status === "confirmed" ? "（登録済み）" : m.status === "cancelled" ? "（キャンセル済み）" : "";
+  const actionsHTML = m.status === "pending"
+    ? `<div class="gemini-schedule-actions">
+        <button type="button" class="gemini-schedule-btn gemini-schedule-btn-confirm" data-schedule-confirm="${m.id}">この内容で登録する</button>
+        <button type="button" class="gemini-schedule-btn gemini-schedule-btn-cancel" data-schedule-cancel="${m.id}">キャンセル・修正する</button>
+      </div>`
+    : "";
+  return `
+    <div class="gemini-bubble gemini-bubble-model gemini-schedule-card${m.status !== "pending" ? " gemini-schedule-card-done" : ""}">
+      <div class="gemini-schedule-title">📅 予定の確認${statusLabel}</div>
+      <div class="gemini-schedule-row">・タイトル：${esc(p.title)}</div>
+      <div class="gemini-schedule-row">・日時：${esc(p.dateLabel)} ${esc(p.timeLabel)}</div>
+      ${warningHTML}
+      ${actionsHTML}
+    </div>`;
+}
+
+// 直前のメッセージが未確定の確認カードのとき、ユーザーがボタンではなく
+// 「OK」「キャンセル」等をチャットで直接打ち込んでも確定・取消できるようにする
+const GEMINI_CONFIRM_TEXT_RE = /^(ok|okay|オーケー|おっけー|はい|うん|了解|りょうかい|お願いします?|よろしく(お願いします?)?|登録(して(ください)?|する)?|それで(お願いします?)?)[!!。、\s]*$/i;
+const GEMINI_CANCEL_TEXT_RE = /^(キャンセル(します?)?|やめ(る|て|ます)?|中止(します?)?|いいえ|いや|やっぱ(り)?(やめ(ます)?)?)[!!。、\s]*$/;
+
 export function renderGeminiChat(){
   const messages = geminiChat.messages;
   const msgsHTML = messages.length
     ? messages.map(geminiMessageBubbleHTML).join("")
-    : `<div class="gemini-empty">✨ Azureやこのアプリの資格勉強について、Geminiに気軽に質問してみましょう。<br>「7月9日16時から17時で面接を入れて」のように話しかけると、予定も登録できます。</div>`;
+    : `<div class="gemini-empty">✨ Azureやこのアプリの資格勉強について、Geminiに気軽に質問してみましょう。<br>「7月9日16時から17時で面接を入れて」のように話しかけると、確認カードが表示され、内容を確定すると予定を登録できます。</div>`;
   const busyHTML = geminiChat.busy ? `<div class="gemini-bubble gemini-bubble-model gemini-bubble-busy">…考え中</div>` : "";
   const errorHTML = geminiChat.error ? `<div class="gemini-error">${esc(geminiChat.error)}</div>` : "";
 
@@ -1904,12 +1932,51 @@ export function renderGeminiChat(){
   const scrollEl = document.getElementById("gemini-scroll");
   if(scrollEl) scrollEl.scrollTop = scrollEl.scrollHeight;
 
+  app.querySelectorAll("[data-schedule-confirm]").forEach(btn => {
+    btn.onclick = () => {
+      const id = Number(btn.dataset.scheduleConfirm);
+      const msg = geminiChat.messages.find(mm => mm.id === id);
+      if(!msg || msg.status !== "pending") return;
+      btn.disabled = true;
+      geminiConfirmSchedule(msg).then(() => render());
+    };
+  });
+  app.querySelectorAll("[data-schedule-cancel]").forEach(btn => {
+    btn.onclick = () => {
+      const id = Number(btn.dataset.scheduleCancel);
+      const msg = geminiChat.messages.find(mm => mm.id === id);
+      if(!msg || msg.status !== "pending") return;
+      geminiCancelSchedule(msg);
+      render();
+    };
+  });
+
   const inputEl = document.getElementById("gemini-input");
   const sendBtn = document.getElementById("gemini-send");
   const submit = () => {
     if(!inputEl || geminiChat.busy) return;
     const text = inputEl.value;
-    if(!text.trim()) return;
+    const trimmed = text.trim();
+    if(!trimmed) return;
+
+    // 直前のメッセージが未確定の予定確認カードなら、「OK」「キャンセル」等の
+    // 短い返答はGeminiへ送らずここで直接確定／取消として処理する
+    const lastMsg = geminiChat.messages[geminiChat.messages.length - 1];
+    if(lastMsg && lastMsg.type === "schedule_confirm" && lastMsg.status === "pending"){
+      if(GEMINI_CONFIRM_TEXT_RE.test(trimmed)){
+        pushGeminiMessage({ role: "user", text: trimmed });
+        render();
+        geminiConfirmSchedule(lastMsg).then(() => render());
+        return;
+      }
+      if(GEMINI_CANCEL_TEXT_RE.test(trimmed)){
+        pushGeminiMessage({ role: "user", text: trimmed });
+        geminiCancelSchedule(lastMsg);
+        render();
+        return;
+      }
+    }
+
     // sendGeminiMessageは最初のawait（fetch）に達するまで同期的に実行される
     // ため、この呼び出し直後にrender()すれば「送信したメッセージ＋考え中」を
     // 即座に画面へ反映できる（完了を待ってからのrenderは応答受信後）
@@ -2869,17 +2936,17 @@ async function geminiFindScheduleByQuery(dateStr, titleQuery){
   return evs.length === 1 ? evs[0] : null;
 }
 
-// Gemini相談チャット（js/gemini.js）がregister_schedule/update_schedule/
-// delete_schedule関数呼び出しを受け取ったときに呼ばれる。実際のカレンダー
-// 操作は既存の登録処理（Google連携中ならGoogle Calendar API、未連携なら
-// ローカルのデモストレージ）にそのまま乗せる。戻り値のtextはチャット画面に
-// モデルの発言として表示する確認／エラーメッセージ
+// Gemini相談チャット（js/gemini.js）がregister_schedule関数呼び出しを
+// 受け取ったときに呼ばれる。ここではカレンダーへは一切書き込まず、抽出
+// された内容を検証・整形し、重複チェックの結果を添えたプレビュー情報を
+// 返すだけに留める。実際の登録はユーザーが確認カードで確定操作をした
+// 時点でgeminiConfirmSchedule()が行う（戻り値のpreviewが確認カード用、
+// textはバリデーションエラー時にそのままチャットへ表示するメッセージ）
 async function geminiRegisterSchedule(args){
   const title = (args && typeof args.title === "string" ? args.title : "").trim().slice(0, 200);
   const dateStr = args && typeof args.date === "string" ? args.date : "";
   const rawStart = args && typeof args.start_time === "string" ? args.start_time : "";
   const rawEnd = args && typeof args.end_time === "string" ? args.end_time : "";
-  const confirmOverwrite = !!(args && args.confirm_overwrite);
 
   const dm = /^(\d{4})-(\d{2})-(\d{2})$/.exec(dateStr);
   if(!title || !dm){
@@ -2892,28 +2959,51 @@ async function geminiRegisterSchedule(args){
   }
   const timeRe = /^([01]\d|2[0-3]):[0-5]\d$/;
   const start = timeRe.test(rawStart) ? rawStart : "";
-  const end = timeRe.test(rawEnd) ? rawEnd : "";
+  let end = timeRe.test(rawEnd) ? rawEnd : "";
   if(start && end && end <= start){
     return { text: "終了時刻は開始時刻より後にしてください。" };
+  }
+  // 終了時刻が指定されなかった場合は、確認カードにもそのまま反映できるよう
+  // ここでデフォルトの所要時間（1時間）を補っておく
+  if(start && !end){
+    const endDate = new Date(y, m, d, Number(start.slice(0,2)), Number(start.slice(3,5)) + 60);
+    end = `${String(endDate.getHours()).padStart(2,"0")}:${String(endDate.getMinutes()).padStart(2,"0")}`;
   }
 
   const dateLabel = `${y}年${m+1}月${d}日(${NEWS_WEEKDAYS[dateObj.getDay()]})`;
   const timeLabel = start ? `${start}${end ? `〜${end}` : ""}` : "終日";
 
-  if(!confirmOverwrite){
-    let existing = [];
-    try{ existing = await geminiFetchDayEventsForQuery(y, m, d); }catch(e){ existing = []; }
+  let warning = "";
+  try{
+    const existing = await geminiFetchDayEventsForQuery(y, m, d);
     const dup = existing.find(ev => gcalTimesOverlap(start, end, ev.start, ev.end));
     if(dup){
-      return { text: `その時間はすでに「${dup.title || "無題"}」の予定が入っていますが、登録してもよろしいですか？` };
+      const dupTimeLabel = dup.start ? `${dup.start}${dup.end ? `〜${dup.end}` : ""}` : "終日";
+      warning = `${dupTimeLabel}に「${dup.title || "無題"}」の予定があります`;
     }
-  }
+  }catch(e){ /* 重複チェックに失敗しても確認カード自体は表示する */ }
+
+  return {
+    preview: { title, dateLabel, timeLabel, warning, args: { y, m, d, title, start, end } },
+  };
+}
+
+// 確認カードの「この内容で登録する」（またはチャットでの「OK」相当の返答）で
+// 呼ばれ、ここで初めて実際にカレンダーへ書き込む。書き込み後は同じメッセージ
+// のstatusを更新し、結果を新しいモデル発言としてチャットに積む
+async function geminiConfirmSchedule(msg){
+  const { y, m, d, title, start, end } = msg.preview.args;
+  const dateLabel = msg.preview.dateLabel;
+  const timeLabel = msg.preview.timeLabel;
 
   try{
     if(gcalGoogleAccessToken){
       if(gcalGoogleCalendars === null) await gcalRefreshGoogleCalendars();
       const cals = gcalGoogleCalendars || [];
-      if(!cals.length) return { text: "連携できるGoogleカレンダーが見つかりませんでした。" };
+      if(!cals.length){
+        pushGeminiMessage({ role: "model", text: "連携できるGoogleカレンダーが見つかりませんでした。" });
+        return;
+      }
       let activeId = null;
       try{ activeId = localStorage.getItem(gcalStorageKey(GCAL_GOOGLE_ACTIVE_KEY)); }catch(e){}
       if(!activeId || !cals.some(c => c.id === activeId)) activeId = cals[0].id;
@@ -2936,10 +3026,20 @@ async function geminiRegisterSchedule(args){
       geminiLastSchedule = { source: "local", storeActiveId: store.activeId, eventId: newEvent.id, dateKey, y, m, d, start, end, title };
     }
   }catch(e){
-    return { text: `予定の登録に失敗しました：「${title}」（${dateLabel} ${timeLabel}）。もう一度お試しください。` };
+    msg.status = "pending";
+    pushGeminiMessage({ role: "model", text: `予定の登録に失敗しました：「${title}」（${dateLabel} ${timeLabel}）。もう一度お試しください。` });
+    return;
   }
 
-  return { text: `✅ ${dateLabel} ${timeLabel} に「${title}」を登録しました。` };
+  msg.status = "confirmed";
+  pushGeminiMessage({ role: "model", text: `✅ ${dateLabel} ${timeLabel} に「${title}」を登録しました。` });
+}
+
+// 確認カードの「キャンセル・修正する」（またはチャットでの「キャンセル」相当の
+// 返答）で呼ばれる。カレンダーへは何も書き込まず、カードを取り消し状態にする
+function geminiCancelSchedule(msg){
+  msg.status = "cancelled";
+  pushGeminiMessage({ role: "model", text: "予定の登録をキャンセルしました。内容を変えて、もう一度お申し付けください。" });
 }
 
 // delete_schedule：target:'last'（または日付・タイトル省略時）なら直前に
