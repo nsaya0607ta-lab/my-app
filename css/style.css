@@ -66,6 +66,7 @@ body{
 .top-titlewrap{min-width:0;flex:1;}
 .eyebrow{font-size:11px;letter-spacing:.22em;color:var(--accent);font-weight:700;}
 h1.title{font-size:34px;line-height:1.05;font-weight:800;margin:8px 0 0;letter-spacing:-.01em;}
+h1.title.title--badge{margin:2px 0 0;}
 
 /* ヘッダー右上：ランキング／プロフィールへの小さな丸型ショートカット */
 .top-nav{display:flex;flex:none;gap:10px;padding-top:2px;}
@@ -1030,8 +1031,7 @@ body[class*="sb-theme-"]::before{ content:""; position:fixed; inset:0; backgroun
 .an-log-row.ok .an-log-judge{ color:#ffffff; background:var(--good); }
 .an-log-row.ng .an-log-judge{ color:var(--muted); background:rgba(0,0,0,.05); }
 
-/* ============ 追加：資格バッジ（← 資格選択 の下・ダッシュボード左上） ============ */
-.cert-badge-row{ display:flex; margin-bottom:12px; }
+/* ============ 追加：資格バッジ（見出し欄・ランキング/プロフアイコン横の空白を埋める） ============ */
 .cert-badge{
   display:inline-flex; align-items:center; justify-content:center;
   padding:9px 20px; border-radius:14px;

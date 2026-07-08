@@ -114,10 +114,12 @@ function updateHeaderTitle(){
   }
   topEl.style.display = "";
   const c = S.cert ? certById(S.cert) : null;
-  // 資格コード（AZ-900 など）はステータスバーのバッジに既に出ているため、
-  // 見出しでの重複表示はやめて上のスペースを詰める。資格未選択の画面のみ「ホーム」を出す。
-  titleEl.style.display = c ? "none" : "";
-  titleEl.textContent = c ? "" : "ホーム";
+  // 資格選択中は、隠していた見出し枠にバッジを出す（ランキング/プロフアイコン
+  // 横の空白を埋める）。資格未選択の画面では従来通り「ホーム」を表示。
+  titleEl.style.display = "";
+  titleEl.classList.toggle("title--badge", !!c);
+  if(c) titleEl.innerHTML = `<span class="cert-badge">${esc(c.code)}</span>`;
+  else titleEl.textContent = "ホーム";
   topEl.classList.toggle("top--notitle", !!c);
 }
 
@@ -338,7 +340,6 @@ export function renderHome(){
   updateHeaderNav(true);
   const h=loadHist();
   const ov=overallStat();
-  const c=S.cert ? certById(S.cert) : null;
 
   // 統計データの集計
   const examHistory = h.filter(x => x.mode === "exam");
@@ -373,8 +374,6 @@ export function renderHome(){
     <div class="q-head" style="margin-bottom:10px">
       <button class="quit" data-go="${certsBackTarget()}">← 資格選択</button>
     </div>
-
-    ${c ? `<div class="cert-badge-row"><span class="cert-badge">${esc(c.code)}</span></div>` : ``}
 
     <div class="stats-dash">
       <div class="stats-dash-head">
