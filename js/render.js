@@ -2777,7 +2777,7 @@ async function gcalCreateGoogleEvent(calId, y, m, d, title, start, end){
     const nextStr = newsDateKey(next.getFullYear(), next.getMonth(), next.getDate());
     body = { summary, start: { date: dateStr }, end: { date: nextStr } };
   }
-  await gcalGoogleApiFetch(`calendars/${encodeURIComponent(calId)}/events`, {
+  return gcalGoogleApiFetch(`calendars/${encodeURIComponent(calId)}/events`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
@@ -2788,16 +2788,98 @@ async function gcalDeleteGoogleEvent(calId, eventId){
   await gcalGoogleApiFetch(`calendars/${encodeURIComponent(calId)}/events/${encodeURIComponent(eventId)}`, { method: "DELETE" });
 }
 
-// Gemini相談チャット（js/gemini.js）が「register_schedule」関数呼び出しを
-// 受け取ったときに呼ばれる。実際の予定作成は既存のカレンダー登録処理
-// （Google連携中ならgcalCreateGoogleEvent、未連携ならローカルのデモ
-// ストレージ）にそのまま乗せる。戻り値のtextはチャット画面にモデルの
-// 発言として表示する確認／エラーメッセージ
+// Gemini経由の予定変更（update_schedule）用：日時・タイトルの一部だけを
+// 差し替えたいので、既存イベントを取り直さずPATCHで直接上書きする
+async function gcalPatchGoogleEvent(calId, eventId, y, m, d, title, start, end){
+  const pad = (n) => String(n).padStart(2, "0");
+  const dateStr = `${y}-${pad(m+1)}-${pad(d)}`;
+  const summary = title;
+  let body;
+  if(start){
+    const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
+    body = {
+      summary,
+      start: { dateTime: `${dateStr}T${start}:00`, timeZone: tz },
+      end: { dateTime: `${dateStr}T${end || start}:00`, timeZone: tz },
+    };
+  } else {
+    const next = new Date(y, m, d+1);
+    const nextStr = newsDateKey(next.getFullYear(), next.getMonth(), next.getDate());
+    body = { summary, start: { date: dateStr }, end: { date: nextStr } };
+  }
+  return gcalGoogleApiFetch(`calendars/${encodeURIComponent(calId)}/events/${encodeURIComponent(eventId)}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+}
+
+// Gemini経由で登録・変更・削除した直近1件の予定への参照。「今のやつ消して」
+// 「さっきの予定を後ろ倒しして」のように対象を明示しない依頼に応えるために、
+// このチャットタブを開いている間だけ保持する（永続化はしない）
+let geminiLastSchedule = null;
+
+// start/endは"HH:MM"（空文字は終日予定）。2つの予定が同じ日に時間帯として
+// 重なっているかどうかを判定する。どちらかが終日予定の場合はその日全体を
+// 占有しているとみなし、常に重複扱いにする
+function gcalTimesOverlap(aStart, aEnd, bStart, bEnd){
+  if(!aStart || !bStart) return true;
+  const aE = aEnd || aStart;
+  const bE = bEnd || bStart;
+  return aStart < bE && bStart < aE;
+}
+
+// 指定日の既存の予定一覧を、Google連携中／未連携どちらの場合でも同じ形
+// （{source,calId/storeActiveId,eventId,dateKey,y,m,d,title,start,end}）で
+// 返す。予定の重複チェックと、delete_schedule/update_scheduleでの
+// 日付＋タイトルによる対象特定の両方から共通で使う
+async function geminiFetchDayEventsForQuery(y, m, d){
+  const dateKey = newsDateKey(y, m, d);
+  if(gcalGoogleAccessToken){
+    if(gcalGoogleCalendars === null) await gcalRefreshGoogleCalendars();
+    const cals = gcalGoogleCalendars || [];
+    if(!cals.length) return [];
+    let activeId = null;
+    try{ activeId = localStorage.getItem(gcalStorageKey(GCAL_GOOGLE_ACTIVE_KEY)); }catch(e){}
+    if(!activeId || !cals.some(c => c.id === activeId)) activeId = cals[0].id;
+    const dayStart = new Date(y, m, d);
+    const dayEnd = new Date(y, m, d + 1);
+    const params = new URLSearchParams({ timeMin: dayStart.toISOString(), timeMax: dayEnd.toISOString(), singleEvents: "true", maxResults: "50", orderBy: "startTime" });
+    const data = await gcalGoogleApiFetch(`calendars/${encodeURIComponent(activeId)}/events?${params.toString()}`);
+    const map = gcalMapGoogleEventItems(data.items, { id: activeId });
+    return (map[dateKey] || []).map(ev => ({ source: "google", calId: activeId, eventId: ev.id, dateKey, y, m, d, title: ev.title, start: ev.start, end: ev.end }));
+  }
+  const store = loadGcalStore();
+  const evs = (store.events[store.activeId] && store.events[store.activeId][dateKey]) || [];
+  return evs.map(ev => ({ source: "local", storeActiveId: store.activeId, eventId: ev.id, dateKey, y, m, d, title: ev.title, start: ev.start, end: ev.end }));
+}
+
+// delete_schedule/update_scheduleが日付＋タイトルで対象を指定してきたときに、
+// その日の予定一覧からタイトルが部分一致する1件を探す。タイトル未指定なら
+// その日の予定が1件だけの場合のみそれを対象にする（複数あると誤削除・誤変更の
+// リスクがあるため、あいまいな場合は対象なしとして呼び出し側に聞き返させる）
+async function geminiFindScheduleByQuery(dateStr, titleQuery){
+  const dm = /^(\d{4})-(\d{2})-(\d{2})$/.exec(dateStr || "");
+  if(!dm) return null;
+  const y = Number(dm[1]), m = Number(dm[2]) - 1, d = Number(dm[3]);
+  let evs;
+  try{ evs = await geminiFetchDayEventsForQuery(y, m, d); }catch(e){ return null; }
+  if(!evs.length) return null;
+  if(titleQuery) return evs.find(ev => ev.title && ev.title.includes(titleQuery)) || null;
+  return evs.length === 1 ? evs[0] : null;
+}
+
+// Gemini相談チャット（js/gemini.js）がregister_schedule/update_schedule/
+// delete_schedule関数呼び出しを受け取ったときに呼ばれる。実際のカレンダー
+// 操作は既存の登録処理（Google連携中ならGoogle Calendar API、未連携なら
+// ローカルのデモストレージ）にそのまま乗せる。戻り値のtextはチャット画面に
+// モデルの発言として表示する確認／エラーメッセージ
 async function geminiRegisterSchedule(args){
   const title = (args && typeof args.title === "string" ? args.title : "").trim().slice(0, 200);
   const dateStr = args && typeof args.date === "string" ? args.date : "";
   const rawStart = args && typeof args.start_time === "string" ? args.start_time : "";
   const rawEnd = args && typeof args.end_time === "string" ? args.end_time : "";
+  const confirmOverwrite = !!(args && args.confirm_overwrite);
 
   const dm = /^(\d{4})-(\d{2})-(\d{2})$/.exec(dateStr);
   if(!title || !dm){
@@ -2818,6 +2900,15 @@ async function geminiRegisterSchedule(args){
   const dateLabel = `${y}年${m+1}月${d}日(${NEWS_WEEKDAYS[dateObj.getDay()]})`;
   const timeLabel = start ? `${start}${end ? `〜${end}` : ""}` : "終日";
 
+  if(!confirmOverwrite){
+    let existing = [];
+    try{ existing = await geminiFetchDayEventsForQuery(y, m, d); }catch(e){ existing = []; }
+    const dup = existing.find(ev => gcalTimesOverlap(start, end, ev.start, ev.end));
+    if(dup){
+      return { text: `その時間はすでに「${dup.title || "無題"}」の予定が入っていますが、登録してもよろしいですか？` };
+    }
+  }
+
   try{
     if(gcalGoogleAccessToken){
       if(gcalGoogleCalendars === null) await gcalRefreshGoogleCalendars();
@@ -2826,20 +2917,23 @@ async function geminiRegisterSchedule(args){
       let activeId = null;
       try{ activeId = localStorage.getItem(gcalStorageKey(GCAL_GOOGLE_ACTIVE_KEY)); }catch(e){}
       if(!activeId || !cals.some(c => c.id === activeId)) activeId = cals[0].id;
-      await gcalCreateGoogleEvent(activeId, y, m, d, title, start, end);
+      const created = await gcalCreateGoogleEvent(activeId, y, m, d, title, start, end);
       // このチャット経由の追加は日／月カードのキャッシュを経由しないため、
       // 次にカレンダー画面を開いたときに確実に反映されるよう、切断時と
       // 同様にキャッシュを空にして再取得を促す
       gcalGoogleEventsCache = {};
       gcalGoogleDayEventsCache = {};
+      geminiLastSchedule = { source: "google", calId: activeId, eventId: created && created.id, dateKey: newsDateKey(y, m, d), y, m, d, start, end, title };
     } else {
       const author = gcalLoadAuthorName() || getProfileName() || "";
       const store = loadGcalStore();
       const dateKey = newsDateKey(y, m, d);
       if(!store.events[store.activeId]) store.events[store.activeId] = {};
       if(!store.events[store.activeId][dateKey]) store.events[store.activeId][dateKey] = [];
-      store.events[store.activeId][dateKey].push({ id: gcalGenId("e"), title, start, end, author });
+      const newEvent = { id: gcalGenId("e"), title, start, end, author };
+      store.events[store.activeId][dateKey].push(newEvent);
       saveGcalStore(store);
+      geminiLastSchedule = { source: "local", storeActiveId: store.activeId, eventId: newEvent.id, dateKey, y, m, d, start, end, title };
     }
   }catch(e){
     return { text: `予定の登録に失敗しました：「${title}」（${dateLabel} ${timeLabel}）。もう一度お試しください。` };
@@ -2847,7 +2941,121 @@ async function geminiRegisterSchedule(args){
 
   return { text: `✅ ${dateLabel} ${timeLabel} に「${title}」を登録しました。` };
 }
-setGeminiScheduleHandler(geminiRegisterSchedule);
+
+// delete_schedule：target:'last'（または日付・タイトル省略時）なら直前に
+// このチャットで登録・変更した予定を、それ以外はdate＋titleで特定した予定を削除する
+async function geminiDeleteSchedule(args){
+  const target = args && typeof args.target === "string" ? args.target : "";
+  const dateStr = args && typeof args.date === "string" ? args.date : "";
+  const titleQuery = (args && typeof args.title === "string" ? args.title : "").trim();
+
+  let ref = null;
+  if(target === "last" || (!dateStr && !titleQuery)){
+    ref = geminiLastSchedule;
+    if(!ref) return { text: "直前に登録した予定が見つかりませんでした。対象の日付とタイトルを教えてください。" };
+  } else {
+    ref = await geminiFindScheduleByQuery(dateStr, titleQuery);
+    if(!ref) return { text: "該当する予定が見つかりませんでした。日付やタイトルを確認してもう一度お試しください。" };
+  }
+
+  try{
+    if(ref.source === "google"){
+      await gcalDeleteGoogleEvent(ref.calId, ref.eventId);
+      gcalGoogleEventsCache = {};
+      gcalGoogleDayEventsCache = {};
+    } else {
+      const store = loadGcalStore();
+      const evs = store.events[ref.storeActiveId] && store.events[ref.storeActiveId][ref.dateKey];
+      const idx = evs ? evs.findIndex(e => e.id === ref.eventId) : -1;
+      if(idx < 0) return { text: "対象の予定が見つかりませんでした。すでに削除されている可能性があります。" };
+      evs.splice(idx, 1);
+      saveGcalStore(store);
+    }
+  }catch(e){
+    return { text: `予定「${ref.title}」の削除に失敗しました。もう一度お試しください。` };
+  }
+
+  if(geminiLastSchedule === ref) geminiLastSchedule = null;
+  return { text: `🗑️ 「${ref.title}」の予定を削除しました。` };
+}
+
+// update_schedule：target:'last'（または日付・タイトル省略時）なら直前の予定を、
+// それ以外はdate＋original_titleで特定した予定を対象に、指定された項目だけを書き換える
+async function geminiUpdateSchedule(args){
+  const target = args && typeof args.target === "string" ? args.target : "";
+  const dateStr = args && typeof args.date === "string" ? args.date : "";
+  const titleQuery = (args && typeof args.original_title === "string" ? args.original_title : "").trim();
+
+  let ref = null;
+  if(target === "last" || (!dateStr && !titleQuery)){
+    ref = geminiLastSchedule;
+    if(!ref) return { text: "直前に登録した予定が見つかりませんでした。対象の日付とタイトルを教えてください。" };
+  } else {
+    ref = await geminiFindScheduleByQuery(dateStr, titleQuery);
+    if(!ref) return { text: "該当する予定が見つかりませんでした。日付やタイトルを確認してもう一度お試しください。" };
+  }
+
+  const newDateStr = args && typeof args.new_date === "string" ? args.new_date : "";
+  const newDm = newDateStr ? /^(\d{4})-(\d{2})-(\d{2})$/.exec(newDateStr) : null;
+  if(newDateStr && !newDm) return { text: "変更後の日付を認識できませんでした。" };
+
+  const timeRe = /^([01]\d|2[0-3]):[0-5]\d$/;
+  const rawNewStart = args && typeof args.new_start_time === "string" ? args.new_start_time : "";
+  const rawNewEnd = args && typeof args.new_end_time === "string" ? args.new_end_time : "";
+  const newStart = rawNewStart ? (timeRe.test(rawNewStart) ? rawNewStart : null) : undefined;
+  const newEnd = rawNewEnd ? (timeRe.test(rawNewEnd) ? rawNewEnd : null) : undefined;
+  if(newStart === null || newEnd === null){
+    return { text: "変更後の時刻を認識できませんでした。「HH:MM」の形式でお伝えください。" };
+  }
+
+  const y = newDm ? Number(newDm[1]) : ref.y;
+  const m = newDm ? Number(newDm[2]) - 1 : ref.m;
+  const d = newDm ? Number(newDm[3]) : ref.d;
+  const start = newStart !== undefined ? newStart : ref.start;
+  const end = newEnd !== undefined ? newEnd : ref.end;
+  const newTitleRaw = args && typeof args.new_title === "string" ? args.new_title.trim().slice(0, 200) : "";
+  const title = newTitleRaw || ref.title;
+
+  if(start && end && end <= start){
+    return { text: "終了時刻は開始時刻より後にしてください。" };
+  }
+
+  try{
+    if(ref.source === "google"){
+      await gcalPatchGoogleEvent(ref.calId, ref.eventId, y, m, d, title, start, end);
+      gcalGoogleEventsCache = {};
+      gcalGoogleDayEventsCache = {};
+    } else {
+      const store = loadGcalStore();
+      const oldEvs = store.events[ref.storeActiveId] && store.events[ref.storeActiveId][ref.dateKey];
+      const idx = oldEvs ? oldEvs.findIndex(e => e.id === ref.eventId) : -1;
+      if(idx < 0) return { text: "対象の予定が見つかりませんでした。すでに削除・変更されている可能性があります。" };
+      const [ev] = oldEvs.splice(idx, 1);
+      ev.title = title; ev.start = start; ev.end = end;
+      const newDateKey = newsDateKey(y, m, d);
+      if(!store.events[ref.storeActiveId][newDateKey]) store.events[ref.storeActiveId][newDateKey] = [];
+      store.events[ref.storeActiveId][newDateKey].push(ev);
+      saveGcalStore(store);
+      ref.dateKey = newDateKey;
+    }
+  }catch(e){
+    return { text: `予定「${ref.title}」の変更に失敗しました。もう一度お試しください。` };
+  }
+
+  ref.y = y; ref.m = m; ref.d = d; ref.start = start; ref.end = end; ref.title = title;
+  const dateLabel = `${y}年${m+1}月${d}日(${NEWS_WEEKDAYS[new Date(y, m, d).getDay()]})`;
+  const timeLabel = start ? `${start}${end ? `〜${end}` : ""}` : "終日";
+  return { text: `✏️ 予定を「${title}」（${dateLabel} ${timeLabel}）に変更しました。` };
+}
+
+// js/gemini.js側からは関数名と引数だけが渡されるので、ここで3種類の
+// カレンダー操作へ振り分ける
+async function geminiHandleScheduleFunctionCall(name, args){
+  if(name === "delete_schedule") return geminiDeleteSchedule(args);
+  if(name === "update_schedule") return geminiUpdateSchedule(args);
+  return geminiRegisterSchedule(args);
+}
+setGeminiScheduleHandler(geminiHandleScheduleFunctionCall);
 
 function gcalBindConnectBar(root){
   const connectBtn = root.querySelector("#gcal-google-connect");
