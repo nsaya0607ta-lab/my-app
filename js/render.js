@@ -1886,6 +1886,8 @@ function geminiMessageBubbleHTML(m){
 function geminiScheduleConfirmCardHTML(m){
   const p = m.preview;
   const warningHTML = p.warning ? `<div class="gemini-schedule-warning">⚠️ ${esc(p.warning)}</div>` : "";
+  const relativeNoteHTML = p.relativeNote ? `<div class="gemini-schedule-row">・${esc(p.relativeNote)}</div>` : "";
+  const recurrenceHTML = p.recurrenceLabel ? `<div class="gemini-schedule-row">・🔁 ${esc(p.recurrenceLabel)}</div>` : "";
   const statusLabel = m.status === "confirmed" ? "（登録済み）" : m.status === "cancelled" ? "（キャンセル済み）" : "";
   const actionsHTML = m.status === "pending"
     ? `<div class="gemini-schedule-actions">
@@ -1898,6 +1900,8 @@ function geminiScheduleConfirmCardHTML(m){
       <div class="gemini-schedule-title">📅 予定の確認${statusLabel}</div>
       <div class="gemini-schedule-row">・タイトル：${esc(p.title)}</div>
       <div class="gemini-schedule-row">・日時：${esc(p.dateLabel)} ${esc(p.timeLabel)}</div>
+      ${relativeNoteHTML}
+      ${recurrenceHTML}
       ${warningHTML}
       ${actionsHTML}
     </div>`;
@@ -2826,8 +2830,10 @@ async function gcalRefreshGoogleDayEvents(y, m, d){
   renderGcalDailyWidget();
 }
 
-// start/endは"HH:MM"（未入力なら終日予定として扱う）
-async function gcalCreateGoogleEvent(calId, y, m, d, title, start, end){
+// start/endは"HH:MM"（未入力なら終日予定として扱う）。recurrenceは
+// "none"/"daily"/"weekly"/"monthly"で、none以外ならGoogleカレンダー
+// 標準のRRULEで繰り返し予定として登録する
+async function gcalCreateGoogleEvent(calId, y, m, d, title, start, end, recurrence){
   const pad = (n) => String(n).padStart(2, "0");
   const dateStr = `${y}-${pad(m+1)}-${pad(d)}`;
   const summary = title;
@@ -2844,6 +2850,8 @@ async function gcalCreateGoogleEvent(calId, y, m, d, title, start, end){
     const nextStr = newsDateKey(next.getFullYear(), next.getMonth(), next.getDate());
     body = { summary, start: { date: dateStr }, end: { date: nextStr } };
   }
+  const rrule = recurrence && recurrence !== "none" ? gcalBuildRRule(recurrence, new Date(y, m, d)) : "";
+  if(rrule) body.recurrence = [rrule];
   return gcalGoogleApiFetch(`calendars/${encodeURIComponent(calId)}/events`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -2894,6 +2902,25 @@ function gcalTimesOverlap(aStart, aEnd, bStart, bEnd){
   const aE = aEnd || aStart;
   const bE = bEnd || bStart;
   return aStart < bE && bStart < aE;
+}
+
+function gcalTimeToMinutes(hhmm){
+  return Number(hhmm.slice(0,2)) * 60 + Number(hhmm.slice(3,5));
+}
+function gcalMinutesToTime(min){
+  const clamped = Math.max(0, Math.min(23 * 60 + 59, min));
+  const pad = (n) => String(n).padStart(2, "0");
+  return `${pad(Math.floor(clamped / 60))}:${pad(clamped % 60)}`;
+}
+
+// Googleカレンダーの繰り返し予定用RRULEを組み立てる。dateは1回目の日付
+// （曜日・日にちの基準）として使う
+const GCAL_RRULE_BYDAY = ["SU","MO","TU","WE","TH","FR","SA"];
+function gcalBuildRRule(recurrence, dateObj){
+  if(recurrence === "daily") return "RRULE:FREQ=DAILY";
+  if(recurrence === "weekly") return `RRULE:FREQ=WEEKLY;BYDAY=${GCAL_RRULE_BYDAY[dateObj.getDay()]}`;
+  if(recurrence === "monthly") return `RRULE:FREQ=MONTHLY;BYMONTHDAY=${dateObj.getDate()}`;
+  return "";
 }
 
 // 指定日の既存の予定一覧を、Google連携中／未連携どちらの場合でも同じ形
@@ -2947,6 +2974,9 @@ async function geminiRegisterSchedule(args){
   const dateStr = args && typeof args.date === "string" ? args.date : "";
   const rawStart = args && typeof args.start_time === "string" ? args.start_time : "";
   const rawEnd = args && typeof args.end_time === "string" ? args.end_time : "";
+  const anchorTitle = (args && typeof args.relative_anchor_title === "string" ? args.relative_anchor_title : "").trim();
+  const relativePosition = args && args.relative_position === "before" ? "before" : "after";
+  const recurrence = ["daily", "weekly", "monthly"].includes(args && args.recurrence) ? args.recurrence : "none";
 
   const dm = /^(\d{4})-(\d{2})-(\d{2})$/.exec(dateStr);
   if(!title || !dm){
@@ -2958,8 +2988,37 @@ async function geminiRegisterSchedule(args){
     return { text: "日付を認識できませんでした。もう一度お試しください。" };
   }
   const timeRe = /^([01]\d|2[0-3]):[0-5]\d$/;
-  const start = timeRe.test(rawStart) ? rawStart : "";
+  let start = timeRe.test(rawStart) ? rawStart : "";
   let end = timeRe.test(rawEnd) ? rawEnd : "";
+  let relativeNote = "";
+
+  // 「〜のあと／〜の前」のように既存の予定を基準にした時間指定の場合は、
+  // Gemini自身には時刻を推測させず、ここで実際のカレンダーから基準予定を
+  // 検索して開始時刻を自動計算する
+  if(!start && anchorTitle){
+    const anchor = await geminiFindScheduleByQuery(dateStr, anchorTitle);
+    if(!anchor){
+      return { text: `基準となる「${anchorTitle}」の予定が${y}年${m+1}月${d}日(${NEWS_WEEKDAYS[dateObj.getDay()]})に見つかりませんでした。時刻を指定してもう一度お試しください。` };
+    }
+    if(relativePosition === "before"){
+      const base = anchor.start || anchor.end;
+      if(base){
+        end = base;
+        start = gcalMinutesToTime(gcalTimeToMinutes(base) - 60);
+      }
+    } else {
+      const base = anchor.end || anchor.start;
+      if(base){
+        start = base;
+        end = gcalMinutesToTime(gcalTimeToMinutes(base) + 60);
+      }
+    }
+    if(!start){
+      return { text: `「${anchor.title || anchorTitle}」は終日の予定のため、前後の時刻を自動計算できませんでした。時刻を指定してもう一度お試しください。` };
+    }
+    relativeNote = `「${anchor.title || anchorTitle}」の${relativePosition === "before" ? "直前" : "直後"}に自動設定`;
+  }
+
   if(start && end && end <= start){
     return { text: "終了時刻は開始時刻より後にしてください。" };
   }
@@ -2972,6 +3031,10 @@ async function geminiRegisterSchedule(args){
 
   const dateLabel = `${y}年${m+1}月${d}日(${NEWS_WEEKDAYS[dateObj.getDay()]})`;
   const timeLabel = start ? `${start}${end ? `〜${end}` : ""}` : "終日";
+  const recurrenceLabel = recurrence === "daily" ? "毎日繰り返し"
+    : recurrence === "weekly" ? `毎週${NEWS_WEEKDAYS[dateObj.getDay()]}曜日に繰り返し`
+    : recurrence === "monthly" ? `毎月${d}日に繰り返し`
+    : "";
 
   let warning = "";
   try{
@@ -2984,17 +3047,37 @@ async function geminiRegisterSchedule(args){
   }catch(e){ /* 重複チェックに失敗しても確認カード自体は表示する */ }
 
   return {
-    preview: { title, dateLabel, timeLabel, warning, args: { y, m, d, title, start, end } },
+    preview: { title, dateLabel, timeLabel, warning, relativeNote, recurrenceLabel, args: { y, m, d, title, start, end, recurrence } },
   };
+}
+
+// Googleカレンダー未連携時（ローカル保存）は繰り返し予定の仕組みが無いため、
+// 直近の一定回数分を個別の予定として展開して登録する簡易対応。同じ
+// recurrenceIdを持たせておき、将来の一括編集・削除の手がかりにする
+const GCAL_LOCAL_RECURRENCE_COUNT = { daily: 14, weekly: 8, monthly: 6 };
+function gcalRecurrenceOccurrenceDates(recurrence, y, m, d){
+  const count = GCAL_LOCAL_RECURRENCE_COUNT[recurrence];
+  if(!count) return [{ y, m, d }];
+  const dates = [];
+  for(let i = 0; i < count; i++){
+    let dt;
+    if(recurrence === "daily") dt = new Date(y, m, d + i);
+    else if(recurrence === "weekly") dt = new Date(y, m, d + i * 7);
+    else dt = new Date(y, m + i, d);
+    dates.push({ y: dt.getFullYear(), m: dt.getMonth(), d: dt.getDate() });
+  }
+  return dates;
 }
 
 // 確認カードの「この内容で登録する」（またはチャットでの「OK」相当の返答）で
 // 呼ばれ、ここで初めて実際にカレンダーへ書き込む。書き込み後は同じメッセージ
 // のstatusを更新し、結果を新しいモデル発言としてチャットに積む
 async function geminiConfirmSchedule(msg){
-  const { y, m, d, title, start, end } = msg.preview.args;
+  const { y, m, d, title, start, end, recurrence } = msg.preview.args;
   const dateLabel = msg.preview.dateLabel;
   const timeLabel = msg.preview.timeLabel;
+  const recurrenceLabel = msg.preview.recurrenceLabel;
+  let localOccurrenceCount = 0;
 
   try{
     if(gcalGoogleAccessToken){
@@ -3007,7 +3090,7 @@ async function geminiConfirmSchedule(msg){
       let activeId = null;
       try{ activeId = localStorage.getItem(gcalStorageKey(GCAL_GOOGLE_ACTIVE_KEY)); }catch(e){}
       if(!activeId || !cals.some(c => c.id === activeId)) activeId = cals[0].id;
-      const created = await gcalCreateGoogleEvent(activeId, y, m, d, title, start, end);
+      const created = await gcalCreateGoogleEvent(activeId, y, m, d, title, start, end, recurrence);
       // このチャット経由の追加は日／月カードのキャッシュを経由しないため、
       // 次にカレンダー画面を開いたときに確実に反映されるよう、切断時と
       // 同様にキャッシュを空にして再取得を促す
@@ -3017,13 +3100,21 @@ async function geminiConfirmSchedule(msg){
     } else {
       const author = gcalLoadAuthorName() || getProfileName() || "";
       const store = loadGcalStore();
-      const dateKey = newsDateKey(y, m, d);
       if(!store.events[store.activeId]) store.events[store.activeId] = {};
-      if(!store.events[store.activeId][dateKey]) store.events[store.activeId][dateKey] = [];
-      const newEvent = { id: gcalGenId("e"), title, start, end, author };
-      store.events[store.activeId][dateKey].push(newEvent);
+      const occurrences = gcalRecurrenceOccurrenceDates(recurrence, y, m, d);
+      const recurrenceId = occurrences.length > 1 ? gcalGenId("r") : "";
+      let first = null;
+      occurrences.forEach(occ => {
+        const dateKey = newsDateKey(occ.y, occ.m, occ.d);
+        if(!store.events[store.activeId][dateKey]) store.events[store.activeId][dateKey] = [];
+        const newEvent = { id: gcalGenId("e"), title, start, end, author };
+        if(recurrenceId) newEvent.recurrenceId = recurrenceId;
+        store.events[store.activeId][dateKey].push(newEvent);
+        if(!first) first = { newEvent, dateKey, ...occ };
+      });
       saveGcalStore(store);
-      geminiLastSchedule = { source: "local", storeActiveId: store.activeId, eventId: newEvent.id, dateKey, y, m, d, start, end, title };
+      localOccurrenceCount = occurrences.length;
+      geminiLastSchedule = { source: "local", storeActiveId: store.activeId, eventId: first.newEvent.id, dateKey: first.dateKey, y: first.y, m: first.m, d: first.d, start, end, title };
     }
   }catch(e){
     msg.status = "pending";
@@ -3032,7 +3123,10 @@ async function geminiConfirmSchedule(msg){
   }
 
   msg.status = "confirmed";
-  pushGeminiMessage({ role: "model", text: `✅ ${dateLabel} ${timeLabel} に「${title}」を登録しました。` });
+  const recurrenceSuffix = recurrenceLabel
+    ? `（${recurrenceLabel}${localOccurrenceCount > 1 ? `・直近${localOccurrenceCount}回分をこの端末に登録` : ""}）`
+    : "";
+  pushGeminiMessage({ role: "model", text: `✅ ${dateLabel} ${timeLabel} に「${title}」を登録しました${recurrenceSuffix}。` });
 }
 
 // 確認カードの「キャンセル・修正する」（またはチャットでの「キャンセル」相当の
