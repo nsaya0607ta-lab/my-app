@@ -428,7 +428,7 @@ export function certStat(c){
   return { bp, best, plays:hist.length, lvl, tiers:tiers.length };
 }
 
-/* ---- 総合エンジニアレベル（全資格の合計BPから連続的に算出）----
+/* ---- 総合レベル（全資格の合計BPから連続的に算出）----
    資格レベルが TIERS の段数なのに対し、総合は「合計BPの数式」で出す。
    資格が増えても合計BPが増えて自然にレベルが上がるだけなので破綻しない。 */
 
@@ -479,15 +479,17 @@ export function defaultName(){ return "エンジニア" + (state.currentUserId ?
 
 export function buildPublic(){
   const certLevels={};
+  const certBP={};
   CERTS.forEach(c=>{
     if(c.status==="ready"){
       const bp=parseInt(localStorage.getItem("cert_"+c.id+"_bp")||"0",10)||0;
       certLevels[c.id]=(c.TIERS||[]).filter(t=>bp>=t.bp).length;
+      certBP[c.id]=bp;
     }
   });
   const ov=overallStat();
   return { displayName:getProfileName()||defaultName(), totalBP:ov.tbp, overallLevel:ov.lv,
-           title:ov.title, certLevels, updatedAt:new Date().toISOString() };
+           title:ov.title, certLevels, certBP, updatedAt:new Date().toISOString() };
 }
 // ランキングへ自動公開・更新（ログイン中なら表示名の有無に関わらず自動で反映）
 

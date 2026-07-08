@@ -9,6 +9,7 @@ export const S = {
 export const state = {
   practicePick:false,
   historyTab:"all",       // 履歴タブ: all | practice | exam | review
+  rankingTab:"overall",   // ランキングタブ: overall | 資格id（例：az900）
   db:null, currentUserId:null, currentUser:null,
   authReady:false, guestMode:false, authMode:"signup", authBusy:false,
   cloudData:null, profileChecked:false,

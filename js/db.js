@@ -47,6 +47,19 @@ import { S, state } from './state.js';
           return c.data().count + 1;
         } catch (e) { return null; }
       },
+      // 資格別ランキング（certBP.{certId} の降順）
+      topByCert: async (certId, n) => {
+        const q = query(collection(state.db, "leaderboard"), orderBy("certBP." + certId, "desc"), limit(n || 50));
+        const snap = await getDocs(q);
+        const rows = []; snap.forEach(d => rows.push(Object.assign({ uid: d.id }, d.data())));
+        return rows;
+      },
+      myRankByCert: async (certId, myBP) => {
+        try {
+          const c = await getCountFromServer(query(collection(state.db, "leaderboard"), where("certBP." + certId, ">", myBP)));
+          return c.data().count + 1;
+        } catch (e) { return null; }
+      },
       me: async () => {
         if (!state.currentUserId) return null;
         try { const d = await getDoc(doc(state.db, "leaderboard", state.currentUserId)); return d.exists() ? d.data() : null; }
