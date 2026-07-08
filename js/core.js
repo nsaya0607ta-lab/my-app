@@ -225,17 +225,16 @@ export function finish(){
   // モード判定（exam=試験 / practice=演習 / review=復習）
   const runMode = S.review ? "review" : (S.mode==="practice" ? "practice" : "exam");
   let score, scoreMax, exp, mult=0;
-  if(runMode==="practice"){
-    // 演習：1000点換算を廃止。実際の配点合計(total)を満点、獲得点を切り上げてスコア。EXP=スコア
+  if(runMode==="practice" || runMode==="review"){
+    // 演習・復習：1000点換算を廃止。実際の配点合計(total)を満点、獲得点を切り上げてスコア。EXP=スコア
     score = Math.ceil(earned);
     scoreMax = total;
     exp = score;
   } else {
-    // 試験・復習：従来どおり1000点満点換算（変更しない）
+    // 試験：1000点満点換算
     score = total ? Math.round(earned/total*1000) : 0;
     scoreMax = 1000;
-    if(runMode==="exam"){ mult = examMult(score); exp = calcExp(score, "exam"); }
-    else { exp = score; }   // 復習：従来どおり点数がそのままEXP
+    mult = examMult(score); exp = calcExp(score, "exam");
   }
 
   // EXPをBP(=経験値)として加算 → 資格内レベルと全体レベルの両方に反映
