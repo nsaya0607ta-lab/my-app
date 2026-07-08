@@ -29,6 +29,35 @@ body{
   background:radial-gradient(120% 90% at 50% -10%, #e0f2fe 0%, var(--bg) 65%) fixed;
   color:var(--text); min-height:100vh; -webkit-font-smoothing:antialiased;
 }
+/* 起動スプラッシュ：ゴールドの犬アイコンを中央に浮かび上がらせ、
+   3秒間表示した後にjs/main.jsからフェードアウトさせる（js/main.js参照） */
+.splash-screen{
+  position:fixed; inset:0; z-index:3000;
+  display:flex; align-items:center; justify-content:center;
+  background:radial-gradient(120% 90% at 50% 40%, #16283f 0%, #0a1626 70%);
+  opacity:1; transition:opacity .5s ease;
+}
+.splash-screen.splash-hide{opacity:0; pointer-events:none;}
+.splash-glow{
+  position:absolute; width:min(70vw,320px); height:min(70vw,320px);
+  border-radius:50%;
+  background:radial-gradient(circle, rgba(217,119,6,.35) 0%, rgba(217,119,6,0) 70%);
+  animation:splash-pulse 2.4s ease-in-out infinite;
+}
+.splash-icon{
+  position:relative; width:min(56vw,220px); height:min(56vw,220px);
+  border-radius:50%; object-fit:cover;
+  box-shadow:0 0 0 1px rgba(217,119,6,.4), 0 0 40px rgba(217,119,6,.35);
+  animation:splash-in .9s cubic-bezier(.22,1,.36,1) both;
+}
+@keyframes splash-in{
+  0%{opacity:0; transform:scale(.82); filter:blur(6px);}
+  100%{opacity:1; transform:scale(1); filter:blur(0);}
+}
+@keyframes splash-pulse{
+  0%,100%{transform:scale(1); opacity:.9;}
+  50%{transform:scale(1.08); opacity:1;}
+}
 .shell{max-width:480px;margin:0 auto;padding:max(22px,env(safe-area-inset-top)) 18px calc(30px + env(safe-area-inset-bottom));display:flex;flex-direction:column;min-height:100vh;}
 .top{margin-bottom:18px;}
 .top-row{display:flex;align-items:flex-start;justify-content:space-between;gap:10px;}

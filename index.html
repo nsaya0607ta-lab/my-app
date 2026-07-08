@@ -16,9 +16,13 @@
      特にホーム画面に追加したSafari（standalone PWA）は古いCSS/JSを強くキャッシュ
      しやすいため、この2ファイル（または読み込まれる他のJS/CSS）を更新した際は、
      必ず下記2箇所の ?v= の値を同時に更新してください（例: 日付や連番でOK）。 -->
-<link rel="stylesheet" href="css/style.css?v=20260705h">
+<link rel="stylesheet" href="css/style.css?v=20260708a">
 </head>
 <body>
+<div id="splash-screen" class="splash-screen" aria-hidden="true">
+  <div class="splash-glow"></div>
+  <img class="splash-icon" src="assets/icon/app-icon-512.png" alt="">
+</div>
 <div class="shell">
   <div id="statusbar" class="statusbar"></div>
   <div class="top">
@@ -41,6 +45,6 @@
   <div id="app" class="page"></div>
 </div>
 
-<script type="module" src="js/main.js?v=20260705h"></script>
+<script type="module" src="js/main.js?v=20260708a"></script>
 </body>
 </html>
