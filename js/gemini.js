@@ -6,12 +6,32 @@
    ========================================================================= */
 
 const MAX_HISTORY_TURNS = 20;
+const WEEKDAY_JA = ["日","月","火","水","木","金","土"];
 
 export const geminiChat = {
   messages: [],   // {role:"user"|"model", text}[]
   busy: false,
   error: null,
 };
+
+// 「予定を入れて」のような依頼をGeminiがregister_schedule関数呼び出しとして
+// 返してきたとき、実際にカレンダーへ書き込む処理はカレンダー機能を持つ
+// render.js側に任せる。循環importを避けるため、起動時にrender.jsから
+// このセッター経由でハンドラーを注入してもらう
+let scheduleHandler = null;
+export function setGeminiScheduleHandler(fn){
+  scheduleHandler = fn;
+}
+
+function currentDateContext(){
+  const now = new Date();
+  const pad = (n) => String(n).padStart(2, "0");
+  return {
+    date: `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`,
+    weekday: WEEKDAY_JA[now.getDay()],
+    time: `${pad(now.getHours())}:${pad(now.getMinutes())}`,
+  };
+}
 
 export async function sendGeminiMessage(text){
   const trimmed = (text || "").trim();
@@ -30,11 +50,17 @@ export async function sendGeminiMessage(text){
     const res = await fetch("/api/gemini/chat", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ message: trimmed, history }),
+      body: JSON.stringify({ message: trimmed, history, today: currentDateContext() }),
     });
     const data = await res.json().catch(() => ({}));
     if(!res.ok) throw new Error((data && data.error) || ("request-failed-" + res.status));
-    geminiChat.messages.push({ role: "model", text: data.reply || "" });
+
+    if(data.functionCall && data.functionCall.name === "register_schedule" && scheduleHandler){
+      const result = await scheduleHandler(data.functionCall.args || {});
+      geminiChat.messages.push({ role: "model", text: (result && result.text) || "予定の登録処理でエラーが発生しました。" });
+    } else {
+      geminiChat.messages.push({ role: "model", text: data.reply || "" });
+    }
   }catch(e){
     geminiChat.error = "送信に失敗しました。通信環境を確認して、もう一度お試しください。";
   }finally{
