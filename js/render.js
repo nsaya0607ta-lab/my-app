@@ -114,7 +114,11 @@ function updateHeaderTitle(){
   }
   topEl.style.display = "";
   const c = S.cert ? certById(S.cert) : null;
-  titleEl.textContent = c ? c.code : "ホーム";
+  // 資格コード（AZ-900 など）はステータスバーのバッジに既に出ているため、
+  // 見出しでの重複表示はやめて上のスペースを詰める。資格未選択の画面のみ「ホーム」を出す。
+  titleEl.style.display = c ? "none" : "";
+  titleEl.textContent = c ? "" : "ホーム";
+  topEl.classList.toggle("top--notitle", !!c);
 }
 
 export function render(){
@@ -324,10 +328,15 @@ export function renderUsername(){
   window.scrollTo(0,0);
 }
 
+// ホーム画面下部の4モードボタン用アイコン（洗練されたラインアート）
+const MENU_ICON_PRACTICE = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="4" width="11" height="16" rx="2.2"></rect><path d="M8.3 3.4h4.4a1 1 0 0 1 1 1V5h-6.4v-.6a1 1 0 0 1 1-1Z"></path><path d="M8 10h5M8 13h3.3"></path><path d="M14.6 14.4 18.9 10l1.6 1.6-4.3 4.3h-1.6v-1.5Z"></path></svg>`;
+const MENU_ICON_EXAM = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M9.5 2h5"></path><path d="M12 2v3"></path><circle cx="12" cy="13.5" r="8"></circle><circle cx="12" cy="13.5" r="4"></circle><circle cx="12" cy="13.5" r="1"></circle><path d="m18.2 7.3 1.4-1.4"></path></svg>`;
+const MENU_ICON_REVIEW = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path stroke-width="1.4" opacity=".55" d="M12 5.6C10.3 4.3 7.9 3.8 5.5 4.2a1 1 0 0 0-.8 1v13.2a1 1 0 0 0 1.2 1c2-.4 4-.1 5.5 1a.7.7 0 0 0 1.2 0c1.5-1.1 3.5-1.4 5.5-1a1 1 0 0 0 1.2-1V5.2a1 1 0 0 0-.8-1c-2.4-.4-4.8.1-6.5 1.4Z"></path><path stroke-width="1.4" opacity=".55" d="M12 5.6v14"></path><path stroke-width="2.1" d="M15.6 10.3a4 4 0 1 0 1 4.4"></path><path stroke-width="2.1" d="m16.3 8.7.3 2.2-2.2-.3"></path></svg>`;
+const MENU_ICON_DICT = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5.6C10.3 4.3 7.9 3.8 5.5 4.2a1 1 0 0 0-.8 1v13.2a1 1 0 0 0 1.2 1c2-.4 4-.1 5.5 1a.7.7 0 0 0 1.2 0c1.5-1.1 3.5-1.4 5.5-1a1 1 0 0 0 1.2-1V5.2a1 1 0 0 0-.8-1c-2.4-.4-4.8.1-6.5 1.4Z"></path><path d="M12 5.6v14"></path><text x="6.8" y="13.2" font-size="5.2" font-weight="800" stroke="none" fill="currentColor">A</text><text x="14" y="13.2" font-size="5.2" font-weight="800" stroke="none" fill="currentColor">Z</text></svg>`;
+
 export function renderHome(){
   updateHeaderNav(true);
   const h=loadHist();
-  const c=certById(S.cert)||{};
   const ov=overallStat();
 
   // 統計データの集計
@@ -360,16 +369,15 @@ export function renderHome(){
   const passPct = PASS/1000*100;
 
   app.innerHTML = `
-    <div class="q-head" style="margin-bottom:14px">
+    <div class="q-head" style="margin-bottom:10px">
       <button class="quit" data-go="${certsBackTarget()}">← 資格選択</button>
-      <span class="q-count" style="color:${c.accent||'var(--accent)'}">${esc(c.code||"")}</span>
     </div>
 
     <div class="stats-dash">
       <div class="stats-dash-head">
         <span class="stats-dash-ico">📊</span>
         <div>
-          <div class="stats-dash-ttl">${esc(c.code)} 学習統計ダッシュボード</div>
+          <div class="stats-dash-ttl">学習統計ダッシュボード</div>
           <div class="stats-dash-sub">これまでの学習の積み重ね</div>
         </div>
       </div>
@@ -432,13 +440,38 @@ export function renderHome(){
         <button class="pcount-btn" data-pc="15">15問</button>
       </div>
       <button class="link" data-pcancel>キャンセル</button>
-    </div>` : `
-    <button class="cta" data-practice style="margin-top:16px">📝 演習モード</button>`}
+    </div>` : ``}
 
-    <button class="cta cta-exam" data-mode="exam" style="margin-top:12px">🎯 試験モード</button>
+    <div class="menu-stack" style="margin-top:${state.practicePick ? "12" : "18"}px">
+      ${!state.practicePick ? `
+      <button class="menu-btn menu-btn--practice" data-practice>
+        <span class="menu-btn-icon">${MENU_ICON_PRACTICE}</span>
+        <span class="menu-btn-text"><span class="menu-btn-label">演習モード</span></span>
+        <span class="menu-btn-chevron">›</span>
+      </button>` : ``}
 
-    ${(loadWrong().length)?`<button class="ghost rev-btn" data-review style="margin-top:12px">🔁 復習モード（間違えた ${loadWrong().length} 問）</button>`:`<div class="x-hint" style="margin-top:12px;text-align:center">復習モード：間違えた問題がここに溜まり、再挑戦できます</div>`}
-    <button class="ghost" data-go="dict" style="margin-top:10px">📖 用語辞典</button>
+      <button class="menu-btn menu-btn--exam" data-mode="exam">
+        <span class="menu-btn-icon">${MENU_ICON_EXAM}</span>
+        <span class="menu-btn-text"><span class="menu-btn-label">試験モード</span></span>
+        <span class="menu-btn-chevron">›</span>
+      </button>
+
+      ${(loadWrong().length)?`
+      <button class="menu-btn menu-btn--review" data-review>
+        <span class="menu-btn-icon-wrap">
+          <span class="menu-btn-icon">${MENU_ICON_REVIEW}</span>
+          <span class="menu-btn-badge">${loadWrong().length}</span>
+        </span>
+        <span class="menu-btn-text"><span class="menu-btn-label">復習モード（間違えた ${loadWrong().length} 問）</span></span>
+        <span class="menu-btn-chevron">›</span>
+      </button>`:`<div class="x-hint" style="margin:0;text-align:center">復習モード：間違えた問題がここに溜まり、再挑戦できます</div>`}
+
+      <button class="menu-btn menu-btn--dict" data-go="dict">
+        <span class="menu-btn-icon">${MENU_ICON_DICT}</span>
+        <span class="menu-btn-text"><span class="menu-btn-label">用語辞典</span></span>
+        <span class="menu-btn-chevron">›</span>
+      </button>
+    </div>
     ${h.length?`<button class="link" data-go="history">スコア履歴を見る（${h.length}件）</button>`:
       `<div class="install">ヒント：ブラウザの共有メニューから「ホーム画面に追加」すると、アプリのように起動できます。</div>`}
     ${state.currentUser
