@@ -100,7 +100,10 @@ export async function sendGeminiMessage(text, onChunk){
       res = await doFetch();
     } catch (networkErr) {
       // 接続確立自体に失敗した場合のみ、瞬断などを想定して一度だけ黙って
-      // 再試行する（サーバー側の応答が始まった後の切断はここでは扱わない）
+      // 再試行する（サーバー側の応答が始まった後の切断はここでは扱わない）。
+      // ミリ秒単位で即座に再送するとサーバー側のリトライと重なって無駄な
+      // Gemini APIリクエストを増やすため、必ず3秒以上待ってから再試行する
+      await new Promise((resolve) => setTimeout(resolve, 3000));
       res = await doFetch();
     }
 

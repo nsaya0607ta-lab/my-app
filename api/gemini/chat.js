@@ -8,13 +8,16 @@ const MODEL = process.env.GEMINI_MODEL || "gemini-2.5-flash";
 const MAX_MESSAGE_LEN = 2000;
 const MAX_HISTORY_TURNS = 20;
 const UPSTREAM_TIMEOUT_MS = 25000;
-const UPSTREAM_MAX_ATTEMPTS = 3;
-const UPSTREAM_BACKOFF_MS = [500, 1500];
+// リトライしすぎるとGemini無料枠のクォータ（分単位のリクエスト数上限）を
+// かえって早く消費してしまうため、リトライは最大1回までに制限し、
+// 再試行の間隔も必ず3秒以上空ける（ミリ秒単位の連続リトライは行わない）。
+const UPSTREAM_MAX_ATTEMPTS = 2;
+const UPSTREAM_RETRY_DELAY_MS = 3000;
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 // Gemini APIへのリクエストは、一時的なネットワーク不調やGemini側の混雑
-// （429/5xx）で失敗することがある。ここで短いタイムアウト＋数回のリトライを
+// （429/5xx）で失敗することがある。ここで短いタイムアウト＋最大1回のリトライを
 // かけることで、瞬間的な遅延がそのままユーザーへの「送信に失敗しました」
 // エラーに直結しないようにする。ストリーム開始前（レスポンスヘッダー受信前）
 // の失敗だけを対象とし、ストリーミング開始後の切断はここでは扱わない。
@@ -27,7 +30,7 @@ async function fetchGeminiWithRetry(url, options) {
       const res = await fetch(url, { ...options, signal: controller.signal });
       clearTimeout(timer);
       if ((res.status === 429 || res.status >= 500) && attempt < UPSTREAM_MAX_ATTEMPTS - 1) {
-        await sleep(UPSTREAM_BACKOFF_MS[attempt] || UPSTREAM_BACKOFF_MS[UPSTREAM_BACKOFF_MS.length - 1]);
+        await sleep(UPSTREAM_RETRY_DELAY_MS);
         continue;
       }
       return res;
@@ -35,7 +38,7 @@ async function fetchGeminiWithRetry(url, options) {
       clearTimeout(timer);
       lastErr = e;
       if (attempt < UPSTREAM_MAX_ATTEMPTS - 1) {
-        await sleep(UPSTREAM_BACKOFF_MS[attempt] || UPSTREAM_BACKOFF_MS[UPSTREAM_BACKOFF_MS.length - 1]);
+        await sleep(UPSTREAM_RETRY_DELAY_MS);
         continue;
       }
     }
