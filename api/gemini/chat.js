@@ -1,9 +1,46 @@
 // Gemini APIキーはサーバー側の環境変数（Vercelのプロジェクト設定）でのみ保持し、
 // フロントエンドには一切渡さない。クライアントはこのエンドポイントにメッセージを
 // POSTするだけで、実際のGemini呼び出しはここで行う。
-const MODEL = process.env.GEMINI_MODEL || "gemini-2.5-flash";
+// gemini-3.5-flashは軽量・低レイテンシ用途向けのモデル。応答速度を優先しつつ、
+// 環境変数で他モデルへの切り替えも可能にしておく。
+const MODEL = process.env.GEMINI_MODEL || "gemini-3.5-flash";
 const MAX_MESSAGE_LEN = 2000;
 const MAX_HISTORY_TURNS = 20;
+const UPSTREAM_TIMEOUT_MS = 25000;
+const UPSTREAM_MAX_ATTEMPTS = 3;
+const UPSTREAM_BACKOFF_MS = [500, 1500];
+
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+// Gemini APIへのリクエストは、一時的なネットワーク不調やGemini側の混雑
+// （429/5xx）で失敗することがある。ここで短いタイムアウト＋数回のリトライを
+// かけることで、瞬間的な遅延がそのままユーザーへの「送信に失敗しました」
+// エラーに直結しないようにする。ストリーム開始前（レスポンスヘッダー受信前）
+// の失敗だけを対象とし、ストリーミング開始後の切断はここでは扱わない。
+async function fetchGeminiWithRetry(url, options) {
+  let lastErr;
+  for (let attempt = 0; attempt < UPSTREAM_MAX_ATTEMPTS; attempt++) {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), UPSTREAM_TIMEOUT_MS);
+    try {
+      const res = await fetch(url, { ...options, signal: controller.signal });
+      clearTimeout(timer);
+      if ((res.status === 429 || res.status >= 500) && attempt < UPSTREAM_MAX_ATTEMPTS - 1) {
+        await sleep(UPSTREAM_BACKOFF_MS[attempt] || UPSTREAM_BACKOFF_MS[UPSTREAM_BACKOFF_MS.length - 1]);
+        continue;
+      }
+      return res;
+    } catch (e) {
+      clearTimeout(timer);
+      lastErr = e;
+      if (attempt < UPSTREAM_MAX_ATTEMPTS - 1) {
+        await sleep(UPSTREAM_BACKOFF_MS[attempt] || UPSTREAM_BACKOFF_MS[UPSTREAM_BACKOFF_MS.length - 1]);
+        continue;
+      }
+    }
+  }
+  throw lastErr || new Error("gemini-request-failed");
+}
 
 // ユーザーが「予定を入れて」のように話しかけたとき、Geminiにこの関数を
 // 呼び出させて日付・時刻・タイトルを構造化データとして抽出させる。実際の
@@ -130,9 +167,19 @@ module.exports = async (req, res) => {
     time: typeof body.today.time === "string" ? body.today.time.slice(0, 5) : "",
   } : null;
 
+  // streamGenerateContent（SSE）を使い、Geminiが生成したテキストを受信次第
+  // 逐次クライアントへ転送する。これによりVercelの応答タイムアウト対策になる
+  // （最初の1バイトが速く返る）だけでなく、ユーザーにも「考え中」のまま長時間
+  // 待たせず、生成中のテキストがその場で表示されるようになる。
+  // クライアントへは改行区切りJSON（NDJSON）で {"type": ...} イベントを送る。
+  let streamStarted = false;
+  const send = (obj) => {
+    res.write(JSON.stringify(obj) + "\n");
+  };
+
   try {
-    const url = `https://generativelanguage.googleapis.com/v1beta/models/${MODEL}:generateContent?key=${apiKey}`;
-    const r = await fetch(url, {
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/${MODEL}:streamGenerateContent?alt=sse&key=${apiKey}`;
+    const r = await fetchGeminiWithRetry(url, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -142,36 +189,85 @@ module.exports = async (req, res) => {
         generationConfig: { temperature: 0.7, maxOutputTokens: 1024 },
       }),
     });
-    const data = await r.json();
+
     if (!r.ok) {
-      console.error("gemini api error:", data);
+      let data = null;
+      try { data = await r.json(); } catch (_) { /* ボディが無い/JSONでない場合は無視 */ }
+      console.error("gemini api error:", r.status, data);
       res.status(502).json({ error: (data && data.error && data.error.message) || "gemini-request-failed" });
       return;
     }
 
-    const candidate = data && data.candidates && data.candidates[0];
-    const parts = (candidate && candidate.content && candidate.content.parts) || [];
+    res.writeHead(200, {
+      "Content-Type": "application/x-ndjson; charset=utf-8",
+      "Cache-Control": "no-cache, no-transform",
+      "X-Accel-Buffering": "no",
+    });
+    streamStarted = true;
 
-    const functionCallPart = parts.find((p) => p.functionCall && SCHEDULE_FUNCTION_NAMES.has(p.functionCall.name));
-    if (functionCallPart) {
-      res.status(200).json({ functionCall: { name: functionCallPart.functionCall.name, args: functionCallPart.functionCall.args || {} } });
-      return;
+    let replyText = "";
+    let functionCallResult = null;
+    let blockReason = null;
+    let buffer = "";
+    const decoder = new TextDecoder();
+    const reader = r.body.getReader();
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+
+      // SSEは "data: {...}\n\n" 形式でイベントが区切られて届く
+      let sepIndex;
+      while ((sepIndex = buffer.indexOf("\n\n")) !== -1) {
+        const rawEvent = buffer.slice(0, sepIndex);
+        buffer = buffer.slice(sepIndex + 2);
+        const dataLine = rawEvent.split("\n").find((l) => l.startsWith("data:"));
+        if (!dataLine) continue;
+        const jsonStr = dataLine.slice(5).trim();
+        if (!jsonStr || jsonStr === "[DONE]") continue;
+
+        let chunk;
+        try { chunk = JSON.parse(jsonStr); } catch (_) { continue; }
+
+        const candidate = chunk && chunk.candidates && chunk.candidates[0];
+        const parts = (candidate && candidate.content && candidate.content.parts) || [];
+        for (const p of parts) {
+          if (p.functionCall && SCHEDULE_FUNCTION_NAMES.has(p.functionCall.name)) {
+            functionCallResult = { name: p.functionCall.name, args: p.functionCall.args || {} };
+          } else if (typeof p.text === "string" && p.text) {
+            replyText += p.text;
+            send({ type: "chunk", text: p.text });
+          }
+        }
+        if (chunk && chunk.promptFeedback && chunk.promptFeedback.blockReason) {
+          blockReason = chunk.promptFeedback.blockReason;
+        }
+      }
     }
 
-    const reply = parts.map((p) => p.text || "").join("");
-    if (!reply) {
-      const blocked = data && data.promptFeedback && data.promptFeedback.blockReason;
-      res.status(200).json({
-        reply: blocked
+    if (functionCallResult) {
+      send({ type: "functionCall", name: functionCallResult.name, args: functionCallResult.args });
+    } else if (!replyText) {
+      send({
+        type: "done",
+        reply: blockReason
           ? "この内容にはお答えできませんでした。別の聞き方でもう一度お試しください。"
           : "回答を生成できませんでした。もう一度お試しください。",
       });
-      return;
+    } else {
+      send({ type: "done", reply: replyText });
     }
-
-    res.status(200).json({ reply });
+    res.end();
   } catch (e) {
     console.error("gemini chat error:", e);
-    res.status(500).json({ error: "internal-error" });
+    if (streamStarted) {
+      // 生成途中でネットワークが切れた場合でも、ここまでに送ったテキストは
+      // クライアント側に残しつつ、エラーを伝えて即座に諦めさせない
+      try { send({ type: "error", error: "internal-error" }); } catch (_) { /* noop */ }
+      try { res.end(); } catch (_) { /* noop */ }
+    } else {
+      res.status(500).json({ error: "internal-error" });
+    }
   }
 };
