@@ -114,10 +114,12 @@ function updateHeaderTitle(){
   }
   topEl.style.display = "";
   const c = S.cert ? certById(S.cert) : null;
-  // 資格コード（AZ-900 など）はステータスバーのバッジに既に出ているため、
-  // 見出しでの重複表示はやめて上のスペースを詰める。資格未選択の画面のみ「ホーム」を出す。
-  titleEl.style.display = c ? "none" : "";
-  titleEl.textContent = c ? "" : "ホーム";
+  // 資格選択中は、隠していた見出し枠にバッジを出す（ランキング/プロフアイコン
+  // 横の空白を埋める）。資格未選択の画面では従来通り「ホーム」を表示。
+  titleEl.style.display = "";
+  titleEl.classList.toggle("title--badge", !!c);
+  if(c) titleEl.innerHTML = `<span class="cert-badge">${esc(c.code)}</span>`;
+  else titleEl.textContent = "ホーム";
   topEl.classList.toggle("top--notitle", !!c);
 }
 
