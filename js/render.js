@@ -1,7 +1,6 @@
 import { CERTS } from './data/certs.js';
 import { DC_PHASES, L, REGIONS } from './data/constants.js';
 import { CONCEPTS, DRAW, PASS, Q, TIERS, applySkin, certById, certStat, commit, correctSet, dcCount, dcPhase, dcTitle, esc, exportCode, fmt, getBP, getProfileName, grade, importCode, isAdminAccount, isMulti, loadHist, loadReviewStats, loadWrong, overallLevel, overallStat, pick, pts, publishLeaderboard, purchaseSkin, saveCoins, saveToCloud, selectCert, setBP, setProfileName, skinHandleIdentityChange, stars, start, startReview, totalBP } from './core.js';
-import { getLiveStocks, getLiveStocksJP } from './stocks.js';
 import { getWeather } from './weather.js';
 import { geminiChat, sendGeminiMessage, setGeminiScheduleHandler, pushGeminiMessage } from './gemini.js';
 import { SKIN_DATA } from './data/skins.js';
@@ -44,7 +43,7 @@ export function renderStatusBar(){
              || (!state.guestMode && !state.currentUser)
              || (!state.guestMode && state.currentUser && (!state.profileChecked || !getProfileName()));
   const screen = resolveScreen();
-  const otherScreens = ["ranking","profile","settings","skins","analytics","schedule","portfolio","news-japan","news-world","calendar","gemini","gemini-edit-event"];
+  const otherScreens = ["ranking","profile","settings","skins","analytics","portfolio","news-japan","news-world","calendar","gemini","gemini-edit-event"];
   if(gated || otherScreens.includes(screen)){ el.classList.remove("show"); el.innerHTML=""; return; }
   const ov = overallStat();          // 総合Lvと次Lvまでの進捗(%)
   const coins = (S.coins||0);
@@ -87,7 +86,7 @@ export function renderStatusBar(){
 // render()末尾の分岐と同じ優先順位で判定する）ため、ヘッダー周りの表示制御は
 // この「実際に描画される画面名」を使って判断する。
 function resolveScreen(){
-  const noCertScreens = ["ranking","profile","settings","skins","analytics","certs","lpic-certs","schedule","portfolio","news-japan","news-world","calendar","gemini","gemini-edit-event"];
+  const noCertScreens = ["ranking","profile","settings","skins","analytics","certs","lpic-certs","portfolio","news-japan","news-world","calendar","gemini","gemini-edit-event"];
   if(noCertScreens.includes(S.screen)) return S.screen;
   if(S.screen==="select" || !S.cert) return "select";
   return S.screen; // home/quiz/result/review/dict/transfer/history
@@ -149,7 +148,6 @@ export function render(){
   if(S.screen==="analytics") return renderAnalytics();
   if(S.screen==="certs") return renderCertList();
   if(S.screen==="lpic-certs") return renderLpicList();
-  if(S.screen==="schedule") return renderSchedule();
   if(S.screen==="portfolio") return renderPortfolio();
   if(S.screen==="news-japan") return renderNewsJapan();
   if(S.screen==="news-world") return renderNewsWorld();
@@ -1244,53 +1242,26 @@ async function loadWeatherCard(){
   startWeatherRefresh();      // 以後20分間隔でバックグラウンド自動更新
 }
 
-/* =========================================================================
-   MARKET WATCH（株価ティッカー）：ニュースカードと同じデザインシステムを
-   流用した「電光掲示板（ティッカーボード）風」の株価ティッカー。
-   銘柄名＋株価＋前日比が右から左へエンドレスに流れるマーキーと、左上の
-   最終更新日時からなる。ホーム画面には表示せず、日本経済・世界経済の
-   各ニュース画面の最上部にcreateMarketWatch()のインスタンスとしてそれぞれ
-   独立して表示する（日本経済＝JP_STOCKS＝日本の主要企業のNYSE上場ADR、
-   世界経済＝STOCKS＝米国株6銘柄。どちらもFinnhub実データ取得を同条件で試みる）。
-   起動直後はサンプル株価で表示し、Finnhubの株価APIから実際の株価を取得
-   できた場合はそちらに置き換える（東証の個別銘柄・指数はFinnhub無料枠では
-   実データが取得できないことを確認済みのため、日本経済側はNYSE上場のADRを
-   採用している）。取得に失敗した場合、一度も実データを取得できていなければ
-   引き続きサンプル値を、既に実データを取得済みの銘柄であれば最後に取得
-   できた値（最終参照値）をそのまま据え置いて表示する（実データのように
-   見える擬似変動はさせない）。
-   ========================================================================= */
-
+// ポートフォリオ画面（保有株の閲覧）が銘柄名・価格を引くための静的な
+// 銘柄マスタ（日本経済＝JP_STOCKS＝日本の主要企業のNYSE上場ADR、
+// 世界経済＝STOCKS＝米国株6銘柄）
 const STOCKS = [
-  { ticker:"MSFT", name:"Microsoft", price:435.12, previousClose:429.91, sessionLabel:"サンプル", isLive:false, everLive:false },
-  { ticker:"AMZN", name:"Amazon", price:189.50, previousClose:190.45, sessionLabel:"サンプル", isLive:false, everLive:false },
-  { ticker:"GOOGL", name:"Alphabet", price:199.80, previousClose:200.80, sessionLabel:"サンプル", isLive:false, everLive:false },
-  { ticker:"AAPL", name:"Apple", price:213.40, previousClose:211.20, sessionLabel:"サンプル", isLive:false, everLive:false },
-  { ticker:"META", name:"Meta", price:512.30, previousClose:520.10, sessionLabel:"サンプル", isLive:false, everLive:false },
-  { ticker:"NVDA", name:"NVIDIA", price:135.60, previousClose:131.90, sessionLabel:"サンプル", isLive:false, everLive:false },
+  { ticker:"MSFT", name:"Microsoft", price:435.12 },
+  { ticker:"AMZN", name:"Amazon", price:189.50 },
+  { ticker:"GOOGL", name:"Alphabet", price:199.80 },
+  { ticker:"AAPL", name:"Apple", price:213.40 },
+  { ticker:"META", name:"Meta", price:512.30 },
+  { ticker:"NVDA", name:"NVIDIA", price:135.60 },
 ];
 
-// 日本経済ニュース画面用の株価ティッカー。東証の個別銘柄・指数はFinnhub無料枠
-// では実データ取得ができないことを確認済みのため使用せず、日本の主要企業が
-// NYSEに上場しているADR（米国預託証券）を採用する。米国株と全く同じ取引所・
-// 取得経路のため、米国株と同条件（取得できた銘柄だけ実データに置き換え、
-// 失敗した銘柄はサンプル値の擬似変動）でFinnhubの実データ取得を試みる
 const JP_STOCKS = [
-  { ticker:"TM", name:"トヨタ自動車(ADR)", price:195.40, previousClose:193.80, sessionLabel:"サンプル", isLive:false, everLive:false },
-  { ticker:"SONY", name:"ソニーG(ADR)", price:24.60, previousClose:24.30, sessionLabel:"サンプル", isLive:false, everLive:false },
-  { ticker:"HMC", name:"本田技研(ADR)", price:32.10, previousClose:32.50, sessionLabel:"サンプル", isLive:false, everLive:false },
-  { ticker:"MUFG", name:"三菱UFJ(ADR)", price:11.20, previousClose:11.05, sessionLabel:"サンプル", isLive:false, everLive:false },
-  { ticker:"MFG", name:"みずほFG(ADR)", price:4.55, previousClose:4.60, sessionLabel:"サンプル", isLive:false, everLive:false },
-  { ticker:"NMR", name:"野村HD(ADR)", price:6.35, previousClose:6.20, sessionLabel:"サンプル", isLive:false, everLive:false },
+  { ticker:"TM", name:"トヨタ自動車(ADR)", price:195.40 },
+  { ticker:"SONY", name:"ソニーG(ADR)", price:24.60 },
+  { ticker:"HMC", name:"本田技研(ADR)", price:32.10 },
+  { ticker:"MUFG", name:"三菱UFJ(ADR)", price:11.20 },
+  { ticker:"MFG", name:"みずほFG(ADR)", price:4.55 },
+  { ticker:"NMR", name:"野村HD(ADR)", price:6.35 },
 ];
-
-// change(%)は常に previousClose（前日終値）を基準に計算する。
-// 実データ取得時・擬似変動時ともにこの基準値を更新して整合性を保つ。
-[STOCKS, JP_STOCKS].forEach(list => list.forEach(s => { s.change = ((s.price - s.previousClose) / s.previousClose) * 100; }));
-// 起動直後は実データ取得前なので、必ず「サンプル」表示から始める（実データと誤認させない）
-
-const STOCK_REFRESH_MS = 45000; // 実株価の再取得・擬似変動の更新間隔
-const STOCK_TICK_PCT = 0.006;   // 実データが使えない場合の1回あたりの変動幅（±0.3%程度）
 
 /* ---- 保有株（デモ取引のポートフォリオ）。端末ローカルに保存する ----
    保存キーは「現在ログインしているユーザー」ごとに独立させる。ベースキーに
@@ -1323,192 +1294,6 @@ export function applyCloudPortfolio(pf){
   savePortfolio(pf);
   if(S.screen === "portfolio") renderPortfolio();
 }
-
-function round2(n){ return Math.round(n*100)/100; }
-
-// 「◯月◯日 ◯時◯分時点」形式に整形する（最終更新日時の表示用）
-function formatStocksUpdatedAt(ms){
-  const d = new Date(ms);
-  return `${d.getMonth()+1}月${d.getDate()}日 ${d.getHours()}時${String(d.getMinutes()).padStart(2,"0")}分時点`;
-}
-
-// 実データが取得できなかった銘柄のフォールバック処理。
-// 一度でも実データを取得できたことがある銘柄（everLive）は、ランダムな擬似変動は
-// させず、最後に取得できた実際の値をそのまま据え置いて表示する（「最終参照」）。
-// まだ一度も実データを取得できていない起動直後のみ、デモ表示用に擬似的な値動きを見せる
-// （この場合のみ「サンプル」ラベルを出し、実データと誤認されないようにする）。
-function simulateStockTick(s){
-  s.isLive = false;
-  if(s.everLive){
-    // 実データ取得済みの銘柄：価格・変化率は動かさず、最後に取得できた値のまま据え置く
-    s.sessionLabel = "最終参照";
-    return;
-  }
-  const delta = (Math.random() - 0.5) * STOCK_TICK_PCT;
-  s.price = Math.max(0.01, round2(s.price * (1 + delta)));
-  s.change = ((s.price - s.previousClose) / s.previousClose) * 100;
-  s.sessionLabel = "サンプル";
-}
-
-// ティッカー1銘柄分。マーキーをシームレスにループさせるため同じ列を2周分
-// 描画する（copy=0/1）。中身のテキストはIDで直接更新し、アニメーション中の
-// DOM再構築（＝流れのリセット）を避ける。instanceIdで日本経済／世界経済の
-// 2インスタンス分のDOM idを衝突なく分離する
-function stockTapeItemHTML(instanceId, copy, i){
-  const hidden = copy === 1 ? ` aria-hidden="true"` : "";
-  return `
-    <span class="stock-tape-item"${hidden}>
-      <span class="tape-ticker" id="tape-ticker-${instanceId}-${copy}-${i}"></span>
-      <span class="tape-price" id="tape-price-${instanceId}-${copy}-${i}"></span>
-      <span class="tape-change" id="tape-change-${instanceId}-${copy}-${i}"></span>
-      <span class="tape-session" id="tape-session-${instanceId}-${copy}-${i}" style="display:none"></span>
-    </span>`;
-}
-
-// 日本経済・世界経済それぞれのMARKET WATCHインスタンスを生成するファクトリー。
-// instanceIdごとに独立したDOM id・自動更新タイマー・電光掲示板テープを持つため、
-// 2画面で同時に（切り替えながら）使っても互いに干渉しない。
-// fetchLiveを渡した場合のみFinnhub実データ取得を試み、銘柄ごとに成否を判定
-// する（一部の銘柄が取得できなくても他の銘柄は実データを表示できる）。
-// fetchLiveを渡さない場合は常にサンプル値の擬似変動で表示する
-// MARKET WATCHカード右上のミニ買付/売却/ポートフォリオボタン用アイコン。
-// カレンダー起動アイコン等と同じ、線画のみのプレーンなSVGで統一する
-const STOCK_MINI_ICON_BUY = `<svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="19" x2="12" y2="5"></line><polyline points="6 11 12 5 18 11"></polyline></svg>`;
-const STOCK_MINI_ICON_SELL = `<svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"></line><polyline points="6 13 12 19 18 13"></polyline></svg>`;
-const STOCK_MINI_ICON_PORTFOLIO = `<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19V7a2 2 0 0 1 2-2h9l5 5v9a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2Z"></path><path d="M15 5v5h5"></path><line x1="8" y1="13" x2="16" y2="13"></line><line x1="8" y1="17" x2="13" y2="17"></line></svg>`;
-
-function createMarketWatch({ instanceId, stocks, fetchLive, formatPrice }){
-  let lastUpdatedAt = null;
-  let refreshTimer = null;
-  const tapeId = `stock-tape-${instanceId}`;
-  const updatedId = `stock-updated-${instanceId}`;
-  // 価格の通貨表示：世界経済（米国株）は"$"、日本経済（円建て指標・銘柄）は
-  // 桁区切りの円表示にするため、インスタンスごとにフォーマットを差し替える
-  const priceText = formatPrice || (s => `$${s.price.toFixed(2)}`);
-
-  function html(){
-    const tapeCopy = (copy) => stocks.map((_,i) => stockTapeItemHTML(instanceId, copy, i)).join("");
-    return `
-      <div class="news-card stocks-card" id="stocks-card-${instanceId}">
-        <div class="news-card-head">
-          <div class="stock-head-left">
-            <span class="news-badge stock-badge">📈 株価</span>
-            <div class="stock-updated" id="${updatedId}"></div>
-          </div>
-          <div class="stock-mini-actions">
-            <button type="button" class="stock-mini-btn buy" id="stock-buy-${instanceId}" aria-label="買付" title="買付">
-              ${STOCK_MINI_ICON_BUY}買付
-            </button>
-            <button type="button" class="stock-mini-btn sell" id="stock-sell-${instanceId}" aria-label="売却" title="売却">
-              ${STOCK_MINI_ICON_SELL}売却
-            </button>
-            <button type="button" class="stock-mini-portfolio" id="stock-portfolio-${instanceId}" aria-label="ポートフォリオへ" title="ポートフォリオ">
-              ${STOCK_MINI_ICON_PORTFOLIO}
-            </button>
-          </div>
-        </div>
-        <div class="stock-tape" id="${tapeId}">
-          <div class="stock-tape-track">${tapeCopy(0)}${tapeCopy(1)}</div>
-        </div>
-      </div>`;
-  }
-
-  function renderUpdated(){
-    const el = document.getElementById(updatedId);
-    if(el) el.textContent = lastUpdatedAt ? formatStocksUpdatedAt(lastUpdatedAt) : "";
-  }
-
-  function renderTapeContent(i){
-    const s = stocks[i];
-    if(!s) return;
-    const up = s.change >= 0;
-    for(let copy = 0; copy < 2; copy++){
-      const tickerEl = document.getElementById(`tape-ticker-${instanceId}-${copy}-${i}`);
-      const priceEl = document.getElementById(`tape-price-${instanceId}-${copy}-${i}`);
-      const changeEl = document.getElementById(`tape-change-${instanceId}-${copy}-${i}`);
-      const sessionEl = document.getElementById(`tape-session-${instanceId}-${copy}-${i}`);
-      if(tickerEl) tickerEl.textContent = s.ticker;
-      if(priceEl) priceEl.textContent = priceText(s);
-      if(changeEl){
-        changeEl.textContent = `${up?"▲":"▼"} ${up?"+":""}${s.change.toFixed(1)}%`;
-        changeEl.className = `tape-change ${up?"up":"down"}`;
-      }
-      if(sessionEl){
-        if(s.sessionLabel){ sessionEl.textContent = s.sessionLabel; sessionEl.style.display = ""; }
-        else { sessionEl.style.display = "none"; }
-      }
-    }
-  }
-  function renderTape(){ stocks.forEach((_,i) => renderTapeContent(i)); }
-
-  // 実株価取得の結果をstocksへ反映する（銘柄ごと。取得できなかった銘柄だけ
-  // フォールバックに回す＝一部失敗しても他の銘柄は実データを表示できる）
-  function applyLiveStocks(liveItems){
-    if(!liveItems) return;
-    let appliedAny = false;
-    liveItems.forEach(liveItem => {
-      if(!liveItem) return; // その銘柄は取得失敗（nullが入る）→ 後段の擬似変動に任せる
-      const s = stocks.find(x => x.ticker === liveItem.ticker);
-      if(!s) return;
-      s.price = liveItem.price;
-      s.previousClose = liveItem.previousClose;
-      s.change = liveItem.change;
-      s.sessionLabel = null; // 実データ取得成功時はバッジ非表示
-      s.isLive = true;
-      s.everLive = true;
-      appliedAny = true;
-    });
-    // 1銘柄でも実データを反映できたら、その瞬間を「最終更新日時」として記録する
-    if(appliedAny) lastUpdatedAt = Date.now();
-  }
-
-  async function refresh(){
-    stocks.forEach(s => { s.isLive = false; }); // 今回の取得結果で改めて判定し直す
-    if(fetchLive){
-      const liveItems = await fetchLive();
-      applyLiveStocks(liveItems);
-    }
-    stocks.forEach(s => { if(!s.isLive) simulateStockTick(s); });
-    renderTape();
-    renderUpdated();
-  }
-
-  function startRefresh(){
-    if(refreshTimer){ clearInterval(refreshTimer); refreshTimer = null; }
-    refresh();
-    refreshTimer = setInterval(() => {
-      if(!document.getElementById(tapeId)){ clearInterval(refreshTimer); refreshTimer = null; return; }
-      refresh();
-    }, STOCK_REFRESH_MS);
-  }
-
-  // 画面のinnerHTML挿入後に呼び出す。DOMが無い（別画面に切り替わった）場合は何もしない
-  function mount(){
-    if(!document.getElementById(tapeId)) return;
-    renderTape();
-    renderUpdated();
-    startRefresh();
-    initHybridTape(tapeId, 27); // 株価ティッカー（自動ループ＋手動スワイプ）
-
-    const buyBtn = document.getElementById(`stock-buy-${instanceId}`);
-    const sellBtn = document.getElementById(`stock-sell-${instanceId}`);
-    const portfolioBtn = document.getElementById(`stock-portfolio-${instanceId}`);
-    if(buyBtn) buyBtn.onclick = () => openTradeModal("buy", stocks);
-    if(sellBtn) sellBtn.onclick = () => openTradeModal("sell", stocks);
-    if(portfolioBtn) portfolioBtn.onclick = () => go("portfolio");
-  }
-
-  return { html, mount };
-}
-
-// JP_STOCKSはNYSE上場のADR（米国預託証券）でドル建てのため、価格表示は
-// 世界経済側と同じ既定の"$"フォーマットのままでよい（formatPriceの指定なし）
-const jpMarketWatch = createMarketWatch({
-  instanceId: "jp",
-  stocks: JP_STOCKS,
-  fetchLive: getLiveStocksJP, // 米国株と同条件でFinnhubから実データ取得を試みる
-});
-const worldMarketWatch = createMarketWatch({ instanceId: "world", stocks: STOCKS, fetchLive: getLiveStocks });
 
 /* ---- ハイブリッドテープ（自動ループ＋手動スワイプ）の共通制御 ----
    株価ティッカーとIT/AIニュースの両方で使う汎用の仕組み。
@@ -1653,187 +1438,12 @@ function initHybridTape(id, speedPxS){
   ensureTapeLoop();
 }
 
-/* ---- AC連動のデモ売買 ---- */
-
 // 売買金額の換算レート：1ドル＝1ACとして四捨五入する（デモ取引用）
 function tradeAmount(price, qty){ return Math.max(1, Math.round(price * qty)); }
 
-// 買付・売却1回分の検証込み計算。amount（総額）はAC不足／保有不足の
-// チェックに使うほか、成功時は更新後のcoins・portfolioを組み立てて返す。
-// ok:falseの場合はmsgのみを返し、呼び出し側は何も書き込まない
-function computeTrade(mode, ticker, qty, price, coins, pf){
-  const amount = tradeAmount(price, qty);
-  if(mode === "buy"){
-    if((coins||0) < amount){
-      return { ok:false, msg:`ACが不足しています（必要 ${amount.toLocaleString()} AC / 残高 ${(coins||0).toLocaleString()} AC）。` };
-    }
-    const h = pf[ticker] || { shares:0, cost:0 };
-    const newPf = Object.assign({}, pf, { [ticker]: { shares: h.shares + qty, cost: h.cost + amount } });
-    return { ok:true, amount, coins: (coins||0) - amount, portfolio: newPf };
-  }
-  const h = pf[ticker];
-  const held = h ? h.shares : 0;
-  if(held < qty){
-    return { ok:false, msg:`保有株数が足りません（${ticker} の保有：${held} 株）。` };
-  }
-  const remaining = held - qty;
-  const newPf = Object.assign({}, pf);
-  if(remaining <= 0){
-    delete newPf[ticker];
-  } else {
-    // 取得原価は平均取得単価ベースで按分して減らす
-    newPf[ticker] = { shares: remaining, cost: Math.round(h.cost * remaining / held) };
-  }
-  return { ok:true, amount, coins: (coins||0) + amount, portfolio: newPf };
-}
-
-// 買付・売却を実行し、AC残高と保有株を更新する。検証エラーはmsgで返す。
-// stocksは呼び出し元のMARKET WATCHインスタンスが持つ銘柄配列（STOCKSまたは
-// JP_STOCKS）で、日本経済・世界経済どちらの画面から売買しても対象銘柄を
-// 正しく参照できるようにする（保有株は共通のPORTFOLIO_KEYに銘柄ticker単位で
-// 保存されるため、日米の保有をまとめて1つのポートフォリオ画面で確認できる）。
-//
-// ログイン中はFirestoreの users/{uid} ドキュメントをトランザクションで読み書きする。
-// サーバー上の最新のAC残高・保有株数を基準に検証したうえでcoins・portfolioの
-// 両方を1回の書き込みで原子的に更新するため、複数端末で同時に操作しても
-// 不整合（AC減算漏れ・保有株の消し忘れ等）が起きない。未ログイン（ゲスト
-// 利用）時はローカル保存のみで同じ検証ロジックを使って更新する
-async function executeTrade(mode, stocks, ticker, qty){
-  const s = stocks.find(x => x.ticker === ticker);
-  if(!s) return { ok:false, msg:"不明な銘柄です。" };
-  if(!Number.isInteger(qty) || qty < 1) return { ok:false, msg:"株数は1株以上で指定してください。" };
-
-  if(state.db && state.currentUserId && window.FirebaseSync && window.FirebaseSync.runTransaction){
-    try{
-      const ref = window.FirebaseSync.doc(state.db, "users", state.currentUserId);
-      const result = await window.FirebaseSync.runTransaction(state.db, async (tx) => {
-        const snap = await tx.get(ref);
-        const data = snap.exists() ? snap.data() : {};
-        const coins = typeof data.coins === "number" ? data.coins : (S.coins||0);
-        const pf = (data.portfolio && typeof data.portfolio === "object" && !Array.isArray(data.portfolio))
-          ? data.portfolio : loadPortfolio();
-        const r = computeTrade(mode, ticker, qty, s.price, coins, pf);
-        if(!r.ok) return r;
-        tx.set(ref, { coins: r.coins, portfolio: r.portfolio, updatedAt: new Date().toISOString() }, { merge:true });
-        return r;
-      });
-      if(!result.ok) return result;
-      S.coins = result.coins;
-      saveCoins(S.coins);
-      savePortfolio(result.portfolio);
-      renderStatusBar(); // 画面上部のAC残高へ即時反映
-      return { ok:true, amount: result.amount };
-    }catch(e){
-      console.error("trade transaction failed:", e);
-      return { ok:false, msg:"通信エラーのため取引を完了できませんでした。もう一度お試しください。" };
-    }
-  }
-
-  // 未ログイン（ゲスト利用）はローカル保存のみで検証・更新する
-  const r = computeTrade(mode, ticker, qty, s.price, S.coins, loadPortfolio());
-  if(!r.ok) return r;
-  S.coins = r.coins;
-  saveCoins(S.coins);
-  savePortfolio(r.portfolio);
-  renderStatusBar();
-  return { ok:true, amount: r.amount };
-}
-
-// 買付／売却モーダル。銘柄と株数を選ぶと合計ACをその場で計算して表示し、
-// 実行時にAC残高・保有株を検証のうえ更新する（ゲーム内デモ取引）。
-// stocksはボタンを開いたMARKET WATCHインスタンスの銘柄配列（STOCKSまたは
-// JP_STOCKS）で、そのカードで表示中の銘柄だけを売買対象にする
-function openTradeModal(mode, stocks){
-  const isBuy = mode === "buy";
-  const pf = loadPortfolio();
-  const heldOf = (t) => (pf[t] ? pf[t].shares : 0);
-  const tickers = isBuy ? stocks.map(s => s.ticker) : stocks.filter(s => heldOf(s.ticker) > 0).map(s => s.ticker);
-
-  const ov = document.createElement("div");
-  ov.className = "modal-ov";
-  if(!tickers.length){
-    ov.innerHTML = `
-      <div class="modal">
-        <div class="modal-title" style="color:var(--text)">📉 売却</div>
-        <div class="modal-body">売却できる保有株がありません。<br>まずは「買付」からACで株を購入してみましょう。</div>
-        <button class="ghost" id="trade-cancel">閉じる</button>
-      </div>`;
-  } else {
-    const options = tickers.map(t => {
-      const s = stocks.find(x => x.ticker === t);
-      const held = heldOf(t);
-      return `<option value="${t}">${t}（$${s.price.toFixed(2)}${!isBuy || held ? ` / 保有 ${held}株` : ""}）</option>`;
-    }).join("");
-    ov.innerHTML = `
-      <div class="modal">
-        <div class="modal-title" style="color:${isBuy?"var(--accent)":"var(--text)"}">${isBuy?"📈 買付":"📉 売却"}<span class="trade-demo-tag">デモ取引</span></div>
-        <div class="trade-balance">💰 AC残高：<b>${(S.coins||0).toLocaleString()}</b> AC</div>
-        <label class="trade-lab" for="trade-sym">銘柄</label>
-        <select id="trade-sym" class="trade-select">${options}</select>
-        <label class="trade-lab" for="trade-qty">株数</label>
-        <div class="trade-qty-row">
-          <button type="button" class="trade-qty-btn" id="trade-minus" aria-label="1株減らす">−</button>
-          <input id="trade-qty" class="trade-qty" type="number" inputmode="numeric" min="1" step="1" value="1">
-          <button type="button" class="trade-qty-btn" id="trade-plus" aria-label="1株増やす">＋</button>
-        </div>
-        <div class="trade-summary" id="trade-summary"></div>
-        <div class="trade-msg" id="trade-msg"></div>
-        <button class="cta" id="trade-go">${isBuy?"買付を実行":"売却を実行"}</button>
-        <button class="ghost" id="trade-cancel" style="margin-top:8px">キャンセル</button>
-        <div class="trade-note">※ゲーム内通貨ACを使ったシミュレーションです。実際の売買は行われません。</div>
-      </div>`;
-  }
-  document.body.appendChild(ov);
-  const close = () => { try{ ov.remove(); }catch(e){} };
-  ov.addEventListener("click", (e) => { if(e.target === ov) close(); });
-  const cancelBtn = ov.querySelector("#trade-cancel");
-  if(cancelBtn) cancelBtn.onclick = close;
-  if(!tickers.length) return;
-
-  const symEl = ov.querySelector("#trade-sym");
-  const qtyEl = ov.querySelector("#trade-qty");
-  const msgEl = ov.querySelector("#trade-msg");
-  const summaryEl = ov.querySelector("#trade-summary");
-
-  const readQty = () => {
-    const v = parseInt(qtyEl.value, 10);
-    return (isNaN(v) || v < 1) ? 1 : v;
-  };
-  const updateSummary = () => {
-    const s = stocks.find(x => x.ticker === symEl.value);
-    if(!s) return;
-    const qty = readQty();
-    const amount = tradeAmount(s.price, qty);
-    const held = heldOf(s.ticker);
-    summaryEl.innerHTML = `合計 <b>${amount.toLocaleString()}</b> AC（$${s.price.toFixed(2)} × ${qty}株）` +
-      (isBuy ? "" : `<span class="trade-held">保有 ${held}株</span>`);
-    msgEl.textContent = "";
-  };
-  symEl.onchange = updateSummary;
-  qtyEl.oninput = updateSummary;
-  ov.querySelector("#trade-minus").onclick = () => { qtyEl.value = String(Math.max(1, readQty() - 1)); updateSummary(); };
-  ov.querySelector("#trade-plus").onclick = () => { qtyEl.value = String(readQty() + 1); updateSummary(); };
-  updateSummary();
-
-  const goBtn = ov.querySelector("#trade-go");
-  goBtn.onclick = async () => {
-    goBtn.disabled = true;
-    msgEl.textContent = "";
-    try{
-      const r = await executeTrade(mode, stocks, symEl.value, readQty());
-      if(!r.ok){ msgEl.textContent = r.msg; goBtn.disabled = false; return; }
-      close();
-    }catch(e){
-      msgEl.textContent = "処理中にエラーが発生しました。もう一度お試しください。";
-      goBtn.disabled = false;
-    }
-  };
-}
-
-/* ポートフォリオ（資産保有額）詳細画面：日本経済・世界経済どちらのMARKET WATCH
-   から買付/売却しても、保有株は共通のPORTFOLIO_KEYにまとまるため、
-   この画面ではSTOCKS・JP_STOCKS両方から銘柄情報を検索して表示する。
-   現金AC＋保有株の評価額（現在株価ベース）のサマリーと保有明細を表示する */
+/* ポートフォリオ（資産保有額）詳細画面：STOCKS・JP_STOCKS両方から銘柄情報を
+   検索して表示する。現金AC＋保有株の評価額（現在株価ベース）のサマリーと
+   保有明細を表示する（新規購入は行えない、保有分の閲覧専用画面） */
 export function renderPortfolio(){
   const pf = loadPortfolio();
   const tickers = Object.keys(pf);
@@ -1865,7 +1475,7 @@ export function renderPortfolio(){
     </div>
     ${rows
       ? `<div class="section-lab">保有株</div><div class="pf-list">${rows}</div>`
-      : `<div class="sel-sub" style="margin-top:24px;text-align:center;">保有している株はまだありません。<br>株価カードの「買付」からACで購入できます。</div>`}
+      : `<div class="sel-sub" style="margin-top:24px;text-align:center;">保有している株はまだありません。</div>`}
     <div class="trade-note" style="text-align:center;margin-top:18px;">※ゲーム内通貨ACを使ったデモ取引のポートフォリオです。</div>
   `;
   app.querySelectorAll("[data-go]").forEach(b => b.onclick = () => go(b.dataset.go));
@@ -2170,19 +1780,10 @@ function vendorCertLauncherRowHTML(){
     </div>`;
 }
 
-// 「予定管理」「日本NEWS」「海外ニュース」「ポートフォリオ」の4項目を
-// 1つの横長カードにまとめたもの。外枠はMicrosoft認定試験カードと同じ
+// 「日本NEWS」「海外ニュース」「ポートフォリオ」「カレンダー」「Gemini相談」の
+// 5項目を1つの横長カードにまとめたもの。外枠はMicrosoft認定試験カードと同じ
 // .ms-cert-card（背景・角丸・シャドウ・margin-top）を流用し、中身だけを
-// launcherItemHTML4個の横並びに差し替えている。
-// MARKET WATCH（株価ティッカー）は各ニュース画面側の最上部に移設済みのため
-// ここには置かず、日本経済／世界経済への起動ボタンのみを配置する
-const CALENDAR_LAUNCHER_ICON_SVG = `
-  <svg viewBox="0 0 24 24" width="19" height="19" fill="none" stroke="var(--accent)" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
-    <rect x="3" y="4.5" width="18" height="16" rx="2.5"></rect>
-    <line x1="8" y1="2.5" x2="8" y2="6.5"></line>
-    <line x1="16" y1="2.5" x2="16" y2="6.5"></line>
-    <line x1="3" y1="10" x2="21" y2="10"></line>
-  </svg>`;
+// launcherItemHTML5個の横並びに差し替えている。
 const PORTFOLIO_LAUNCHER_ICON_SVG = `
   <svg viewBox="0 0 24 24" width="19" height="19" fill="none" stroke="var(--accent)" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
     <path d="M4 19V7a2 2 0 0 1 2-2h9l5 5v9a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2Z"></path>
@@ -2219,7 +1820,6 @@ const GEMINI_LAUNCHER_ICON_SVG = `
 
 function homeLauncherCardHTML(){
   const items = [
-    { iconHTML: CALENDAR_LAUNCHER_ICON_SVG, label: "予定管理", dataGo: "schedule", ariaLabel: "予定管理" },
     { iconHTML: `<span class="launcher-emoji" aria-hidden="true">🇯🇵</span>`, label: "日本NEWS", dataGo: "news-japan", ariaLabel: "日本NEWS" },
     { iconHTML: `<span class="launcher-emoji" aria-hidden="true">🌐</span>`, label: "海外ニュース", dataGo: "news-world", ariaLabel: "海外ニュース" },
     { iconHTML: PORTFOLIO_LAUNCHER_ICON_SVG, label: "ポートフォリオ", dataGo: "portfolio", ariaLabel: "ポートフォリオ" },
@@ -4698,16 +4298,6 @@ export function renderCalendarScreen(){
   window.scrollTo(0,0);
 }
 
-// 予定管理カードから遷移するプレースホルダー画面（機能は未実装、今は空のまま）
-export function renderSchedule(){
-  app.innerHTML = `
-    <div class="q-head"><button class="quit" data-go="select">← ホーム</button><span class="q-count">予定管理</span></div>
-    <div class="sel-sub" style="margin-top:24px;text-align:center;">この機能は近日公開予定です。</div>
-  `;
-  app.querySelectorAll("[data-go]").forEach(b=>b.onclick=()=>go(b.dataset.go));
-  window.scrollTo(0,0);
-}
-
 /* =========================================================================
    ニュース画面（日本経済・世界経済）共通ロジック
    - 上部：今月のミニカレンダー。日付をタップすると選択日が切り替わる
@@ -4798,7 +4388,7 @@ function newsBulkDeleteHTML(){
 
 // 日本経済・世界経済の両画面が使う共通ロジックを1箇所にまとめたファクトリー。
 // storeKeyとlabel/iconだけを差し替えれば同じ挙動の画面を量産できる
-function createNewsScreen({ storeKey, label, icon, seedFn, marketWatch }){
+function createNewsScreen({ storeKey, label, icon, seedFn }){
   // 画面を離れても選択中の日付を覚えておく（再訪時は前回の続きから）。
   // 未選択（初回訪問）の場合のみ「今日」を初期値にする
   let selected = null;
@@ -4846,7 +4436,6 @@ function createNewsScreen({ storeKey, label, icon, seedFn, marketWatch }){
     Array.from(selectedIds).forEach(id=>{ if(!validIds.has(id)) selectedIds.delete(id); });
 
     app.innerHTML = `
-      ${marketWatch ? marketWatch.html() : ""}
       <div class="q-head"><button class="quit" data-go="select">← ホーム</button><span class="q-count">${icon} ${label}</span></div>
       ${newsCalendarHTML(y, m, d, hasNewsSet, todayKey)}
       <div class="section-lab" style="margin-top:16px">${m+1}月${d}日のニュース</div>
@@ -4906,7 +4495,6 @@ function createNewsScreen({ storeKey, label, icon, seedFn, marketWatch }){
         render();
       };
     }
-    if(marketWatch) marketWatch.mount();
     window.scrollTo(0,0);
   }
 
@@ -4929,14 +4517,12 @@ export const renderNewsJapan = createNewsScreen({
   label: "日本経済",
   icon: "🇯🇵",
   seedFn: newsJapanSeed,
-  marketWatch: jpMarketWatch,
 });
 
 export const renderNewsWorld = createNewsScreen({
   storeKey: "news_world_store_v1",
   label: "世界経済",
   icon: "🌐",
-  marketWatch: worldMarketWatch,
 });
 
 /* 「資格を選ぶ」CTAボタンから遷移する専用画面：総合レベルと資格カード一覧
