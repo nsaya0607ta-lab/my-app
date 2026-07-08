@@ -3,6 +3,7 @@ import { DC_PHASES, L, REGIONS } from './data/constants.js';
 import { CONCEPTS, DRAW, PASS, Q, TIERS, applySkin, certById, certStat, commit, correctSet, dcCount, dcPhase, dcTitle, esc, exportCode, fmt, getBP, getProfileName, grade, importCode, isAdminAccount, isMulti, loadHist, loadReviewStats, loadWrong, overallLevel, overallStat, pick, pts, publishLeaderboard, purchaseSkin, saveCoins, saveToCloud, selectCert, setBP, setProfileName, skinHandleIdentityChange, stars, start, startReview, totalBP } from './core.js';
 import { getLiveStocks, getLiveStocksJP } from './stocks.js';
 import { getWeather } from './weather.js';
+import { geminiChat, sendGeminiMessage } from './gemini.js';
 import { SKIN_DATA } from './data/skins.js';
 import { S, state } from './state.js';
 
@@ -43,7 +44,7 @@ export function renderStatusBar(){
              || (!state.guestMode && !state.currentUser)
              || (!state.guestMode && state.currentUser && (!state.profileChecked || !getProfileName()));
   const screen = resolveScreen();
-  const otherScreens = ["ranking","profile","settings","skins","analytics","schedule","portfolio","news-japan","news-world","calendar"];
+  const otherScreens = ["ranking","profile","settings","skins","analytics","schedule","portfolio","news-japan","news-world","calendar","gemini"];
   if(gated || otherScreens.includes(screen)){ el.classList.remove("show"); el.innerHTML=""; return; }
   const ov = overallStat();          // 総合Lvと次Lvまでの進捗(%)
   const coins = (S.coins||0);
@@ -86,7 +87,7 @@ export function renderStatusBar(){
 // render()末尾の分岐と同じ優先順位で判定する）ため、ヘッダー周りの表示制御は
 // この「実際に描画される画面名」を使って判断する。
 function resolveScreen(){
-  const noCertScreens = ["ranking","profile","settings","skins","analytics","certs","lpic-certs","schedule","portfolio","news-japan","news-world","calendar"];
+  const noCertScreens = ["ranking","profile","settings","skins","analytics","certs","lpic-certs","schedule","portfolio","news-japan","news-world","calendar","gemini"];
   if(noCertScreens.includes(S.screen)) return S.screen;
   if(S.screen==="select" || !S.cert) return "select";
   return S.screen; // home/quiz/result/review/dict/transfer/history
@@ -153,6 +154,7 @@ export function render(){
   if(S.screen==="news-japan") return renderNewsJapan();
   if(S.screen==="news-world") return renderNewsWorld();
   if(S.screen==="calendar") return renderCalendarScreen();
+  if(S.screen==="gemini") return renderGeminiChat();
   // 大元：資格選択画面
   if(S.screen==="select" || !S.cert) return renderSelect();
   if(S.screen==="home") return renderHome();
@@ -1869,6 +1871,62 @@ export function renderPortfolio(){
   window.scrollTo(0,0);
 }
 
+// Gemini AIチャット相談画面。会話履歴はgeminiChat（js/gemini.js）が保持し、
+// この画面はその内容を描画するだけ。送信はサーバー側の /api/gemini/chat
+// 経由（APIキーはサーバーのみが保持）で行う。
+function geminiMessageBubbleHTML(m){
+  const cls = "gemini-bubble " + (m.role === "user" ? "gemini-bubble-user" : "gemini-bubble-model");
+  const body = esc(m.text).replace(/\n/g, "<br>");
+  return `<div class="${cls}">${body}</div>`;
+}
+
+export function renderGeminiChat(){
+  const messages = geminiChat.messages;
+  const msgsHTML = messages.length
+    ? messages.map(geminiMessageBubbleHTML).join("")
+    : `<div class="gemini-empty">✨ Azureやこのアプリの資格勉強について、Geminiに気軽に質問してみましょう。</div>`;
+  const busyHTML = geminiChat.busy ? `<div class="gemini-bubble gemini-bubble-model gemini-bubble-busy">…考え中</div>` : "";
+  const errorHTML = geminiChat.error ? `<div class="gemini-error">${esc(geminiChat.error)}</div>` : "";
+
+  app.innerHTML = `
+    <div class="q-head"><button class="quit" data-go="select">← ホーム</button><span class="q-count">✨ Gemini相談</span></div>
+    <div class="gemini-chat-wrap">
+      <div class="gemini-chat-scroll" id="gemini-scroll">${msgsHTML}${busyHTML}</div>
+      ${errorHTML}
+      <div class="gemini-input-row">
+        <textarea id="gemini-input" class="gemini-input" rows="1" placeholder="Azureやこのアプリについて質問できます…" ${geminiChat.busy ? "disabled" : ""}></textarea>
+        <button type="button" class="gemini-send" id="gemini-send" ${geminiChat.busy ? "disabled" : ""}>送信</button>
+      </div>
+    </div>
+  `;
+  app.querySelectorAll("[data-go]").forEach(b => b.onclick = () => go(b.dataset.go));
+
+  const scrollEl = document.getElementById("gemini-scroll");
+  if(scrollEl) scrollEl.scrollTop = scrollEl.scrollHeight;
+
+  const inputEl = document.getElementById("gemini-input");
+  const sendBtn = document.getElementById("gemini-send");
+  const submit = () => {
+    if(!inputEl || geminiChat.busy) return;
+    const text = inputEl.value;
+    if(!text.trim()) return;
+    // sendGeminiMessageは最初のawait（fetch）に達するまで同期的に実行される
+    // ため、この呼び出し直後にrender()すれば「送信したメッセージ＋考え中」を
+    // 即座に画面へ反映できる（完了を待ってからのrenderは応答受信後）
+    const p = sendGeminiMessage(text);
+    render();
+    p.then(() => render());
+  };
+  if(sendBtn) sendBtn.onclick = submit;
+  if(inputEl){
+    inputEl.focus();
+    inputEl.addEventListener("keydown", (e) => {
+      if(e.key === "Enter" && !e.shiftKey){ e.preventDefault(); submit(); }
+    });
+  }
+  window.scrollTo(0,0);
+}
+
 
 // アイコン＋その下のテキストの1組。テキストは最大9文字までは静止表示、
 // それを超える場合は電光掲示板風に右から左へ無限ループでスライドする。
@@ -1955,6 +2013,20 @@ const CALENDAR_APP_LAUNCHER_ICON_SVG = `
     <text x="12" y="18" text-anchor="middle" font-size="9" font-weight="700" fill="#3c4043" font-family="Arial, sans-serif">${new Date().getDate()}</text>
   </svg>`;
 
+// Geminiのロゴをイメージした、紫〜青のグラデーションが入る4方向スパークル。
+// 外部画像に依存せずSVGだけで「Geminiらしさ」を出すためのプレースホルダー表現。
+const GEMINI_LAUNCHER_ICON_SVG = `
+  <svg viewBox="0 0 24 24" width="19" height="19">
+    <defs>
+      <linearGradient id="gemini-launcher-grad" x1="0" y1="0" x2="1" y2="1">
+        <stop offset="0%" stop-color="#4285f4"></stop>
+        <stop offset="50%" stop-color="#9b72cb"></stop>
+        <stop offset="100%" stop-color="#d96570"></stop>
+      </linearGradient>
+    </defs>
+    <path d="M12 2c.6 4.4 2.6 6.6 7 7-4.4.6-6.6 2.6-7 7-.6-4.4-2.6-6.6-7-7 4.4-.6 6.6-2.6 7-7z" fill="url(#gemini-launcher-grad)"></path>
+  </svg>`;
+
 function homeLauncherCardHTML(){
   const items = [
     { iconHTML: CALENDAR_LAUNCHER_ICON_SVG, label: "予定管理", dataGo: "schedule", ariaLabel: "予定管理" },
@@ -1962,6 +2034,7 @@ function homeLauncherCardHTML(){
     { iconHTML: `<span class="launcher-emoji" aria-hidden="true">🌐</span>`, label: "海外ニュース", dataGo: "news-world", ariaLabel: "海外ニュース" },
     { iconHTML: PORTFOLIO_LAUNCHER_ICON_SVG, label: "ポートフォリオ", dataGo: "portfolio", ariaLabel: "ポートフォリオ" },
     { iconHTML: CALENDAR_APP_LAUNCHER_ICON_SVG, label: "カレンダー", dataGo: "calendar", ariaLabel: "カレンダー" },
+    { iconHTML: GEMINI_LAUNCHER_ICON_SVG, label: "Gemini相談", dataGo: "gemini", ariaLabel: "Geminiに相談する" },
   ];
   return `
     <div class="news-card ms-cert-card home-launcher-card" id="home-launcher-card">
