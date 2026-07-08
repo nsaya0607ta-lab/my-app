@@ -7,23 +7,58 @@ const MAX_HISTORY_TURNS = 20;
 
 // ユーザーが「予定を入れて」のように話しかけたとき、Geminiにこの関数を
 // 呼び出させて日付・時刻・タイトルを構造化データとして抽出させる。実際の
-// カレンダーへの書き込みはクライアント側（js/gemini.js経由でrender.js内の
-// 既存のカレンダー登録処理）が行うため、ここでは抽出のみを担当する
+// カレンダーへの書き込み・変更・削除はクライアント側（js/gemini.js経由で
+// render.js内の既存のカレンダー登録処理）が行うため、ここでは抽出のみを担当する
+const SCHEDULE_FUNCTION_NAMES = new Set(["register_schedule", "update_schedule", "delete_schedule"]);
+
 const SCHEDULE_TOOLS = [{
-  functionDeclarations: [{
-    name: "register_schedule",
-    description: "ユーザーが日時とタイトルを指定して予定・スケジュールの登録を明確に依頼したときだけ呼び出す。単なる質問や相談の場合は呼び出さないこと。",
-    parameters: {
-      type: "OBJECT",
-      properties: {
-        date: { type: "STRING", description: "予定の日付。YYYY-MM-DD形式（例:2026-07-09）。「明日」「来週火曜」等の相対表現は、与えられた本日の日付を基準に絶対日付へ変換すること。" },
-        start_time: { type: "STRING", description: "開始時刻。HH:MM形式24時間表記（例:16:00）。指定が無い終日予定の場合は省略。" },
-        end_time: { type: "STRING", description: "終了時刻。HH:MM形式24時間表記（例:17:00）。指定が無い場合は省略。" },
-        title: { type: "STRING", description: "予定のタイトル・内容。" },
+  functionDeclarations: [
+    {
+      name: "register_schedule",
+      description: "ユーザーが日時と内容を指定して予定・スケジュールの登録を明確に依頼したときだけ呼び出す。単なる質問や相談の場合は呼び出さないこと。",
+      parameters: {
+        type: "OBJECT",
+        properties: {
+          date: { type: "STRING", description: "予定の日付。YYYY-MM-DD形式（例:2026-07-09）。「明日」「来週火曜」等の相対表現は、与えられた本日の日付を基準に絶対日付へ変換すること。" },
+          start_time: { type: "STRING", description: "開始時刻。HH:MM形式24時間表記（例:16:00）。指定が無い終日予定の場合は省略。" },
+          end_time: { type: "STRING", description: "終了時刻。HH:MM形式24時間表記（例:17:00）。指定が無い場合は省略。" },
+          title: { type: "STRING", description: "予定のタイトル。「〜の予定を入れて」等の依頼表現をそのまま入れず、文脈から本質的なイベント名だけを抽出すること（例：「仕事」「会議」「デート」「美容院」）。" },
+          confirm_overwrite: { type: "BOOLEAN", description: "直前にこの関数を呼んだ際、同じ時間帯に既存の予定がある旨の確認メッセージが返され、それに対してユーザーが登録の続行に同意した場合にtrueを指定して再度呼び出す。それ以外は省略してよい。" },
+        },
+        required: ["date", "title"],
       },
-      required: ["date", "title"],
     },
-  }],
+    {
+      name: "update_schedule",
+      description: "登録済みの予定の日時やタイトルの変更をユーザーが依頼したときに呼び出す（例：「さっきの予定、10時からに後ろ倒しして」「タイトルを『ミーティング』に変えて」）。",
+      parameters: {
+        type: "OBJECT",
+        properties: {
+          target: { type: "STRING", description: "対象の指定方法。ユーザーが「さっきの」「今の」のように直前に登録した予定を指している場合は'last'を指定する。" },
+          date: { type: "STRING", description: "変更対象を日付とタイトルで特定する場合の、元の予定の日付。YYYY-MM-DD形式。targetが'last'の場合は省略可。" },
+          original_title: { type: "STRING", description: "変更対象を特定するための元のタイトル（分かる場合のみ）。" },
+          new_date: { type: "STRING", description: "変更後の日付。YYYY-MM-DD形式。日付を変更しない場合は省略。" },
+          new_start_time: { type: "STRING", description: "変更後の開始時刻。HH:MM形式24時間表記。変更しない場合は省略。" },
+          new_end_time: { type: "STRING", description: "変更後の終了時刻。HH:MM形式24時間表記。変更しない場合は省略。" },
+          new_title: { type: "STRING", description: "変更後のタイトル。変更しない場合は省略。" },
+        },
+        required: [],
+      },
+    },
+    {
+      name: "delete_schedule",
+      description: "登録済みの予定の削除・取り消し・キャンセルをユーザーが依頼したときに呼び出す（例：「今のやつ消して」「予定を取り消して」「さっきのキャンセルして」）。",
+      parameters: {
+        type: "OBJECT",
+        properties: {
+          target: { type: "STRING", description: "ユーザーが「今の」「さっきの」のように直前に登録した予定を指している場合は'last'を指定する。" },
+          date: { type: "STRING", description: "削除対象を日付とタイトルで特定する場合の日付。YYYY-MM-DD形式。targetが'last'の場合は省略可。" },
+          title: { type: "STRING", description: "削除対象を特定するためのタイトル（分かる場合のみ）。" },
+        },
+        required: [],
+      },
+    },
+  ],
 }];
 
 function buildSystemInstruction(today){
@@ -31,7 +66,12 @@ function buildSystemInstruction(today){
     "あなたはIT資格対策アプリ（Microsoft Azure/SC-300、LPICなど）に組み込まれた学習アシスタントです。",
     "Azure・LPIC・ITインフラ全般や資格試験の学習に関する質問に、初学者にも分かりやすい日本語で簡潔に答えてください。",
     "雑談程度の話題には常識の範囲で軽く答えて構いませんが、医療・法律・金融など専門外の断定的なアドバイスは避けてください。",
-    "このアプリにはカレンダー機能があり、ユーザーが「7月9日16時から17時で予定を入れて」のように予定登録を明確に依頼した場合は、テキストで返答せず register_schedule 関数を呼び出してください。日付・タイトルが不明瞭で判断できない場合のみ、関数を呼ばずに聞き返してください。",
+    "このアプリにはカレンダー機能があり、予定の登録・変更・削除をユーザーに代わって行えます。以下のルールに従ってください。",
+    "【予定の登録】ユーザーが日時と内容を示して予定登録を明確に依頼した場合は、テキストで返答せず register_schedule 関数を呼び出してください。titleには「〜の予定を入れて」等の依頼表現をそのまま入れず、文脈から本質的なイベント名だけを抽出してください（例：「明日の9時から仕事の予定を入れて」→title=「仕事」、「金曜の夜に美容院の予定を追加して」→title=「美容院」）。日付・内容が不明瞭で判断できない場合のみ、関数を呼ばずに聞き返してください。",
+    "【日時が曖昧な表現】「明日の朝」「今週末の昼」「来週の仕事終わり」のように具体的な時刻が無い場合は、一般的な生活時間帯（朝は9時頃、昼は12時頃、夜や仕事終わりは19時頃など）から違和感のない時刻を常識的に推測してregister_scheduleを呼び出すか、推測が難しい場合は関数を呼ばずに「何時頃にしますか？」のように自然に聞き返してください。",
+    "【予定の重複】register_scheduleを呼び出した結果、同じ時間帯に既存の予定がある旨の確認メッセージが返ってきた場合は、その内容をそのままユーザーに伝えて意思を確認してください。ユーザーが登録の続行に同意したら、直前と同じ日時・タイトルでconfirm_overwrite:trueを付けてregister_scheduleを再度呼び出してください。同意が得られない、またはユーザーが取りやめた場合は再呼び出ししないでください。",
+    "【予定の削除・取り消し】ユーザーが「今のやつ消して」「予定を取り消して」「さっきのをキャンセルして」のように予定の削除を依頼した場合はdelete_schedule関数を呼び出してください。直前にこの会話で登録した予定を指している場合はtargetに'last'を指定し、date/titleは省略してください。特定の日付やタイトルで対象が分かる場合はそちらを指定してください。",
+    "【予定の変更】「さっきの予定、10時からに後ろ倒しして」「タイトルを『ミーティング』に変えて」のように、登録済みの予定の日時やタイトルの変更を依頼された場合はupdate_schedule関数を呼び出してください。対象の指定方法はdelete_scheduleと同様です。変更したい項目（new_date/new_start_time/new_end_time/new_title）だけを指定し、変更しない項目は省略してください。",
   ];
   if(today && today.date){
     lines.push(`本日の日付は${today.date}${today.weekday ? `（${today.weekday}曜日）` : ""}です。現在時刻は${today.time || "不明"}です。相対的な日付表現はこれを基準に解釈してください。`);
@@ -105,9 +145,9 @@ module.exports = async (req, res) => {
     const candidate = data && data.candidates && data.candidates[0];
     const parts = (candidate && candidate.content && candidate.content.parts) || [];
 
-    const functionCallPart = parts.find((p) => p.functionCall && p.functionCall.name === "register_schedule");
+    const functionCallPart = parts.find((p) => p.functionCall && SCHEDULE_FUNCTION_NAMES.has(p.functionCall.name));
     if (functionCallPart) {
-      res.status(200).json({ functionCall: { name: "register_schedule", args: functionCallPart.functionCall.args || {} } });
+      res.status(200).json({ functionCall: { name: functionCallPart.functionCall.name, args: functionCallPart.functionCall.args || {} } });
       return;
     }
 

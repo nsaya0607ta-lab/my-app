@@ -7,6 +7,7 @@
 
 const MAX_HISTORY_TURNS = 20;
 const WEEKDAY_JA = ["日","月","火","水","木","金","土"];
+const SCHEDULE_FUNCTION_NAMES = new Set(["register_schedule", "update_schedule", "delete_schedule"]);
 
 export const geminiChat = {
   messages: [],   // {role:"user"|"model", text}[]
@@ -14,10 +15,11 @@ export const geminiChat = {
   error: null,
 };
 
-// 「予定を入れて」のような依頼をGeminiがregister_schedule関数呼び出しとして
-// 返してきたとき、実際にカレンダーへ書き込む処理はカレンダー機能を持つ
+// 「予定を入れて」「変更して」「消して」のような依頼をGeminiが
+// register_schedule/update_schedule/delete_schedule関数呼び出しとして
+// 返してきたとき、実際にカレンダーへ反映する処理はカレンダー機能を持つ
 // render.js側に任せる。循環importを避けるため、起動時にrender.jsから
-// このセッター経由でハンドラーを注入してもらう
+// このセッター経由でハンドラー（関数名, 引数）=>結果 を注入してもらう
 let scheduleHandler = null;
 export function setGeminiScheduleHandler(fn){
   scheduleHandler = fn;
@@ -55,9 +57,9 @@ export async function sendGeminiMessage(text){
     const data = await res.json().catch(() => ({}));
     if(!res.ok) throw new Error((data && data.error) || ("request-failed-" + res.status));
 
-    if(data.functionCall && data.functionCall.name === "register_schedule" && scheduleHandler){
-      const result = await scheduleHandler(data.functionCall.args || {});
-      geminiChat.messages.push({ role: "model", text: (result && result.text) || "予定の登録処理でエラーが発生しました。" });
+    if(data.functionCall && SCHEDULE_FUNCTION_NAMES.has(data.functionCall.name) && scheduleHandler){
+      const result = await scheduleHandler(data.functionCall.name, data.functionCall.args || {});
+      geminiChat.messages.push({ role: "model", text: (result && result.text) || "予定の処理でエラーが発生しました。" });
     } else {
       geminiChat.messages.push({ role: "model", text: data.reply || "" });
     }
