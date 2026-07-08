@@ -341,35 +341,85 @@ export function renderHome(){
   const practiceCorrect = practiceHistory.reduce((s, x) => s + (x.correct || 0), 0);
   const practiceAccuracy = practiceQuestions > 0 ? Math.round(practiceCorrect / practiceQuestions * 100) : 0;
 
+  // ダッシュボード用の視覚化パラメータ
+  const MILESTONES = [10,25,50,100,200,300,500,1000,2000,5000];
+  const nextGoal = MILESTONES.find(m => m > practiceQuestions) ?? (Math.ceil((practiceQuestions+1)/5000)*5000);
+  const prevGoal = MILESTONES[MILESTONES.indexOf(nextGoal)-1] || 0;
+  const goalPct = practiceQuestions > 0 ? Math.min(100, Math.round((practiceQuestions-prevGoal)/(nextGoal-prevGoal)*100)) : 0;
+
+  const RING_R = 38, RING_C = 2*Math.PI*RING_R;
+  const ringRatio = practiceQuestions > 0 ? practiceAccuracy/100 : 0;
+  const ringOffset = RING_C * (1-ringRatio);
+  const accClass = practiceAccuracy>=80 ? "good" : (practiceAccuracy>=60 ? "warn" : "bad");
+
+  const examDots = Math.min(examPlays, 6);
+  const examOverflow = examPlays > 6 ? examPlays-6 : 0;
+
+  const bestPct = Math.min(100, examBest/1000*100);
+  const avgPct = Math.min(100, examAvg/1000*100);
+  const passPct = PASS/1000*100;
+
   app.innerHTML = `
     <div class="q-head" style="margin-bottom:14px">
       <button class="quit" data-go="${certsBackTarget()}">← 資格選択</button>
       <span class="q-count" style="color:${c.accent||'var(--accent)'}">${esc(c.code||"")}</span>
     </div>
 
-    <div class="an-card" style="background:rgba(255,255,255,0.85);">
-      <div class="an-ttl" style="display:flex; align-items:center; gap:6px; font-size:14px; color:var(--text);">
-        📊 ${esc(c.code)} 学習統計ダッシュボード
+    <div class="stats-dash">
+      <div class="stats-dash-head">
+        <span class="stats-dash-ico">📊</span>
+        <div>
+          <div class="stats-dash-ttl">${esc(c.code)} 学習統計ダッシュボード</div>
+          <div class="stats-dash-sub">これまでの学習の積み重ね</div>
+        </div>
       </div>
-      <div class="an-aggro" style="display:grid; grid-template-columns: repeat(2, 1fr); gap:10px; margin-top:12px;">
-        <div class="an-ag" style="background:var(--bg); padding:10px; border-radius:10px; text-align:center;">
-          <div class="an-ag-num" style="font-size:20px; font-weight:800; color:var(--accent);">${practiceQuestions}<small style="font-size:11px; font-weight:600; color:var(--muted); margin-left:2px;">問</small></div>
-          <div class="an-ag-lab" style="font-size:10.5px; color:var(--muted); margin-top:2px;">演習解いた問題数</div>
+      <div class="stats-grid">
+
+        <div class="stat-tile stat-tile--practice">
+          <div class="stat-tile-top"><span class="stat-tile-ico">📚</span><span class="stat-tile-lab">演習した問題数</span></div>
+          <div class="stat-tile-num">${practiceQuestions}<small>問</small></div>
+          <div class="stat-tile-meter"><div class="stat-tile-meter-fill" data-final-width="${goalPct}"></div></div>
+          <div class="stat-tile-sub">${practiceQuestions>0 ? `次の目標 ${nextGoal}問まで あと${nextGoal-practiceQuestions}問` : "演習を始めて記録をつけよう！"}</div>
         </div>
-        <div class="an-ag" style="background:var(--bg); padding:10px; border-radius:10px; text-align:center;">
-          <div class="an-ag-num" style="font-size:20px; font-weight:800; color:var(--gold);">${practiceAccuracy}<small style="font-size:11px; font-weight:600; color:var(--muted); margin-left:2px;">%</small></div>
-          <div class="an-ag-lab" style="font-size:10.5px; color:var(--muted); margin-top:2px;">演習モードの正答率</div>
-        </div>
-        <div class="an-ag" style="background:var(--bg); padding:10px; border-radius:10px; text-align:center;">
-          <div class="an-ag-num" style="font-size:20px; font-weight:800; color:var(--accent);">${examPlays}<small style="font-size:11px; font-weight:600; color:var(--muted); margin-left:2px;">回</small></div>
-          <div class="an-ag-lab" style="font-size:10.5px; color:var(--muted); margin-top:2px;">試験モード実施回数</div>
-        </div>
-        <div class="an-ag" style="background:var(--bg); padding:10px; border-radius:10px; text-align:center; grid-column: span 1;">
-          <div class="an-ag-num" style="font-size:16px; font-weight:800; color:var(--text); line-height:1.2;">
-            <span style="color:var(--good);">${examBest}</span><span style="font-size:11px; color:var(--muted); font-weight:500;"> / ${examAvg}</span>
+
+        <div class="stat-tile stat-tile--accuracy">
+          <div class="stat-tile-top"><span class="stat-tile-ico">🎯</span><span class="stat-tile-lab">演習の正答率</span></div>
+          <div class="ring-wrap">
+            <svg viewBox="0 0 100 100" class="ring">
+              <circle cx="50" cy="50" r="${RING_R}" class="ring-bg"></circle>
+              <circle cx="50" cy="50" r="${RING_R}" class="ring-fg ${accClass}" stroke-dasharray="${RING_C}" stroke-dashoffset="${RING_C}" data-final-offset="${ringOffset}" transform="rotate(-90 50 50)"></circle>
+            </svg>
+            <div class="ring-mid">${practiceQuestions>0 ? `${practiceAccuracy}<small>%</small>` : "―"}</div>
           </div>
-          <div class="an-ag-lab" style="font-size:10.5px; color:var(--muted); margin-top:2px;">試験最高得点 / 平均点</div>
         </div>
+
+        <div class="stat-tile stat-tile--exam">
+          <div class="stat-tile-top"><span class="stat-tile-ico">🏆</span><span class="stat-tile-lab">試験実施回数</span></div>
+          <div class="stat-tile-num">${examPlays}<small>回</small></div>
+          <div class="stat-tile-dots">
+            ${Array.from({length:6}, (_,i)=>`<span class="stat-dot${i<examDots?" on":""}"></span>`).join("")}${examOverflow>0?`<span class="stat-dot-more">+${examOverflow}</span>`:""}
+          </div>
+          <div class="stat-tile-sub">${examPlays>0 ? "挑戦を重ねてスコアを伸ばそう" : "初挑戦でスコアを記録しよう！"}</div>
+        </div>
+
+        <div class="stat-tile stat-tile--score">
+          <div class="stat-tile-top"><span class="stat-tile-ico">📈</span><span class="stat-tile-lab">最高点 / 平均点</span></div>
+          ${examPlays>0 ? `
+          <div class="score-bars">
+            <div class="score-bar-row">
+              <span class="score-bar-tag best">BEST</span>
+              <div class="score-bar-track"><div class="score-bar-fill best" data-final-width="${bestPct}"></div><div class="score-passline" style="left:${passPct}%"></div></div>
+              <span class="score-bar-val">${examBest}</span>
+            </div>
+            <div class="score-bar-row">
+              <span class="score-bar-tag avg">AVG</span>
+              <div class="score-bar-track"><div class="score-bar-fill avg" data-final-width="${avgPct}"></div><div class="score-passline" style="left:${passPct}%"></div></div>
+              <span class="score-bar-val">${examAvg}</span>
+            </div>
+            <div class="score-bar-passlab">合格ライン ${PASS}点</div>
+          </div>` : `<div class="stat-tile-empty">まだ受験記録がありません</div>`}
+        </div>
+
       </div>
     </div>
 
@@ -395,6 +445,10 @@ export function renderHome(){
       ? `<div class="acct-bar">👤 ${esc(state.currentUser.email||"ログイン中")}<button class="link2" data-logout>ログアウト</button></div>`
       : (state.guestMode ? `<div class="acct-bar">ゲストモード（この端末のみ・同期なし）<button class="link2" data-login>ログイン / 新規登録</button></div>` : "")}
   `;
+  requestAnimationFrame(()=>{
+    app.querySelectorAll(".ring-fg[data-final-offset]").forEach(el=>{ el.style.strokeDashoffset = el.dataset.finalOffset; });
+    app.querySelectorAll("[data-final-width]").forEach(el=>{ el.style.width = el.dataset.finalWidth+"%"; });
+  });
   app.querySelectorAll("[data-mode]").forEach(b=>b.onclick=()=>start(b.dataset.mode));
   const prn=app.querySelector("[data-practice]"); if(prn)prn.onclick=()=>{ state.practicePick=true; render(); };
   const pcn=app.querySelector("[data-pcancel]"); if(pcn)pcn.onclick=()=>{ state.practicePick=false; render(); };
