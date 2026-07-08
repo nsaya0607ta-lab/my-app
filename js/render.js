@@ -329,7 +329,6 @@ export function renderHome(){
   const h=loadHist();
   const c=certById(S.cert)||{};
   const ov=overallStat();
-  const bp=getBP(); // 現在の資格の獲得ビルドポイント(EXP)
 
   // 統計データの集計
   const examHistory = h.filter(x => x.mode === "exam");
@@ -339,6 +338,8 @@ export function renderHome(){
 
   const practiceHistory = h.filter(x => x.mode === "practice");
   const practiceQuestions = practiceHistory.reduce((s, x) => s + (x.total || 0), 0);
+  const practiceCorrect = practiceHistory.reduce((s, x) => s + (x.correct || 0), 0);
+  const practiceAccuracy = practiceQuestions > 0 ? Math.round(practiceCorrect / practiceQuestions * 100) : 0;
 
   app.innerHTML = `
     <div class="q-head" style="margin-bottom:14px">
@@ -356,7 +357,11 @@ export function renderHome(){
           <div class="an-ag-lab" style="font-size:10.5px; color:var(--muted); margin-top:2px;">演習解いた問題数</div>
         </div>
         <div class="an-ag" style="background:var(--bg); padding:10px; border-radius:10px; text-align:center;">
-          <div class="an-ag-num" style="font-size:20px; font-weight:800; color:var(--gold);">${examPlays}<small style="font-size:11px; font-weight:600; color:var(--muted); margin-left:2px;">回</small></div>
+          <div class="an-ag-num" style="font-size:20px; font-weight:800; color:var(--gold);">${practiceAccuracy}<small style="font-size:11px; font-weight:600; color:var(--muted); margin-left:2px;">%</small></div>
+          <div class="an-ag-lab" style="font-size:10.5px; color:var(--muted); margin-top:2px;">演習モードの正答率</div>
+        </div>
+        <div class="an-ag" style="background:var(--bg); padding:10px; border-radius:10px; text-align:center;">
+          <div class="an-ag-num" style="font-size:20px; font-weight:800; color:var(--accent);">${examPlays}<small style="font-size:11px; font-weight:600; color:var(--muted); margin-left:2px;">回</small></div>
           <div class="an-ag-lab" style="font-size:10.5px; color:var(--muted); margin-top:2px;">試験モード実施回数</div>
         </div>
         <div class="an-ag" style="background:var(--bg); padding:10px; border-radius:10px; text-align:center; grid-column: span 1;">
@@ -364,10 +369,6 @@ export function renderHome(){
             <span style="color:var(--good);">${examBest}</span><span style="font-size:11px; color:var(--muted); font-weight:500;"> / ${examAvg}</span>
           </div>
           <div class="an-ag-lab" style="font-size:10.5px; color:var(--muted); margin-top:2px;">試験最高得点 / 平均点</div>
-        </div>
-        <div class="an-ag" style="background:var(--bg); padding:10px; border-radius:10px; text-align:center;">
-          <div class="an-ag-num" style="font-size:18px; font-weight:800; color:var(--good);">⚡ ${bp.toLocaleString()}</div>
-          <div class="an-ag-lab" style="font-size:10.5px; color:var(--muted); margin-top:2px;">現在の獲得経験値(BP)</div>
         </div>
       </div>
     </div>
