@@ -1661,6 +1661,13 @@ export function renderGeminiChat(){
       }
     }
 
+    // ここでボタン/入力欄を即座に無効化してから送信する。geminiChat.busyは
+    // sendGeminiMessage内で最初のawaitに達するまでに同期的にtrueへ変わり
+    // render()でも disabled が反映されるが、それより前に二重クリックや
+    // Enter連打が割り込む余地を残さないよう明示的にも無効化しておく
+    if(sendBtn) sendBtn.disabled = true;
+    if(inputEl) inputEl.disabled = true;
+
     // sendGeminiMessageは最初のawait（fetch）に達するまで同期的に実行される
     // ため、この呼び出し直後にrender()すれば「送信したメッセージ＋考え中」を
     // 即座に画面へ反映できる（完了を待ってからのrenderは応答受信後）。
@@ -1675,7 +1682,14 @@ export function renderGeminiChat(){
   if(inputEl){
     inputEl.focus();
     inputEl.addEventListener("keydown", (e) => {
-      if(e.key === "Enter" && !e.shiftKey){ e.preventDefault(); submit(); }
+      if(e.key !== "Enter" || e.shiftKey) return;
+      // 日本語IME等で変換確定のためにEnterを押した場合（isComposing）は
+      // 送信せず、確定後に改めて押されたEnterだけを送信として扱う。
+      // ここを見ずに送信すると「変換確定のEnter」と「送信のEnter」の
+      // 2回分が両方送信されてしまい、1メッセージのつもりが二重送信になる
+      if(e.isComposing || e.keyCode === 229) return;
+      e.preventDefault();
+      submit();
     });
   }
   window.scrollTo(0,0);
