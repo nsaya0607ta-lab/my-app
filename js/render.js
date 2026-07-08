@@ -346,21 +346,7 @@ export function renderHome(){
       <span class="q-count" style="color:${c.accent||'var(--accent)'}">${esc(c.code||"")}</span>
     </div>
 
-    ${state.practicePick ? `
-    <div class="pcount-wrap">
-      <div class="pcount-lab">📝 演習モード・問題数を選択</div>
-      <div class="pcount">
-        <button class="pcount-btn" data-pc="5">5問</button>
-        <button class="pcount-btn" data-pc="10">10問</button>
-        <button class="pcount-btn" data-pc="15">15問</button>
-      </div>
-      <button class="link" data-pcancel>キャンセル</button>
-    </div>` : `
-    <button class="cta" data-practice>📝 演習モード</button>`}
-    
-    <button class="cta cta-exam" data-mode="exam" style="margin-top:12px">🎯 試験モード</button>
-
-    <div class="an-card" style="margin-top:16px; background:rgba(255,255,255,0.85);">
+    <div class="an-card" style="background:rgba(255,255,255,0.85);">
       <div class="an-ttl" style="display:flex; align-items:center; gap:6px; font-size:14px; color:var(--text);">
         📊 ${esc(c.code)} 学習統計ダッシュボード
       </div>
@@ -385,6 +371,20 @@ export function renderHome(){
         </div>
       </div>
     </div>
+
+    ${state.practicePick ? `
+    <div class="pcount-wrap" style="margin-top:16px">
+      <div class="pcount-lab">📝 演習モード・問題数を選択</div>
+      <div class="pcount">
+        <button class="pcount-btn" data-pc="5">5問</button>
+        <button class="pcount-btn" data-pc="10">10問</button>
+        <button class="pcount-btn" data-pc="15">15問</button>
+      </div>
+      <button class="link" data-pcancel>キャンセル</button>
+    </div>` : `
+    <button class="cta" data-practice style="margin-top:16px">📝 演習モード</button>`}
+
+    <button class="cta cta-exam" data-mode="exam" style="margin-top:12px">🎯 試験モード</button>
 
     ${(loadWrong().length)?`<button class="ghost rev-btn" data-review style="margin-top:12px">🔁 復習モード（間違えた ${loadWrong().length} 問）</button>`:`<div class="x-hint" style="margin-top:12px;text-align:center">復習モード：間違えた問題がここに溜まり、再挑戦できます</div>`}
     <button class="ghost" data-go="dict" style="margin-top:10px">📖 用語辞典</button>
