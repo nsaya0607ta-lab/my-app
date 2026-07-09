@@ -1325,21 +1325,40 @@ const JP_STOCKS = [
 // ポートフォリオ画面の「株式を検索して追加」ウォッチリスト機能が検索対象と
 // する米国株の銘柄マスタ（priceは基準値＝前日終値扱いのモックデータ）
 const WATCH_STOCKS = [
-  { ticker:"AAPL", name:"Apple", price:213.40 },
-  { ticker:"TSLA", name:"Tesla", price:248.50 },
-  { ticker:"NVDA", name:"NVIDIA", price:135.60 },
-  { ticker:"MSFT", name:"Microsoft", price:435.12 },
-  { ticker:"AMZN", name:"Amazon", price:189.50 },
-  { ticker:"GOOGL", name:"Alphabet", price:199.80 },
-  { ticker:"META", name:"Meta", price:512.30 },
-  { ticker:"NFLX", name:"Netflix", price:685.20 },
-  { ticker:"AMD", name:"AMD", price:118.90 },
-  { ticker:"DIS", name:"Disney", price:112.30 },
-  { ticker:"KO", name:"Coca-Cola", price:63.10 },
-  { ticker:"NKE", name:"NIKE", price:75.40 },
-  { ticker:"PYPL", name:"PayPal", price:71.20 },
-  { ticker:"INTC", name:"Intel", price:22.80 },
+  { ticker:"AAPL", name:"Apple", price:213.40, sector:"テクノロジー" },
+  { ticker:"TSLA", name:"Tesla", price:248.50, sector:"自動車" },
+  { ticker:"NVDA", name:"NVIDIA", price:135.60, sector:"半導体 / AI" },
+  { ticker:"MSFT", name:"Microsoft", price:435.12, sector:"テクノロジー" },
+  { ticker:"AMZN", name:"Amazon", price:189.50, sector:"Eコマース" },
+  { ticker:"GOOGL", name:"Alphabet", price:199.80, sector:"テクノロジー" },
+  { ticker:"META", name:"Meta", price:512.30, sector:"テクノロジー" },
+  { ticker:"NFLX", name:"Netflix", price:685.20, sector:"エンタメ" },
+  { ticker:"AMD", name:"AMD", price:118.90, sector:"半導体 / AI" },
+  { ticker:"DIS", name:"Disney", price:112.30, sector:"エンタメ" },
+  { ticker:"KO", name:"Coca-Cola", price:63.10, sector:"生活必需品" },
+  { ticker:"NKE", name:"NIKE", price:75.40, sector:"アパレル" },
+  { ticker:"PYPL", name:"PayPal", price:71.20, sector:"金融" },
+  { ticker:"INTC", name:"Intel", price:22.80, sector:"半導体 / AI" },
 ];
+
+// セクターごとの絵文字とバッジの配色キー（css/style.css の
+// .pf-sector-badge[data-sector="..."] と対応させる）
+const SECTOR_META = {
+  "テクノロジー":  { emoji:"💻", key:"tech" },
+  "自動車":        { emoji:"🚗", key:"auto" },
+  "半導体 / AI":   { emoji:"🧠", key:"semi" },
+  "Eコマース":     { emoji:"🛒", key:"ecom" },
+  "エンタメ":      { emoji:"🎬", key:"media" },
+  "生活必需品":    { emoji:"🥤", key:"staple" },
+  "アパレル":      { emoji:"👟", key:"apparel" },
+  "金融":          { emoji:"💳", key:"finance" },
+};
+
+function sectorBadgeHTML(sector){
+  if(!sector) return "";
+  const meta = SECTOR_META[sector] || { emoji:"🏷️", key:"other" };
+  return `<span class="pf-sector-badge" data-sector="${meta.key}">${meta.emoji} ${esc(sector)}</span>`;
+}
 
 /* ---- 保有株（デモ取引のポートフォリオ）。端末ローカルに保存する ----
    保存キーは「現在ログインしているユーザー」ごとに独立させる。ベースキーに
@@ -1546,16 +1565,14 @@ function initHybridTape(id, speedPxS){
 // 売買金額の換算レート：1ドル＝1ACとして四捨五入する（デモ取引用）
 function tradeAmount(price, qty){ return Math.max(1, Math.round(price * qty)); }
 
-/* ---- ウォッチリスト銘柄の1分足ミニチャート ----
+/* ---- ウォッチリスト銘柄のリアルタイム株価 ----
    実際の株価はサーバー側の /api/stocks/quote（Finnhubの現在値を取得する
    プロキシ。APIキーはVercelの環境変数FINNHUB_API_KEYにのみ保持し、
-   フロントには渡さない）から取得する。1分足の「履歴」は過去分を遡って
-   取得するのではなく、この画面を開いている間に取得できた実際の現在値を
-   その都度チャートへ積み重ねていく方式（フロントで値を生成することはない）。
+   フロントには渡さない）から取得する。
    日本時間22:30〜翌5:30（米国市場の取引時間帯）の間だけ、1分ごとに
    バックグラウンドで再取得する。それ以外の時間帯は直近の値のまま静止させ、
    「取引時間外」であることが分かるバッジを表示する */
-const watchLive = {}; // ticker -> { prevClose, price, history:number[], loaded:boolean }
+const watchLive = {}; // ticker -> { prevClose, price, loaded:boolean }
 
 // 現在時刻を日本時間（分）に変換する（環境のタイムゾーンに依存しない）
 function jstMinutesNow(){
@@ -1571,10 +1588,8 @@ function isUSMarketHoursJST(){
   return mins >= (22*60+30) || mins < (5*60+30); // 日をまたぐため両端で判定
 }
 
-const WATCH_HISTORY_LEN = 20;
-
 // ウォッチリストに追加された銘柄の値動き状態を初期化する（初回のみ）。
-// 実際のAPI取得が終わるまでの間だけ、銘柄マスタの基準値で平らな仮チャートを
+// 実際のAPI取得が終わるまでの間だけ、銘柄マスタの基準値を仮の値として
 // 表示しておく（loaded:falseの間は「取得中」の見た目にする）
 const WATCH_REFRESH_INTERVAL_MS = 60000;
 
@@ -1582,7 +1597,7 @@ function ensureWatchLive(ticker){
   if(watchLive[ticker]) return watchLive[ticker];
   const meta = WATCH_STOCKS.find(s => s.ticker === ticker);
   const base = meta ? meta.price : 100;
-  const st = { prevClose: base, price: base, history: [base], loaded: false, lastFetchTs: 0 };
+  const st = { prevClose: base, price: base, loaded: false, lastFetchTs: 0 };
   watchLive[ticker] = st;
   return st;
 }
@@ -1602,8 +1617,8 @@ async function fetchStockQuotes(tickers){
   }
 }
 
-// 取得できた実際の現在値をウォッチリストの状態へ反映する（1分足チャートに
-// 1点積み増す形）。dataは fetchStockQuotes() が返す quotes オブジェクト
+// 取得できた実際の現在値をウォッチリストの状態へ反映する。
+// dataは fetchStockQuotes() が返す quotes オブジェクト
 function applyWatchQuotes(quotes){
   Object.keys(quotes).forEach(ticker => {
     const q = quotes[ticker];
@@ -1612,27 +1627,7 @@ function applyWatchQuotes(quotes){
     st.price = q.price;
     st.loaded = true;
     st.lastFetchTs = Date.now();
-    st.history.push(q.price);
-    if(st.history.length > WATCH_HISTORY_LEN) st.history.shift();
   });
-}
-
-// 履歴配列から簡易ラインチャートのSVGを生成する（取得直後で点が1つしか
-// 無いうちは、幅いっぱいの水平線として表示する）
-function watchSparklineSVG(history, isUp){
-  const w = 64, h = 26;
-  const min = Math.min(...history), max = Math.max(...history);
-  const range = (max - min) || 1;
-  const denom = Math.max(1, history.length - 1);
-  const pts = history.map((v,i) => {
-    const x = (i/denom) * w;
-    const y = h - ((v-min)/range) * (h-4) - 2;
-    return `${x.toFixed(1)},${y.toFixed(1)}`;
-  }).join(" ");
-  const color = isUp ? "var(--good)" : "var(--bad)";
-  return `<svg class="pf-spark" viewBox="0 0 ${w} ${h}" preserveAspectRatio="none">
-    <polyline points="${pts}" fill="none" style="stroke:${color}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-  </svg>`;
 }
 
 function watchRowHTML(ticker){
@@ -1649,8 +1644,8 @@ function watchRowHTML(ticker){
     <div class="pf-watch-left">
       <span class="pf-ticker">${esc(ticker)}</span>
       <span class="pf-name">${esc(meta.name)}</span>
+      ${sectorBadgeHTML(meta.sector)}
     </div>
-    <div class="pf-watch-chart">${watchSparklineSVG(live.history, up)}</div>
     <div class="pf-watch-right">
       ${priceHTML}
     </div>
