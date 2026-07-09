@@ -776,6 +776,38 @@ h1.title.title--badge{margin:2px 0 0;}
 .pf-shares{font-size:11px;font-weight:700;color:var(--muted);}
 .pf-val{font-size:14.5px;font-weight:800;color:var(--text);font-variant-numeric:tabular-nums;}
 
+/* ポートフォリオ＞ウォッチリスト（検索して追加した銘柄・1分足ミニチャート） */
+.pf-watch-addbtn{width:100%;padding:13px;border:1px dashed var(--accent);border-radius:13px;
+  background:rgba(2,132,199,.06);color:var(--accent);font-size:14px;font-weight:700;cursor:pointer;
+  transition:background .15s;}
+.pf-watch-addbtn:hover{background:rgba(2,132,199,.11);}
+.pf-watch-badge{display:inline-block;font-size:10.5px;font-weight:700;color:var(--muted);margin:10px 0 2px;}
+.pf-watch-badge.on{color:var(--good);}
+.pf-watch-list{display:flex;flex-direction:column;gap:9px;margin-top:10px;}
+.pf-watch-row{display:flex;align-items:center;gap:10px;background:var(--surface);
+  border:1px solid var(--line);border-radius:14px;padding:11px 13px;box-shadow:0 2px 6px rgba(15,23,42,.03);}
+.pf-watch-left{display:flex;flex-direction:column;gap:1px;min-width:0;flex:1;}
+.pf-watch-chart{flex:none;width:64px;height:26px;}
+.pf-spark{width:100%;height:100%;display:block;}
+.pf-watch-right{display:flex;flex-direction:column;align-items:flex-end;gap:1px;flex:none;}
+.pf-watch-price{font-size:14px;font-weight:800;color:var(--text);font-variant-numeric:tabular-nums;}
+.pf-watch-chg{font-size:11px;font-weight:700;font-variant-numeric:tabular-nums;}
+.pf-watch-chg.up{color:var(--good);}
+.pf-watch-chg.down{color:var(--bad);}
+.pf-watch-rm{flex:none;width:24px;height:24px;border:none;border-radius:50%;background:var(--bg2);
+  color:var(--muted);font-size:14px;line-height:1;cursor:pointer;}
+
+/* ポートフォリオ＞ウォッチリスト＞検索して追加モーダル */
+.pf-search-modal{max-width:420px;}
+.pf-search-list{max-height:320px;overflow-y:auto;display:flex;flex-direction:column;gap:8px;margin-top:12px;}
+.pf-search-row{display:flex;align-items:center;gap:10px;background:var(--bg2);border-radius:12px;padding:10px 12px;}
+.pf-search-left{display:flex;flex-direction:column;gap:1px;min-width:0;flex:1;}
+.pf-search-price{flex:none;font-size:12.5px;font-weight:700;color:var(--muted);font-variant-numeric:tabular-nums;}
+.pf-search-addbtn{flex:none;border:none;border-radius:10px;padding:8px 12px;font-size:12.5px;font-weight:700;
+  color:#ffffff;background:linear-gradient(90deg,var(--accent),#0ea5e9);cursor:pointer;}
+.pf-search-addbtn.added{background:var(--bg2);color:var(--muted);cursor:default;}
+.pf-search-empty{font-size:12.5px;color:var(--muted);text-align:center;padding:16px 0;}
+
 /* ニュース画面（日本経済・世界経済で共用）：ミニカレンダー・日付別ニュース一覧・管理者投稿欄 */
 .njp-cal{background:var(--surface);border:1px solid var(--line);border-radius:16px;padding:14px;
   box-shadow:0 2px 8px rgba(15,23,42,.03);}

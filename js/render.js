@@ -1322,6 +1322,25 @@ const JP_STOCKS = [
   { ticker:"NMR", name:"野村HD(ADR)", price:6.35 },
 ];
 
+// ポートフォリオ画面の「株式を検索して追加」ウォッチリスト機能が検索対象と
+// する米国株の銘柄マスタ（priceは基準値＝前日終値扱いのモックデータ）
+const WATCH_STOCKS = [
+  { ticker:"AAPL", name:"Apple", price:213.40 },
+  { ticker:"TSLA", name:"Tesla", price:248.50 },
+  { ticker:"NVDA", name:"NVIDIA", price:135.60 },
+  { ticker:"MSFT", name:"Microsoft", price:435.12 },
+  { ticker:"AMZN", name:"Amazon", price:189.50 },
+  { ticker:"GOOGL", name:"Alphabet", price:199.80 },
+  { ticker:"META", name:"Meta", price:512.30 },
+  { ticker:"NFLX", name:"Netflix", price:685.20 },
+  { ticker:"AMD", name:"AMD", price:118.90 },
+  { ticker:"DIS", name:"Disney", price:112.30 },
+  { ticker:"KO", name:"Coca-Cola", price:63.10 },
+  { ticker:"NKE", name:"NIKE", price:75.40 },
+  { ticker:"PYPL", name:"PayPal", price:71.20 },
+  { ticker:"INTC", name:"Intel", price:22.80 },
+];
+
 /* ---- 保有株（デモ取引のポートフォリオ）。端末ローカルに保存する ----
    保存キーは「現在ログインしているユーザー」ごとに独立させる。ベースキーに
    ログイン中のFirebase UID（未ログイン＝ゲスト利用中は"guest"固定）を連結
@@ -1352,6 +1371,33 @@ export function applyCloudPortfolio(pf){
   if(!pf || typeof pf !== "object" || Array.isArray(pf)) return;
   savePortfolio(pf);
   if(S.screen === "portfolio") renderPortfolio();
+}
+
+/* ---- ウォッチリスト（検索して追加した銘柄の一覧）。保有株とは別物で、
+   売買は行わず値動きの確認のみを目的とする。保存キーは保有株と同じ方式で
+   ログイン中のユーザーごとに独立させる ---- */
+const WATCHLIST_KEY = "stock_watchlist_v1";
+
+function watchlistStorageKey(){
+  const uid = (state && state.currentUserId) ? state.currentUserId : "guest";
+  return `${WATCHLIST_KEY}::${uid}`;
+}
+function loadWatchlist(){
+  try{
+    const arr = JSON.parse(localStorage.getItem(watchlistStorageKey()) || "[]");
+    return Array.isArray(arr) ? arr.filter(t => typeof t === "string") : [];
+  }catch(e){ return []; }
+}
+function saveWatchlist(list){
+  try{ localStorage.setItem(watchlistStorageKey(), JSON.stringify(list)); }catch(e){}
+}
+function addToWatchlist(ticker){
+  const list = loadWatchlist();
+  if(!list.includes(ticker)) list.push(ticker);
+  saveWatchlist(list);
+}
+function removeFromWatchlist(ticker){
+  saveWatchlist(loadWatchlist().filter(t => t !== ticker));
 }
 
 /* ---- ハイブリッドテープ（自動ループ＋手動スワイプ）の共通制御 ----
@@ -1500,9 +1546,188 @@ function initHybridTape(id, speedPxS){
 // 売買金額の換算レート：1ドル＝1ACとして四捨五入する（デモ取引用）
 function tradeAmount(price, qty){ return Math.max(1, Math.round(price * qty)); }
 
+/* ---- ウォッチリスト銘柄の1分足ミニチャート（モック）シミュレーション ----
+   実際のリアルタイムAPIとは連携せず、フロントエンド側で株価をランダムに
+   微変動させるだけの簡易モック。日本時間22:30〜翌5:30（米国市場の取引時間
+   帯のイメージ）の間だけ、1分ごとに値を動かす。それ以外の時間帯は直近の
+   値のまま静止させ、「取引時間外」であることが分かるバッジを表示する */
+const watchLive = {}; // ticker -> { prevClose, price, history:number[] }
+
+// 現在時刻を日本時間（分）に変換する（環境のタイムゾーンに依存しない）
+function jstMinutesNow(){
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone:"Asia/Tokyo", hour:"2-digit", minute:"2-digit", hour12:false
+  }).formatToParts(new Date());
+  const h = Number(parts.find(p => p.type === "hour").value);
+  const m = Number(parts.find(p => p.type === "minute").value);
+  return h * 60 + m;
+}
+function isUSMarketHoursJST(){
+  const mins = jstMinutesNow();
+  return mins >= (22*60+30) || mins < (5*60+30); // 日をまたぐため両端で判定
+}
+
+const WATCH_HISTORY_LEN = 20;
+
+// ウォッチリストに追加された銘柄の値動き状態を初期化する（初回のみ）。
+// 直近の1分足イメージが伝わるよう、基準値の周りに軽いランダムウォークで
+// 履歴を作っておく
+function ensureWatchLive(ticker){
+  if(watchLive[ticker]) return watchLive[ticker];
+  const meta = WATCH_STOCKS.find(s => s.ticker === ticker);
+  const base = meta ? meta.price : 100;
+  let p = base;
+  const history = [];
+  for(let i=0;i<WATCH_HISTORY_LEN;i++){
+    p = Math.max(0.01, p * (1 + (Math.random()-0.5)*0.004));
+    history.push(p);
+  }
+  const st = { prevClose: base, price: history[history.length-1], history };
+  watchLive[ticker] = st;
+  return st;
+}
+
+// 1分ぶんの値動きを進める（米国市場の取引時間中のみ呼ばれる想定）
+function tickWatchLive(ticker){
+  const st = ensureWatchLive(ticker);
+  st.price = Math.max(0.01, st.price * (1 + (Math.random()-0.5)*0.006));
+  st.history.push(st.price);
+  if(st.history.length > WATCH_HISTORY_LEN) st.history.shift();
+}
+
+// 履歴配列から簡易ラインチャートのSVGを生成する
+function watchSparklineSVG(history, isUp){
+  const w = 64, h = 26;
+  const min = Math.min(...history), max = Math.max(...history);
+  const range = (max - min) || 1;
+  const pts = history.map((v,i) => {
+    const x = (i/(history.length-1)) * w;
+    const y = h - ((v-min)/range) * (h-4) - 2;
+    return `${x.toFixed(1)},${y.toFixed(1)}`;
+  }).join(" ");
+  const color = isUp ? "var(--good)" : "var(--bad)";
+  return `<svg class="pf-spark" viewBox="0 0 ${w} ${h}" preserveAspectRatio="none">
+    <polyline points="${pts}" fill="none" style="stroke:${color}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+  </svg>`;
+}
+
+function watchRowHTML(ticker){
+  const meta = WATCH_STOCKS.find(s => s.ticker === ticker);
+  if(!meta) return "";
+  const live = ensureWatchLive(ticker);
+  const chg = ((live.price - live.prevClose)/live.prevClose) * 100;
+  const up = chg >= 0;
+  return `<div class="pf-watch-row" data-ticker="${esc(ticker)}">
+    <div class="pf-watch-left">
+      <span class="pf-ticker">${esc(ticker)}</span>
+      <span class="pf-name">${esc(meta.name)}</span>
+    </div>
+    <div class="pf-watch-chart">${watchSparklineSVG(live.history, up)}</div>
+    <div class="pf-watch-right">
+      <span class="pf-watch-price">$${live.price.toFixed(2)}</span>
+      <span class="pf-watch-chg ${up?"up":"down"}">${up?"+":""}${chg.toFixed(2)}%</span>
+    </div>
+    <button type="button" class="pf-watch-rm" data-rm-ticker="${esc(ticker)}" aria-label="ウォッチリストから削除">×</button>
+  </div>`;
+}
+
+function watchListInnerHTML(){
+  const list = loadWatchlist();
+  if(!list.length) return "";
+  return `<div class="pf-watch-list">${list.map(watchRowHTML).join("")}</div>`;
+}
+
+function watchLiveBadgeHTML(){
+  return isUSMarketHoursJST()
+    ? `<span class="pf-watch-badge on">🟢 米国市場 取引時間中・リアルタイム更新中</span>`
+    : `<span class="pf-watch-badge off">⚪ 米国市場 取引時間外（22:30〜翌5:30に自動更新）</span>`;
+}
+
+function bindWatchListRowEvents(){
+  app.querySelectorAll("[data-rm-ticker]").forEach(btn => btn.onclick = () => {
+    removeFromWatchlist(btn.dataset.rmTicker);
+    renderPortfolio();
+  });
+}
+
+let watchLiveTimer = null;
+// 1分ごとに（米国市場時間中のみ）ウォッチリストの値を進めて再描画する。
+// ポートフォリオ画面を離れて対象の要素がDOMから消えたら自動的に止まる
+function startWatchLiveRefresh(){
+  if(watchLiveTimer){ clearInterval(watchLiveTimer); watchLiveTimer = null; }
+  watchLiveTimer = setInterval(() => {
+    const wrap = document.getElementById("pf-watch-list-wrap");
+    if(!wrap){ clearInterval(watchLiveTimer); watchLiveTimer = null; return; }
+    const badge = document.getElementById("pf-watch-badge-wrap");
+    if(badge) badge.innerHTML = watchLiveBadgeHTML();
+    if(!isUSMarketHoursJST()) return;
+    loadWatchlist().forEach(tickWatchLive);
+    wrap.innerHTML = watchListInnerHTML();
+    bindWatchListRowEvents();
+  }, 60000);
+}
+
+// 検索結果1件ぶんの行。追加済みの銘柄はボタンを無効化して「追加済み」と表示する
+function stockSearchResultsHTML(query, watchlist){
+  const q = query.trim().toLowerCase();
+  const list = q
+    ? WATCH_STOCKS.filter(s => s.ticker.toLowerCase().includes(q) || s.name.toLowerCase().includes(q))
+    : WATCH_STOCKS;
+  if(!list.length) return `<div class="pf-search-empty">該当する銘柄が見つかりません。</div>`;
+  return list.map(s => {
+    const added = watchlist.includes(s.ticker);
+    return `<div class="pf-search-row">
+      <div class="pf-search-left">
+        <span class="pf-ticker">${esc(s.ticker)}</span>
+        <span class="pf-name">${esc(s.name)}</span>
+      </div>
+      <span class="pf-search-price">$${s.price.toFixed(2)}</span>
+      <button type="button" class="pf-search-addbtn${added?" added":""}" data-add-ticker="${esc(s.ticker)}"${added?" disabled":""}>${added?"追加済み":"＋ 追加"}</button>
+    </div>`;
+  }).join("");
+}
+
+// 「🔍 株式を検索して追加」ボタンから開く、米国株の検索・追加ポップアップ。
+// 入力のたびに結果一覧だけを再描画し、入力欄自体は作り直さないことで
+// フォーカスやカーソル位置を保つ（gcal-selday-inputの候補表示と同じ考え方）
+function openStockSearchModal(){
+  const ov = document.createElement("div");
+  ov.className = "modal-ov";
+  const close = () => { try{ ov.remove(); }catch(e){} renderPortfolio(); };
+  let query = "";
+
+  const renderResults = () => {
+    const box = ov.querySelector("#pf-search-list");
+    if(!box) return;
+    box.innerHTML = stockSearchResultsHTML(query, loadWatchlist());
+    box.querySelectorAll("[data-add-ticker]").forEach(btn => btn.onclick = () => {
+      addToWatchlist(btn.dataset.addTicker);
+      renderResults();
+    });
+  };
+
+  ov.innerHTML = `
+    <div class="modal pf-search-modal">
+      <div class="modal-title" style="color:var(--text)">🔍 株式を検索して追加</div>
+      <input type="text" class="gcal-ev-input" id="pf-search-input" placeholder="ティッカー or 銘柄名で検索（例: AAPL, テスラ）" autocomplete="off">
+      <div class="pf-search-list" id="pf-search-list"></div>
+      <button class="ghost" id="pf-search-close" style="margin-top:12px">閉じる</button>
+    </div>`;
+  const input = ov.querySelector("#pf-search-input");
+  input.oninput = () => { query = input.value; renderResults(); };
+  ov.querySelector("#pf-search-close").onclick = close;
+  renderResults();
+
+  document.body.appendChild(ov);
+  ov.addEventListener("click", (e) => { if(e.target === ov) close(); });
+  input.focus();
+}
+
 /* ポートフォリオ（資産保有額）詳細画面：STOCKS・JP_STOCKS両方から銘柄情報を
    検索して表示する。現金AC＋保有株の評価額（現在株価ベース）のサマリーと
-   保有明細を表示する（新規購入は行えない、保有分の閲覧専用画面） */
+   保有明細を表示する（新規購入は行えない、保有分の閲覧専用画面）。加えて、
+   検索して自由に登録できるウォッチリスト（値動き確認専用・売買なし）を
+   ヒーローカードの下に表示する */
 export function renderPortfolio(){
   const pf = loadPortfolio();
   const tickers = Object.keys(pf);
@@ -1525,6 +1750,8 @@ export function renderPortfolio(){
     </div>`;
   }).join("");
   const cash = S.coins || 0;
+  const watchHTML = watchListInnerHTML();
+  const showEmptyMsg = !rows && !watchHTML;
   app.innerHTML = `
     <div class="q-head"><button class="quit" data-go="select">← ホーム</button><span class="q-count">ポートフォリオ</span></div>
     <div class="pf-hero">
@@ -1532,12 +1759,19 @@ export function renderPortfolio(){
       <div class="pf-hero-total">${(cash + stockValue).toLocaleString()} <small>AC</small></div>
       <div class="pf-hero-sub">💰 現金 ${cash.toLocaleString()} AC ・ 📈 株式 ${stockValue.toLocaleString()} AC</div>
     </div>
-    ${rows
-      ? `<div class="section-lab">保有株</div><div class="pf-list">${rows}</div>`
-      : `<div class="sel-sub" style="margin-top:24px;text-align:center;">保有している株はまだありません。</div>`}
-    <div class="trade-note" style="text-align:center;margin-top:18px;">※ゲーム内通貨ACを使ったデモ取引のポートフォリオです。</div>
+    ${rows ? `<div class="section-lab">保有株</div><div class="pf-list">${rows}</div>` : ""}
+    <div class="section-lab" style="margin-top:${rows?"22px":"0"}">ウォッチリスト</div>
+    <button type="button" class="pf-watch-addbtn" id="pf-watch-add-btn">🔍 株式を検索して追加</button>
+    <div id="pf-watch-badge-wrap">${watchHTML ? watchLiveBadgeHTML() : ""}</div>
+    <div id="pf-watch-list-wrap">${watchHTML}</div>
+    ${showEmptyMsg ? `<div class="sel-sub" style="margin-top:24px;text-align:center;">保有している株はまだありません。</div>` : ""}
+    <div class="trade-note" style="text-align:center;margin-top:18px;">※ゲーム内通貨ACを使ったデモ取引のポートフォリオです。ウォッチリストは値動き確認のみで売買は行われません。</div>
   `;
   app.querySelectorAll("[data-go]").forEach(b => b.onclick = () => go(b.dataset.go));
+  const addBtn = document.getElementById("pf-watch-add-btn");
+  if(addBtn) addBtn.onclick = openStockSearchModal;
+  bindWatchListRowEvents();
+  startWatchLiveRefresh();
   window.scrollTo(0,0);
 }
 
