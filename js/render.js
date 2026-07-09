@@ -1576,11 +1576,13 @@ const WATCH_HISTORY_LEN = 20;
 // ウォッチリストに追加された銘柄の値動き状態を初期化する（初回のみ）。
 // 実際のAPI取得が終わるまでの間だけ、銘柄マスタの基準値で平らな仮チャートを
 // 表示しておく（loaded:falseの間は「取得中」の見た目にする）
+const WATCH_REFRESH_INTERVAL_MS = 60000;
+
 function ensureWatchLive(ticker){
   if(watchLive[ticker]) return watchLive[ticker];
   const meta = WATCH_STOCKS.find(s => s.ticker === ticker);
   const base = meta ? meta.price : 100;
-  const st = { prevClose: base, price: base, history: [base], loaded: false };
+  const st = { prevClose: base, price: base, history: [base], loaded: false, lastFetchTs: 0 };
   watchLive[ticker] = st;
   return st;
 }
@@ -1609,6 +1611,7 @@ function applyWatchQuotes(quotes){
     st.prevClose = q.prevClose;
     st.price = q.price;
     st.loaded = true;
+    st.lastFetchTs = Date.now();
     st.history.push(q.price);
     if(st.history.length > WATCH_HISTORY_LEN) st.history.shift();
   });
@@ -1675,26 +1678,42 @@ function bindWatchListRowEvents(){
   });
 }
 
-// 現在ウォッチリストに登録されている銘柄の実際の株価をサーバー経由で
-// まとめて取得し、DOMを（丸ごと再描画せず）部分更新する
+// 現在ウォッチリストに登録されている銘柄のうち、まだ一度も取得していない
+// 銘柄・前回の取得から1分以上経っている銘柄だけをサーバー経由で取得する。
+// ポートフォリオ画面を開き直すたびに毎回叩いてしまうと、まだ1分経って
+// いなくてもミニチャートが動いて見えてしまうため、ここで絞り込む
+function staleWatchTickers(list){
+  const now = Date.now();
+  return list.filter(t => {
+    const st = ensureWatchLive(t);
+    return !st.loaded || (now - st.lastFetchTs) >= WATCH_REFRESH_INTERVAL_MS;
+  });
+}
+
 async function refreshWatchQuotes(){
   const list = loadWatchlist();
   if(!list.length) return;
-  const { quotes, errors } = await fetchStockQuotes(list);
+  const targets = staleWatchTickers(list);
+  if(!targets.length) return; // 全銘柄まだ1分未満なら何もしない（表示も据え置き）
+  const { quotes, errors } = await fetchStockQuotes(targets);
   applyWatchQuotes(quotes);
   const wrap = document.getElementById("pf-watch-list-wrap");
   if(!wrap) return; // 取得中に画面を離れていたら何もしない
   wrap.innerHTML = watchListInnerHTML();
   bindWatchListRowEvents();
   const badge = document.getElementById("pf-watch-badge-wrap");
-  if(badge) badge.innerHTML = watchLiveBadgeHTML(errors.length === list.length);
+  if(badge) badge.innerHTML = watchLiveBadgeHTML(errors.length === targets.length);
 }
 
 let watchLiveTimer = null;
 // 1分ごとに（米国市場時間中のみ）実際の株価を再取得する。ポートフォリオ
-// 画面を離れて対象の要素がDOMから消えたら自動的に止まる
+// 画面を離れて対象の要素がDOMから消えたら自動的に止まる。
+// renderPortfolio()はFirestoreのonSnapshot経由（保有株・コイン更新等）でも
+// 呼ばれることがあり、その都度タイマーを作り直すと1分経つ前に何度も
+// リセットされてしまい、いつまで経っても発火しない不具合になる。そのため
+// 既に動いている場合は何もしない（作り直さない）
 function startWatchLiveRefresh(){
-  if(watchLiveTimer){ clearInterval(watchLiveTimer); watchLiveTimer = null; }
+  if(watchLiveTimer) return;
   watchLiveTimer = setInterval(() => {
     const wrap = document.getElementById("pf-watch-list-wrap");
     if(!wrap){ clearInterval(watchLiveTimer); watchLiveTimer = null; return; }
@@ -1704,6 +1723,16 @@ function startWatchLiveRefresh(){
     refreshWatchQuotes();
   }, 60000);
 }
+
+// スマホでアプリをバックグラウンドに回す（画面ロック・アプリ切り替え等）と
+// setIntervalが止まる/大きく遅延することがあるため、フォアグラウンドに
+// 戻った瞬間にも取得し直す。前回取得から実際に1分以上経っていた銘柄だけが
+// refreshWatchQuotes()内の判定で更新されるので、二重更新にはならない
+document.addEventListener("visibilitychange", () => {
+  if(document.visibilityState !== "visible") return;
+  if(!document.getElementById("pf-watch-list-wrap")) return;
+  refreshWatchQuotes();
+});
 
 // 検索結果1件ぶんの行。quotesにその銘柄の実際の現在値があればそれを、
 // 無ければ銘柄マスタの参考値を「取得中」の目安として表示する。追加済みの
@@ -1824,7 +1853,7 @@ export function renderPortfolio(){
   const addBtn = document.getElementById("pf-watch-add-btn");
   if(addBtn) addBtn.onclick = openStockSearchModal;
   bindWatchListRowEvents();
-  refreshWatchQuotes(); // 画面を開いた瞬間に、時間帯に関わらず最新の実際の株価を1回取得する
+  refreshWatchQuotes(); // 未取得の銘柄と、前回取得から1分以上経った銘柄だけを更新する（画面を開き直しただけでは動かない）
   startWatchLiveRefresh(); // 以後は市場時間中のみ1分ごとにバックグラウンド更新
   window.scrollTo(0,0);
 }
