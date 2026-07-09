@@ -219,6 +219,25 @@ export function applySkin(key){
   try{ saveToCloud(getBP(), loadWrong(), loadHist()); }catch(e){}
   return { ok:true };
 }
+/* ===== UIテーマ（背景の配色）・タップ音の永続化 =====
+   購入制のスキン（上記）とは異なり、コイン不要・アカウント非依存の
+   単純な端末表示設定のため、ユーザーごとに分けず1つのキーで保存する */
+const UI_THEME_STORE_KEY = "ui_theme_v1";
+const TAP_SOUND_STORE_KEY = "tap_sound_v1";
+
+export function loadUiTheme(){
+  try{ return localStorage.getItem(UI_THEME_STORE_KEY) || "default"; }catch(e){ return "default"; }
+}
+export function saveUiTheme(key){
+  try{ localStorage.setItem(UI_THEME_STORE_KEY, key); }catch(e){}
+}
+export function loadTapSound(){
+  try{ return localStorage.getItem(TAP_SOUND_STORE_KEY) || "wood"; }catch(e){ return "wood"; }
+}
+export function saveTapSound(key){
+  try{ localStorage.setItem(TAP_SOUND_STORE_KEY, key); }catch(e){}
+}
+
 // 獲得コイン：試験はスコア帯で固定、演習・復習は「正解数×3」
 
 export function coinReward(runMode, correct, score){
