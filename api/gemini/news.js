@@ -11,19 +11,42 @@ const MODEL = process.env.GEMINI_MODEL || "gemini-2.5-flash";
 const ADMIN_EMAIL = "for.administ@gmail.com";
 const MAX_PROMPT_LEN = 500;
 const MAX_ITEMS = 10;
+const MAX_SUMMARY_LEN = 160;
 
-function buildSystemInstruction(category){
+// relaxed=falseの初回検索で0件だった場合にだけ、日付・キーワードの縛りを
+// 緩めた2回目の検索を行う（buildFallbackPromptと組み合わせて使う）。
+// 「実在する記事以外は使わない」という制約自体はrelaxedでも変えない
+// （ここを緩めると記事のでっち上げに繋がるため）。
+function buildSystemInstruction(category, relaxed){
   const categoryLabel = category === "world" ? "海外（世界経済）" : "日本（日本経済）";
-  return [
+  const lines = [
     "あなたはニュースアプリの管理者専用ツールに組み込まれた、ニュース収集アシスタントです。",
-    `ニュースソースは必ず「NewsPicks」（newspicks.com）に限定してください。他のニュースサイトの記事は絶対に使わないでください。`,
-    `今回のカテゴリは「${categoryLabel}」です。ユーザーの依頼内容に沿って、該当する最新のNewsPicks記事を検索し、実在する記事のタイトルとURLだけを使ってください。`,
-    "記事のタイトルやURLを推測・創作することは禁止です。検索結果から実在が確認できる記事だけを採用してください。十分な件数が見つからない場合は、無理に件数を埋めず、見つかった分だけを返してください。",
+    "ニュースソースは必ず「NewsPicks」（newspicks.com）に限定してください。他のニュースサイトの記事は絶対に使わないでください。",
+    `今回のカテゴリは「${categoryLabel}」です。ユーザーの依頼内容に沿って、該当する最新のNewsPicks記事を検索し、実在する記事のタイトル・URL・要約だけを使ってください。`,
+    "記事のタイトル・URL・要約を推測・創作することは絶対に禁止です。検索結果から実在が確認できる記事だけを採用してください。",
     "URLは必ず https://newspicks.com/ から始まる実在のページのみを使ってください。",
+  ];
+  if(relaxed){
+    lines.push(
+      "ユーザーが指定した日付・キーワードに厳密に一致する記事が見つからない場合は、無理に諦めず、NewsPicksの直近24時間以内、それも無ければ直近で公開されている最新の記事（IT・ビジネス・経済など一般的なジャンルを問わない）を代わりに採用してください。",
+      "日付やキーワードの一致にはこだわらなくてよいので、実在する記事であることだけを条件に、できるだけ件数を埋めてください。",
+    );
+  } else {
+    lines.push("十分な件数が見つからない場合は、無理に件数を埋めず、見つかった分だけを返してください。");
+  }
+  lines.push(
     "出力は必ず次のJSON形式の配列のみとし、前後に説明文やMarkdownのコードフェンスを一切付けないでください：",
-    '[{"title":"記事タイトル","url":"https://newspicks.com/..."}, ...]',
+    '[{"title":"記事タイトル","url":"https://newspicks.com/...","summary":"記事内容を1〜2文で要約したもの"}, ...]',
+    "summaryは記事の内容から実在する範囲で簡潔にまとめ、不明な場合は空文字にしてください（推測で埋めないこと）。",
     "該当する記事が1件も見つからない場合は空配列 [] のみを返してください。",
-  ].join("\n");
+  );
+  return lines.join("\n");
+}
+
+// 初回検索が0件だったときに使う、日付・キーワードを指定しない汎用プロンプト
+function buildFallbackPrompt(category){
+  const categoryLabel = category === "world" ? "海外・世界経済" : "日本・国内経済";
+  return `NewsPicksに掲載されている${categoryLabel}関連の最新ニュースを、IT・ビジネス・経済など話題を問わず${MAX_ITEMS}件まで持ってきてください。`;
 }
 
 function isNewsPicksUrl(raw){
@@ -54,10 +77,10 @@ function extractJsonArray(text){
   }
 }
 
-async function callGemini(apiKey, { prompt, category, useSearchGrounding }){
+async function callGemini(apiKey, { prompt, category, useSearchGrounding, relaxed }){
   const body = {
     contents: [{ role: "user", parts: [{ text: prompt }] }],
-    systemInstruction: { role: "system", parts: [{ text: buildSystemInstruction(category) }] },
+    systemInstruction: { role: "system", parts: [{ text: buildSystemInstruction(category, relaxed) }] },
     generationConfig: { temperature: 0.2, maxOutputTokens: 2048 },
   };
   if(useSearchGrounding) body.tools = [{ google_search: {} }];
@@ -70,6 +93,42 @@ async function callGemini(apiKey, { prompt, category, useSearchGrounding }){
   });
   const data = await r.json().catch(() => ({}));
   return { ok: r.ok, status: r.status, data };
+}
+
+// グラウンディングあり→無しの順で試し、どちらも失敗したらnullを返す
+async function callGeminiWithGroundingFallback(apiKey, { prompt, category, relaxed }){
+  let result = await callGemini(apiKey, { prompt, category, useSearchGrounding: true, relaxed });
+  if (!result.ok) {
+    console.error("gemini news api error (with search grounding):", result.status, result.data);
+    result = await callGemini(apiKey, { prompt, category, useSearchGrounding: false, relaxed });
+  }
+  if (!result.ok) {
+    console.error("gemini news api error:", result.status, result.data);
+    return null;
+  }
+  return result;
+}
+
+// Geminiのレスポンスからtitle/url/summaryを抽出し、NewsPicks以外のURLを
+// 弾いた上で検証済みのitems配列にする（システム指示だけに頼らない多層防御）
+function extractItems(result){
+  const candidate = result.data && result.data.candidates && result.data.candidates[0];
+  const parts = (candidate && candidate.content && candidate.content.parts) || [];
+  const text = parts.map((p) => p.text || "").join("");
+
+  const rawItems = extractJsonArray(text) || [];
+  const items = [];
+  for (const raw of rawItems) {
+    if (!raw || typeof raw !== "object") continue;
+    const title = typeof raw.title === "string" ? raw.title.trim().slice(0, 200) : "";
+    const url = typeof raw.url === "string" ? raw.url.trim() : "";
+    if (!title || !url) continue;
+    if (!isNewsPicksUrl(url)) continue;
+    const summary = typeof raw.summary === "string" ? raw.summary.trim().slice(0, MAX_SUMMARY_LEN) : "";
+    items.push({ title, url, summary });
+    if (items.length >= MAX_ITEMS) break;
+  }
+  return items;
 }
 
 module.exports = async (req, res) => {
@@ -112,36 +171,26 @@ module.exports = async (req, res) => {
   }
 
   try {
-    // まずGoogle検索によるグラウンディング付きで実在記事を探させ、万一
-    // このモデル/プロジェクト設定で当該ツールが使えない場合（400エラー）は
-    // グラウンディング無しで再試行する
-    let result = await callGemini(apiKey, { prompt, category, useSearchGrounding: true });
-    if (!result.ok) {
-      console.error("gemini news api error (with search grounding):", result.status, result.data);
-      result = await callGemini(apiKey, { prompt, category, useSearchGrounding: false });
-    }
-    if (!result.ok) {
-      console.error("gemini news api error:", result.status, result.data);
-      res.status(502).json({ error: (result.data && result.data.error && result.data.error.message) || "gemini-request-failed" });
+    // 1回目：ユーザーの依頼プロンプトのまま、日付・キーワードに厳密に
+    // 沿った検索を行う（グラウンディングあり→無しの順で試す）
+    const result = await callGeminiWithGroundingFallback(apiKey, { prompt, category, relaxed: false });
+    if (!result) {
+      res.status(502).json({ error: "gemini-request-failed" });
       return;
     }
 
-    const candidate = result.data && result.data.candidates && result.data.candidates[0];
-    const parts = (candidate && candidate.content && candidate.content.parts) || [];
-    const text = parts.map((p) => p.text || "").join("");
+    let items = extractItems(result);
 
-    const rawItems = extractJsonArray(text) || [];
-    const items = [];
-    for (const raw of rawItems) {
-      if (!raw || typeof raw !== "object") continue;
-      const title = typeof raw.title === "string" ? raw.title.trim().slice(0, 200) : "";
-      const url = typeof raw.url === "string" ? raw.url.trim() : "";
-      if (!title || !url) continue;
-      // NewsPicks以外のドメインが混じっていた場合はここで確実に弾く
-      // （システム指示だけに頼らない多層防御）
-      if (!isNewsPicksUrl(url)) continue;
-      items.push({ title, url });
-      if (items.length >= MAX_ITEMS) break;
+    // 2回目（フォールバック）：厳密一致で0件だった場合のみ、日付・キーワードの
+    // 縛りを緩めた汎用プロンプトで再検索する。実在記事のみという制約は
+    // 変えないため、それでも0件なら素直に空配列を返す
+    if (items.length === 0) {
+      const fallbackResult = await callGeminiWithGroundingFallback(apiKey, {
+        prompt: buildFallbackPrompt(category),
+        category,
+        relaxed: true,
+      });
+      if (fallbackResult) items = extractItems(fallbackResult);
     }
 
     res.status(200).json({ items });

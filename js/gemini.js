@@ -199,7 +199,7 @@ export const geminiNews = {
 
 // prompt: 「本日の日本のITニュースを5件持ってきて」等の依頼文
 // category: "japan" | "world"
-// 戻り値：{title, url}[]（取得失敗時はnull。geminiNews.errorに理由文言）
+// 戻り値：{title, url, summary}[]（取得失敗時はnull。geminiNews.errorに理由文言）
 export async function fetchGeminiNewsItems(prompt, category){
   const trimmed = (prompt || "").trim();
   if(!trimmed || geminiNews.busy) return null;
