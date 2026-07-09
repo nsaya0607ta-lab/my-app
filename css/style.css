@@ -886,7 +886,7 @@ h1.title.title--badge{margin:2px 0 0;}
    一目でジャンルを識別できるようアクセントカラーだけ変える */
 .launcher-icon-news-jp{background:linear-gradient(150deg,#fff1f2,#fecaca);box-shadow:0 5px 14px rgba(220,38,38,.20),inset 0 1px 0 rgba(255,255,255,.6);}
 .launcher-icon-news-world{background:linear-gradient(150deg,#eff6ff,#bfdbfe);box-shadow:0 5px 14px rgba(37,99,235,.20),inset 0 1px 0 rgba(255,255,255,.6);}
-.launcher-icon-stock{background:linear-gradient(150deg,#22c55e,#15803d);border-color:transparent;box-shadow:0 5px 14px rgba(21,128,61,.32),inset 0 1px 0 rgba(255,255,255,.25);}
+.launcher-icon-stock{background:linear-gradient(150deg,#6ee7a0,#34a866);border-color:transparent;box-shadow:0 5px 14px rgba(52,168,102,.24),inset 0 1px 0 rgba(255,255,255,.3);}
 .launcher-icon-calendar{background:linear-gradient(150deg,#eff6ff,#dbeafe);box-shadow:0 5px 14px rgba(37,99,235,.16),inset 0 1px 0 rgba(255,255,255,.6);}
 .launcher-icon-ms{background:linear-gradient(150deg,#ffffff,#eef2f7);box-shadow:0 5px 14px rgba(15,23,42,.12),inset 0 1px 0 rgba(255,255,255,.7);}
 .launcher-icon-lpic{background:linear-gradient(150deg,#fef3c7,#fcd34d);box-shadow:0 5px 14px rgba(217,119,6,.22),inset 0 1px 0 rgba(255,255,255,.5);}
@@ -908,7 +908,7 @@ h1.title.title--badge{margin:2px 0 0;}
    ため、5個目以降のアイコンが追加されてカード幅からはみ出しても、その分は
    overflow-x:autoにより右から左へ手動スワイプ（スクロール）して表示できる */
 .home-launcher-card{padding:14px 4px;}
-.home-launcher-row{display:flex;width:100%;gap:16px;overflow-x:auto;overflow-y:hidden;
+.home-launcher-row{display:flex;width:100%;gap:9px;overflow-x:auto;overflow-y:hidden;
   padding:2px 10px 6px;scroll-snap-type:x proximity;-webkit-overflow-scrolling:touch;
   scrollbar-width:none;}
 .home-launcher-row::-webkit-scrollbar{display:none;}
@@ -921,7 +921,7 @@ h1.title.title--badge{margin:2px 0 0;}
 /* 「MS」「LPIC」の2項目を1枚のカードに横並びで表示する行。
    外枠は.ms-cert-cardを流用し、中身だけ.launcher-item2個を等間隔で
    中央に並べたものに差し替えている */
-.vendor-launcher-row{display:flex;width:100%;justify-content:center;align-items:flex-start;gap:56px;}
+.vendor-launcher-row{display:flex;width:100%;justify-content:center;align-items:flex-start;gap:28px;}
 .vendor-launcher-row .launcher-item{flex:none;}
 
 /* テキスト部分：9文字までは中央揃えで静止、超える場合は電光掲示板風に無限スライド */
