@@ -1835,7 +1835,7 @@ export function renderPortfolio(){
   const watchHTML = watchListInnerHTML();
   const showEmptyMsg = !rows && !watchHTML;
   app.innerHTML = `
-    <div class="q-head"><button class="quit" data-go="select">← ホーム</button><span class="q-count">ポートフォリオ</span></div>
+    <div class="q-head"><button class="quit" data-go="select">← ホーム</button><span class="q-count">株価</span></div>
     <div class="pf-hero">
       <div class="pf-hero-lab">総資産（評価額）</div>
       <div class="pf-hero-total">${(cash + stockValue).toLocaleString()} <small>AC</small></div>
@@ -2148,7 +2148,7 @@ export function renderGeminiEditEvent(){
 // 最小単位のパーツ（vendorCertLauncherRowHTML／homeLauncherCardHTMLの両方から使う）
 const LAUNCHER_LABEL_MAX_CHARS = 9;
 
-function launcherItemHTML({ iconHTML, label, dataGo, ariaLabel }){
+function launcherItemHTML({ iconHTML, label, dataGo, ariaLabel, variant }){
   const chars = [...label]; // サロゲートペアも1文字として正しく数える
   const needsMarquee = chars.length > LAUNCHER_LABEL_MAX_CHARS;
   const labelHTML = needsMarquee
@@ -2157,9 +2157,10 @@ function launcherItemHTML({ iconHTML, label, dataGo, ariaLabel }){
          <span class="ms-cert-marquee-item" aria-hidden="true">${esc(label)}</span>
        </span>`
     : `<span class="ms-cert-static">${esc(label)}</span>`;
+  const variantClass = variant ? ` launcher-icon-${variant}` : "";
   return `
     <div class="launcher-item">
-      <button type="button" class="ms-logo-btn" data-go="${dataGo}" aria-label="${esc(ariaLabel)}" title="${esc(ariaLabel)}">
+      <button type="button" class="ms-logo-btn${variantClass}" data-go="${dataGo}" aria-label="${esc(ariaLabel)}" title="${esc(ariaLabel)}">
         ${iconHTML}
       </button>
       <button type="button" class="ms-cert-link" data-go="${dataGo}" title="${esc(label)}">
@@ -2168,7 +2169,7 @@ function launcherItemHTML({ iconHTML, label, dataGo, ariaLabel }){
     </div>`;
 }
 
-// Microsoftロゴ（4色の田の字）をイメージした丸型ボタン。タップで資格選択画面へ
+// Microsoftロゴ（4色の田の字）をイメージした角丸スクエアボタン。タップで資格選択画面へ
 const MS_LOGO_ICON_HTML = `<span class="ms-logo-grid">
       <span class="ms-logo-sq r"></span>
       <span class="ms-logo-sq g"></span>
@@ -2179,7 +2180,7 @@ const MS_LOGO_ICON_HTML = `<span class="ms-logo-grid">
 // LPIC（Linux技術者認定）をイメージしたペンギン（Linuxの象徴）アイコン。プレースホルダー的な絵文字表現。
 const LPIC_LOGO_ICON_HTML = `<span class="launcher-emoji" aria-hidden="true">🐧</span>`;
 
-// 「Microsoft認定試験」「LPIC」の2つの起動ボタンを1枚のカードに横並びで表示する。
+// 「MS」「LPIC」の2つの起動ボタンを1枚のカードに横並びで表示する。
 // 見た目はMicrosoft単体カードだった頃と同じ .ms-cert-card を流用し、中身だけ
 // launcherItemHTMLを2個並べたものに差し替えている（画像の「Microsoft認定資格」
 // の右隣に「LPIC」を配置したいという要望に対応）
@@ -2187,29 +2188,28 @@ function vendorCertLauncherRowHTML(){
   return `
     <div class="news-card ms-cert-card vendor-cert-card" id="vendor-cert-card">
       <div class="vendor-launcher-row">
-        ${launcherItemHTML({ iconHTML: MS_LOGO_ICON_HTML, label: "Microsoft認定試験", dataGo: "certs", ariaLabel: "Microsoft認定資格を選ぶ" })}
-        ${launcherItemHTML({ iconHTML: LPIC_LOGO_ICON_HTML, label: "LPIC", dataGo: "lpic-certs", ariaLabel: "LPIC資格を選ぶ" })}
+        ${launcherItemHTML({ iconHTML: MS_LOGO_ICON_HTML, label: "MS", dataGo: "certs", ariaLabel: "Microsoft認定資格を選ぶ", variant: "ms" })}
+        ${launcherItemHTML({ iconHTML: LPIC_LOGO_ICON_HTML, label: "LPIC", dataGo: "lpic-certs", ariaLabel: "LPIC資格を選ぶ", variant: "lpic" })}
       </div>
     </div>`;
 }
 
-// 「日本NEWS」「海外ニュース」「ポートフォリオ」「カレンダー」の
-// 4項目を1つの横長カードにまとめたもの。外枠はMicrosoft認定試験カードと同じ
-// .ms-cert-card（背景・角丸・シャドウ・margin-top）を流用し、中身だけを
-// launcherItemHTML4個の横並びに差し替えている。
-const PORTFOLIO_LAUNCHER_ICON_SVG = `
-  <svg viewBox="0 0 24 24" width="19" height="19" fill="none" stroke="var(--accent)" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
-    <path d="M4 19V7a2 2 0 0 1 2-2h9l5 5v9a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2Z"></path>
-    <path d="M15 5v5h5"></path>
-    <line x1="8" y1="13" x2="16" y2="13"></line>
-    <line x1="8" y1="17" x2="13" y2="17"></line>
+// 「J-NEWS」「F-NEWS」「株価」「カレンダー」の4項目を1つの横長カードに
+// まとめたもの。外枠はMSカードと同じ.ms-cert-card（背景・角丸・シャドウ・
+// margin-top）を流用し、中身だけをlauncherItemHTML4個の横スクロール行に
+// 差し替えている。5個目以降のアイコンが増えても.home-launcher-row側の
+// overflow-x:autoにより、はみ出た分は手動スワイプで表示できる
+const STOCK_LAUNCHER_ICON_SVG = `
+  <svg viewBox="0 0 24 24" width="21" height="21" fill="none" stroke="#ffffff" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round">
+    <polyline points="3 17 9.5 10.5 13.5 14.5 21 6"></polyline>
+    <polyline points="14.5 6 21 6 21 12.5"></polyline>
   </svg>`;
 // Googleカレンダーのアプリアイコンを思わせる「今日の日付を表示する
 // カレンダー」デザイン（青いヘッダーバー＋今日の日付の数字）。予定管理
 // アイコン（線画のみ）とは見た目を分け、単独の「カレンダー」画面への
 // 入口だと一目でわかるようにする
 const CALENDAR_APP_LAUNCHER_ICON_SVG = `
-  <svg viewBox="0 0 24 24" width="19" height="19">
+  <svg viewBox="0 0 24 24" width="21" height="21">
     <rect x="2.5" y="4" width="19" height="17" rx="3" fill="#ffffff" stroke="var(--line)" stroke-width="1.2"></rect>
     <path d="M2.5 7a3 3 0 0 1 3-3h13a3 3 0 0 1 3 3v2H2.5V7z" fill="#4285f4"></path>
     <line x1="7.5" y1="2" x2="7.5" y2="6.5" stroke="#1a56c4" stroke-width="1.7" stroke-linecap="round"></line>
@@ -2219,10 +2219,10 @@ const CALENDAR_APP_LAUNCHER_ICON_SVG = `
 
 function homeLauncherCardHTML(){
   const items = [
-    { iconHTML: `<span class="launcher-emoji" aria-hidden="true">🇯🇵</span>`, label: "日本NEWS", dataGo: "news-japan", ariaLabel: "日本NEWS" },
-    { iconHTML: `<span class="launcher-emoji" aria-hidden="true">🌐</span>`, label: "海外ニュース", dataGo: "news-world", ariaLabel: "海外ニュース" },
-    { iconHTML: PORTFOLIO_LAUNCHER_ICON_SVG, label: "ポートフォリオ", dataGo: "portfolio", ariaLabel: "ポートフォリオ" },
-    { iconHTML: CALENDAR_APP_LAUNCHER_ICON_SVG, label: "カレンダー", dataGo: "calendar", ariaLabel: "カレンダー" },
+    { iconHTML: `<span class="launcher-emoji" aria-hidden="true">🇯🇵</span>`, label: "J-NEWS", dataGo: "news-japan", ariaLabel: "日本NEWS", variant: "news-jp" },
+    { iconHTML: `<span class="launcher-emoji" aria-hidden="true">🌐</span>`, label: "F-NEWS", dataGo: "news-world", ariaLabel: "海外ニュース", variant: "news-world" },
+    { iconHTML: STOCK_LAUNCHER_ICON_SVG, label: "株価", dataGo: "portfolio", ariaLabel: "株価", variant: "stock" },
+    { iconHTML: CALENDAR_APP_LAUNCHER_ICON_SVG, label: "カレンダー", dataGo: "calendar", ariaLabel: "カレンダー", variant: "calendar" },
   ];
   return `
     <div class="news-card ms-cert-card home-launcher-card" id="home-launcher-card">
