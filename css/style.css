@@ -776,7 +776,7 @@ h1.title.title--badge{margin:2px 0 0;}
 .pf-shares{font-size:11px;font-weight:700;color:var(--muted);}
 .pf-val{font-size:14.5px;font-weight:800;color:var(--text);font-variant-numeric:tabular-nums;}
 
-/* ポートフォリオ＞ウォッチリスト（検索して追加した銘柄・1分足ミニチャート） */
+/* ポートフォリオ＞ウォッチリスト（検索して追加した銘柄・セクターバッジ表示） */
 .pf-watch-addbtn{width:100%;padding:13px;border:1px dashed var(--accent);border-radius:13px;
   background:rgba(2,132,199,.06);color:var(--accent);font-size:14px;font-weight:700;cursor:pointer;
   transition:background .15s;}
@@ -786,9 +786,20 @@ h1.title.title--badge{margin:2px 0 0;}
 .pf-watch-list{display:flex;flex-direction:column;gap:9px;margin-top:10px;}
 .pf-watch-row{display:flex;align-items:center;gap:10px;background:var(--surface);
   border:1px solid var(--line);border-radius:14px;padding:11px 13px;box-shadow:0 2px 6px rgba(15,23,42,.03);}
-.pf-watch-left{display:flex;flex-direction:column;gap:1px;min-width:0;flex:1;}
-.pf-watch-chart{flex:none;width:64px;height:26px;}
-.pf-spark{width:100%;height:100%;display:block;}
+.pf-watch-left{display:flex;flex-direction:column;gap:3px;min-width:0;flex:1;}
+/* 銘柄のセクターを示す角丸タグ。data-sector値ごとに配色を変え、
+   パッと見で業界カテゴリが判別できるようにする */
+.pf-sector-badge{display:inline-flex;align-items:center;gap:3px;width:fit-content;
+  font-size:10.5px;font-weight:700;line-height:1.4;padding:2px 8px;border-radius:999px;
+  background:var(--bg2);color:var(--muted);border:1px solid var(--line);}
+.pf-sector-badge[data-sector="tech"]{background:rgba(2,132,199,.10);color:#0369a1;border-color:rgba(2,132,199,.22);}
+.pf-sector-badge[data-sector="auto"]{background:rgba(100,116,139,.12);color:#475569;border-color:rgba(100,116,139,.22);}
+.pf-sector-badge[data-sector="semi"]{background:rgba(147,51,234,.10);color:#7e22ce;border-color:rgba(147,51,234,.22);}
+.pf-sector-badge[data-sector="ecom"]{background:rgba(217,119,6,.10);color:#b45309;border-color:rgba(217,119,6,.22);}
+.pf-sector-badge[data-sector="media"]{background:rgba(219,39,119,.10);color:#be185d;border-color:rgba(219,39,119,.22);}
+.pf-sector-badge[data-sector="staple"]{background:rgba(22,163,74,.10);color:#15803d;border-color:rgba(22,163,74,.22);}
+.pf-sector-badge[data-sector="apparel"]{background:rgba(234,88,12,.10);color:#c2410c;border-color:rgba(234,88,12,.22);}
+.pf-sector-badge[data-sector="finance"]{background:rgba(13,148,136,.10);color:#0f766e;border-color:rgba(13,148,136,.22);}
 .pf-watch-right{display:flex;flex-direction:column;align-items:flex-end;gap:1px;flex:none;}
 .pf-watch-price{font-size:14px;font-weight:800;color:var(--text);font-variant-numeric:tabular-nums;}
 .pf-watch-chg{font-size:11px;font-weight:700;font-variant-numeric:tabular-nums;}
