@@ -5,6 +5,8 @@
    会話履歴はこのタブを開いている間だけ保持する簡易実装（保存はしない）。
    ========================================================================= */
 
+import { getWeather } from './weather.js';
+
 const MAX_HISTORY_TURNS = 20;
 const WEEKDAY_JA = ["日","月","火","水","木","金","土"];
 const SCHEDULE_FUNCTION_NAMES = new Set(["register_schedule", "update_schedule", "delete_schedule"]);
@@ -37,6 +39,39 @@ export function pushGeminiMessage(msg){
 let scheduleHandler = null;
 export function setGeminiScheduleHandler(fn){
   scheduleHandler = fn;
+}
+
+// ホーム画面の「今日の予定・タスク」を、循環importを避けつつ取得するための
+// 注入ポイント（render.js側から起動時にセットされる）。天気はweather.js
+// （render.jsに依存しないモジュール）なので直接importできるが、予定・タスクは
+// render.js側の状態に依存するため同じ注入方式を使う
+let homeContextProvider = null;
+export function setGeminiHomeContextProvider(fn){
+  homeContextProvider = fn;
+}
+
+// 天気カード・ホームの予定/タスクウィジェットと同じ実データをGeminiに渡すための
+// スナップショットを組み立てる。取得に失敗しても会話自体は止めたくないので、
+// 個別にtry/catchし、取れなかった項目はnull/空のまま送る
+async function buildAppContext(){
+  let weather = null;
+  try{
+    const w = await getWeather();
+    if(w){
+      weather = { city: w.city, temp: w.temp, label: w.label, pop: w.pop, precip: w.precip };
+    }
+  }catch(e){ /* 天気が取れなくてもチャットは継続する */ }
+
+  let home = null;
+  try{
+    if(homeContextProvider) home = homeContextProvider();
+  }catch(e){ /* 予定/タスクが取れなくてもチャットは継続する */ }
+
+  return {
+    weather,
+    todos: (home && home.todos) || [],
+    events: (home && home.events) || [],
+  };
 }
 
 function currentDateContext(){
@@ -85,7 +120,8 @@ export async function sendGeminiMessage(text, onChunk){
     .slice(-MAX_HISTORY_TURNS)
     .map(m => ({ role: m.role, text: m.text }));
 
-  const payload = JSON.stringify({ message: trimmed, history, today: currentDateContext() });
+  const appContext = await buildAppContext();
+  const payload = JSON.stringify({ message: trimmed, history, today: currentDateContext(), appContext });
   const doFetch = () => fetch("/api/gemini/chat", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
