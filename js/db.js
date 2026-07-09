@@ -1,7 +1,7 @@
   import { initializeApp } from "https://www.gstatic.com/firebasejs/10.0.0/firebase-app.js";
   import { getFirestore, doc, setDoc, getDoc, deleteDoc, onSnapshot, collection, query, where, orderBy, limit, getDocs, getCountFromServer, writeBatch, increment, runTransaction } from "https://www.gstatic.com/firebasejs/10.0.0/firebase-firestore.js";
   import { getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword, signOut, onAuthStateChanged, deleteUser, reauthenticateWithCredential, EmailAuthProvider } from "https://www.gstatic.com/firebasejs/10.0.0/firebase-auth.js";
-import { applyCloud, applyCloudSkins, commit, publishLeaderboard, saveCoins, seedCloudFromLocal, totalBP } from './core.js';
+import { applyCloud, applyCloudSkins, commit, getProfileName, publishLeaderboard, saveCoins, seedCloudFromLocal, totalBP } from './core.js';
 import { app, applyCloudGcal, applyCloudPortfolio, logout, render } from './render.js';
 import { S, state } from './state.js';
 
@@ -145,6 +145,37 @@ import { S, state } from './state.js';
           const d = await getDoc(doc(state.db, "gcalNames", id));
           return d.exists() ? (d.data().name || null) : null;
         } catch (e) { return null; }
+      }
+    };
+
+    // ニュース機能：管理者が登録した「タイトル」「本文」をFirestoreのnews
+    // コレクションに保存し、全ユーザーで共有する（1件＝1ドキュメント）。
+    // 一覧画面はURLへ遷移せず、アプリ内の詳細画面でcontentをそのまま表示する。
+    // ドキュメントIDはカテゴリを問わず一意な乱数文字列（サーバー側の連番は使わない）
+    window.News = {
+      add: async (category, dateKey, title, content) => {
+        if (!state.db) { const e = new Error("db-not-ready"); e.code = "db-not-ready"; throw e; }
+        const id = "n" + Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
+        await setDoc(doc(state.db, "news", id), {
+          category, dateKey, title, content,
+          authorName: getProfileName() || "",
+          createdAt: new Date().toISOString()
+        });
+        return id;
+      },
+      remove: async (id) => {
+        if (!state.db || !id) return;
+        await deleteDoc(doc(state.db, "news", id));
+      },
+      // 指定カテゴリ（"japan" | "world"）の全件を、日付キー→登録日時の昇順で返す。
+      // カレンダーの「ニュースがある日」マークも一覧もこの1回の取得結果から作る
+      listByCategory: async (category) => {
+        if (!state.db) return [];
+        const snap = await getDocs(query(collection(state.db, "news"), where("category", "==", category)));
+        const rows = [];
+        snap.forEach(d => rows.push(Object.assign({ id: d.id }, d.data())));
+        rows.sort((a, b) => (a.dateKey || "").localeCompare(b.dateKey || "") || (a.createdAt || "").localeCompare(b.createdAt || ""));
+        return rows;
       }
     };
 

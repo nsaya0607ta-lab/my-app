@@ -43,7 +43,7 @@ export function renderStatusBar(){
              || (!state.guestMode && !state.currentUser)
              || (!state.guestMode && state.currentUser && (!state.profileChecked || !getProfileName()));
   const screen = resolveScreen();
-  const otherScreens = ["ranking","profile","settings","skins","analytics","portfolio","news-japan","news-world","calendar","gemini","gemini-edit-event"];
+  const otherScreens = ["ranking","profile","settings","skins","analytics","portfolio","news-japan","news-world","news-detail","calendar","gemini","gemini-edit-event"];
   if(gated || otherScreens.includes(screen)){ el.classList.remove("show"); el.innerHTML=""; return; }
   const ov = overallStat();          // 総合Lvと次Lvまでの進捗(%)
   const coins = (S.coins||0);
@@ -86,7 +86,7 @@ export function renderStatusBar(){
 // render()末尾の分岐と同じ優先順位で判定する）ため、ヘッダー周りの表示制御は
 // この「実際に描画される画面名」を使って判断する。
 function resolveScreen(){
-  const noCertScreens = ["ranking","profile","settings","skins","analytics","certs","lpic-certs","portfolio","news-japan","news-world","calendar","gemini","gemini-edit-event"];
+  const noCertScreens = ["ranking","profile","settings","skins","analytics","certs","lpic-certs","portfolio","news-japan","news-world","news-detail","calendar","gemini","gemini-edit-event"];
   if(noCertScreens.includes(S.screen)) return S.screen;
   if(S.screen==="select" || !S.cert) return "select";
   return S.screen; // home/quiz/result/review/dict/transfer/history
@@ -151,6 +151,7 @@ export function render(){
   if(S.screen==="portfolio") return renderPortfolio();
   if(S.screen==="news-japan") return renderNewsJapan();
   if(S.screen==="news-world") return renderNewsWorld();
+  if(S.screen==="news-detail") return renderNewsDetail();
   if(S.screen==="calendar") return renderCalendarScreen();
   if(S.screen==="gemini") return renderGeminiChat();
   if(S.screen==="gemini-edit-event") return renderGeminiEditEvent();
@@ -4324,28 +4325,23 @@ export function renderCalendarScreen(){
    ニュース画面（日本経済・世界経済）共通ロジック
    - 上部：今月のミニカレンダー。日付をタップすると選択日が切り替わる
    - 中央：選択中の日付に紐づくニュースをタイトルのみで縦並びに表示。
-     URLが登録されている項目はカード（または右の矢印）をタップすると
-     新しいタブへ安全に開く（target="_blank" + rel="noopener noreferrer"）
+     カードをタップするとアプリ内の「ニュース詳細画面」（news-detail）へ
+     遷移し、登録された本文（content）をそのまま表示する。外部URLへは
+     一切遷移しない
    - 管理者（isAdminAccount()）の場合のみ、各カード左側に削除選択用の
      チェックボックスと「選択したニュースを削除」ボタン、および
-     「タイトル入力欄」「URL入力欄」「登録ボタン」の3点構成の登録フォーム
-     を表示。タイトルとURLを別々のフィールドで受け取ることで、1件の
-     登録操作でタイトルとURLが正しく1つのニュース項目として保存される
-   日付ごとのニュースはこの端末のlocalStorageに保存する（他ユーザーへの
-   共有は行わない、この端末限定の簡易実装）。日本経済・世界経済は同一の
-   カレンダー／一覧／管理フォーム／削除ロジックをcreateNewsScreen()で共有し、
-   保存先のキーと画面ラベルだけが異なる
+     「タイトル入力欄」「本文入力欄」「登録ボタン」の3点構成の登録フォーム
+     を表示する
+   ニュースはFirestoreの news コレクション（1件＝1ドキュメント）に保存し、
+   全ユーザーで共有する（管理者が登録すると全員の一覧に反映される。API本体は
+   db.jsのwindow.News）。日本経済・世界経済は同一のカレンダー／一覧／管理
+   フォーム／削除ロジックをcreateNewsScreen()で共有し、categoryと画面ラベル
+   だけが異なる
    ========================================================================= */
 
 const NEWS_WEEKDAYS = ["日","月","火","水","木","金","土"];
 
 function newsDateKey(y, m, d){ return `${y}-${String(m+1).padStart(2,"0")}-${String(d).padStart(2,"0")}`; }
-
-// 一覧の各ニュースをチェックボックス選択・削除対象として区別するための
-// 端末内限定の一意なID（サーバー同期はしないためシンプルな乱数で十分）
-function newsGenId(){
-  return `n${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`;
-}
 
 function newsCalendarHTML(y, m, selectedDay, hasNewsSet, todayKey){
   const first = new Date(y, m, 1);
@@ -4369,25 +4365,22 @@ function newsCalendarHTML(y, m, selectedDay, hasNewsSet, todayKey){
     </div>`;
 }
 
-// タイトルのみを表示し、URLが登録されている項目はカード全体がリンクになる
-// （URL文字列そのものは画面に出さない）。管理者の場合のみ、削除選択用の
+// タイトルのみを表示し、カードをタップするとニュース詳細画面（news-detail）
+// へ遷移する（本文はここでは表示しない）。管理者の場合のみ、削除選択用の
 // チェックボックスをカード左側に添える（selectedIdsは選択中のnews.idの集合）
 function newsListHTML(items, admin, selectedIds){
   if(!items || !items.length){
     return `<div class="njp-empty">この日のニュースはまだ登録されていません。</div>`;
   }
   return `<div class="njp-news-list">${items.map(n => {
-    const hasUrl = /^https?:\/\//.test(n.url||"");
-    const tag = hasUrl ? "a" : "div";
-    const attrs = hasUrl ? `href="${esc(n.url)}" target="_blank" rel="noopener noreferrer"` : "";
-    const link = `<${tag} class="njp-news-link"${attrs?" "+attrs:""}>
+    const link = `<button type="button" class="njp-news-link" data-news-id="${esc(n.id)}">
       <span class="njp-news-title">${esc(n.title)}</span>
-      ${hasUrl?'<span class="njp-news-arrow">→</span>':""}
-    </${tag}>`;
+      <span class="njp-news-arrow">→</span>
+    </button>`;
     const checkbox = admin
       ? `<input type="checkbox" class="njp-news-check" data-id="${esc(n.id)}" aria-label="削除対象として選択"${selectedIds&&selectedIds.has(n.id)?" checked":""}>`
       : "";
-    return `<div class="njp-news-item${hasUrl?" has-link":""}">${checkbox}${link}</div>`;
+    return `<div class="njp-news-item has-link">${checkbox}${link}</div>`;
   }).join("")}</div>`;
 }
 
@@ -4396,7 +4389,7 @@ function newsAdminFormHTML(){
     <div class="njp-admin">
       <div class="njp-admin-title">🛠️ 管理者専用：ニュース登録</div>
       <input type="text" class="njp-admin-input" id="njp-admin-title" placeholder="ニュースのタイトルを入力">
-      <input type="url" class="njp-admin-input" id="njp-admin-url" placeholder="リンク先のURLを入力">
+      <textarea class="njp-admin-input njp-admin-textarea" id="njp-admin-content" rows="5" placeholder="ニュースの本文を入力"></textarea>
       <button type="button" class="njp-admin-btn" id="njp-admin-submit">ニュースを登録</button>
     </div>`;
 }
@@ -4409,46 +4402,41 @@ function newsBulkDeleteHTML(){
 }
 
 // 日本経済・世界経済の両画面が使う共通ロジックを1箇所にまとめたファクトリー。
-// storeKeyとlabel/iconだけを差し替えれば同じ挙動の画面を量産できる
-function createNewsScreen({ storeKey, label, icon, seedFn }){
+// categoryとlabel/iconだけを差し替えれば同じ挙動の画面を量産できる。
+// データはFirestoreのnewsコレクション（window.News、db.js）に保存し、
+// 全ユーザーで共有する
+function createNewsScreen({ category, label, icon }){
   // 画面を離れても選択中の日付を覚えておく（再訪時は前回の続きから）。
   // 未選択（初回訪問）の場合のみ「今日」を初期値にする
   let selected = null;
   // 削除対象としてチェックボックスで選択中のnews.idの集合。日付を切り替えた
   // ときや削除実行後にはリセットする（別の日の選択が残らないように）
   let selectedIds = new Set();
+  // このカテゴリの全件（Firestoreから取得済みの結果）。未取得の間はnull
+  let cache = null;
+  let loading = false;
 
-  function loadStore(){
-    let store = {};
-    try{ store = JSON.parse(localStorage.getItem(storeKey) || "{}"); }catch(e){}
-    if(seedFn){
-      const seed = seedFn();
-      if(!store[seed.key]) store[seed.key] = seed.items;
+  async function refresh(){
+    if(loading) return;
+    loading = true;
+    try{
+      cache = (window.News ? await window.News.listByCategory(category) : []) || [];
+    }catch(e){
+      cache = cache || [];
     }
-    // 旧バージョンで保存された（idを持たない）ニュースにも削除機能が
-    // 使えるよう、idが無い項目には初回読み込み時に一度だけ払い出す
-    let migrated = false;
-    Object.keys(store).forEach(k=>{
-      (store[k]||[]).forEach(n=>{
-        if(!n.id){ n.id = newsGenId(); migrated = true; }
-      });
-    });
-    if(migrated) saveStore(store);
-    return store;
-  }
-
-  function saveStore(store){
-    try{ localStorage.setItem(storeKey, JSON.stringify(store)); }catch(e){}
+    loading = false;
+    render();
   }
 
   function render(){
     const now = new Date();
     if(!selected) selected = { y: now.getFullYear(), m: now.getMonth(), d: now.getDate() };
     const { y, m, d } = selected;
-    const store = loadStore();
+    if(cache === null){ refresh(); }  // 初回のみFirestoreから取得（以後はrefresh()で明示的に再取得）
+    const allItems = cache || [];
     const selKey = newsDateKey(y, m, d);
-    const items = store[selKey] || [];
-    const hasNewsSet = new Set(Object.keys(store).filter(k => (store[k]||[]).length));
+    const items = allItems.filter(n => n.dateKey === selKey);
+    const hasNewsSet = new Set(allItems.map(n => n.dateKey));
     const todayKey = newsDateKey(now.getFullYear(), now.getMonth(), now.getDate());
     const admin = isAdminAccount();
 
@@ -4461,7 +4449,7 @@ function createNewsScreen({ storeKey, label, icon, seedFn }){
       <div class="q-head"><button class="quit" data-go="select">← ホーム</button><span class="q-count">${icon} ${label}</span></div>
       ${newsCalendarHTML(y, m, d, hasNewsSet, todayKey)}
       <div class="section-lab" style="margin-top:16px">${m+1}月${d}日のニュース</div>
-      <div id="njp-news-area">${newsListHTML(items, admin, selectedIds)}</div>
+      <div id="njp-news-area">${cache===null ? `<div class="njp-empty">読み込み中…</div>` : newsListHTML(items, admin, selectedIds)}</div>
       ${admin ? newsBulkDeleteHTML() : ""}
       ${admin ? newsAdminFormHTML() : ""}
     `;
@@ -4472,6 +4460,14 @@ function createNewsScreen({ storeKey, label, icon, seedFn }){
       render();
     });
 
+    // カードタップ→アプリ内のニュース詳細画面へ遷移（外部URLへは遷移しない）
+    app.querySelectorAll("[data-news-id]").forEach(b=>b.onclick=()=>{
+      const item = items.find(n => n.id === b.dataset.newsId);
+      if(!item) return;
+      S.newsDetail = { title:item.title, content:item.content, dateKey:item.dateKey, label, icon, returnScreen:S.screen };
+      go("news-detail");
+    });
+
     if(admin){
       const bulkBtn = document.getElementById("njp-bulk-delete");
       const syncBulkBtn = () => {
@@ -4480,6 +4476,7 @@ function createNewsScreen({ storeKey, label, icon, seedFn }){
       syncBulkBtn();
 
       app.querySelectorAll(".njp-news-check").forEach(cb=>{
+        cb.onclick = (ev) => ev.stopPropagation();  // カード本体のクリック（詳細画面遷移）を誘発させない
         cb.onchange = () => {
           const id = cb.dataset.id;
           if(cb.checked) selectedIds.add(id); else selectedIds.delete(id);
@@ -4487,34 +4484,38 @@ function createNewsScreen({ storeKey, label, icon, seedFn }){
         };
       });
 
-      if(bulkBtn) bulkBtn.onclick = () => {
-        if(bulkBtn.disabled || !selectedIds.size) return;
-        const freshStore = loadStore();
-        freshStore[selKey] = (freshStore[selKey] || []).filter(n => !selectedIds.has(n.id));
-        saveStore(freshStore);
+      if(bulkBtn) bulkBtn.onclick = async () => {
+        if(bulkBtn.disabled || !selectedIds.size || !window.News) return;
+        bulkBtn.disabled = true;
+        try{
+          await Promise.all(Array.from(selectedIds).map(id => window.News.remove(id)));
+        }catch(e){
+          alert("削除に失敗しました。時間をおいて再度お試しください。");
+        }
         selectedIds = new Set();
-        render();
+        await refresh();
       };
 
       const submitBtn = document.getElementById("njp-admin-submit");
-      if(submitBtn) submitBtn.onclick = () => {
+      if(submitBtn) submitBtn.onclick = async () => {
         const titleInput = document.getElementById("njp-admin-title");
-        const urlInput = document.getElementById("njp-admin-url");
+        const contentInput = document.getElementById("njp-admin-content");
         const title = (titleInput.value||"").trim();
-        const url = (urlInput.value||"").trim();
+        const content = (contentInput.value||"").trim();
         if(!title){ titleInput.focus(); return; }
-        if(url && !/^https?:\/\//.test(url)){
-          alert("URLは http:// または https:// から始まる形式で入力してください（省略も可）。");
-          urlInput.focus();
-          return;
+        if(!content){ contentInput.focus(); return; }
+        if(!window.News){ alert("準備中です。少し待って再度お試しください。"); return; }
+        submitBtn.disabled = true;
+        try{
+          await window.News.add(category, selKey, title, content);
+          titleInput.value = "";
+          contentInput.value = "";
+          await refresh();
+        }catch(e){
+          alert("登録に失敗しました。時間をおいて再度お試しください。");
+        }finally{
+          submitBtn.disabled = false;
         }
-        const freshStore = loadStore();
-        if(!freshStore[selKey]) freshStore[selKey] = [];
-        freshStore[selKey].push({ id: newsGenId(), title, url });
-        saveStore(freshStore);
-        titleInput.value = "";
-        urlInput.value = "";
-        render();
       };
     }
     window.scrollTo(0,0);
@@ -4523,29 +4524,48 @@ function createNewsScreen({ storeKey, label, icon, seedFn }){
   return render;
 }
 
-// 今日の日付にあらかじめ登録しておく日本経済のモックニュース3件
-function newsJapanSeed(){
-  const now = new Date();
-  const key = newsDateKey(now.getFullYear(), now.getMonth(), now.getDate());
-  return { key, items: [
-    { id:"jp-seed-1", title:"【日本経済】日銀の追加利上げ観測でメガバンク株急騰、円高シフトへの警戒も", url:"https://newspicks.com/theme-news/1131/" },
-    { id:"jp-seed-2", title:"【米国経済】米雇用統計が予想超えの堅調、FRBによる利下げ時期予測が後退か", url:"https://newspicks.com/theme-news/54/" },
-    { id:"jp-seed-3", title:"【日本経済】東証のPBR1倍割れ是正勧告から2年、企業の「稼ぐ力」の現在地", url:"https://newspicks.com/news/10178940" },
-  ]};
-}
-
 export const renderNewsJapan = createNewsScreen({
-  storeKey: "news_japan_store_v1",
+  category: "japan",
   label: "日本経済",
   icon: "🇯🇵",
-  seedFn: newsJapanSeed,
 });
 
 export const renderNewsWorld = createNewsScreen({
-  storeKey: "news_world_store_v1",
+  category: "world",
   label: "世界経済",
   icon: "🌐",
 });
+
+// ニュース詳細画面：一覧でカードをタップした際の遷移先。管理者が登録した
+// 本文（content）をそのまま表示するだけの単純な画面で、外部サイトへは
+// 遷移しない。表示するデータはS.newsDetail（一覧タップ時にセットされる）
+function renderNewsDetail(){
+  const d = S.newsDetail;
+  if(!d){ go("select"); return; }
+  app.innerHTML = `
+    <div class="q-head"><button class="quit" data-go="${esc(d.returnScreen||"select")}">← 戻る</button><span class="q-count">${d.icon||""} ${esc(d.label||"ニュース")}</span></div>
+    <div class="njp-detail">
+      <div class="njp-detail-date">${esc(newsDetailDateLabel(d.dateKey))}</div>
+      <h2 class="njp-detail-title">${esc(d.title)}</h2>
+      <div class="njp-detail-body">${newsDetailBodyHTML(d.content)}</div>
+    </div>`;
+  app.querySelectorAll("[data-go]").forEach(b=>b.onclick=()=>go(b.dataset.go));
+  window.scrollTo(0,0);
+}
+
+function newsDetailDateLabel(dateKey){
+  const mtch = /^(\d{4})-(\d{2})-(\d{2})$/.exec(dateKey||"");
+  if(!mtch) return "";
+  const y = Number(mtch[1]), m = Number(mtch[2]), d = Number(mtch[3]);
+  const weekday = NEWS_WEEKDAYS[new Date(y, m-1, d).getDay()];
+  return `${y}年${m}月${d}日(${weekday})`;
+}
+
+// 本文中の空行を段落区切り、単独の改行を<br>として表示する。
+// XSS対策のためesc()適用後の文字列に対して改行だけを変換する
+function newsDetailBodyHTML(content){
+  return esc(content||"").split(/\n{2,}/).map(p => `<p>${p.split("\n").join("<br>")}</p>`).join("");
+}
 
 /* 「資格を選ぶ」CTAボタンから遷移する専用画面：総合レベルと資格カード一覧
    vendorで「microsoft」「lpic」を切り替え、同じUI・レベリングの仕組みを
