@@ -1707,9 +1707,13 @@ async function refreshWatchQuotes(){
 
 let watchLiveTimer = null;
 // 1分ごとに（米国市場時間中のみ）実際の株価を再取得する。ポートフォリオ
-// 画面を離れて対象の要素がDOMから消えたら自動的に止まる
+// 画面を離れて対象の要素がDOMから消えたら自動的に止まる。
+// renderPortfolio()はFirestoreのonSnapshot経由（保有株・コイン更新等）でも
+// 呼ばれることがあり、その都度タイマーを作り直すと1分経つ前に何度も
+// リセットされてしまい、いつまで経っても発火しない不具合になる。そのため
+// 既に動いている場合は何もしない（作り直さない）
 function startWatchLiveRefresh(){
-  if(watchLiveTimer){ clearInterval(watchLiveTimer); watchLiveTimer = null; }
+  if(watchLiveTimer) return;
   watchLiveTimer = setInterval(() => {
     const wrap = document.getElementById("pf-watch-list-wrap");
     if(!wrap){ clearInterval(watchLiveTimer); watchLiveTimer = null; return; }
@@ -1719,6 +1723,16 @@ function startWatchLiveRefresh(){
     refreshWatchQuotes();
   }, 60000);
 }
+
+// スマホでアプリをバックグラウンドに回す（画面ロック・アプリ切り替え等）と
+// setIntervalが止まる/大きく遅延することがあるため、フォアグラウンドに
+// 戻った瞬間にも取得し直す。前回取得から実際に1分以上経っていた銘柄だけが
+// refreshWatchQuotes()内の判定で更新されるので、二重更新にはならない
+document.addEventListener("visibilitychange", () => {
+  if(document.visibilityState !== "visible") return;
+  if(!document.getElementById("pf-watch-list-wrap")) return;
+  refreshWatchQuotes();
+});
 
 // 検索結果1件ぶんの行。quotesにその銘柄の実際の現在値があればそれを、
 // 無ければ銘柄マスタの参考値を「取得中」の目安として表示する。追加済みの
