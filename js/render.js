@@ -12,6 +12,23 @@ import { S, state } from './state.js';
 
 export const app = document.getElementById("app");
 
+// 「総合ランク」バーのタップツールチップ：バーをタップすると次のレベルまでの
+// 残りBPを吹き出しで表示する。render()のたびに要素が作り直されるため、
+// 開閉状態はこのモジュール変数側で管理し、再タップ／他要素タップ／2.6秒経過の
+// いずれかで自動的に閉じる。
+let rankTooltipEl = null;
+let rankTooltipTimer = null;
+function closeRankTooltip(){
+  if(rankTooltipEl) rankTooltipEl.classList.remove("sb-tooltip-show");
+  rankTooltipEl = null;
+  clearTimeout(rankTooltipTimer);
+}
+document.addEventListener("click", (e)=>{
+  if(!rankTooltipEl) return;
+  if(e.target.closest && e.target.closest(".sb-line-overall")) return;
+  closeRankTooltip();
+});
+
 // 「資格を選ぶ」画面・ホーム（select）画面はどちらも特定の資格に紐づかない
 // 全体ビューのため、遷移するたびに選択中の資格をクリアする。これにより、
 // 個別資格の画面（AZ-900など）から資格一覧へ「戻る」際に、前の資格の
@@ -71,11 +88,19 @@ export function renderStatusBar(){
       </div>`;
   }
 
+  const overallNextText = ov.remain > 0
+    ? `あと <b>${ov.remain.toLocaleString()}</b> BP`
+    : "まもなくレベルアップ！";
+
   el.innerHTML = `
     <div class="sb-levels">
-      <div class="sb-line">
+      <div class="sb-line sb-line-overall">
         <span class="sb-lab">総合ランク Lv.<b>${ov.lv}</b></span>
-        <span class="sb-prog" title="次の総合Lvまで ${ov.remain.toLocaleString()} BP"><span class="sb-prog-f overall" style="width:${ov.pct}%"></span></span>
+        <span class="sb-prog"><span class="sb-prog-f overall" style="width:${ov.pct}%"></span></span>
+        <div class="sb-tooltip">
+          <span class="sb-tooltip-sub">次のレベルまで</span>
+          <span class="sb-tooltip-main">${overallNextText}</span>
+        </div>
       </div>
       ${certRow}
     </div>
@@ -83,6 +108,21 @@ export function renderStatusBar(){
     <span class="sb-coin">💰 <b>${coins.toLocaleString()}</b> AC</span>
   `;
   el.classList.add("show");
+
+  // 総合ランクのバーをタップ（クリック）すると、次のレベルまでの残りBPを
+  // 吹き出しでフワッと表示する。もう一度タップするか2.6秒経つと自動的に閉じる
+  const overallLine = el.querySelector(".sb-line-overall");
+  const tip = overallLine && overallLine.querySelector(".sb-tooltip");
+  if(overallLine && tip){
+    overallLine.onclick = (e) => {
+      e.stopPropagation();
+      if(rankTooltipEl === tip){ closeRankTooltip(); return; }
+      closeRankTooltip();
+      rankTooltipEl = tip;
+      tip.classList.add("sb-tooltip-show");
+      rankTooltipTimer = setTimeout(closeRankTooltip, 2600);
+    };
+  }
 }
 
 // S.screen の値だけでは実際に描画される画面と食い違うことがある
