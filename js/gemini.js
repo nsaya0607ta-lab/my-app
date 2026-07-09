@@ -5,8 +5,6 @@
    会話履歴はこのタブを開いている間だけ保持する簡易実装（保存はしない）。
    ========================================================================= */
 
-import { state } from './state.js';
-
 const MAX_HISTORY_TURNS = 20;
 const WEEKDAY_JA = ["日","月","火","水","木","金","土"];
 const SCHEDULE_FUNCTION_NAMES = new Set(["register_schedule", "update_schedule", "delete_schedule"]);
@@ -184,46 +182,4 @@ export function resetGeminiChat(){
   geminiChat.busy = false;
   geminiChat.error = null;
   geminiChat.streamingText = "";
-}
-
-/* =========================================================================
-   Geminiボタン（簡易）：管理者（for.administ@gmail.com）専用のニュース自動取得。
-   /api/gemini/news はサーバー側でもFirebaseのIDトークンとemailクレームを
-   検証しているため、ここで管理者判定を通っていないユーザーが直接叩いても
-   403で拒否される（クライアント側の表示制御だけに頼らない）。
-   ========================================================================= */
-export const geminiNews = {
-  busy: false,
-  error: null,
-};
-
-// prompt: 「本日の日本のITニュースを5件持ってきて」等の依頼文
-// category: "japan" | "world"
-// 戻り値：{title, url, summary}[]（取得失敗時はnull。geminiNews.errorに理由文言）
-export async function fetchGeminiNewsItems(prompt, category){
-  const trimmed = (prompt || "").trim();
-  if(!trimmed || geminiNews.busy) return null;
-  if(!state.currentUser){
-    geminiNews.error = "ログインしてください。";
-    return null;
-  }
-
-  geminiNews.busy = true;
-  geminiNews.error = null;
-  try{
-    const idToken = await state.currentUser.getIdToken();
-    const res = await fetch("/api/gemini/news", {
-      method: "POST",
-      headers: { "Content-Type": "application/json", "Authorization": `Bearer ${idToken}` },
-      body: JSON.stringify({ prompt: trimmed, category: category === "world" ? "world" : "japan" }),
-    });
-    const data = await res.json().catch(() => ({}));
-    if(!res.ok) throw new Error((data && data.error) || ("request-failed-" + res.status));
-    return Array.isArray(data.items) ? data.items : [];
-  }catch(e){
-    geminiNews.error = "ニュースの取得に失敗しました。通信環境を確認して、もう一度お試しください。";
-    return null;
-  }finally{
-    geminiNews.busy = false;
-  }
 }

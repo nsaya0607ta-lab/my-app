@@ -1,8 +1,8 @@
 import { CERTS } from './data/certs.js';
 import { DC_PHASES, L, REGIONS } from './data/constants.js';
-import { CONCEPTS, DRAW, PASS, Q, TIERS, applySkin, certById, certStat, commit, correctSet, dcCount, dcPhase, dcTitle, esc, exportCode, fmt, getBP, getProfileName, grade, importCode, isAdminAccount, isGeminiNewsAdmin, isMulti, loadHist, loadReviewStats, loadWrong, overallLevel, overallStat, pick, pts, publishLeaderboard, purchaseSkin, saveCoins, saveToCloud, selectCert, setBP, setProfileName, skinHandleIdentityChange, stars, start, startReview, totalBP } from './core.js';
+import { CONCEPTS, DRAW, PASS, Q, TIERS, applySkin, certById, certStat, commit, correctSet, dcCount, dcPhase, dcTitle, esc, exportCode, fmt, getBP, getProfileName, grade, importCode, isAdminAccount, isMulti, loadHist, loadReviewStats, loadWrong, overallLevel, overallStat, pick, pts, publishLeaderboard, purchaseSkin, saveCoins, saveToCloud, selectCert, setBP, setProfileName, skinHandleIdentityChange, stars, start, startReview, totalBP } from './core.js';
 import { getWeather } from './weather.js';
-import { geminiChat, sendGeminiMessage, setGeminiScheduleHandler, pushGeminiMessage, geminiNews, fetchGeminiNewsItems } from './gemini.js';
+import { geminiChat, sendGeminiMessage, setGeminiScheduleHandler, pushGeminiMessage } from './gemini.js';
 import { SKIN_DATA } from './data/skins.js';
 import { S, state } from './state.js';
 
@@ -4394,10 +4394,7 @@ function newsListHTML(items, admin, selectedIds){
     const tag = hasUrl ? "a" : "div";
     const attrs = hasUrl ? `href="${esc(n.url)}" target="_blank" rel="noopener noreferrer"` : "";
     const link = `<${tag} class="njp-news-link"${attrs?" "+attrs:""}>
-      <span class="njp-news-text">
-        <span class="njp-news-title">${esc(n.title)}</span>
-        ${n.summary?`<span class="njp-news-summary">${esc(n.summary)}</span>`:""}
-      </span>
+      <span class="njp-news-title">${esc(n.title)}</span>
       ${hasUrl?'<span class="njp-news-arrow">→</span>':""}
     </${tag}>`;
     const checkbox = admin
@@ -4424,23 +4421,9 @@ function newsBulkDeleteHTML(){
     </div>`;
 }
 
-// Geminiボタン（簡易）：for.administ@gmail.com専用。NewsPicksの実在記事だけを
-// Geminiに検索させ、for.administ@gmail.com自身の依頼プロンプト（例：「本日の
-// 日本のITニュースを5件持ってきて」）に応じて、その日のニュース一覧へ
-// 自動登録する
-function newsGeminiPanelHTML(){
-  return `
-    <div class="njp-gemini">
-      <div class="njp-admin-title">🤖 Geminiボタン（簡易）：NewsPicksから自動取得・登録</div>
-      <input type="text" class="njp-admin-input" id="njp-gemini-prompt" placeholder="例：本日の日本のITニュースを5件持ってきて">
-      <button type="button" class="njp-admin-btn" id="njp-gemini-submit">Geminiで取得して登録</button>
-      <div class="njp-gemini-status" id="njp-gemini-status" aria-live="polite"></div>
-    </div>`;
-}
-
 // 日本経済・世界経済の両画面が使う共通ロジックを1箇所にまとめたファクトリー。
 // storeKeyとlabel/iconだけを差し替えれば同じ挙動の画面を量産できる
-function createNewsScreen({ storeKey, label, icon, seedFn, geminiCategory }){
+function createNewsScreen({ storeKey, label, icon, seedFn }){
   // 画面を離れても選択中の日付を覚えておく（再訪時は前回の続きから）。
   // 未選択（初回訪問）の場合のみ「今日」を初期値にする
   let selected = null;
@@ -4481,9 +4464,6 @@ function createNewsScreen({ storeKey, label, icon, seedFn, geminiCategory }){
     const hasNewsSet = new Set(Object.keys(store).filter(k => (store[k]||[]).length));
     const todayKey = newsDateKey(now.getFullYear(), now.getMonth(), now.getDate());
     const admin = isAdminAccount();
-    // Geminiボタン（簡易）はfor.administ@gmail.com本人のみに限定する、より厳格な判定
-    // （isAdminAccountの表示名フォールバックは適用しない）
-    const geminiAdmin = isGeminiNewsAdmin();
 
     // その日のニュースに存在しないidの選択は持ち越さない（削除済み・日付
     // 切り替え後の残留選択を防ぐ）
@@ -4497,7 +4477,6 @@ function createNewsScreen({ storeKey, label, icon, seedFn, geminiCategory }){
       <div id="njp-news-area">${newsListHTML(items, admin, selectedIds)}</div>
       ${admin ? newsBulkDeleteHTML() : ""}
       ${admin ? newsAdminFormHTML() : ""}
-      ${geminiAdmin ? newsGeminiPanelHTML() : ""}
     `;
     app.querySelectorAll("[data-go]").forEach(b=>b.onclick=()=>go(b.dataset.go));
     app.querySelectorAll("[data-day]").forEach(b=>b.onclick=()=>{
@@ -4551,40 +4530,6 @@ function createNewsScreen({ storeKey, label, icon, seedFn, geminiCategory }){
         render();
       };
     }
-
-    if(geminiAdmin){
-      const promptInput = document.getElementById("njp-gemini-prompt");
-      const geminiBtn = document.getElementById("njp-gemini-submit");
-      const statusEl = document.getElementById("njp-gemini-status");
-      if(geminiBtn) geminiBtn.onclick = async () => {
-        const prompt = (promptInput.value || "").trim();
-        if(!prompt){ promptInput.focus(); return; }
-        geminiBtn.disabled = true;
-        if(statusEl) statusEl.textContent = "GeminiがNewsPicksからニュースを検索しています…";
-
-        const fetchedItems = await fetchGeminiNewsItems(prompt, geminiCategory);
-
-        // 非同期待機中に画面遷移・再描画されていた場合、既に外れたDOMを
-        // 触らないようにする
-        if(!document.body.contains(geminiBtn)) return;
-        geminiBtn.disabled = false;
-
-        if(fetchedItems === null){
-          if(statusEl) statusEl.textContent = geminiNews.error || "取得に失敗しました。もう一度お試しください。";
-          return;
-        }
-        if(!fetchedItems.length){
-          if(statusEl) statusEl.textContent = "該当するNewsPicksの記事が見つかりませんでした。プロンプトを変えてもう一度お試しください。";
-          return;
-        }
-
-        const freshStore = loadStore();
-        if(!freshStore[selKey]) freshStore[selKey] = [];
-        fetchedItems.forEach(it => freshStore[selKey].push({ id: newsGenId(), title: it.title, url: it.url, summary: it.summary || "" }));
-        saveStore(freshStore);
-        render();
-      };
-    }
     window.scrollTo(0,0);
   }
 
@@ -4607,14 +4552,12 @@ export const renderNewsJapan = createNewsScreen({
   label: "日本経済",
   icon: "🇯🇵",
   seedFn: newsJapanSeed,
-  geminiCategory: "japan",
 });
 
 export const renderNewsWorld = createNewsScreen({
   storeKey: "news_world_store_v1",
   label: "世界経済",
   icon: "🌐",
-  geminiCategory: "world",
 });
 
 /* 「資格を選ぶ」CTAボタンから遷移する専用画面：総合レベルと資格カード一覧
