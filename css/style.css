@@ -909,6 +909,21 @@ h1.title.title--badge{margin:2px 0 0;}
 .cert-stats small{color:var(--muted);font-size:11px;}
 .cert-card.locked{background:var(--bg2);border-left-color:var(--line);cursor:default;opacity:.7;box-shadow:none;}
 .cert-card.locked .cert-code{color:var(--muted);}
+
+/* LPIC：コマンド別学習画面 */
+.cmd-cat{font-size:12px;font-weight:800;letter-spacing:.04em;color:var(--muted);margin:18px 2px 8px;}
+.cmd-cat:first-of-type{margin-top:4px;}
+.cmd-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:10px;}
+.cmd-card{display:flex;flex-direction:column;gap:4px;text-align:left;cursor:pointer;color:var(--text);
+  background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:12px 13px;
+  box-shadow:0 4px 10px rgba(15,23,42,.02);transition:transform .12s;}
+.cmd-card:active{transform:scale(.97);}
+.cmd-card-name{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:15px;font-weight:800;color:var(--accent);}
+.cmd-card-desc{font-size:11.5px;color:var(--muted);line-height:1.3;}
+.cmd-card-count{font-size:10.5px;color:var(--muted);margin-top:2px;}
+.cmd-card.weak{border-color:var(--gold);}
+.cmd-card.weak .cmd-card-count{color:var(--gold);font-weight:700;}
+@media (min-width:520px){ .cmd-grid{grid-template-columns:repeat(3,1fr);} }
 /* =========================================================================
    🎨 背景スキンショップ用スタイル
    ========================================================================= */

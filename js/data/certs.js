@@ -1,6 +1,7 @@
 import { AZ900_CONCEPTS, AZ900_Q, AZ900_TIERS } from './az900.js';
 import { CONCEPTS, Q, TIERS } from '../core.js';
 import { LPIC1_CONCEPTS, LPIC1_Q, LPIC1_TIERS } from './lpic1.js';
+import { LPIC1_CMD_Q } from './lpic1-commands.js';
 import { SC300_CONCEPTS, SC300_Q, SC300_TIERS } from './sc300.js';
 
 export const CERTS = [
@@ -18,7 +19,7 @@ export const CERTS = [
 
   { id:"lpic1", code:"LPIC-1", name:"Linux 技術者認定 レベル1", sub:"Linux Administrator（基礎）",
     vendor:"lpic", accent:"#f5a623", draw:24, pass:700, status:"ready",
-    Q:LPIC1_Q, CONCEPTS:LPIC1_CONCEPTS, TIERS:LPIC1_TIERS },
+    Q:LPIC1_Q, CONCEPTS:LPIC1_CONCEPTS, TIERS:LPIC1_TIERS, extraQ:LPIC1_CMD_Q },
   { id:"lpic2", code:"LPIC-2", name:"Linux 技術者認定 レベル2", sub:"Linux Engineer（中級）",
     vendor:"lpic", accent:"#e8590c", draw:24, pass:700, status:"coming" },
   { id:"lpic3", code:"LPIC-3", name:"Linux 技術者認定 レベル3", sub:"Linux Enterprise Professional（上級）",

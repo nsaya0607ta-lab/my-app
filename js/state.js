@@ -4,6 +4,7 @@ export const S = {
   currentSkin:"default",       // 現在適用中のスキン
   ownedSkins:["default"],      // 購入済みスキンのリスト
   deck:[], idx:0, picks:[], sel:[], revealed:false, last:null,
+  commandCmd:null,             // コマンド別演習中に選択中のコマンド（例："grep"）。通常演習/試験ではnull
   newsDetail:null,             // ニュース詳細画面に表示中の項目（{title,content,dateKey,label,icon,returnScreen}）
 };
 
