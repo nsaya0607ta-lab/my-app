@@ -67,21 +67,58 @@ function extractJsonArray(text){
   const fenceMatch = /^```(?:json)?\s*([\s\S]*?)\s*```$/i.exec(cleaned);
   if(fenceMatch) cleaned = fenceMatch[1].trim();
   const start = cleaned.indexOf("[");
+  if(start === -1) return null;
   const end = cleaned.lastIndexOf("]");
-  if(start === -1 || end === -1 || end < start) return null;
-  try{
-    const parsed = JSON.parse(cleaned.slice(start, end + 1));
-    return Array.isArray(parsed) ? parsed : null;
-  }catch(e){
-    return null;
+  if(end !== -1 && end > start){
+    try{
+      const parsed = JSON.parse(cleaned.slice(start, end + 1));
+      if(Array.isArray(parsed)) return parsed;
+    }catch(e){
+      // 配列全体としては壊れている（末尾が閉じていない等）ので、下の
+      // フォールバックで完成しているオブジェクトだけを個別に救い出す
+    }
   }
+  // maxOutputTokensでの打ち切りなどにより配列が正しく閉じていないケースに
+  // 備え、波括弧の対応を数えながら完成している{...}だけを個別に取り出す
+  // （末尾の壊れた1件だけを捨て、それより前の分は活かす）
+  return extractCompleteObjects(cleaned.slice(start + 1));
+}
+
+function extractCompleteObjects(text){
+  const results = [];
+  let depth = 0;
+  let objStart = -1;
+  let inString = false;
+  let escape = false;
+  for(let i = 0; i < text.length; i++){
+    const ch = text[i];
+    if(inString){
+      if(escape) escape = false;
+      else if(ch === "\\") escape = true;
+      else if(ch === '"') inString = false;
+      continue;
+    }
+    if(ch === '"'){ inString = true; continue; }
+    if(ch === "{"){
+      if(depth === 0) objStart = i;
+      depth++;
+    } else if(ch === "}"){
+      depth--;
+      if(depth === 0 && objStart !== -1){
+        try{ results.push(JSON.parse(text.slice(objStart, i + 1))); }
+        catch(e){ /* このオブジェクトは壊れているのでスキップ */ }
+        objStart = -1;
+      }
+    }
+  }
+  return results;
 }
 
 async function callGemini(apiKey, { prompt, category, useSearchGrounding, relaxed }){
   const body = {
     contents: [{ role: "user", parts: [{ text: prompt }] }],
     systemInstruction: { role: "system", parts: [{ text: buildSystemInstruction(category, relaxed) }] },
-    generationConfig: { temperature: 0.2, maxOutputTokens: 2048 },
+    generationConfig: { temperature: 0.2, maxOutputTokens: 4096 },
   };
   if(useSearchGrounding) body.tools = [{ google_search: {} }];
 
@@ -122,29 +159,62 @@ function getReplyText(result){
 function getGroundingSummary(result){
   const candidate = result.data && result.data.candidates && result.data.candidates[0];
   const gm = candidate && candidate.groundingMetadata;
-  if (!gm) return "groundingMetadata=none";
-  const queries = gm.webSearchQueries || [];
-  const chunkCount = (gm.groundingChunks || []).length;
-  return `webSearchQueries=${JSON.stringify(queries)} groundingChunks=${chunkCount}`;
+  const finishReason = candidate && candidate.finishReason;
+  const gmText = gm
+    ? `webSearchQueries=${JSON.stringify(gm.webSearchQueries || [])} groundingChunks=${(gm.groundingChunks || []).length}`
+    : "groundingMetadata=none";
+  return `${gmText} finishReason=${finishReason || "unknown"}`;
 }
 
-// Geminiのレスポンスからtitle/url/summaryを抽出し、NewsPicks以外のURLを
-// 弾いた上で検証済みのitems配列にする（システム指示だけに頼らない多層防御）
+// Geminiのレスポンスからtitle/url/summaryを抽出し、NewsPicks以外のURLや
+// 重複URLを弾いた上で検証済みのitems配列にする（システム指示だけに頼らない多層防御）
 function extractItems(result){
   const text = getReplyText(result);
   const rawItems = extractJsonArray(text) || [];
   const items = [];
+  const seenUrls = new Set();
   for (const raw of rawItems) {
     if (!raw || typeof raw !== "object") continue;
     const title = typeof raw.title === "string" ? raw.title.trim().slice(0, 200) : "";
     const url = typeof raw.url === "string" ? raw.url.trim() : "";
     if (!title || !url) continue;
     if (!isNewsPicksUrl(url)) continue;
+    if (seenUrls.has(url)) continue;
+    seenUrls.add(url);
     const summary = typeof raw.summary === "string" ? raw.summary.trim().slice(0, MAX_SUMMARY_LEN) : "";
     items.push({ title, url, summary });
     if (items.length >= MAX_ITEMS) break;
   }
   return items;
+}
+
+const URL_CHECK_TIMEOUT_MS = 6000;
+
+// グラウンディングが機能していない場合、Geminiが検索結果の裏付け無しに
+// もっともらしいタイトル・URLを作文してしまうことがある（groundingChunksが
+// 0でもテキストとしては出力されうる）。プロンプト指示だけに頼らず、実際に
+// そのURLが存在するかをサーバー側でも取得確認し、存在しないものは弾く
+async function urlLooksReachable(url){
+  try{
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), URL_CHECK_TIMEOUT_MS);
+    const r = await fetch(url, {
+      method: "GET",
+      redirect: "follow",
+      signal: controller.signal,
+      headers: { "User-Agent": "Mozilla/5.0 (compatible; NewsVerifyBot/1.0)" },
+    });
+    clearTimeout(timer);
+    return r.ok;
+  }catch(e){
+    return false;
+  }
+}
+
+async function filterReachableItems(items){
+  if(!items.length) return items;
+  const reachable = await Promise.all(items.map((it) => urlLooksReachable(it.url)));
+  return items.filter((_, i) => reachable[i]);
 }
 
 module.exports = async (req, res) => {
@@ -195,7 +265,7 @@ module.exports = async (req, res) => {
       return;
     }
 
-    let items = extractItems(result);
+    let items = await filterReachableItems(extractItems(result));
     let fallbackResult = null;
 
     // 2回目（フォールバック）：厳密一致で0件だった場合のみ、日付・キーワードの
@@ -207,7 +277,7 @@ module.exports = async (req, res) => {
         category,
         relaxed: true,
       });
-      if (fallbackResult) items = extractItems(fallbackResult);
+      if (fallbackResult) items = await filterReachableItems(extractItems(fallbackResult));
     }
 
     // 0件のままの場合、GoogleのAPI呼び出し自体は成功しているのに実在記事が
