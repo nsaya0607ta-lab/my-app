@@ -107,11 +107,64 @@ const SCHEDULE_TOOLS = [{
   ],
 }];
 
-function buildSystemInstruction(today){
+// 天気・降水量・今日の予定/タスクは、ユーザーが実際に見ている画面の数値と
+// 食い違わないよう、クライアント（js/gemini.js）から送られてきた実データを
+// そのまま文章化するだけに留める。ここで新たな数値を作り出したり、送られて
+// きていない項目を推測で埋めたりしないこと
+function weatherContextLines(weather){
+  if(!weather || typeof weather.temp !== "number"){
+    return ["【天気・降水量】現在地の天気情報は取得できていません。天気や降水量について聞かれた場合は、正直に「現在地の天気情報を取得できませんでした」と伝えてください。"];
+  }
+  const city = weather.city || "現在地";
+  const label = weather.label || "";
+  const pop = typeof weather.pop === "number" ? weather.pop : null;
+  const precip = typeof weather.precip === "number" ? weather.precip : null;
   const lines = [
-    "あなたはIT資格対策アプリ（Microsoft Azure/SC-300、LPICなど）に組み込まれた学習アシスタントです。",
+    `【天気】画面左上の天気カードが表示している実測データは次の通りです：${city}の天気は${label || "不明"}、気温${weather.temp}℃です。ユーザーが天気について尋ねたら「現在の天気は〇〇です」のようにこのデータをもとに答えてください。`,
+  ];
+  if(pop !== null || precip !== null){
+    const parts = [];
+    if(pop !== null) parts.push(`降水確率${pop}%`);
+    if(precip !== null) parts.push(`降水量${precip}mm`);
+    lines.push(`【降水量】${parts.join("、")}です。ユーザーが降水量や雨について尋ねた場合は、この数値をもとに雨の強さに応じた実用的なアドバイス（例：「折りたたみ傘があると安心です」「足元が滑りやすいので気をつけてください」）を添えてください。数値が低く雨の心配がなければ、無理に注意喚起せず傘は不要な旨を伝えて構いません。`);
+  }
+  return lines;
+}
+
+function scheduleTaskSummaryLines(todos, events){
+  const hasTodos = Array.isArray(todos) && todos.length > 0;
+  const hasEvents = Array.isArray(events) && events.length > 0;
+  const lines = ["【今日の予定とタスク】画面中央には「今日の予定」と「本日のタスク」が表示されています。ユーザーが今日の予定やタスクについて尋ねた場合は、必ず以下の実データだけをもとに一覧で整理して答え、送られていない予定やタスクを勝手に作り出さないでください。"];
+  if(hasEvents){
+    const list = events.map(e => `${e.start ? `${e.start}${e.end ? `〜${e.end}` : ""} ` : ""}${e.title}`).join("／");
+    lines.push(`本日の予定：${list}`);
+  } else {
+    lines.push("本日の予定：登録されていません。");
+  }
+  if(hasTodos){
+    const list = todos.map(t => `${t.text}${t.done ? "（完了済み）" : ""}`).join("／");
+    lines.push(`本日のタスク：${list}`);
+  } else {
+    lines.push("本日のタスク：登録されていません。");
+  }
+  if(hasEvents || hasTodos){
+    lines.push("さらに、予定の時間帯の偏りやタスクの量を見て、タイパ（タイムパフォーマンス）を高めるための一言アドバイス（例：「午後に予定が集中しているので、午前中にタスクを1つ消化しておくと楽になりますよ！」）を添えてください。");
+  } else {
+    lines.push("予定もタスクも無い場合は「今日は予定もタスクも入っていません、自由に使える1日ですね！」のように前向きに伝えてください。");
+  }
+  return lines;
+}
+
+function buildSystemInstruction(today, appContext){
+  const lines = [
+    "あなたは、このIT資格対策アプリ（Microsoft Azure/SC-300、LPICなど）専用のAIアシスタント「Gemini」です。",
+    "アプリのスタイリッシュな世界観に合わせて、長すぎずスッキリとした、絵文字や箇条書きを交えた見やすい文章で、ユーザーに寄り添うポジティブなトーンで答えてください。",
     "Azure・LPIC・ITインフラ全般や資格試験の学習に関する質問に、初学者にも分かりやすい日本語で簡潔に答えてください。",
     "雑談程度の話題には常識の範囲で軽く答えて構いませんが、医療・法律・金融など専門外の断定的なアドバイスは避けてください。",
+    ...weatherContextLines(appContext && appContext.weather),
+    ...scheduleTaskSummaryLines(appContext && appContext.todos, appContext && appContext.events),
+    "【アプリの機能ボタン】ホーム画面中央下には「J-NEWS」「F-NEWS」「株価」「カレンダー」「設定」のボタンが並んでいます。ユーザーがこれらのボタンについて尋ねたり「何ができる？」と聞いてきた場合は分かりやすく解説してください。J-NEWSは日本の最新ニュースを読める機能、F-NEWSは海外の最新ニュースを読める機能、株価は保有銘柄のデモ取引や株価確認ができる機能、カレンダーは月表示で予定を管理できる機能（ホーム中央の予定ウィジェットは1日表示の簡易版）、設定は背景スキンやタップ音を変更できる機能です。",
+    "【資格勉強のご案内】ホーム画面いちばん下には「MS」「LPIC」のボタンがあり、資格対策の学習コンテンツに進めます。ユーザーがどの資格を勉強できるか尋ねた場合は、この一覧を教えてあげてください。MSボタンからはMicrosoft認定資格を選べます（AZ-900「Azure基礎」・SC-300「セキュリティ中級」は学習可能、SC-900「セキュリティ基礎」は近日公開）。LPICボタンからはLinux技術者認定を選べます（LPIC-1は学習可能、LPIC-2・LPIC-3は近日公開）。",
     "このアプリにはカレンダー機能があり、予定の登録・変更・削除をユーザーに代わって行えます。以下のルールに従ってください。",
     "【予定の登録】ユーザーが日時と内容を示して予定登録を明確に依頼した場合は、テキストで返答せず register_schedule 関数を呼び出してください。titleには「〜の予定を入れて」等の依頼表現をそのまま入れず、文脈から本質的なイベント名だけを抽出してください（例：「明日の9時から仕事の予定を入れて」→title=「仕事」、「金曜の夜に美容院の予定を追加して」→title=「美容院」）。また「15時に役所に行く」「資料を作成する」のような動詞・タスク表現も、そのまま入れず適切な名詞に変換してください（例：「役所に行く」→title=「役所」）。日付・内容が不明瞭で判断できない場合のみ、関数を呼ばずに聞き返してください。register_scheduleを呼び出すと、実際の登録はまだ行われず、アプリ側がユーザーに確認カードを表示して最終確認を取ります。重複の警告もそのカード上に自動で表示されるため、あなたが重複の有無を気にしたり、確認や再呼び出しをする必要はありません。",
     "【相対的な時間指定（文脈連携）】「明日の仕事のあとに美容院」「会議の前にランチ」のように、既存の別の予定を基準にした時間指定がされた場合は、自分で時刻を推測しないでください。start_time/end_timeは省略し、relative_anchor_title（基準となる予定のタイトル、例：「仕事」）とrelative_position（「あと」ならafter、「前」ならbefore）を指定してregister_scheduleを呼び出してください。実際の時刻は、アプリ側がカレンダー上の基準予定の実在時刻を調べて自動計算します。",
@@ -171,6 +224,32 @@ module.exports = async (req, res) => {
     time: typeof body.today.time === "string" ? body.today.time.slice(0, 5) : "",
   } : null;
 
+  // 天気カード・ホームの予定/タスクウィジェットの実データ。クライアントからの
+  // 任意入力なので、型・件数・長さを必ず検証してから使う
+  const rawAppContext = body.appContext && typeof body.appContext === "object" ? body.appContext : null;
+  const rawWeather = rawAppContext && rawAppContext.weather && typeof rawAppContext.weather === "object" ? rawAppContext.weather : null;
+  const appContext = {
+    weather: rawWeather && typeof rawWeather.temp === "number" ? {
+      city: typeof rawWeather.city === "string" ? rawWeather.city.slice(0, 40) : "",
+      temp: rawWeather.temp,
+      label: typeof rawWeather.label === "string" ? rawWeather.label.slice(0, 20) : "",
+      pop: typeof rawWeather.pop === "number" ? rawWeather.pop : null,
+      precip: typeof rawWeather.precip === "number" ? rawWeather.precip : null,
+    } : null,
+    todos: (Array.isArray(rawAppContext && rawAppContext.todos) ? rawAppContext.todos : [])
+      .slice(0, 30)
+      .map(t => ({ text: typeof (t && t.text) === "string" ? t.text.slice(0, 60) : "", done: !!(t && t.done) }))
+      .filter(t => t.text),
+    events: (Array.isArray(rawAppContext && rawAppContext.events) ? rawAppContext.events : [])
+      .slice(0, 30)
+      .map(e => ({
+        title: typeof (e && e.title) === "string" ? e.title.slice(0, 60) : "",
+        start: typeof (e && e.start) === "string" ? e.start.slice(0, 5) : "",
+        end: typeof (e && e.end) === "string" ? e.end.slice(0, 5) : "",
+      }))
+      .filter(e => e.title),
+  };
+
   // streamGenerateContent（SSE）を使い、Geminiが生成したテキストを受信次第
   // 逐次クライアントへ転送する。これによりVercelの応答タイムアウト対策になる
   // （最初の1バイトが速く返る）だけでなく、ユーザーにも「考え中」のまま長時間
@@ -189,7 +268,7 @@ module.exports = async (req, res) => {
       body: JSON.stringify({
         contents,
         tools: SCHEDULE_TOOLS,
-        systemInstruction: { role: "system", parts: [{ text: buildSystemInstruction(today) }] },
+        systemInstruction: { role: "system", parts: [{ text: buildSystemInstruction(today, appContext) }] },
         generationConfig: { temperature: 0.7, maxOutputTokens: 1024 },
       }),
     });

@@ -3,7 +3,7 @@ import { DC_PHASES, L, REGIONS } from './data/constants.js';
 import { CONCEPTS, DRAW, PASS, Q, TIERS, applySkin, certById, certStat, commit, correctSet, dcCount, dcPhase, dcTitle, esc, exportCode, fmt, getBP, getProfileName, grade, importCode, isAdminAccount, isMulti, loadHist, loadReviewStats, loadTapSound, loadUiTheme, loadWrong, overallLevel, overallStat, pick, pts, publishLeaderboard, purchaseSkin, questionsForCommand, saveCoins, saveTapSound, saveToCloud, saveUiTheme, selectCert, setBP, setProfileName, skinHandleIdentityChange, stars, start, startCommandPractice, startReview, totalBP } from './core.js';
 import { LPIC1_COMMANDS } from './data/lpic1-commands.js';
 import { getWeather } from './weather.js';
-import { geminiChat, sendGeminiMessage, setGeminiScheduleHandler, pushGeminiMessage } from './gemini.js';
+import { geminiChat, sendGeminiMessage, setGeminiScheduleHandler, setGeminiHomeContextProvider, pushGeminiMessage } from './gemini.js';
 import { SKIN_DATA } from './data/skins.js';
 import { UI_THEME_DATA } from './data/uithemes.js';
 import { TAP_SOUND_DATA } from './data/tapsounds.js';
@@ -3491,6 +3491,31 @@ async function geminiHandleScheduleFunctionCall(name, args){
   return geminiRegisterSchedule(args);
 }
 setGeminiScheduleHandler(geminiHandleScheduleFunctionCall);
+
+// Geminiチャットが「今日の予定・タスク」の質問にホーム画面と同じ実データで
+// 答えられるよう、ホーム画面の日表示ウィジェットが既に読み込んでいる
+// キャッシュ（Googleカレンダー連携時）またはローカルストアのみを参照して
+// 本日ぶんのスナップショットを返す。新規のネットワーク取得は行わない
+function getTodayHomeContext(){
+  const now = new Date();
+  const todayKey = newsDateKey(now.getFullYear(), now.getMonth(), now.getDate());
+  const todos = (loadGcalTodoStore()[todayKey] || []).map(t => ({ text: t.text, done: !!t.done }));
+
+  let events = [];
+  if(gcalGoogleAccessToken && gcalGoogleCalendars && gcalGoogleCalendars.length){
+    const evMap = gcalGoogleDayEventsCache[gcalDayCacheKey(todayKey)];
+    events = (evMap && evMap[todayKey]) || [];
+  } else {
+    const store = loadGcalStore();
+    const active = store.calendars.find(c => c.id === store.activeId) || store.calendars[0];
+    events = (active && store.events[active.id] && store.events[active.id][todayKey]) || [];
+  }
+  return {
+    todos,
+    events: events.map(ev => ({ title: ev.title, start: ev.start || null, end: ev.end || null })),
+  };
+}
+setGeminiHomeContextProvider(getTodayHomeContext);
 
 function gcalBindConnectBar(root){
   const connectBtn = root.querySelector("#gcal-google-connect");
