@@ -902,7 +902,7 @@ export function renderTransfer(){
 /* SC-300: Microsoft Identity and Access Administrator（IDとアクセスの管理）*/
 
 /* お天気カード：資格一覧画面の上部。左から「日付＋デジタル時計」
-   「天気（地名・気温・降水確率）」「簡易予定表」の3カラム構成。
+   「天気（地名・気温・降水確率）」「Gemini相談への導線」の構成。
    位置情報が取得できない場合はデフォルト地点（東京）にフォールバックし、
    取得できないことを隠さずラベルで示す。天気データ自体が取得できない
    場合は「取得できませんでした」の案内を表示し、実データのように見える
@@ -914,7 +914,7 @@ const WEATHER_REFRESH_MS = 20 * 60 * 1000; // 20分ごとに天気を自動で�
 
 // カードは左（比率2.4）＝「日付＋デジタル時計｜天気（地名・アイコン・気温）」
 // ＋その下の降水確率の推移を示す滑らかな曲線グラフ、
-// 右（比率1）＝簡易予定表（ダミー表示。予定管理機能は未実装）の2エリア構成。
+// 右（比率1）＝Gemini相談へ遷移するボタンの2エリア構成。
 function weatherCardHTML(){
   return `
     <div class="news-card weather-card" id="weather-card">
@@ -948,10 +948,12 @@ function weatherCardHTML(){
           </div>
           <div class="weather-pop-chart" id="weather-pop-chart"></div>
         </div>
-        <div class="weather-schedule">
-          <div class="weather-schedule-title">予定</div>
-          <div class="weather-schedule-item">15:00 勉強会</div>
-          <div class="weather-schedule-item">19:00 買い物</div>
+        <div class="weather-gemini">
+          <div class="weather-gemini-title">AIに相談</div>
+          <div class="weather-gemini-desc">気になることを何でも質問できます</div>
+          <button type="button" class="weather-gemini-btn" data-go="gemini">
+            <span class="weather-gemini-btn-icon">✨</span>Geminiに質問
+          </button>
         </div>
       </div>
     </div>`;
@@ -1680,7 +1682,9 @@ export function renderGeminiChat(){
   };
   if(sendBtn) sendBtn.onclick = submit;
   if(inputEl){
-    inputEl.focus();
+    // 画面表示のたびに自動でフォーカスすると、Gemini相談ボタンを押した
+    // だけでスマホの仮想キーボードが勝手に立ち上がってしまうため、
+    // ユーザーが入力欄自体をタップするまでフォーカスは当てない
     inputEl.addEventListener("keydown", (e) => {
       if(e.key !== "Enter" || e.shiftKey) return;
       // 日本語IME等で変換確定のためにEnterを押した場合（isComposing）は
