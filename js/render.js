@@ -1,6 +1,7 @@
 import { CERTS } from './data/certs.js';
 import { DC_PHASES, L, REGIONS } from './data/constants.js';
-import { CONCEPTS, DRAW, PASS, Q, TIERS, applySkin, certById, certStat, commit, correctSet, dcCount, dcPhase, dcTitle, esc, exportCode, fmt, getBP, getProfileName, grade, importCode, isAdminAccount, isMulti, loadHist, loadReviewStats, loadWrong, overallLevel, overallStat, pick, pts, publishLeaderboard, purchaseSkin, saveCoins, saveToCloud, selectCert, setBP, setProfileName, skinHandleIdentityChange, stars, start, startReview, totalBP } from './core.js';
+import { CONCEPTS, DRAW, PASS, Q, TIERS, applySkin, certById, certStat, commit, correctSet, dcCount, dcPhase, dcTitle, esc, exportCode, fmt, getBP, getProfileName, grade, importCode, isAdminAccount, isMulti, loadHist, loadReviewStats, loadWrong, overallLevel, overallStat, pick, pts, publishLeaderboard, purchaseSkin, questionsForCommand, saveCoins, saveToCloud, selectCert, setBP, setProfileName, skinHandleIdentityChange, stars, start, startCommandPractice, startReview, totalBP } from './core.js';
+import { LPIC1_COMMANDS } from './data/lpic1-commands.js';
 import { getWeather } from './weather.js';
 import { geminiChat, sendGeminiMessage, setGeminiScheduleHandler, pushGeminiMessage } from './gemini.js';
 import { SKIN_DATA } from './data/skins.js';
@@ -158,6 +159,7 @@ export function render(){
   // 大元：資格選択画面
   if(S.screen==="select" || !S.cert) return renderSelect();
   if(S.screen==="home") return renderHome();
+  if(S.screen==="lpic-commands") return renderLpicCommands();
   if(S.screen==="quiz") return renderQuiz();
   if(S.screen==="result") return renderResult();
   if(S.screen==="review") return renderReview();
@@ -487,7 +489,9 @@ export function renderHome(){
     app.querySelectorAll("[data-final-width]").forEach(el=>{ el.style.width = el.dataset.finalWidth+"%"; });
   });
   app.querySelectorAll("[data-mode]").forEach(b=>b.onclick=()=>start(b.dataset.mode));
-  const prn=app.querySelector("[data-practice]"); if(prn)prn.onclick=()=>{ state.practicePick=true; render(); };
+  const prn=app.querySelector("[data-practice]"); if(prn)prn.onclick=()=>{
+    if(S.cert==="lpic1"){ go("lpic-commands"); } else { state.practicePick=true; render(); }
+  };
   const pcn=app.querySelector("[data-pcancel]"); if(pcn)pcn.onclick=()=>{ state.practicePick=false; render(); };
   app.querySelectorAll("[data-pc]").forEach(b=>b.onclick=()=>start("practice", +b.dataset.pc));
   const rv=app.querySelector("[data-review]"); if(rv)rv.onclick=()=>startReview();
@@ -496,13 +500,55 @@ export function renderHome(){
   const li=app.querySelector("[data-login]"); if(li)li.onclick=()=>{ state.guestMode=false; state.authMode="login"; render(); };
 }
 
+/* ======================= LPIC：コマンド別学習画面 ======================= */
+// 「演習」ボタンから遷移する、Linuxコマンドを選んで学習できる画面。
+// カードを選ぶとそのコマンドにタグ付けされた問題だけで演習（practiceモード）を開始する。
+
+export function renderLpicCommands(){
+  updateHeaderNav(true);
+  const wrongSet = new Set(loadWrong());
+  const categories = [];
+  LPIC1_COMMANDS.forEach(c=>{
+    let group = categories.find(g=>g.name===c.category);
+    if(!group){ group = {name:c.category, cmds:[]}; categories.push(group); }
+    group.cmds.push(c);
+  });
+  const sections = categories.map(g=>`
+    <div class="cmd-cat">${esc(g.name)}</div>
+    <div class="cmd-grid">
+      ${g.cmds.map(c=>{
+        const pool = questionsForCommand(c.key);
+        const weak = pool.some(q=>wrongSet.has(q.id));
+        return `<button class="cmd-card${weak?" weak":""}" data-cmd="${esc(c.key)}">
+          <span class="cmd-card-name">${esc(c.label)}</span>
+          <span class="cmd-card-desc">${esc(c.desc)}</span>
+          <span class="cmd-card-count">${pool.length}問${weak?" ・ 復習あり":""}</span>
+        </button>`;
+      }).join("")}
+    </div>`).join("");
+  app.innerHTML = `
+    <div class="q-head" style="margin-bottom:14px">
+      <button class="quit" data-go="home">← 演習モードへ戻る</button>
+    </div>
+    <div class="sel-head">
+      <span class="eyebrow">LPIC-1 コマンド別学習</span>
+      <h2 class="sel-title">コマンドを選んで演習</h2>
+    </div>
+    <div class="x-hint" style="margin:0 0 14px">コマンドを選ぶと、そのコマンドに関する問題だけで演習を開始します。正解した問題の配点分だけがスコア・EXPに加算されます。</div>
+    ${sections}
+  `;
+  app.querySelectorAll("[data-cmd]").forEach(b=>b.onclick=()=>startCommandPractice(b.dataset.cmd));
+  app.querySelectorAll("[data-go]").forEach(b=>b.onclick=()=>go(b.dataset.go));
+  window.scrollTo(0,0);
+}
+
 export function renderQuiz(){
   const q=S.deck[S.idx], pct=(S.idx/S.deck.length)*100, multi=isMulti(q);
   
   app.innerHTML = `
     <div class="q-head">
       <button class="quit" data-go="home">✕ 中断</button>
-      <span class="q-count">${S.review?'<span class="rev-tag-q">🔁 復習</span> ':(S.mode==="practice"?'<span class="mode-tag practice">📝 演習</span> ':'<span class="mode-tag exam">🎯 試験</span> ')}${S.idx+1} <em>/ ${S.deck.length}</em></span>
+      <span class="q-count">${S.review?'<span class="rev-tag-q">🔁 復習</span> ':(S.mode==="practice"?`<span class="mode-tag practice">📝 ${S.commandCmd?esc(S.commandCmd)+" 演習":"演習"}</span> `:'<span class="mode-tag exam">🎯 試験</span> ')}${S.idx+1} <em>/ ${S.deck.length}</em></span>
     </div>
     <div class="progress"><div class="progress-fill" style="width:${pct}%"></div></div>
     <div class="q-badge"><span class="stars">${stars(q.imp)}</span><span>重要度 ${q.imp}</span><span class="pts">${pts(q)} 点</span>${multi?`<span class="multi">複数選択（${q.c.length}つ）</span>`:""}</div>
@@ -562,8 +608,8 @@ export function renderResult(){
   const gain = (e.bpGain!=null) ? e.bpGain : e.score;
   let expLine, verdictTxt, verdictPass, subLine;
   if(isPractice){
-    expLine = "演習モード：獲得した配点合計がそのまま EXP";
-    verdictTxt = "演習完了"; verdictPass = ratio>=0.7;
+    expLine = S.commandCmd ? `${S.commandCmd} コマンド演習：獲得した配点合計がそのまま EXP` : "演習モード：獲得した配点合計がそのまま EXP";
+    verdictTxt = S.commandCmd ? `${S.commandCmd} コマンド演習 完了` : "演習完了"; verdictPass = ratio>=0.7;
     subLine = `獲得 ${e.score} / ${max} 点（実際の配点合計・部分点込み・小数切り上げ）`;
   } else if(e.mode==="review"){
     expLine = "復習：獲得した配点合計がそのまま EXP";
@@ -610,7 +656,7 @@ export function renderResult(){
     </div>
   `;
   requestAnimationFrame(()=>{ const c=app.querySelector(".gauge-fg"); if(c)c.style.strokeDashoffset=off; });
-  app.querySelector("[data-retry]").onclick=()=>{ if(S.review){ if(loadWrong().length) startReview(); else go("home"); } else start(S.mode); };
+  app.querySelector("[data-retry]").onclick=()=>{ if(S.review){ if(loadWrong().length) startReview(); else go("home"); } else if(S.commandCmd){ startCommandPractice(S.commandCmd); } else start(S.mode); };
   app.querySelectorAll("[data-go]").forEach(b=>b.onclick=()=>go(b.dataset.go));
 }
 

@@ -10,6 +10,8 @@ export let DRAW = 45;    // 選択中の資格の1回の出題数（loadCertで�
 
 export let Q = [], CONCEPTS = [], TIERS = [];   // 選択中の資格のデータ（loadCertで差し替え）
 
+export let ExtraQ = [];   // 資格ごとの追加問題プール（例：LPIC-1のコマンド別学習問題）。loadCertで差し替え
+
 /* =========================================================================
    問題プール（ここに追加していけば自動でランダム出題の対象になります）
    imp  = 重要度(1〜5)。配点は IMP_POINTS で決定。
@@ -63,6 +65,7 @@ export function grade(q, sel){
 export function start(mode, count){
   state.practicePick=false;
   S.review=false;
+  S.commandCmd=null;
   S.mode = (mode==="practice") ? "practice" : "exam";
   const n = (S.mode==="practice") ? (count||10) : DRAW;   // 演習は選択数、試験は従来どおりDRAW
   S.deck = shuffle(Q).slice(0, Math.min(n, Q.length));
@@ -71,11 +74,27 @@ export function start(mode, count){
 
 export function startReview(){
   state.practicePick=false;
+  S.commandCmd=null;
   const wrong=loadWrong();
-  const pool=Q.filter(q=>wrong.indexOf(q.id)>=0);
+  const pool=[...Q, ...ExtraQ].filter(q=>wrong.indexOf(q.id)>=0);
   if(!pool.length){ go("home"); return; }
   S.review=true;
   S.deck = shuffle(pool).slice(0, Math.min(DRAW, pool.length));
+  S.idx=0; S.picks=[]; S.sel=[]; S.screen="quiz"; render();
+}
+
+// コマンド別学習：指定コマンドにタグ付けされた問題だけを出題する演習モード
+// （EXP/スコアの加算ロジックはstart("practice")と共通。正解した問題の配点のみが加算される）
+export function questionsForCommand(cmd){ return ExtraQ.filter(q=>q.cmd===cmd); }
+
+export function startCommandPractice(cmd){
+  state.practicePick=false;
+  S.review=false;
+  S.mode="practice";
+  S.commandCmd=cmd;
+  const pool = questionsForCommand(cmd);
+  if(!pool.length){ return; }
+  S.deck = shuffle(pool);
   S.idx=0; S.picks=[]; S.sel=[]; S.screen="quiz"; render();
 }
 
@@ -246,7 +265,7 @@ export function finish(){
   S.coins = (S.coins||0) + coinGain;
   saveCoins(S.coins);
   const unlocked = TIERS.filter(t=>t.bp>prevBp && t.bp<=newBp).map(t=>t.icon+" "+t.name);
-  const modeLabel = (runMode==="review" ? "復習" : runMode==="practice" ? "演習" : "試験") + S.deck.length + "問";
+  const modeLabel = (runMode==="review" ? "復習" : runMode==="practice" ? (S.commandCmd ? `${S.commandCmd}コマンド演習` : "演習") : "試験") + S.deck.length + "問";
   const entry = {id:Date.now(), date:new Date().toISOString(), modeLabel,
                  mode:runMode, mult, correct, total:S.deck.length, score, scoreMax, earned:Math.ceil(earned), totalPts:total,
                  bpGain:exp, bpTotal:newBp, coinGain, coinTotal:S.coins, unlocked, review:!!S.review};
@@ -338,6 +357,7 @@ export function loadCert(id){
   const c = certById(id); if(!c) return;
   S.cert = c.id;
   Q = c.Q || []; CONCEPTS = c.CONCEPTS || []; TIERS = c.TIERS || [];
+  ExtraQ = c.extraQ || [];
   DRAW = c.draw || 45; PASS = c.pass || 700;
 }
 
