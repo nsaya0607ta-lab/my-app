@@ -4490,7 +4490,8 @@ function createNewsScreen({ category, label, icon }){
         try{
           await Promise.all(Array.from(selectedIds).map(id => window.News.remove(id)));
         }catch(e){
-          alert("削除に失敗しました。時間をおいて再度お試しください。");
+          console.error("news delete failed:", e);
+          alert("削除に失敗しました。時間をおいて再度お試しください。\n(" + (e && (e.code || e.message) || "unknown error") + ")");
         }
         selectedIds = new Set();
         await refresh();
@@ -4512,7 +4513,8 @@ function createNewsScreen({ category, label, icon }){
           contentInput.value = "";
           await refresh();
         }catch(e){
-          alert("登録に失敗しました。時間をおいて再度お試しください。");
+          console.error("news add failed:", e);
+          alert("登録に失敗しました。時間をおいて再度お試しください。\n(" + (e && (e.code || e.message) || "unknown error") + ")");
         }finally{
           submitBtn.disabled = false;
         }
