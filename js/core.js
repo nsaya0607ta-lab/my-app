@@ -464,7 +464,7 @@ export function overallStat(){
 export function isAdminAccount(){
   const email = (state.currentUser && state.currentUser.email) || "";
   const name = getProfileName() || "";
-  return email.toLowerCase() === "admin@gmail.com" || name.toLowerCase() === "admin";
+  return email.toLowerCase() === "for.administ@gmail.com" || name.toLowerCase() === "admin";
 }
 
 export function getProfileName(){ return localStorage.getItem("profile_name") || ""; }
