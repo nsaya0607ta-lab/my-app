@@ -872,59 +872,62 @@ h1.title.title--badge{margin:2px 0 0;}
 .njp-detail-body p{margin:0 0 12px;}
 .njp-detail-body p:last-child{margin-bottom:0;}
 
-/* Microsoft認定試験カード・ホーム画面の統合起動カード：NEWS/STOCKSと同じ
-   .news-card を土台にした独立カード。丸型ロゴボタン＋テキストを縦横完全
+/* MSカード・ホーム画面の統合起動カード：NEWS/STOCKSと同じ.news-cardを
+   土台にした独立カード。角丸スクエアのロゴボタン＋テキストを縦横完全
    中央揃えで内包する */
 .ms-cert-card{margin-top:14px;min-height:104px;display:flex;align-items:center;justify-content:center;}
-.ms-logo-btn{flex:none;width:44px;height:44px;border-radius:50%;border:1px solid var(--line);background:var(--surface);
-  display:flex;align-items:center;justify-content:center;padding:0;cursor:pointer;box-shadow:0 2px 6px rgba(15,23,42,.06);}
-.ms-logo-btn:active{transform:scale(.94);}
-.ms-logo-grid{display:grid;grid-template-columns:1fr 1fr;grid-template-rows:1fr 1fr;gap:2px;width:19px;height:19px;}
-.ms-logo-sq{border-radius:1px;}
+.ms-logo-btn{flex:none;width:50px;height:50px;border-radius:16px;border:1px solid rgba(15,23,42,.06);
+  background:linear-gradient(150deg,#f8fafc,#e2e8f0);
+  display:flex;align-items:center;justify-content:center;padding:0;cursor:pointer;
+  box-shadow:0 5px 14px rgba(15,23,42,.10),inset 0 1px 0 rgba(255,255,255,.6);
+  transition:transform .16s cubic-bezier(.34,1.56,.64,1),box-shadow .16s;}
+.ms-logo-btn:active{transform:scale(.90);box-shadow:0 2px 6px rgba(15,23,42,.14),inset 0 1px 0 rgba(255,255,255,.6);}
+/* カテゴリごとのグラデーション配色。角丸スクエア＋シャドウでスタイリッシュに統一しつつ、
+   一目でジャンルを識別できるようアクセントカラーだけ変える */
+.launcher-icon-news-jp{background:linear-gradient(150deg,#fff1f2,#fecaca);box-shadow:0 5px 14px rgba(220,38,38,.20),inset 0 1px 0 rgba(255,255,255,.6);}
+.launcher-icon-news-world{background:linear-gradient(150deg,#eff6ff,#bfdbfe);box-shadow:0 5px 14px rgba(37,99,235,.20),inset 0 1px 0 rgba(255,255,255,.6);}
+.launcher-icon-stock{background:linear-gradient(150deg,#6ee7a0,#34a866);border-color:transparent;box-shadow:0 5px 14px rgba(52,168,102,.24),inset 0 1px 0 rgba(255,255,255,.3);}
+.launcher-icon-calendar{background:linear-gradient(150deg,#eff6ff,#dbeafe);box-shadow:0 5px 14px rgba(37,99,235,.16),inset 0 1px 0 rgba(255,255,255,.6);}
+.launcher-icon-ms{background:linear-gradient(150deg,#ffffff,#eef2f7);box-shadow:0 5px 14px rgba(15,23,42,.12),inset 0 1px 0 rgba(255,255,255,.7);}
+.launcher-icon-lpic{background:linear-gradient(150deg,#fef3c7,#fcd34d);box-shadow:0 5px 14px rgba(217,119,6,.22),inset 0 1px 0 rgba(255,255,255,.5);}
+.ms-logo-grid{display:grid;grid-template-columns:1fr 1fr;grid-template-rows:1fr 1fr;gap:2px;width:21px;height:21px;}
+.ms-logo-sq{border-radius:2px;}
 .ms-logo-sq.r{background:#f25022;}
 .ms-logo-sq.g{background:#7fba00;}
 .ms-logo-sq.b{background:#00a4ef;}
 .ms-logo-sq.y{background:#ffb900;}
-.launcher-emoji{font-size:19px;line-height:1;}
+.launcher-emoji{font-size:21px;line-height:1;}
 
-/* アイコン＋テキスト1組の最小単位。単独カード（Microsoft認定試験）では
-   .ms-cert-card直下に1つだけ、統合カード（.home-launcher-row）では
-   4つが横並びで使われる */
+/* アイコン＋テキスト1組の最小単位。単独カード（MS）では.ms-cert-card直下に
+   1つだけ、統合カード（.home-launcher-row）では複数が横並びで使われる */
 .launcher-item{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:7px;}
 
-/* 予定管理・日本NEWS・海外ニュース・ポートフォリオの4項目を1つの横長カードに
-   まとめたもの。外枠は.ms-cert-cardをそのまま流用し、中身だけ.launcher-item
-   4個をカード幅いっぱいに均等配置する行に差し替えている */
-.home-launcher-card{padding:14px 6px;}
-/* 項目が4つまではカード幅いっぱいに均等配置されるが、5つ目（設定）以降が
-   加わり1項目あたりの最小幅(64px)を確保できなくなった場合は、右から左へ
-   手動スワイプできる横スクロールに切り替わる（スクロールバー自体は非表示） */
-.home-launcher-row{display:flex;width:100%;gap:6px;overflow-x:auto;-webkit-overflow-scrolling:touch;
-  scroll-snap-type:x proximity;scrollbar-width:none;-ms-overflow-style:none;}
+/* J-NEWS・F-NEWS・株価・カレンダー・設定の項目を1つの横長カードにまとめたもの。
+   外枠は.ms-cert-cardをそのまま流用し、中身だけ.launcher-itemを横スクロール
+   できる行に差し替えている。各アイテムは幅を固定（flex:0 0 auto）している
+   ため、5個目（設定）以降のアイコンが追加されてカード幅からはみ出しても、
+   その分はoverflow-x:autoにより右から左へ手動スワイプ（スクロール）して表示できる */
+.home-launcher-card{padding:14px 4px;}
+.home-launcher-row{display:flex;width:100%;gap:9px;overflow-x:auto;overflow-y:hidden;
+  padding:2px 10px 6px;scroll-snap-type:x proximity;-webkit-overflow-scrolling:touch;
+  scrollbar-width:none;}
 .home-launcher-row::-webkit-scrollbar{display:none;}
-.home-launcher-row .launcher-item{flex:1 1 64px;min-width:64px;scroll-snap-align:start;}
-/* .launcher-itemはalign-items:centerのため、子のms-cert-link（display:block）
-   は本来ボタン自身の文字幅ぶんに縮んで描画される。5項目に増えて1列の幅が
-   狭くなった際、それを放置すると隣の列にラベルが視覚的にはみ出すため、
-   ここで明示的に列幅いっぱいに合わせ、文字はms-cert-textwrap側で
-   確実に折り返さず省略されるようにする */
+.home-launcher-row .launcher-item{flex:0 0 auto;width:68px;scroll-snap-align:start;}
 .home-launcher-row .ms-cert-link{width:100%;}
 .home-launcher-row .ms-cert-textwrap{width:100%;}
 .home-launcher-row .ms-cert-static,
 .home-launcher-row .ms-cert-marquee-item{font-size:9.5px;}
 
-/* ⚙️ 設定ボタン：カレンダーボタンの隣に並ぶ、四角（角丸）のギアボタン。
-   丸型の.ms-logo-btnとは違い、新規追加ボタンとして依頼どおりの角丸スクエア形状にする */
-.settings-gear-btn{flex:none;width:44px;height:44px;border-radius:14px;border:1px solid var(--line);
-  background:linear-gradient(160deg,var(--surface),var(--bg2));
-  display:flex;align-items:center;justify-content:center;padding:0;cursor:pointer;
-  box-shadow:0 2px 6px rgba(15,23,42,.06);transition:transform .12s,box-shadow .12s;}
-.settings-gear-btn:active{transform:scale(.92) rotate(18deg);box-shadow:0 1px 3px rgba(15,23,42,.08);}
+/* ⚙️ 設定ボタン：カレンダーボタンの隣に並ぶ、他の起動アイコンと同じ.ms-logo-btn
+   （角丸スクエア）を土台にした専用バリエーション。ニュートラルなスレート系の
+   グラデーションで、コンテンツ色（赤/青/緑等）と並んでも「操作系」だとひと目でわかる */
+.launcher-icon-settings{background:linear-gradient(150deg,#f1f5f9,#cbd5e1);box-shadow:0 5px 14px rgba(100,116,139,.20),inset 0 1px 0 rgba(255,255,255,.6);}
+.settings-gear-btn:active{transform:scale(.90);box-shadow:0 2px 6px rgba(100,116,139,.24),inset 0 1px 0 rgba(255,255,255,.6);}
 
-/* 「Microsoft認定試験」「LPIC」の2項目を1枚のカードに横並びで表示する行。
+/* 「MS」「LPIC」の2項目を1枚のカードに横並びで表示する行。
    外枠は.ms-cert-cardを流用し、中身だけ.launcher-item2個を等間隔で
    中央に並べたものに差し替えている */
-.vendor-launcher-row{display:flex;width:100%;justify-content:center;align-items:flex-start;gap:56px;}
+.vendor-launcher-row{display:flex;width:100%;justify-content:center;align-items:flex-start;gap:28px;}
 .vendor-launcher-row .launcher-item{flex:none;}
 
 /* テキスト部分：9文字までは中央揃えで静止、超える場合は電光掲示板風に無限スライド */
