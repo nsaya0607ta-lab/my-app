@@ -945,6 +945,10 @@ h1.title.title--badge{margin:2px 0 0;}
 .launcher-icon-settings{background:linear-gradient(150deg,#f1f5f9,#cbd5e1);box-shadow:0 5px 14px rgba(100,116,139,.20),inset 0 1px 0 rgba(255,255,255,.6);}
 .settings-gear-btn:active{transform:scale(.90);box-shadow:0 2px 6px rgba(100,116,139,.24),inset 0 1px 0 rgba(255,255,255,.6);}
 
+/* 📋 ルールボタン：設定ボタンの隣に並ぶ、同じ.ms-logo-btnベースの専用バリエーション */
+.launcher-icon-rules{background:linear-gradient(150deg,#eef2ff,#c7d2fe);box-shadow:0 5px 14px rgba(79,70,229,.20),inset 0 1px 0 rgba(255,255,255,.6);}
+.rules-list-btn:active{transform:scale(.90);box-shadow:0 2px 6px rgba(79,70,229,.24),inset 0 1px 0 rgba(255,255,255,.6);}
+
 /* 「MS」「LPIC」の2項目を1枚のカードに横並びで表示する行。
    外枠は.ms-cert-cardを流用し、中身だけ.launcher-item2個を等間隔で
    中央に並べたものに差し替えている */
@@ -1072,6 +1076,17 @@ body[data-theme="dark"][class*="sb-theme-"]::before{ background:rgba(0,0,0,.55);
 .settings-modal-close{width:100%;margin-top:4px;padding:13px;border:none;border-radius:13px;cursor:pointer;
   font-size:14px;font-weight:700;color:var(--text);background:var(--bg2);transition:transform .1s;}
 .settings-modal-close:active{transform:scale(.98);}
+
+/* ---- ルールモーダル本体：既存の.modal-ov/.modalを土台に使う ---- */
+.rules-modal{max-width:420px;}
+.rules-modal-title{color:var(--accent);}
+.rules-modal-body{max-height:60vh;overflow-y:auto;padding-right:2px;margin-bottom:14px;}
+.rules-section{margin-bottom:16px;}
+.rules-section:last-child{margin-bottom:0;}
+.rules-section-title{font-size:13px;font-weight:800;color:var(--text);letter-spacing:.02em;margin-bottom:6px;}
+.rules-text{font-size:12.5px;color:var(--muted);line-height:1.7;}
+.rules-list{margin:6px 0 0;padding-left:18px;font-size:12.5px;color:var(--muted);line-height:1.8;}
+.rules-list li{margin-bottom:2px;}
 
 /* ---- UIテーマ（配色）本体：body[data-theme]でCSS変数と背景を丸ごと差し替える。
    購入制スキン（sb-theme-*クラス／模様の重ね張り）とは独立した仕組みなので、
