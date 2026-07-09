@@ -115,6 +115,19 @@ function getReplyText(result){
   return parts.map((p) => p.text || "").join("");
 }
 
+// groundingMetadataの有無・実行された検索クエリを見れば、Gemini側で
+// 実際にGoogle検索（グラウンディング）が動いたのかどうかを切り分けられる。
+// これが無い/空なら、検索自体が行われずモデルの内部知識だけで
+// 「実在確認できない」として空配列を返している可能性が高い
+function getGroundingSummary(result){
+  const candidate = result.data && result.data.candidates && result.data.candidates[0];
+  const gm = candidate && candidate.groundingMetadata;
+  if (!gm) return "groundingMetadata=none";
+  const queries = gm.webSearchQueries || [];
+  const chunkCount = (gm.groundingChunks || []).length;
+  return `webSearchQueries=${JSON.stringify(queries)} groundingChunks=${chunkCount}`;
+}
+
 // Geminiのレスポンスからtitle/url/summaryを抽出し、NewsPicks以外のURLを
 // 弾いた上で検証済みのitems配列にする（システム指示だけに頼らない多層防御）
 function extractItems(result){
@@ -206,7 +219,9 @@ module.exports = async (req, res) => {
         "prompt=", prompt.slice(0, 200),
         "category=", category,
         "firstReplyText=", getReplyText(result).slice(0, 800),
-        "fallbackReplyText=", fallbackResult ? getReplyText(fallbackResult).slice(0, 800) : "(fallback call failed)"
+        "firstGrounding=", getGroundingSummary(result),
+        "fallbackReplyText=", fallbackResult ? getReplyText(fallbackResult).slice(0, 800) : "(fallback call failed)",
+        "fallbackGrounding=", fallbackResult ? getGroundingSummary(fallbackResult) : "(fallback call failed)"
       );
     }
 
