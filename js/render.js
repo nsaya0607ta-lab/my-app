@@ -2284,6 +2284,29 @@ function settingsLauncherItemHTML(){
     </div>`;
 }
 
+// ルールボタン専用のアイコン（規約・一覧を表す書類アイコン）。設定ボタンと
+// 同じく画面遷移(data-go)ではなくルールモーダルを開くため専用HTMLを組む
+const RULES_LIST_ICON_SVG = `
+  <svg viewBox="0 0 24 24" width="21" height="21" fill="none" stroke="var(--accent)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M6 2.8h9.2L19 6.6V21a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1V3.8a1 1 0 0 1 1-1Z"></path>
+    <path d="M15 2.8V6.6h3.8"></path>
+    <line x1="7.6" y1="11" x2="15.6" y2="11"></line>
+    <line x1="7.6" y1="14.4" x2="15.6" y2="14.4"></line>
+    <line x1="7.6" y1="17.8" x2="13" y2="17.8"></line>
+  </svg>`;
+
+function rulesLauncherItemHTML(){
+  return `
+    <div class="launcher-item">
+      <button type="button" class="ms-logo-btn launcher-icon-rules rules-list-btn" data-open-rules aria-label="ルール" title="ルール">
+        ${RULES_LIST_ICON_SVG}
+      </button>
+      <button type="button" class="ms-cert-link" data-open-rules title="ルール">
+        <span class="ms-cert-textwrap"><span class="ms-cert-static">ルール</span></span>
+      </button>
+    </div>`;
+}
+
 function homeLauncherCardHTML(){
   const items = [
     { iconHTML: `<span class="launcher-emoji" aria-hidden="true">🇯🇵</span>`, label: "J-NEWS", dataGo: "news-japan", ariaLabel: "日本NEWS", variant: "news-jp" },
@@ -2296,6 +2319,7 @@ function homeLauncherCardHTML(){
       <div class="home-launcher-row">
         ${items.map(it => launcherItemHTML(it)).join("")}
         ${settingsLauncherItemHTML()}
+        ${rulesLauncherItemHTML()}
       </div>
     </div>`;
 }
@@ -4770,6 +4794,7 @@ export function renderSelect(){
   `;
   app.querySelectorAll("[data-go]").forEach(b=>b.onclick=()=>go(b.dataset.go));
   app.querySelectorAll("[data-open-settings]").forEach(b=>b.onclick=()=>openSettingsModal());
+  app.querySelectorAll("[data-open-rules]").forEach(b=>b.onclick=()=>openRulesModal());
   const lo=app.querySelector("[data-logout]"); if(lo)lo.onclick=()=>logout();
   const li=app.querySelector("[data-login]"); if(li)li.onclick=()=>{ state.guestMode=false; state.authMode="login"; render(); };
   loadWeatherCard();
@@ -4856,6 +4881,76 @@ function openSettingsModal(){
   document.body.appendChild(ov);
   wireSettingsModal(ov);
   ov.addEventListener("click", (e) => { if(e.target === ov) closeSettingsModal(ov); });
+}
+
+/* =========================================================================
+   📋 ルールモーダル（ホーム画面の設定ボタンの隣から開く）
+   ・このアプリに現在ある機能の全体像をまとめた説明書き。動作を変える設定
+   ではなく、読み物として表示するだけの静的モーダル（設定モーダルと同じ
+   #app外・document.body直付けのオーバーレイ方式を踏襲）
+   ========================================================================= */
+function rulesModalBodyHTML(){
+  return `
+    <div class="rules-section">
+      <div class="rules-section-title">📝 このアプリについて</div>
+      <div class="rules-text">複数のIT資格試験を演習形式で学べる問題集アプリです。学習以外にも、コイン・スキン・データセンター育成といったゲーム要素や、カレンダー・ニュース・株価・お天気・AIチャットなどの生活系ミニ機能もホーム画面から使えます。</div>
+    </div>
+    <div class="rules-section">
+      <div class="rules-section-title">🎓 資格試験モード</div>
+      <div class="rules-text">対応資格：AZ-900（Azure基礎）／SC-300（Identity and Access）／SC-900（セキュリティ基礎）／LPIC-1・2・3（Linux技術者認定）。</div>
+      <ul class="rules-list">
+        <li>演習モード：1問ごとに正誤と解説を確認しながら進める</li>
+        <li>本番（試験）モード：まとめて解答し、最後にスコアをまとめて確認する</li>
+        <li>復習モード：これまで間違えた問題だけを解き直す</li>
+        <li>LPICのみ：コマンド別に絞った演習も可能</li>
+        <li>解答履歴・正答率などの学習記録（履歴／分析画面）</li>
+      </ul>
+    </div>
+    <div class="rules-section">
+      <div class="rules-section-title">🏗️ コイン・スキン・データセンター育成</div>
+      <div class="rules-text">問題に正解するとコインとBP（ビルドポイント）を獲得します。コインはショップでスキン（見た目）の購入に使え、BPは資格ごとの「データセンター」の育成レベル・称号に反映されます。</div>
+    </div>
+    <div class="rules-section">
+      <div class="rules-section-title">🏆 ランキング・プロフィール・ログイン</div>
+      <div class="rules-text">Firebaseによるログイン（新規登録／ログイン）またはゲストモード（この端末のみ・同期なし）で利用できます。総合ランキングと資格別ランキング、表示名を設定できるプロフィール画面があります。</div>
+    </div>
+    <div class="rules-section">
+      <div class="rules-section-title">⚙️ 設定</div>
+      <div class="rules-text">設定ボタンから、背景の配色（スキン設定：default／dark／sakura／forestの4種）とタップ音（wood／drop／click／mute）を切り替えられます。</div>
+    </div>
+    <div class="rules-section">
+      <div class="rules-section-title">📅 カレンダー</div>
+      <div class="rules-text">Googleカレンダーと連携し、ホームの日別ウィジェットや月表示で予定を確認・追加・削除できます。自分／共有相手のカレンダーを切り替えたり、共有ユーザーをこの端末に登録することも可能です（実際の招待通知や同期は行われません）。</div>
+    </div>
+    <div class="rules-section">
+      <div class="rules-section-title">🤖 Gemini AIチャット相談</div>
+      <div class="rules-text">Gemini AIとチャットで相談できます。「予定を入れて／変更して／消して」のような依頼をすると、AIがカレンダーの予定登録・変更・削除を提案し、確認のうえ反映できます。会話履歴はそのタブを開いている間だけ保持され、保存はされません。</div>
+    </div>
+    <div class="rules-section">
+      <div class="rules-section-title">📰 ニュース・📈 株価・☀️ お天気</div>
+      <div class="rules-text">国内／海外ニュースの一覧と詳細表示、株価・ポートフォリオの確認、現在地に基づくお天気表示をホーム画面から見られます。</div>
+    </div>
+    <div class="rules-section">
+      <div class="rules-section-title">📖 用語辞典・💾 データ引き継ぎ</div>
+      <div class="rules-text">資格学習用の用語辞典に加え、コードを発行してこの端末のデータ（進捗・コイン・スキン等）を別端末へ引き継ぐ機能があります。</div>
+    </div>`;
+}
+
+function closeRulesModal(ov){ try{ ov.remove(); }catch(e){} }
+
+function openRulesModal(){
+  const ov = document.createElement("div");
+  ov.className = "modal-ov";
+  ov.innerHTML = `
+    <div class="modal rules-modal">
+      <div class="modal-title rules-modal-title">📋 ルール</div>
+      <div id="rules-modal-body" class="rules-modal-body">${rulesModalBodyHTML()}</div>
+      <button type="button" class="settings-modal-close" id="rules-modal-close">閉じる</button>
+    </div>`;
+  document.body.appendChild(ov);
+  const closeBtn = ov.querySelector("#rules-modal-close");
+  if(closeBtn) closeBtn.onclick = () => { playTapSound(); closeRulesModal(ov); };
+  ov.addEventListener("click", (e) => { if(e.target === ov) closeRulesModal(ov); });
 }
 
 // 「カレンダー」メニューボタンから遷移する専用画面。ニュース画面と同じ
