@@ -109,13 +109,16 @@ async function callGeminiWithGroundingFallback(apiKey, { prompt, category, relax
   return result;
 }
 
+function getReplyText(result){
+  const candidate = result.data && result.data.candidates && result.data.candidates[0];
+  const parts = (candidate && candidate.content && candidate.content.parts) || [];
+  return parts.map((p) => p.text || "").join("");
+}
+
 // Geminiのレスポンスからtitle/url/summaryを抽出し、NewsPicks以外のURLを
 // 弾いた上で検証済みのitems配列にする（システム指示だけに頼らない多層防御）
 function extractItems(result){
-  const candidate = result.data && result.data.candidates && result.data.candidates[0];
-  const parts = (candidate && candidate.content && candidate.content.parts) || [];
-  const text = parts.map((p) => p.text || "").join("");
-
+  const text = getReplyText(result);
   const rawItems = extractJsonArray(text) || [];
   const items = [];
   for (const raw of rawItems) {
@@ -180,17 +183,31 @@ module.exports = async (req, res) => {
     }
 
     let items = extractItems(result);
+    let fallbackResult = null;
 
     // 2回目（フォールバック）：厳密一致で0件だった場合のみ、日付・キーワードの
     // 縛りを緩めた汎用プロンプトで再検索する。実在記事のみという制約は
     // 変えないため、それでも0件なら素直に空配列を返す
     if (items.length === 0) {
-      const fallbackResult = await callGeminiWithGroundingFallback(apiKey, {
+      fallbackResult = await callGeminiWithGroundingFallback(apiKey, {
         prompt: buildFallbackPrompt(category),
         category,
         relaxed: true,
       });
       if (fallbackResult) items = extractItems(fallbackResult);
+    }
+
+    // 0件のままの場合、GoogleのAPI呼び出し自体は成功しているのに実在記事が
+    // 見つからない状態なので、原因調査のためGeminiの生テキストをログに残す
+    // （NewsPicks限定という制約に対し検索がそもそもヒットしていない可能性が高い）
+    if (items.length === 0) {
+      console.error(
+        "gemini news: no items found.",
+        "prompt=", prompt.slice(0, 200),
+        "category=", category,
+        "firstReplyText=", getReplyText(result).slice(0, 800),
+        "fallbackReplyText=", fallbackResult ? getReplyText(fallbackResult).slice(0, 800) : "(fallback call failed)"
+      );
     }
 
     res.status(200).json({ items });
