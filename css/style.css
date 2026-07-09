@@ -896,8 +896,13 @@ h1.title.title--badge{margin:2px 0 0;}
    まとめたもの。外枠は.ms-cert-cardをそのまま流用し、中身だけ.launcher-item
    4個をカード幅いっぱいに均等配置する行に差し替えている */
 .home-launcher-card{padding:14px 6px;}
-.home-launcher-row{display:flex;width:100%;justify-content:space-between;gap:2px;}
-.home-launcher-row .launcher-item{flex:1;min-width:0;}
+/* 項目が4つまではカード幅いっぱいに均等配置されるが、5つ目（設定）以降が
+   加わり1項目あたりの最小幅(64px)を確保できなくなった場合は、右から左へ
+   手動スワイプできる横スクロールに切り替わる（スクロールバー自体は非表示） */
+.home-launcher-row{display:flex;width:100%;gap:6px;overflow-x:auto;-webkit-overflow-scrolling:touch;
+  scroll-snap-type:x proximity;scrollbar-width:none;-ms-overflow-style:none;}
+.home-launcher-row::-webkit-scrollbar{display:none;}
+.home-launcher-row .launcher-item{flex:1 1 64px;min-width:64px;scroll-snap-align:start;}
 /* .launcher-itemはalign-items:centerのため、子のms-cert-link（display:block）
    は本来ボタン自身の文字幅ぶんに縮んで描画される。5項目に増えて1列の幅が
    狭くなった際、それを放置すると隣の列にラベルが視覚的にはみ出すため、
@@ -907,6 +912,14 @@ h1.title.title--badge{margin:2px 0 0;}
 .home-launcher-row .ms-cert-textwrap{width:100%;}
 .home-launcher-row .ms-cert-static,
 .home-launcher-row .ms-cert-marquee-item{font-size:9.5px;}
+
+/* ⚙️ 設定ボタン：カレンダーボタンの隣に並ぶ、四角（角丸）のギアボタン。
+   丸型の.ms-logo-btnとは違い、新規追加ボタンとして依頼どおりの角丸スクエア形状にする */
+.settings-gear-btn{flex:none;width:44px;height:44px;border-radius:14px;border:1px solid var(--line);
+  background:linear-gradient(160deg,var(--surface),var(--bg2));
+  display:flex;align-items:center;justify-content:center;padding:0;cursor:pointer;
+  box-shadow:0 2px 6px rgba(15,23,42,.06);transition:transform .12s,box-shadow .12s;}
+.settings-gear-btn:active{transform:scale(.92) rotate(18deg);box-shadow:0 1px 3px rgba(15,23,42,.08);}
 
 /* 「Microsoft認定試験」「LPIC」の2項目を1枚のカードに横並びで表示する行。
    外枠は.ms-cert-cardを流用し、中身だけ.launcher-item2個を等間隔で
@@ -985,6 +998,89 @@ h1.title.title--badge{margin:2px 0 0;}
 /* ============ 追加：全体背景スキンの可読性スクリム（ライトモードに最適化） ============ */
 body[class*="sb-theme-"]{ background-attachment: fixed; }
 body[class*="sb-theme-"]::before{ content:""; position:fixed; inset:0; background:rgba(255,255,255,.45); z-index:-1; pointer-events:none; }
+/* ダークテーマ中に購入制スキンの模様を重ねた場合は、白スクリムだと沈んで見える
+   ため黒スクリムに切り替える */
+body[data-theme="dark"][class*="sb-theme-"]::before{ background:rgba(0,0,0,.55); }
+
+/* =========================================================================
+   ⚙️ 設定モーダル（スキン設定／タップ音設定）・UIテーマ
+   ========================================================================= */
+
+/* ---- 設定モーダル本体：既存の.modal-ov/.modalを土台に使う ---- */
+.settings-modal{max-width:400px;}
+.settings-modal-title{color:var(--accent);}
+.settings-section{margin-bottom:18px;}
+.settings-section:last-of-type{margin-bottom:14px;}
+.settings-section-title{font-size:12.5px;font-weight:800;color:var(--muted);letter-spacing:.03em;margin-bottom:10px;}
+
+.settings-skin-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;}
+.settings-skin-card{position:relative;display:flex;flex-direction:column;align-items:flex-start;gap:6px;
+  padding:11px;border-radius:14px;border:1.5px solid var(--line);background:var(--surface);cursor:pointer;
+  text-align:left;font-family:inherit;transition:border-color .12s,transform .12s;}
+.settings-skin-card:active{transform:scale(.97);}
+.settings-skin-card.applied{border-color:var(--accent);box-shadow:0 0 0 2px rgba(2,132,199,.18);}
+.settings-skin-swatch{display:block;width:100%;height:34px;border-radius:9px;border:1px solid rgba(0,0,0,.06);}
+.settings-skin-name{display:block;font-size:12.5px;font-weight:800;color:var(--text);}
+.settings-skin-sub{display:block;font-size:10.5px;color:var(--muted);}
+.settings-check{position:absolute;top:8px;right:8px;width:18px;height:18px;border-radius:6px;
+  background:var(--accent);color:#fff;font-size:11px;font-weight:800;
+  display:flex;align-items:center;justify-content:center;}
+
+/* 各UIテーマのプレビュー用スウォッチ（実際のbody背景と同系色のミニグラデーション） */
+.settings-theme-default{background:linear-gradient(135deg,#e0f2fe,#f8fafc 70%);}
+.settings-theme-dark{background:linear-gradient(135deg,#22314f,#05070f 70%);}
+.settings-theme-sakura{background:linear-gradient(135deg,#f8c7da,#fdf1f4 70%);}
+.settings-theme-forest{background:linear-gradient(135deg,#bfe3c4,#f5f2e6 70%);}
+
+.settings-sound-list{display:flex;flex-direction:column;gap:8px;}
+.settings-sound-row{position:relative;display:flex;align-items:center;gap:10px;width:100%;
+  padding:10px 12px;border-radius:13px;border:1.5px solid var(--line);background:var(--surface);
+  cursor:pointer;text-align:left;font-family:inherit;transition:border-color .12s,transform .12s;}
+.settings-sound-row:active{transform:scale(.98);}
+.settings-sound-row.applied{border-color:var(--accent);box-shadow:0 0 0 2px rgba(2,132,199,.18);}
+.settings-sound-icon{flex:none;width:32px;height:32px;border-radius:10px;background:var(--bg2);
+  display:flex;align-items:center;justify-content:center;font-size:15px;}
+.settings-sound-info{flex:1;min-width:0;}
+.settings-sound-name{display:block;font-size:13px;font-weight:800;color:var(--text);}
+.settings-sound-sub{display:block;font-size:10.5px;color:var(--muted);margin-top:1px;}
+.settings-sound-row .settings-check{position:static;flex:none;}
+
+.settings-modal-close{width:100%;margin-top:4px;padding:13px;border:none;border-radius:13px;cursor:pointer;
+  font-size:14px;font-weight:700;color:var(--text);background:var(--bg2);transition:transform .1s;}
+.settings-modal-close:active{transform:scale(.98);}
+
+/* ---- UIテーマ（配色）本体：body[data-theme]でCSS変数と背景を丸ごと差し替える。
+   購入制スキン（sb-theme-*クラス／模様の重ね張り）とは独立した仕組みなので、
+   両方同時に適用しても互いを壊さない ---- */
+body[data-theme="dark"]{
+  --bg:#0b1120; --bg2:#111a2e; --surface:#141d33; --surface2:#1c2740;
+  --line:#26314f; --accent:#38bdf8; --text:#e7ecf5; --muted:#8b97b3;
+  --good:#34d399; --gold:#fbbf24; --bad:#f87171;
+  background:radial-gradient(120% 90% at 50% -10%, #1a2740 0%, #05070f 65%) fixed;
+}
+body[data-theme="sakura"]{
+  --bg:#fdf1f4; --bg2:#fbe3ea; --surface:#fffafb; --surface2:#f8dbe4;
+  --line:#f0c2d1; --accent:#db4d78; --text:#4a2733; --muted:#9c7684;
+  --good:#3f9d5d; --gold:#c9932e; --bad:#c9506a;
+  background:radial-gradient(120% 90% at 50% -10%, #fde1ea 0%, #fdf1f4 65%) fixed;
+}
+body[data-theme="forest"]{
+  --bg:#f5f2e6; --bg2:#ece4cd; --surface:#fffdf6; --surface2:#e4dcc2;
+  --line:#d7cca4; --accent:#3f7d55; --text:#2a3a2c; --muted:#7c8a73;
+  --good:#3f9d5d; --gold:#a9822f; --bad:#c1443b;
+  background:radial-gradient(120% 90% at 50% -10%, #dcefe0 0%, #f5f2e6 65%) fixed;
+}
+/* ダークテーマは半透明の白ガラス面がそのままだと浮いてしまうため、
+   主要な大面積コンポーネントのみ暗色ガラスに調整する */
+body[data-theme="dark"] .statusbar{background:rgba(20,29,51,.75);}
+body[data-theme="dark"] .an-card{background:rgba(20,29,51,.7);}
+body[data-theme="dark"] .sb-skin-card{background:rgba(20,29,51,.6);}
+body[data-theme="dark"] .news-arrow{background:rgba(20,29,51,.7);}
+body[data-theme="dark"] .pcount-btn{background:linear-gradient(180deg,#182642,#141d33);}
+body[data-theme="dark"] .menu-btn{border-color:rgba(255,255,255,.12);
+  background:linear-gradient(155deg,rgba(255,255,255,.07),rgba(255,255,255,.02));
+  box-shadow:0 10px 22px rgba(0,0,0,.35), inset 0 1px 0 rgba(255,255,255,.08);}
+body[data-theme="dark"] .menu-btn:active{box-shadow:0 4px 10px rgba(0,0,0,.3), inset 0 1px 0 rgba(255,255,255,.06);}
 
 /* ============ 追加：資格カードの出題プール数 ============ */
 .cert-pool{ margin-top:8px; font-family:ui-monospace,Menlo,Consolas,monospace; font-size:11px; letter-spacing:.04em; color:var(--muted); }

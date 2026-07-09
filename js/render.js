@@ -1,10 +1,13 @@
 import { CERTS } from './data/certs.js';
 import { DC_PHASES, L, REGIONS } from './data/constants.js';
-import { CONCEPTS, DRAW, PASS, Q, TIERS, applySkin, certById, certStat, commit, correctSet, dcCount, dcPhase, dcTitle, esc, exportCode, fmt, getBP, getProfileName, grade, importCode, isAdminAccount, isMulti, loadHist, loadReviewStats, loadWrong, overallLevel, overallStat, pick, pts, publishLeaderboard, purchaseSkin, questionsForCommand, saveCoins, saveToCloud, selectCert, setBP, setProfileName, skinHandleIdentityChange, stars, start, startCommandPractice, startReview, totalBP } from './core.js';
+import { CONCEPTS, DRAW, PASS, Q, TIERS, applySkin, certById, certStat, commit, correctSet, dcCount, dcPhase, dcTitle, esc, exportCode, fmt, getBP, getProfileName, grade, importCode, isAdminAccount, isMulti, loadHist, loadReviewStats, loadTapSound, loadUiTheme, loadWrong, overallLevel, overallStat, pick, pts, publishLeaderboard, purchaseSkin, questionsForCommand, saveCoins, saveTapSound, saveToCloud, saveUiTheme, selectCert, setBP, setProfileName, skinHandleIdentityChange, stars, start, startCommandPractice, startReview, totalBP } from './core.js';
 import { LPIC1_COMMANDS } from './data/lpic1-commands.js';
 import { getWeather } from './weather.js';
 import { geminiChat, sendGeminiMessage, setGeminiScheduleHandler, pushGeminiMessage } from './gemini.js';
 import { SKIN_DATA } from './data/skins.js';
+import { UI_THEME_DATA } from './data/uithemes.js';
+import { TAP_SOUND_DATA } from './data/tapsounds.js';
+import { playTapSound } from './audio.js';
 import { S, state } from './state.js';
 
 export const app = document.getElementById("app");
@@ -124,6 +127,13 @@ function updateHeaderTitle(){
   topEl.classList.toggle("top--notitle", !!c);
 }
 
+// ⚙️ 設定モーダルの「スキン設定」で選んだUIテーマ（配色）を <body data-theme="..."> へ
+// 反映する。購入制のスキン（sb-theme-*クラス）とは独立した仕組みで、render()の
+// たびに呼ぶほか、モーダル内でテーマを選んだ直後にも即時反映のため呼び出す
+function applyUiTheme(){
+  document.body.setAttribute("data-theme", S.uiTheme || "default");
+}
+
 export function render(){
   gcalHandleIdentityChange(); // ログインユーザーの切替を検知し、前の人のGoogle連携状態を破棄
   skinHandleIdentityChange(); // ログインユーザーの切替を検知し、前の人のスキン状態を読み直す
@@ -133,6 +143,8 @@ export function render(){
   // 🎨 アプリ全体の背景スキンを body に適用（default のときは元の背景のまま）
   const sk = S.currentSkin || "default";
   document.body.className = (sk && sk!=="default") ? ("sb-theme-"+sk) : "";
+  // ⚙️ 設定＞スキン設定のUIテーマ（配色）を body に適用
+  applyUiTheme();
   // アカウントの認証ゲート（ゲストモードならスキップ）
   if(!state.guestMode && !state.authReady) return renderLoading();
   if(!state.guestMode && !state.currentUser) return renderAuth();
@@ -2217,6 +2229,26 @@ const CALENDAR_APP_LAUNCHER_ICON_SVG = `
     <text x="12" y="18" text-anchor="middle" font-size="9" font-weight="700" fill="#3c4043" font-family="Arial, sans-serif">${new Date().getDate()}</text>
   </svg>`;
 
+// 設定ボタン（ギア）専用のアイコン。他の起動ボタンと違って画面遷移(data-go)
+// ではなく設定モーダルを開くため、launcherItemHTML()は使わず専用HTMLを組む
+const SETTINGS_GEAR_ICON_SVG = `
+  <svg viewBox="0 0 24 24" width="19" height="19" fill="none" stroke="var(--accent)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+    <circle cx="12" cy="12" r="3.2"></circle>
+    <path d="M19.4 13.5a1.7 1.7 0 0 0 .34 1.87l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.7 1.7 0 0 0-1.87-.34 1.7 1.7 0 0 0-1.04 1.56V19.5a2 2 0 1 1-4 0v-.09A1.7 1.7 0 0 0 8.96 17.85a1.7 1.7 0 0 0-1.87.34l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.7 1.7 0 0 0 4.6 13.5 1.7 1.7 0 0 0 3.04 12.46H2.95a2 2 0 1 1 0-4h.09A1.7 1.7 0 0 0 4.6 7.42 1.7 1.7 0 0 0 4.26 5.55l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.7 1.7 0 0 0 8.96 3.06 1.7 1.7 0 0 0 10 1.5V1.41a2 2 0 1 1 4 0v.09A1.7 1.7 0 0 0 15.04 3.06a1.7 1.7 0 0 0 1.87-.34l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.7 1.7 0 0 0 19.4 7.42 1.7 1.7 0 0 0 20.96 8.46h.09a2 2 0 1 1 0 4h-.09a1.7 1.7 0 0 0-1.56 1.04Z"></path>
+  </svg>`;
+
+function settingsLauncherItemHTML(){
+  return `
+    <div class="launcher-item">
+      <button type="button" class="settings-gear-btn" data-open-settings aria-label="設定" title="設定">
+        ${SETTINGS_GEAR_ICON_SVG}
+      </button>
+      <button type="button" class="ms-cert-link" data-open-settings title="設定">
+        <span class="ms-cert-textwrap"><span class="ms-cert-static">設定</span></span>
+      </button>
+    </div>`;
+}
+
 function homeLauncherCardHTML(){
   const items = [
     { iconHTML: `<span class="launcher-emoji" aria-hidden="true">🇯🇵</span>`, label: "日本NEWS", dataGo: "news-japan", ariaLabel: "日本NEWS" },
@@ -2228,6 +2260,7 @@ function homeLauncherCardHTML(){
     <div class="news-card ms-cert-card home-launcher-card" id="home-launcher-card">
       <div class="home-launcher-row">
         ${items.map(it => launcherItemHTML(it)).join("")}
+        ${settingsLauncherItemHTML()}
       </div>
     </div>`;
 }
@@ -4676,11 +4709,93 @@ export function renderSelect(){
       : (state.guestMode ? `<div class="acct-bar">ゲストモード（この端末のみ・同期なし）<button class="link2" data-login>ログイン / 新規登録</button></div>` : "")}
   `;
   app.querySelectorAll("[data-go]").forEach(b=>b.onclick=()=>go(b.dataset.go));
+  app.querySelectorAll("[data-open-settings]").forEach(b=>b.onclick=()=>openSettingsModal());
   const lo=app.querySelector("[data-logout]"); if(lo)lo.onclick=()=>logout();
   const li=app.querySelector("[data-login]"); if(li)li.onclick=()=>{ state.guestMode=false; state.authMode="login"; render(); };
   loadWeatherCard();
   renderGcalDailyWidget();
   window.scrollTo(0,0);
+}
+
+/* =========================================================================
+   ⚙️ 設定モーダル（ホーム画面のカレンダーボタン横のギアボタンから開く）
+   ・スキン設定（背景の配色を4パターンから即時切替。body[data-theme]で適用）
+   ・タップ音設定（Web Audio APIでその場合成する効果音を4パターンから選択）
+   他のポップアップ（openGcalAuthorNameModal等）と同じく、#app（render()で
+   丸ごと差し替わる領域）の外、document.bodyに直接オーバーレイを追加する
+   方式。これによりスキン/タップ音の選択でapp側を再描画しても閉じない。
+   ========================================================================= */
+function settingsModalBodyHTML(){
+  const skinCards = UI_THEME_DATA.map(th => {
+    const applied = (S.uiTheme || "default") === th.key;
+    return `
+      <button type="button" class="settings-skin-card${applied ? " applied" : ""}" data-theme-pick="${th.key}">
+        <span class="settings-skin-swatch settings-theme-${th.key}"></span>
+        <span class="settings-skin-name">${th.icon} ${esc(th.name)}</span>
+        <span class="settings-skin-sub">${esc(th.sub)}</span>
+        ${applied ? `<span class="settings-check">✓</span>` : ""}
+      </button>`;
+  }).join("");
+
+  const soundRows = TAP_SOUND_DATA.map(sd => {
+    const applied = (S.tapSound || "wood") === sd.key;
+    return `
+      <button type="button" class="settings-sound-row${applied ? " applied" : ""}" data-sound-pick="${sd.key}">
+        <span class="settings-sound-icon">${sd.icon}</span>
+        <span class="settings-sound-info">
+          <span class="settings-sound-name">${esc(sd.name)}</span>
+          <span class="settings-sound-sub">${esc(sd.sub)}</span>
+        </span>
+        ${applied ? `<span class="settings-check">✓</span>` : ""}
+      </button>`;
+  }).join("");
+
+  return `
+    <div class="settings-section">
+      <div class="settings-section-title">🎨 スキン設定（背景の変更）</div>
+      <div class="settings-skin-grid">${skinCards}</div>
+    </div>
+    <div class="settings-section">
+      <div class="settings-section-title">🔊 タップ音設定（効果音の選択）</div>
+      <div class="settings-sound-list">${soundRows}</div>
+    </div>`;
+}
+
+function wireSettingsModal(ov){
+  const body = ov.querySelector("#settings-modal-body");
+  const refresh = () => { body.innerHTML = settingsModalBodyHTML(); wireSettingsModal(ov); };
+
+  ov.querySelectorAll("[data-theme-pick]").forEach(b => b.onclick = () => {
+    playTapSound(); // 選択時の操作フィードバックは現在のタップ音設定のまま鳴らす
+    S.uiTheme = b.dataset.themePick;
+    saveUiTheme(S.uiTheme);
+    applyUiTheme();
+    refresh();
+  });
+  ov.querySelectorAll("[data-sound-pick]").forEach(b => b.onclick = () => {
+    S.tapSound = b.dataset.soundPick;
+    saveTapSound(S.tapSound);
+    playTapSound(); // 選んだ音をその場で試聴
+    refresh();
+  });
+  const closeBtn = ov.querySelector("#settings-modal-close");
+  if(closeBtn) closeBtn.onclick = () => { playTapSound(); closeSettingsModal(ov); };
+}
+
+function closeSettingsModal(ov){ try{ ov.remove(); }catch(e){} }
+
+function openSettingsModal(){
+  const ov = document.createElement("div");
+  ov.className = "modal-ov";
+  ov.innerHTML = `
+    <div class="modal settings-modal">
+      <div class="modal-title settings-modal-title">⚙️ 設定</div>
+      <div id="settings-modal-body">${settingsModalBodyHTML()}</div>
+      <button type="button" class="settings-modal-close" id="settings-modal-close">閉じる</button>
+    </div>`;
+  document.body.appendChild(ov);
+  wireSettingsModal(ov);
+  ov.addEventListener("click", (e) => { if(e.target === ov) closeSettingsModal(ov); });
 }
 
 // 「カレンダー」メニューボタンから遷移する専用画面。ニュース画面と同じ
