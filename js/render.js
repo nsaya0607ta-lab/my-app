@@ -949,10 +949,8 @@ function weatherCardHTML(){
           <div class="weather-pop-chart" id="weather-pop-chart"></div>
         </div>
         <div class="weather-gemini">
-          <div class="weather-gemini-title">AIに相談</div>
-          <div class="weather-gemini-desc">気になることを何でも質問できます</div>
           <button type="button" class="weather-gemini-btn" data-go="gemini">
-            <span class="weather-gemini-btn-icon">✨</span>Geminiに質問
+            <span class="weather-gemini-btn-icon">✨</span>Gemini
           </button>
         </div>
       </div>
@@ -1819,10 +1817,10 @@ function vendorCertLauncherRowHTML(){
     </div>`;
 }
 
-// 「日本NEWS」「海外ニュース」「ポートフォリオ」「カレンダー」「Gemini相談」の
-// 5項目を1つの横長カードにまとめたもの。外枠はMicrosoft認定試験カードと同じ
+// 「日本NEWS」「海外ニュース」「ポートフォリオ」「カレンダー」の
+// 4項目を1つの横長カードにまとめたもの。外枠はMicrosoft認定試験カードと同じ
 // .ms-cert-card（背景・角丸・シャドウ・margin-top）を流用し、中身だけを
-// launcherItemHTML5個の横並びに差し替えている。
+// launcherItemHTML4個の横並びに差し替えている。
 const PORTFOLIO_LAUNCHER_ICON_SVG = `
   <svg viewBox="0 0 24 24" width="19" height="19" fill="none" stroke="var(--accent)" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
     <path d="M4 19V7a2 2 0 0 1 2-2h9l5 5v9a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2Z"></path>
@@ -1843,27 +1841,12 @@ const CALENDAR_APP_LAUNCHER_ICON_SVG = `
     <text x="12" y="18" text-anchor="middle" font-size="9" font-weight="700" fill="#3c4043" font-family="Arial, sans-serif">${new Date().getDate()}</text>
   </svg>`;
 
-// Geminiのロゴをイメージした、紫〜青のグラデーションが入る4方向スパークル。
-// 外部画像に依存せずSVGだけで「Geminiらしさ」を出すためのプレースホルダー表現。
-const GEMINI_LAUNCHER_ICON_SVG = `
-  <svg viewBox="0 0 24 24" width="19" height="19">
-    <defs>
-      <linearGradient id="gemini-launcher-grad" x1="0" y1="0" x2="1" y2="1">
-        <stop offset="0%" stop-color="#4285f4"></stop>
-        <stop offset="50%" stop-color="#9b72cb"></stop>
-        <stop offset="100%" stop-color="#d96570"></stop>
-      </linearGradient>
-    </defs>
-    <path d="M12 2c.6 4.4 2.6 6.6 7 7-4.4.6-6.6 2.6-7 7-.6-4.4-2.6-6.6-7-7 4.4-.6 6.6-2.6 7-7z" fill="url(#gemini-launcher-grad)"></path>
-  </svg>`;
-
 function homeLauncherCardHTML(){
   const items = [
     { iconHTML: `<span class="launcher-emoji" aria-hidden="true">🇯🇵</span>`, label: "日本NEWS", dataGo: "news-japan", ariaLabel: "日本NEWS" },
     { iconHTML: `<span class="launcher-emoji" aria-hidden="true">🌐</span>`, label: "海外ニュース", dataGo: "news-world", ariaLabel: "海外ニュース" },
     { iconHTML: PORTFOLIO_LAUNCHER_ICON_SVG, label: "ポートフォリオ", dataGo: "portfolio", ariaLabel: "ポートフォリオ" },
     { iconHTML: CALENDAR_APP_LAUNCHER_ICON_SVG, label: "カレンダー", dataGo: "calendar", ariaLabel: "カレンダー" },
-    { iconHTML: GEMINI_LAUNCHER_ICON_SVG, label: "Gemini相談", dataGo: "gemini", ariaLabel: "Geminiに相談する" },
   ];
   return `
     <div class="news-card ms-cert-card home-launcher-card" id="home-launcher-card">
