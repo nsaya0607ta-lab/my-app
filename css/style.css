@@ -805,7 +805,8 @@ h1.title.title--badge{margin:2px 0 0;}
 .njp-news-item.has-link:active{transform:scale(.98);background:var(--bg2);}
 .njp-news-check{flex:none;width:18px;height:18px;accent-color:var(--accent);cursor:pointer;}
 .njp-news-link{flex:1;min-width:0;display:flex;align-items:center;justify-content:space-between;gap:10px;
-  text-decoration:none;color:inherit;}
+  text-decoration:none;color:inherit;border:none;background:none;padding:0;margin:0;font:inherit;
+  text-align:left;cursor:pointer;}
 .njp-news-title{font-size:13px;font-weight:600;color:var(--text);line-height:1.5;}
 .njp-news-arrow{flex:none;color:var(--accent);font-weight:800;font-size:14px;}
 
@@ -823,10 +824,20 @@ h1.title.title--badge{margin:2px 0 0;}
   background:var(--surface);color:var(--text);font-size:13px;font-family:inherit;
   box-sizing:border-box;}
 .njp-admin-input+.njp-admin-input{margin-top:8px;}
+.njp-admin-textarea{resize:vertical;min-height:96px;line-height:1.6;}
 .njp-admin-btn{margin-top:10px;width:100%;padding:11px 0;border-radius:12px;border:1px solid var(--accent);
   background:var(--accent);color:#ffffff;font-size:13.5px;font-weight:800;cursor:pointer;
   box-shadow:0 2px 8px rgba(2,132,199,.25);transition:transform .12s,filter .12s;}
 .njp-admin-btn:active{transform:scale(.97);filter:brightness(.95);}
+
+/* ニュース詳細画面：一覧でカードをタップした際に遷移する、本文をそのまま表示するだけの画面 */
+.njp-detail{background:var(--surface);border:1px solid var(--line);border-radius:16px;
+  padding:18px 16px;box-shadow:0 2px 8px rgba(15,23,42,.03);}
+.njp-detail-date{font-size:12px;font-weight:700;color:var(--muted);margin-bottom:8px;}
+.njp-detail-title{font-size:16px;font-weight:800;color:var(--text);line-height:1.45;margin:0 0 14px;}
+.njp-detail-body{font-size:13.5px;color:var(--text);line-height:1.9;}
+.njp-detail-body p{margin:0 0 12px;}
+.njp-detail-body p:last-child{margin-bottom:0;}
 
 /* Microsoft認定試験カード・ホーム画面の統合起動カード：NEWS/STOCKSと同じ
    .news-card を土台にした独立カード。丸型ロゴボタン＋テキストを縦横完全

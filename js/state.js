@@ -3,7 +3,8 @@ export const S = {
   screen:"select", cert:null, mode:"exam", coins:0,
   currentSkin:"default",       // 現在適用中のスキン
   ownedSkins:["default"],      // 購入済みスキンのリスト
-  deck:[], idx:0, picks:[], sel:[], revealed:false, last:null
+  deck:[], idx:0, picks:[], sel:[], revealed:false, last:null,
+  newsDetail:null,             // ニュース詳細画面に表示中の項目（{title,content,dateKey,label,icon,returnScreen}）
 };
 
 export const state = {
