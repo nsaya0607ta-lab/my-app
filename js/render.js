@@ -532,18 +532,17 @@ export function renderLpicCommands(){
     </div>
     <div class="sel-head">
       <span class="eyebrow">LPIC-1 演習モード</span>
-      <h2 class="sel-title">コマンドを選んで演習</h2>
     </div>
 
     <div class="pcount-wrap" style="margin-top:0">
-      <div class="pcount-lab">🔀 全体からランダムに演習（従来の演習）</div>
+      <div class="pcount-lab">ランダム演習</div>
       <div class="pcount">
         <button class="pcount-btn" data-pc="5">5問</button>
         <button class="pcount-btn" data-pc="10">10問</button>
         <button class="pcount-btn" data-pc="15">15問</button>
       </div>
     </div>
-
+　　　<h2 class="sel-title">コマンドを選んで演習</h2>
     <div class="x-hint" style="margin:14px 0">またはコマンドを選ぶと、そのコマンドに関する問題だけで演習を開始します。正解した問題の配点分だけがスコア・EXPに加算されます。</div>
     ${sections}
   `;
