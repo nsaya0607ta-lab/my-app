@@ -13,6 +13,29 @@ const MAX_PROMPT_LEN = 500;
 const MAX_ITEMS = 10;
 const MAX_SUMMARY_LEN = 160;
 
+// NewsPicksの実在記事がグラウンディング検索で見つからない場合のフォールバック
+// 先として許可する、主要な報道機関のドメイン一覧（カテゴリ別）。ここに無い
+// ドメインはGeminiがどれだけ「実在する」と主張しても採用しない
+// （出典の信頼性を検索結果の裏付けだけに頼らない多層防御）
+const REPUTABLE_DOMAINS = {
+  japan: [
+    "nikkei.com", "asahi.com", "mainichi.jp", "yomiuri.co.jp", "nhk.or.jp",
+    "itmedia.co.jp", "impress.co.jp", "diamond.jp", "toyokeizai.net",
+    "president.jp", "forbesjapan.com", "businessinsider.jp", "jiji.com",
+    "kyodonews.net",
+  ],
+  world: [
+    "reuters.com", "bloomberg.com", "cnbc.com", "wsj.com", "ft.com",
+    "techcrunch.com", "theverge.com", "engadget.com", "wired.com",
+    "businessinsider.com", "apnews.com", "bbc.com", "forbes.com",
+  ],
+};
+
+const REPUTABLE_LABEL = {
+  japan: "日本経済新聞(nikkei.com)、朝日新聞(asahi.com)、毎日新聞(mainichi.jp)、読売新聞(yomiuri.co.jp)、NHK NEWS WEB(nhk.or.jp)、ITmedia(itmedia.co.jp)、東洋経済オンライン(toyokeizai.net)、ダイヤモンド・オンライン(diamond.jp)",
+  world: "Reuters(reuters.com)、Bloomberg(bloomberg.com)、CNBC(cnbc.com)、The Wall Street Journal(wsj.com)、Financial Times(ft.com)、TechCrunch(techcrunch.com)、The Verge(theverge.com)",
+};
+
 // relaxed=falseの初回検索で0件だった場合にだけ、日付・キーワードの縛りを
 // 緩めた2回目の検索を行う（buildFallbackPromptと組み合わせて使う）。
 // 「実在する記事以外は使わない」という制約自体はrelaxedでも変えない
@@ -21,15 +44,16 @@ function buildSystemInstruction(category, relaxed){
   const categoryLabel = category === "world" ? "海外（世界経済）" : "日本（日本経済）";
   const lines = [
     "あなたはニュースアプリの管理者専用ツールに組み込まれた、ニュース収集アシスタントです。",
-    "ニュースソースは必ず「NewsPicks」（newspicks.com）に限定してください。他のニュースサイトの記事は絶対に使わないでください。",
+    "ニュースソースは「NewsPicks」（newspicks.com）を最優先にしてください。",
     `今回のカテゴリは「${categoryLabel}」です。ユーザーの依頼内容に沿って、該当する最新のNewsPicks記事を検索し、実在する記事のタイトル・URL・要約だけを使ってください。`,
     "記事のタイトル・URL・要約を推測・創作することは絶対に禁止です。検索結果から実在が確認できる記事だけを採用してください。",
     "URLは必ず https://newspicks.com/ から始まる実在のページのみを使ってください。",
   ];
   if(relaxed){
     lines.push(
-      "ユーザーが指定した日付・キーワードに厳密に一致する記事が見つからない場合は、無理に諦めず、NewsPicksの直近24時間以内、それも無ければ直近で公開されている最新の記事（IT・ビジネス・経済など一般的なジャンルを問わない）を代わりに採用してください。",
-      "日付やキーワードの一致にはこだわらなくてよいので、実在する記事であることだけを条件に、できるだけ件数を埋めてください。",
+      "NewsPicksに十分な実在記事が見つからない場合は、無理に諦めず、次の主要な報道機関のニュースサイトの実在記事を代わりに使ってよいです（該当URLのドメインで判定するので、必ずそのドメインの実ページを使うこと）：",
+      REPUTABLE_LABEL[category] || REPUTABLE_LABEL.japan,
+      "日付やキーワードの一致にもこだわらなくてよいので、実在する記事であることだけを条件に、できるだけ件数を埋めてください。",
     );
   } else {
     lines.push("十分な件数が見つからない場合は、無理に件数を埋めず、見つかった分だけを返してください。");
@@ -46,15 +70,34 @@ function buildSystemInstruction(category, relaxed){
 // 初回検索が0件だったときに使う、日付・キーワードを指定しない汎用プロンプト
 function buildFallbackPrompt(category){
   const categoryLabel = category === "world" ? "海外・世界経済" : "日本・国内経済";
-  return `NewsPicksに掲載されている${categoryLabel}関連の最新ニュースを、IT・ビジネス・経済など話題を問わず${MAX_ITEMS}件まで持ってきてください。`;
+  return `NewsPicks、それが無ければ主要な報道機関に掲載されている${categoryLabel}関連の最新ニュースを、IT・ビジネス・経済など話題を問わず${MAX_ITEMS}件まで持ってきてください。`;
+}
+
+function hostMatchesDomain(host, domain){
+  return host === domain || host.endsWith("." + domain);
 }
 
 function isNewsPicksUrl(raw){
   try{
     const u = new URL(raw);
     if(u.protocol !== "https:" && u.protocol !== "http:") return false;
+    return hostMatchesDomain(u.hostname.toLowerCase(), "newspicks.com");
+  }catch(e){
+    return false;
+  }
+}
+
+// relaxed時のみ、NewsPicks以外でもカテゴリ別のREPUTABLE_DOMAINSに含まれる
+// ドメインなら許可する
+function isAllowedNewsUrl(raw, category, relaxed){
+  if(isNewsPicksUrl(raw)) return true;
+  if(!relaxed) return false;
+  try{
+    const u = new URL(raw);
+    if(u.protocol !== "https:" && u.protocol !== "http:") return false;
     const host = u.hostname.toLowerCase();
-    return host === "newspicks.com" || host.endsWith(".newspicks.com");
+    const list = REPUTABLE_DOMAINS[category] || [];
+    return list.some((domain) => hostMatchesDomain(host, domain));
   }catch(e){
     return false;
   }
@@ -166,9 +209,10 @@ function getGroundingSummary(result){
   return `${gmText} finishReason=${finishReason || "unknown"}`;
 }
 
-// Geminiのレスポンスからtitle/url/summaryを抽出し、NewsPicks以外のURLや
-// 重複URLを弾いた上で検証済みのitems配列にする（システム指示だけに頼らない多層防御）
-function extractItems(result){
+// Geminiのレスポンスからtitle/url/summaryを抽出し、許可されていないURLや
+// 重複URLを弾いた上で検証済みのitems配列にする（システム指示だけに頼らない多層防御）。
+// relaxed=falseの間はNewsPicksのみ、relaxed=trueならカテゴリ別の主要報道機関も許可する
+function extractItems(result, category, relaxed){
   const text = getReplyText(result);
   const rawItems = extractJsonArray(text) || [];
   const items = [];
@@ -178,7 +222,7 @@ function extractItems(result){
     const title = typeof raw.title === "string" ? raw.title.trim().slice(0, 200) : "";
     const url = typeof raw.url === "string" ? raw.url.trim() : "";
     if (!title || !url) continue;
-    if (!isNewsPicksUrl(url)) continue;
+    if (!isAllowedNewsUrl(url, category, relaxed)) continue;
     if (seenUrls.has(url)) continue;
     seenUrls.add(url);
     const summary = typeof raw.summary === "string" ? raw.summary.trim().slice(0, MAX_SUMMARY_LEN) : "";
@@ -265,19 +309,20 @@ module.exports = async (req, res) => {
       return;
     }
 
-    let items = await filterReachableItems(extractItems(result));
+    let items = await filterReachableItems(extractItems(result, category, false));
     let fallbackResult = null;
 
-    // 2回目（フォールバック）：厳密一致で0件だった場合のみ、日付・キーワードの
-    // 縛りを緩めた汎用プロンプトで再検索する。実在記事のみという制約は
-    // 変えないため、それでも0件なら素直に空配列を返す
+    // 2回目（フォールバック）：NewsPicks限定で0件だった場合のみ、日付・
+    // キーワードの縛りを緩め、かつ主要な報道機関のドメインも許可した
+    // 汎用プロンプトで再検索する。実在記事のみという制約は変えないため、
+    // それでも0件なら素直に空配列を返す
     if (items.length === 0) {
       fallbackResult = await callGeminiWithGroundingFallback(apiKey, {
         prompt: buildFallbackPrompt(category),
         category,
         relaxed: true,
       });
-      if (fallbackResult) items = await filterReachableItems(extractItems(fallbackResult));
+      if (fallbackResult) items = await filterReachableItems(extractItems(fallbackResult, category, true));
     }
 
     // 0件のままの場合、GoogleのAPI呼び出し自体は成功しているのに実在記事が
