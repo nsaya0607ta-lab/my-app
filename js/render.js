@@ -949,8 +949,10 @@ function weatherCardHTML(){
           <div class="weather-pop-chart" id="weather-pop-chart"></div>
         </div>
         <div class="weather-gemini">
-          <button type="button" class="weather-gemini-btn" data-go="gemini">
-            <span class="weather-gemini-btn-icon">✨</span>Gemini
+          <button type="button" class="weather-gemini-btn" data-go="gemini" aria-label="Geminiに相談する" title="Geminiに相談する">
+            <svg class="weather-gemini-btn-icon" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+              <path d="M12 0C12 6.75 6.75 12 0 12C6.75 12 12 17.25 12 24C12 17.25 17.25 12 24 12C17.25 12 12 6.75 12 0Z" fill="#fff"/>
+            </svg>
           </button>
         </div>
       </div>
