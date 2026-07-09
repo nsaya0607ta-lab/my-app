@@ -4,6 +4,7 @@ import { CONCEPTS, DRAW, PASS, Q, TIERS, applySkin, certById, certStat, commit, 
 import { LPIC1_COMMANDS } from './data/lpic1-commands.js';
 import { getWeather } from './weather.js';
 import { fetchStockPrices, loadCachedPricesMeta } from './stocks.js';
+import { fetchUsStockPrices, loadCachedUsPrices, searchStocks } from './finnhub.js';
 import { geminiChat, sendGeminiMessage, setGeminiScheduleHandler, pushGeminiMessage } from './gemini.js';
 import { SKIN_DATA } from './data/skins.js';
 import { S, state } from './state.js';
@@ -1302,10 +1303,12 @@ async function loadWeatherCard(){
   startWeatherRefresh();      // 以後20分間隔でバックグラウンド自動更新
 }
 
-// ポートフォリオ画面（保有株の閲覧）が銘柄名を引くための静的な銘柄マスタ
-// （日本経済＝JP_STOCKS＝日本の主要企業のNYSE上場ADR、世界経済＝STOCKS＝
-// 米国株6銘柄）。basePriceはGoogleスプレッドシート経由の実際の株価
-// （/api/stocks、js/stocks.js）が取得できなかった場合のみ使うフォールバック値
+// ポートフォリオ画面（保有株の閲覧）が銘柄名を引くための静的な銘柄マスタ。
+// 世界経済＝STOCKS＝米国株6銘柄（現在値はFinnhub経由、js/finnhub.js）、
+// 日本経済＝JP_STOCKS＝東証の主要銘柄（現在値はGoogleスプレッドシート経由、
+// js/stocks.js。GOOGLEFINANCEが"TYO:xxxx"形式に対応しているため、ADRではなく
+// 東証の実ティッカーをそのまま使える）。basePriceはどちらも現在値の取得に
+// 失敗した場合のみ使うフォールバック値
 const STOCKS = [
   { ticker:"MSFT", name:"Microsoft", basePrice:435.12 },
   { ticker:"AMZN", name:"Amazon", basePrice:189.50 },
@@ -1316,12 +1319,13 @@ const STOCKS = [
 ];
 
 const JP_STOCKS = [
-  { ticker:"TM", name:"トヨタ自動車(ADR)", basePrice:195.40 },
-  { ticker:"SONY", name:"ソニーG(ADR)", basePrice:24.60 },
-  { ticker:"HMC", name:"本田技研(ADR)", basePrice:32.10 },
-  { ticker:"MUFG", name:"三菱UFJ(ADR)", basePrice:11.20 },
-  { ticker:"MFG", name:"みずほFG(ADR)", basePrice:4.55 },
-  { ticker:"NMR", name:"野村HD(ADR)", basePrice:6.35 },
+  { ticker:"7203", name:"トヨタ自動車", basePrice:2850 },
+  { ticker:"6758", name:"ソニーグループ", basePrice:3650 },
+  { ticker:"7267", name:"本田技研工業", basePrice:1650 },
+  { ticker:"8306", name:"三菱UFJフィナンシャル・グループ", basePrice:1950 },
+  { ticker:"8411", name:"みずほフィナンシャルグループ", basePrice:4100 },
+  { ticker:"8604", name:"野村ホールディングス", basePrice:1050 },
+  { ticker:"285A", name:"キオクシアホールディングス", basePrice:2000 },
 ];
 
 /* ---- 保有株（デモ取引のポートフォリオ）。端末ローカルに保存する ----
@@ -1509,66 +1513,164 @@ function currentStockPrice(ticker, basePrice, prices){
   return Number.isFinite(live) ? live : basePrice;
 }
 
-/* ポートフォリオ（資産保有額）詳細画面：STOCKS・JP_STOCKS両方から銘柄情報を
-   検索して表示する。現金AC＋保有株の評価額（現在株価ベース）のサマリーと
-   保有明細を表示する（新規購入は行えない、保有分の閲覧専用画面）。
-   価格はGoogleスプレッドシート経由（js/stocks.js）で取得する。まずローカル
-   キャッシュ（無ければ静的な基準価格）で即座に描画し、裏側で最新値を
-   フェッチして取得できたら再描画する（js/weather.jsの天気カードと同じ
-   「先に描画→裏で最新化」のパターン） */
-export function renderPortfolio(){
-  renderPortfolioScreen(loadCachedPricesMeta());
-  refreshPortfolioPrices();
+const US_TICKERS = STOCKS.map(x => x.ticker);
+
+function formatPriceAsOf(ts){
+  const d = new Date(ts);
+  return `株価 ${String(d.getHours()).padStart(2,"0")}:${String(d.getMinutes()).padStart(2,"0")}時点`;
 }
 
-async function refreshPortfolioPrices(force){
-  const prices = await fetchStockPrices({ force: !!force });
-  if(S.screen !== "portfolio") return; // フェッチ中に画面遷移していたら反映しない
-  renderPortfolioScreen(prices ? { prices, fetchedAt: Date.now() } : null);
-}
-
-function renderPortfolioScreen(cacheMeta){
-  const prices = cacheMeta ? cacheMeta.prices : null;
+// 保有株の評価額一覧を計算する（DOM構築・パッチ更新の両方から共通で使う）
+function computePortfolioRows(prices){
   const pf = loadPortfolio();
-  const tickers = Object.keys(pf);
   const allStocks = [...STOCKS, ...JP_STOCKS];
   let stockValue = 0;
-  const rows = tickers.map(t => {
+  const rows = Object.keys(pf).map(t => {
     const s = allStocks.find(x => x.ticker === t);
     const h = pf[t];
     const price = s ? currentStockPrice(t, s.basePrice, prices) : null;
     const val = price != null ? tradeAmount(price, h.shares) : h.cost;
     stockValue += val;
-    return `<div class="pf-row">
+    return { ticker: t, name: s ? s.name : "", shares: h.shares, val };
+  });
+  return { rows, stockValue };
+}
+
+/* ポートフォリオ（資産保有額）詳細画面：STOCKS・JP_STOCKS両方から銘柄情報を
+   検索して表示する。現金AC＋保有株の評価額（現在株価ベース）のサマリーと
+   保有明細、および任意銘柄の検索（Finnhub）を表示する（保有株自体の新規
+   購入は行えない、閲覧専用画面）。
+   日本株の価格はGoogleスプレッドシート経由（js/stocks.js）、米国株の価格・
+   検索はFinnhub経由（js/finnhub.js）で取得する。まずローカルキャッシュ
+   （無ければ静的な基準価格）で即座に描画し、裏側で最新値をフェッチして
+   取得できたら価格部分だけをその場でパッチする（検索ボックスの入力途中に
+   価格更新で画面全体が再描画されて入力が消えてしまわないように、DOM全体の
+   再構築ではなくテキストの差し替えのみ行う） */
+export function renderPortfolio(){
+  const jp = loadCachedPricesMeta();
+  const us = loadCachedUsPrices(US_TICKERS);
+  const merged = { ...(jp ? jp.prices : {}), ...us };
+  const hasAny = Object.keys(merged).length > 0;
+  renderPortfolioScreen(hasAny ? { prices: merged, fetchedAt: (jp && jp.fetchedAt) || Date.now() } : null);
+  refreshPortfolioPrices();
+}
+
+async function refreshPortfolioPrices(force){
+  const [jpPrices, usPrices] = await Promise.all([
+    fetchStockPrices({ force: !!force }),
+    fetchUsStockPrices(US_TICKERS, { force: !!force }),
+  ]);
+  // フェッチ中に画面遷移していたら反映しない
+  if(S.screen !== "portfolio" || !document.getElementById("pf-hero-total")) return;
+  const merged = { ...(jpPrices || {}), ...(usPrices || {}) };
+  const hasAny = Object.keys(merged).length > 0;
+  patchPortfolioPrices(hasAny ? { prices: merged, fetchedAt: Date.now() } : null);
+}
+
+function renderPortfolioScreen(cacheMeta){
+  const { rows, stockValue } = computePortfolioRows(cacheMeta ? cacheMeta.prices : null);
+  const cash = S.coins || 0;
+  const rowsHtml = rows.map(r => `<div class="pf-row">
       <div class="pf-row-left">
-        <span class="pf-ticker">${esc(t)}</span>
-        <span class="pf-name">${esc(s ? s.name : "")}</span>
+        <span class="pf-ticker">${esc(r.ticker)}</span>
+        <span class="pf-name">${esc(r.name)}</span>
       </div>
       <div class="pf-row-right">
-        <span class="pf-shares">${h.shares}株</span>
-        <span class="pf-val">${val.toLocaleString()} AC</span>
+        <span class="pf-shares">${r.shares}株</span>
+        <span class="pf-val" id="pf-val-${esc(r.ticker)}">${r.val.toLocaleString()} AC</span>
       </div>
-    </div>`;
-  }).join("");
-  const cash = S.coins || 0;
-  const priceAsOfLabel = cacheMeta
-    ? (() => { const d = new Date(cacheMeta.fetchedAt); return `株価 ${String(d.getHours()).padStart(2,"0")}:${String(d.getMinutes()).padStart(2,"0")}時点`; })()
-    : "株価を取得中…";
+    </div>`).join("");
+  const priceAsOfLabel = cacheMeta ? formatPriceAsOf(cacheMeta.fetchedAt) : "株価を取得中…";
   app.innerHTML = `
     <div class="q-head"><button class="quit" data-go="select">← ホーム</button><span class="q-count">ポートフォリオ</span></div>
     <div class="pf-hero">
       <div class="pf-hero-lab">総資産（評価額）</div>
-      <div class="pf-hero-total">${(cash + stockValue).toLocaleString()} <small>AC</small></div>
-      <div class="pf-hero-sub">💰 現金 ${cash.toLocaleString()} AC ・ 📈 株式 ${stockValue.toLocaleString()} AC</div>
-      <div class="pf-hero-asof">${esc(priceAsOfLabel)}</div>
+      <div class="pf-hero-total" id="pf-hero-total">${(cash + stockValue).toLocaleString()} <small>AC</small></div>
+      <div class="pf-hero-sub" id="pf-hero-sub">💰 現金 ${cash.toLocaleString()} AC ・ 📈 株式 ${stockValue.toLocaleString()} AC</div>
+      <div class="pf-hero-asof" id="pf-hero-asof">${esc(priceAsOfLabel)}</div>
     </div>
-    ${rows
-      ? `<div class="section-lab">保有株</div><div class="pf-list">${rows}</div>`
+    ${rows.length
+      ? `<div class="section-lab">保有株</div><div class="pf-list">${rowsHtml}</div>`
       : `<div class="sel-sub" style="margin-top:24px;text-align:center;">保有している株はまだありません。</div>`}
-    <div class="trade-note" style="text-align:center;margin-top:18px;">※ゲーム内通貨ACを使ったデモ取引のポートフォリオです。</div>
+    <div class="section-lab" style="margin-top:22px;">銘柄を検索（米国株）</div>
+    <div class="pf-search">
+      <input type="text" id="pf-search-input" class="pf-search-input" placeholder="銘柄名・ティッカーで検索（例: Tesla, TSLA）" autocomplete="off">
+      <div id="pf-search-results" class="pf-search-results"></div>
+    </div>
+    <div class="trade-note" style="text-align:center;margin-top:18px;">※ゲーム内通貨ACを使ったデモ取引のポートフォリオです。日本株の評価額はGoogleスプレッドシート、米国株の検索・現在値はFinnhub経由で取得しています。</div>
   `;
   app.querySelectorAll("[data-go]").forEach(b => b.onclick = () => go(b.dataset.go));
+  bindPortfolioSearch();
   window.scrollTo(0,0);
+}
+
+// 価格が取得できたときにDOMを部分的に更新する（renderPortfolioScreenを
+// 呼び直さないことで、検索ボックスの入力中の文字や検索結果を消さない）
+function patchPortfolioPrices(cacheMeta){
+  const { rows, stockValue } = computePortfolioRows(cacheMeta ? cacheMeta.prices : null);
+  const cash = S.coins || 0;
+  rows.forEach(r => {
+    const el = document.getElementById(`pf-val-${r.ticker}`);
+    if(el) el.textContent = `${r.val.toLocaleString()} AC`;
+  });
+  const totalEl = document.getElementById("pf-hero-total");
+  if(totalEl) totalEl.innerHTML = `${(cash + stockValue).toLocaleString()} <small>AC</small>`;
+  const subEl = document.getElementById("pf-hero-sub");
+  if(subEl) subEl.textContent = `💰 現金 ${cash.toLocaleString()} AC ・ 📈 株式 ${stockValue.toLocaleString()} AC`;
+  const asofEl = document.getElementById("pf-hero-asof");
+  if(asofEl) asofEl.textContent = cacheMeta ? formatPriceAsOf(cacheMeta.fetchedAt) : "株価を取得中…";
+}
+
+// 検索語を変えている間に、古い検索リクエストの結果が後から届いて上書きして
+// しまわないようにするための連番ガード
+let portfolioSearchSeq = 0;
+
+function bindPortfolioSearch(){
+  const input = document.getElementById("pf-search-input");
+  const resultsEl = document.getElementById("pf-search-results");
+  if(!input || !resultsEl) return;
+  let debounceTimer = null;
+  input.oninput = () => {
+    clearTimeout(debounceTimer);
+    const q = input.value;
+    if(!q.trim()){ portfolioSearchSeq++; resultsEl.innerHTML = ""; return; }
+    debounceTimer = setTimeout(() => runPortfolioSearch(q, resultsEl), 400);
+  };
+}
+
+async function runPortfolioSearch(query, resultsEl){
+  const seq = ++portfolioSearchSeq;
+  resultsEl.innerHTML = `<div class="pf-search-status">検索中…</div>`;
+  const results = await searchStocks(query);
+  if(seq !== portfolioSearchSeq) return; // 検索語を変えている間に来た古い結果は捨てる
+  if(!document.getElementById("pf-search-results")) return; // 画面遷移していたら反映しない
+  if(!results.length){
+    resultsEl.innerHTML = `<div class="pf-search-status">見つかりませんでした</div>`;
+    return;
+  }
+  resultsEl.innerHTML = results.map(r => `
+    <div class="pf-search-item" data-symbol="${esc(r.symbol)}">
+      <div class="pf-row-left">
+        <span class="pf-ticker">${esc(r.symbol)}</span>
+        <span class="pf-name">${esc(r.name)}</span>
+      </div>
+      <span class="pf-search-item-price" id="pf-search-price-${esc(r.symbol)}">タップして表示</span>
+    </div>
+  `).join("");
+  resultsEl.querySelectorAll(".pf-search-item").forEach(item => {
+    item.onclick = () => loadPortfolioSearchQuote(item.dataset.symbol);
+  });
+}
+
+async function loadPortfolioSearchQuote(symbol){
+  const priceEl = document.getElementById(`pf-search-price-${symbol}`);
+  if(!priceEl) return;
+  priceEl.textContent = "取得中…";
+  const prices = await fetchUsStockPrices([symbol]);
+  const el = document.getElementById(`pf-search-price-${symbol}`);
+  if(!el) return; // 表示中に検索結果が変わっていたら反映しない
+  const price = prices[symbol];
+  el.textContent = Number.isFinite(price) ? `${price.toLocaleString()} USD` : "取得できませんでした";
 }
 
 // Gemini AIチャット相談画面。会話履歴はgeminiChat（js/gemini.js）が保持し、
