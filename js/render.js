@@ -3,6 +3,7 @@ import { DC_PHASES, L, REGIONS } from './data/constants.js';
 import { CONCEPTS, DRAW, PASS, Q, TIERS, applySkin, certById, certStat, commit, correctSet, dcCount, dcPhase, dcTitle, esc, exportCode, fmt, getBP, getProfileName, grade, importCode, isAdminAccount, isMulti, loadHist, loadReviewStats, loadWrong, overallLevel, overallStat, pick, pts, publishLeaderboard, purchaseSkin, questionsForCommand, saveCoins, saveToCloud, selectCert, setBP, setProfileName, skinHandleIdentityChange, stars, start, startCommandPractice, startReview, totalBP } from './core.js';
 import { LPIC1_COMMANDS } from './data/lpic1-commands.js';
 import { getWeather } from './weather.js';
+import { fetchStockPrices, loadCachedPricesMeta } from './stocks.js';
 import { geminiChat, sendGeminiMessage, setGeminiScheduleHandler, pushGeminiMessage } from './gemini.js';
 import { SKIN_DATA } from './data/skins.js';
 import { S, state } from './state.js';
@@ -1301,25 +1302,26 @@ async function loadWeatherCard(){
   startWeatherRefresh();      // 以後20分間隔でバックグラウンド自動更新
 }
 
-// ポートフォリオ画面（保有株の閲覧）が銘柄名・価格を引くための静的な
-// 銘柄マスタ（日本経済＝JP_STOCKS＝日本の主要企業のNYSE上場ADR、
-// 世界経済＝STOCKS＝米国株6銘柄）
+// ポートフォリオ画面（保有株の閲覧）が銘柄名を引くための静的な銘柄マスタ
+// （日本経済＝JP_STOCKS＝日本の主要企業のNYSE上場ADR、世界経済＝STOCKS＝
+// 米国株6銘柄）。basePriceはGoogleスプレッドシート経由の実際の株価
+// （/api/stocks、js/stocks.js）が取得できなかった場合のみ使うフォールバック値
 const STOCKS = [
-  { ticker:"MSFT", name:"Microsoft", price:435.12 },
-  { ticker:"AMZN", name:"Amazon", price:189.50 },
-  { ticker:"GOOGL", name:"Alphabet", price:199.80 },
-  { ticker:"AAPL", name:"Apple", price:213.40 },
-  { ticker:"META", name:"Meta", price:512.30 },
-  { ticker:"NVDA", name:"NVIDIA", price:135.60 },
+  { ticker:"MSFT", name:"Microsoft", basePrice:435.12 },
+  { ticker:"AMZN", name:"Amazon", basePrice:189.50 },
+  { ticker:"GOOGL", name:"Alphabet", basePrice:199.80 },
+  { ticker:"AAPL", name:"Apple", basePrice:213.40 },
+  { ticker:"META", name:"Meta", basePrice:512.30 },
+  { ticker:"NVDA", name:"NVIDIA", basePrice:135.60 },
 ];
 
 const JP_STOCKS = [
-  { ticker:"TM", name:"トヨタ自動車(ADR)", price:195.40 },
-  { ticker:"SONY", name:"ソニーG(ADR)", price:24.60 },
-  { ticker:"HMC", name:"本田技研(ADR)", price:32.10 },
-  { ticker:"MUFG", name:"三菱UFJ(ADR)", price:11.20 },
-  { ticker:"MFG", name:"みずほFG(ADR)", price:4.55 },
-  { ticker:"NMR", name:"野村HD(ADR)", price:6.35 },
+  { ticker:"TM", name:"トヨタ自動車(ADR)", basePrice:195.40 },
+  { ticker:"SONY", name:"ソニーG(ADR)", basePrice:24.60 },
+  { ticker:"HMC", name:"本田技研(ADR)", basePrice:32.10 },
+  { ticker:"MUFG", name:"三菱UFJ(ADR)", basePrice:11.20 },
+  { ticker:"MFG", name:"みずほFG(ADR)", basePrice:4.55 },
+  { ticker:"NMR", name:"野村HD(ADR)", basePrice:6.35 },
 ];
 
 /* ---- 保有株（デモ取引のポートフォリオ）。端末ローカルに保存する ----
@@ -1500,10 +1502,33 @@ function initHybridTape(id, speedPxS){
 // 売買金額の換算レート：1ドル＝1ACとして四捨五入する（デモ取引用）
 function tradeAmount(price, qty){ return Math.max(1, Math.round(price * qty)); }
 
+// tickerに対応する現在価格を決める：Googleスプレッドシート経由の実際の
+// 株価（pricesにあれば）を優先し、無ければ静的な基準価格にフォールバックする
+function currentStockPrice(ticker, basePrice, prices){
+  const live = prices && prices[ticker];
+  return Number.isFinite(live) ? live : basePrice;
+}
+
 /* ポートフォリオ（資産保有額）詳細画面：STOCKS・JP_STOCKS両方から銘柄情報を
    検索して表示する。現金AC＋保有株の評価額（現在株価ベース）のサマリーと
-   保有明細を表示する（新規購入は行えない、保有分の閲覧専用画面） */
+   保有明細を表示する（新規購入は行えない、保有分の閲覧専用画面）。
+   価格はGoogleスプレッドシート経由（js/stocks.js）で取得する。まずローカル
+   キャッシュ（無ければ静的な基準価格）で即座に描画し、裏側で最新値を
+   フェッチして取得できたら再描画する（js/weather.jsの天気カードと同じ
+   「先に描画→裏で最新化」のパターン） */
 export function renderPortfolio(){
+  renderPortfolioScreen(loadCachedPricesMeta());
+  refreshPortfolioPrices();
+}
+
+async function refreshPortfolioPrices(force){
+  const prices = await fetchStockPrices({ force: !!force });
+  if(S.screen !== "portfolio") return; // フェッチ中に画面遷移していたら反映しない
+  renderPortfolioScreen(prices ? { prices, fetchedAt: Date.now() } : null);
+}
+
+function renderPortfolioScreen(cacheMeta){
+  const prices = cacheMeta ? cacheMeta.prices : null;
   const pf = loadPortfolio();
   const tickers = Object.keys(pf);
   const allStocks = [...STOCKS, ...JP_STOCKS];
@@ -1511,7 +1536,8 @@ export function renderPortfolio(){
   const rows = tickers.map(t => {
     const s = allStocks.find(x => x.ticker === t);
     const h = pf[t];
-    const val = s ? tradeAmount(s.price, h.shares) : h.cost;
+    const price = s ? currentStockPrice(t, s.basePrice, prices) : null;
+    const val = price != null ? tradeAmount(price, h.shares) : h.cost;
     stockValue += val;
     return `<div class="pf-row">
       <div class="pf-row-left">
@@ -1525,12 +1551,16 @@ export function renderPortfolio(){
     </div>`;
   }).join("");
   const cash = S.coins || 0;
+  const priceAsOfLabel = cacheMeta
+    ? (() => { const d = new Date(cacheMeta.fetchedAt); return `株価 ${String(d.getHours()).padStart(2,"0")}:${String(d.getMinutes()).padStart(2,"0")}時点`; })()
+    : "株価を取得中…";
   app.innerHTML = `
     <div class="q-head"><button class="quit" data-go="select">← ホーム</button><span class="q-count">ポートフォリオ</span></div>
     <div class="pf-hero">
       <div class="pf-hero-lab">総資産（評価額）</div>
       <div class="pf-hero-total">${(cash + stockValue).toLocaleString()} <small>AC</small></div>
       <div class="pf-hero-sub">💰 現金 ${cash.toLocaleString()} AC ・ 📈 株式 ${stockValue.toLocaleString()} AC</div>
+      <div class="pf-hero-asof">${esc(priceAsOfLabel)}</div>
     </div>
     ${rows
       ? `<div class="section-lab">保有株</div><div class="pf-list">${rows}</div>`
