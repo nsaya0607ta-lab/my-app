@@ -528,16 +528,27 @@ export function renderLpicCommands(){
     </div>`).join("");
   app.innerHTML = `
     <div class="q-head" style="margin-bottom:14px">
-      <button class="quit" data-go="home">← 演習モードへ戻る</button>
+      <button class="quit" data-go="home">← ホームへ戻る</button>
     </div>
     <div class="sel-head">
-      <span class="eyebrow">LPIC-1 コマンド別学習</span>
+      <span class="eyebrow">LPIC-1 演習モード</span>
       <h2 class="sel-title">コマンドを選んで演習</h2>
     </div>
-    <div class="x-hint" style="margin:0 0 14px">コマンドを選ぶと、そのコマンドに関する問題だけで演習を開始します。正解した問題の配点分だけがスコア・EXPに加算されます。</div>
+
+    <div class="pcount-wrap" style="margin-top:0">
+      <div class="pcount-lab">🔀 全体からランダムに演習（従来の演習）</div>
+      <div class="pcount">
+        <button class="pcount-btn" data-pc="5">5問</button>
+        <button class="pcount-btn" data-pc="10">10問</button>
+        <button class="pcount-btn" data-pc="15">15問</button>
+      </div>
+    </div>
+
+    <div class="x-hint" style="margin:14px 0">またはコマンドを選ぶと、そのコマンドに関する問題だけで演習を開始します。正解した問題の配点分だけがスコア・EXPに加算されます。</div>
     ${sections}
   `;
   app.querySelectorAll("[data-cmd]").forEach(b=>b.onclick=()=>startCommandPractice(b.dataset.cmd));
+  app.querySelectorAll("[data-pc]").forEach(b=>b.onclick=()=>start("practice", +b.dataset.pc));
   app.querySelectorAll("[data-go]").forEach(b=>b.onclick=()=>go(b.dataset.go));
   window.scrollTo(0,0);
 }
