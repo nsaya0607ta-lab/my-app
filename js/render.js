@@ -4394,7 +4394,10 @@ function newsListHTML(items, admin, selectedIds){
     const tag = hasUrl ? "a" : "div";
     const attrs = hasUrl ? `href="${esc(n.url)}" target="_blank" rel="noopener noreferrer"` : "";
     const link = `<${tag} class="njp-news-link"${attrs?" "+attrs:""}>
-      <span class="njp-news-title">${esc(n.title)}</span>
+      <span class="njp-news-text">
+        <span class="njp-news-title">${esc(n.title)}</span>
+        ${n.summary?`<span class="njp-news-summary">${esc(n.summary)}</span>`:""}
+      </span>
       ${hasUrl?'<span class="njp-news-arrow">→</span>':""}
     </${tag}>`;
     const checkbox = admin
@@ -4577,7 +4580,7 @@ function createNewsScreen({ storeKey, label, icon, seedFn, geminiCategory }){
 
         const freshStore = loadStore();
         if(!freshStore[selKey]) freshStore[selKey] = [];
-        fetchedItems.forEach(it => freshStore[selKey].push({ id: newsGenId(), title: it.title, url: it.url }));
+        fetchedItems.forEach(it => freshStore[selKey].push({ id: newsGenId(), title: it.title, url: it.url, summary: it.summary || "" }));
         saveStore(freshStore);
         render();
       };
