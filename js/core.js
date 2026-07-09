@@ -467,15 +467,6 @@ export function isAdminAccount(){
   return email.toLowerCase() === "admin@gmail.com" || name.toLowerCase() === "admin";
 }
 
-// Geminiニュース自動登録機能の権限判定：ログイン中のメールアドレスが
-// for.administ@gmail.com と完全一致する場合のみtrue（isAdminAccountと違い、
-// 表示名による代替判定は行わない）。ボタンのUI表示・API呼び出しの
-// 両方でこの判定を使い、それ以外のユーザーには一切露出させない
-export function isGeminiNewsAdmin(){
-  const email = (state.currentUser && state.currentUser.email) || "";
-  return email.trim().toLowerCase() === "for.administ@gmail.com";
-}
-
 export function getProfileName(){ return localStorage.getItem("profile_name") || ""; }
 
 export function setProfileName(n){ try{ localStorage.setItem("profile_name", n); }catch(e){} }

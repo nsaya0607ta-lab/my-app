@@ -26,10 +26,7 @@ function getAdmin() {
 // 対応するFirebase UIDを返す。フロントエンドは常に
 // state.currentUser.getIdToken() で取得した最新のIDトークンをこのヘッダに
 // 載せて各 /api/google/* エンドポイントを呼び出す。
-// リクエストのIDトークンを検証し、デコードされたクレーム全体（uid・email等）
-// を返す。email付きの権限判定（例：Geminiニュース自動登録の管理者チェック）
-// が必要な呼び出し元はこちらを使う。
-async function verifyFirebaseIdTokenClaims(req) {
+async function verifyFirebaseIdToken(req) {
   const authHeader = req.headers.authorization || "";
   const m = /^Bearer (.+)$/.exec(authHeader);
   if (!m) {
@@ -53,7 +50,8 @@ async function verifyFirebaseIdTokenClaims(req) {
   }
 
   try {
-    return await adminApp.auth().verifyIdToken(m[1]);
+    const decoded = await adminApp.auth().verifyIdToken(m[1]);
+    return decoded.uid;
   } catch (e) {
     console.error("verifyIdToken failed:", e.message);
     const err = new Error("invalid-id-token: " + e.message);
@@ -62,10 +60,4 @@ async function verifyFirebaseIdTokenClaims(req) {
   }
 }
 
-// 既存の呼び出し元向け：uidだけを返す薄いラッパー
-async function verifyFirebaseIdToken(req) {
-  const decoded = await verifyFirebaseIdTokenClaims(req);
-  return decoded.uid;
-}
-
-module.exports = { getAdmin, verifyFirebaseIdToken, verifyFirebaseIdTokenClaims };
+module.exports = { getAdmin, verifyFirebaseIdToken };
