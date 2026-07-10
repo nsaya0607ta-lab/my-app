@@ -131,6 +131,73 @@ function weatherContextLines(weather){
   return lines;
 }
 
+// 株価タブの保有株・ウォッチリストの実データを文章化する。天気・予定と同じく、
+// クライアントから送られてきた実データだけをもとに答えさせ、送られていない
+// 銘柄の価格を推測・創作させないための指示を添える
+function stockContextLines(stocks){
+  if(!stocks) return [];
+  const holdings = Array.isArray(stocks.holdings) ? stocks.holdings : [];
+  const watchlist = Array.isArray(stocks.watchlist) ? stocks.watchlist : [];
+  if(!holdings.length && !watchlist.length) return [];
+
+  const marketNote = stocks.marketOpen
+    ? "現在は米国市場の取引時間中のため、直近の実勢価格です。"
+    : "現在は米国市場の取引時間外のため、直近の終値（取引時間外の値）です。";
+  const lines = [`【株価（画面「株価」タブの実データ）】ユーザーが株価や資産について尋ねた場合は、必ず以下の実データだけをもとに答えてください。送られていない銘柄の価格を勝手に推測・創作しないでください。${marketNote}`];
+
+  if(holdings.length){
+    const list = holdings.map(h => {
+      const priceLabel = typeof h.price === "number" ? `現在値$${h.price.toFixed(2)}・評価額${Math.round(h.value).toLocaleString()}AC` : "現在値取得不可";
+      return `${h.ticker}(${h.name})：${h.shares}株・${priceLabel}`;
+    }).join("／");
+    lines.push(`保有株：${list}`);
+  } else {
+    lines.push("保有株：まだありません。");
+  }
+  if(typeof stocks.cash === "number"){
+    lines.push(`保有現金（AC）：${Math.round(stocks.cash).toLocaleString()}AC`);
+  }
+  if(watchlist.length){
+    const list = watchlist.map(w => {
+      const chg = typeof w.changePercent === "number" ? `（前日比${w.changePercent >= 0 ? "+" : ""}${w.changePercent.toFixed(2)}%）` : "";
+      return `${w.ticker}(${w.name})：$${w.price.toFixed(2)}${chg}`;
+    }).join("／");
+    lines.push(`ウォッチリスト：${list}`);
+  }
+  lines.push("なお、これらはゲーム内通貨(AC)を使ったデモ取引・値動き確認用のデータであり、実際の証券口座の取引ではありません。");
+  return lines;
+}
+
+// 株価タブの実データ（js/render.jsのbuildStockContextForGemini）を、型・件数・
+// 長さを検証してから使う。天気・予定と同じく、クライアントからの任意入力なので
+// 想定外の形のオブジェクトが来てもここで弾き、壊れた値のままGeminiへ渡さない
+function buildStockAppContext(raw){
+  if(!raw || typeof raw !== "object") return null;
+  return {
+    marketOpen: !!raw.marketOpen,
+    cash: typeof raw.cash === "number" ? raw.cash : null,
+    holdings: (Array.isArray(raw.holdings) ? raw.holdings : [])
+      .slice(0, 20)
+      .map(h => ({
+        ticker: typeof (h && h.ticker) === "string" ? h.ticker.slice(0, 10) : "",
+        name: typeof (h && h.name) === "string" ? h.name.slice(0, 40) : "",
+        shares: typeof (h && h.shares) === "number" ? h.shares : 0,
+        price: typeof (h && h.price) === "number" ? h.price : null,
+        value: typeof (h && h.value) === "number" ? h.value : 0,
+      }))
+      .filter(h => h.ticker),
+    watchlist: (Array.isArray(raw.watchlist) ? raw.watchlist : [])
+      .slice(0, 20)
+      .map(w => ({
+        ticker: typeof (w && w.ticker) === "string" ? w.ticker.slice(0, 10) : "",
+        name: typeof (w && w.name) === "string" ? w.name.slice(0, 40) : "",
+        price: typeof (w && w.price) === "number" ? w.price : null,
+        changePercent: typeof (w && w.changePercent) === "number" ? w.changePercent : null,
+      }))
+      .filter(w => w.ticker && typeof w.price === "number"),
+  };
+}
+
 function scheduleTaskSummaryLines(todos, events){
   const hasTodos = Array.isArray(todos) && todos.length > 0;
   const hasEvents = Array.isArray(events) && events.length > 0;
@@ -163,6 +230,7 @@ function buildSystemInstruction(today, appContext){
     "雑談程度の話題には常識の範囲で軽く答えて構いませんが、医療・法律・金融など専門外の断定的なアドバイスは避けてください。",
     ...weatherContextLines(appContext && appContext.weather),
     ...scheduleTaskSummaryLines(appContext && appContext.todos, appContext && appContext.events),
+    ...stockContextLines(appContext && appContext.stocks),
     "【アプリの機能ボタン】ホーム画面中央下には「J-NEWS」「F-NEWS」「株価」「カレンダー」「設定」のボタンが並んでいます。ユーザーがこれらのボタンについて尋ねたり「何ができる？」と聞いてきた場合は分かりやすく解説してください。J-NEWSは日本の最新ニュースを読める機能、F-NEWSは海外の最新ニュースを読める機能、株価は保有銘柄のデモ取引や株価確認ができる機能、カレンダーは月表示で予定を管理できる機能（ホーム中央の予定ウィジェットは1日表示の簡易版）、設定は背景スキンやタップ音を変更できる機能です。",
     "【資格勉強のご案内】ホーム画面いちばん下には「MS」「LPIC」のボタンがあり、資格対策の学習コンテンツに進めます。ユーザーがどの資格を勉強できるか尋ねた場合は、この一覧を教えてあげてください。MSボタンからはMicrosoft認定資格を選べます（AZ-900「Azure基礎」・SC-300「セキュリティ中級」は学習可能、SC-900「セキュリティ基礎」は近日公開）。LPICボタンからはLinux技術者認定を選べます（LPIC-1は学習可能、LPIC-2・LPIC-3は近日公開）。",
     "このアプリにはカレンダー機能があり、予定の登録・変更・削除をユーザーに代わって行えます。以下のルールに従ってください。",
@@ -248,6 +316,7 @@ module.exports = async (req, res) => {
         end: typeof (e && e.end) === "string" ? e.end.slice(0, 5) : "",
       }))
       .filter(e => e.title),
+    stocks: buildStockAppContext(rawAppContext && rawAppContext.stocks),
   };
 
   // streamGenerateContent（SSE）を使い、Geminiが生成したテキストを受信次第
