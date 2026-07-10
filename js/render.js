@@ -5502,6 +5502,13 @@ function createMindPaletteScreen(){
   let selectedIds = new Set();
   let zoom = 1, panX = 20, panY = 20;
   let lastBoardId = null;
+  let centerPending = true; // 初回・ボード切替時、DOM生成後にキャンバス中央へ寄せる
+
+  // ビューポート中央にキャンバスの中央が来るpanX/panYを算出する
+  const centerPan = (viewport) => ({
+    x: (viewport.clientWidth - MP_CANVAS_W * zoom) / 2,
+    y: (viewport.clientHeight - MP_CANVAS_H * zoom) / 2
+  });
 
   /* ---- 付箋テキストの編集オーバーレイ ----
      キーボードが立ち上がってもキャンバスの表示位置がずれたり、フォーカスが
@@ -5727,7 +5734,7 @@ function createMindPaletteScreen(){
     const zoomReset = document.getElementById("mp-zoom-reset");
     if(zoomIn) zoomIn.onclick = () => { const r = viewport.getBoundingClientRect(); step(r.left + r.width / 2, r.top + r.height / 2, r.left + r.width / 2, r.top + r.height / 2, 1.25); };
     if(zoomOut) zoomOut.onclick = () => { const r = viewport.getBoundingClientRect(); step(r.left + r.width / 2, r.top + r.height / 2, r.left + r.width / 2, r.top + r.height / 2, 0.8); };
-    if(zoomReset) zoomReset.onclick = () => { zoom = 1; panX = 20; panY = 20; applyTransform(); };
+    if(zoomReset) zoomReset.onclick = () => { zoom = 1; ({ x: panX, y: panY } = centerPan(viewport)); applyTransform(); };
   }
 
   function wireCanvas(st){
@@ -5735,6 +5742,11 @@ function createMindPaletteScreen(){
     const viewport = document.getElementById("mp-canvas-viewport");
     const svgEl = document.getElementById("mp-links-svg");
     if(!canvas || !viewport) return;
+
+    if(centerPending){
+      ({ x: panX, y: panY } = centerPan(viewport));
+      centerPending = false;
+    }
 
     wireViewport(canvas, viewport);
 
@@ -5805,6 +5817,7 @@ function createMindPaletteScreen(){
     if(st.id !== lastBoardId){
       zoom = 1; panX = 20; panY = 20; lastBoardId = st.id;
       mode = "idle"; pendingLinkId = null; selectedIds = new Set();
+      centerPending = true;
     }
     const groupColorOf = (gid) => gid ? ((st.groups.find(g => g.id === gid) || {}).color || null) : null;
 
@@ -5845,8 +5858,8 @@ function createMindPaletteScreen(){
         <div class="mp-canvas" id="mp-canvas" style="width:${MP_CANVAS_W}px;height:${MP_CANVAS_H}px">
           <svg class="mp-links-svg" id="mp-links-svg" width="${MP_CANVAS_W}" height="${MP_CANVAS_H}">${linksHTML}</svg>
           ${notesHTML}
+          ${!st.notes.length ? `<div class="mp-empty">ここはあなたの発想キャンバスです。<br>ダブルタップして最初の付箋を置いてみましょう。</div>` : ""}
         </div>
-        ${!st.notes.length ? `<div class="mp-empty">ここはあなたの発想キャンバスです。<br>ダブルタップして最初の付箋を置いてみましょう。</div>` : ""}
         <div class="mp-zoom-controls">
           <button type="button" id="mp-zoom-out" aria-label="縮小">－</button>
           <span class="mp-zoom-label" id="mp-zoom-label">${Math.round(zoom * 100)}%</span>
