@@ -50,9 +50,17 @@ export function setGeminiHomeContextProvider(fn){
   homeContextProvider = fn;
 }
 
-// 天気カード・ホームの予定/タスクウィジェットと同じ実データをGeminiに渡すための
-// スナップショットを組み立てる。取得に失敗しても会話自体は止めたくないので、
-// 個別にtry/catchし、取れなかった項目はnull/空のまま送る
+// 株価タブの保有株・ウォッチリストの実データを、循環importを避けつつ取得する
+// ための注入ポイント（render.js側から起動時にセットされる）。銘柄の現在値取得を
+// 伴うため非同期関数として渡される
+let stockContextProvider = null;
+export function setGeminiStockContextProvider(fn){
+  stockContextProvider = fn;
+}
+
+// 天気カード・ホームの予定/タスクウィジェット・株価タブと同じ実データをGeminiに
+// 渡すためのスナップショットを組み立てる。取得に失敗しても会話自体は止めたく
+// ないので、個別にtry/catchし、取れなかった項目はnull/空のまま送る
 async function buildAppContext(){
   let weather = null;
   try{
@@ -67,10 +75,16 @@ async function buildAppContext(){
     if(homeContextProvider) home = homeContextProvider();
   }catch(e){ /* 予定/タスクが取れなくてもチャットは継続する */ }
 
+  let stocks = null;
+  try{
+    if(stockContextProvider) stocks = await stockContextProvider();
+  }catch(e){ /* 株価が取れなくてもチャットは継続する */ }
+
   return {
     weather,
     todos: (home && home.todos) || [],
     events: (home && home.events) || [],
+    stocks,
   };
 }
 

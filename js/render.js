@@ -3,7 +3,7 @@ import { DC_PHASES, L, REGIONS } from './data/constants.js';
 import { CONCEPTS, DRAW, PASS, Q, TIERS, applySkin, certById, certStat, commit, correctSet, dcCount, dcPhase, dcTitle, esc, exportCode, fmt, getBP, getProfileName, grade, importCode, isAdminAccount, isMulti, loadHist, loadReviewStats, loadTapSound, loadUiTheme, loadWrong, overallLevel, overallStat, pick, pts, publishLeaderboard, purchaseSkin, questionsForCommand, saveCoins, saveTapSound, saveToCloud, saveUiTheme, selectCert, setBP, setProfileName, skinHandleIdentityChange, stars, start, startCommandPractice, startReview, totalBP } from './core.js';
 import { LPIC1_COMMANDS } from './data/lpic1-commands.js';
 import { getWeather } from './weather.js';
-import { geminiChat, sendGeminiMessage, setGeminiScheduleHandler, setGeminiHomeContextProvider, pushGeminiMessage } from './gemini.js';
+import { geminiChat, sendGeminiMessage, setGeminiScheduleHandler, setGeminiHomeContextProvider, setGeminiStockContextProvider, pushGeminiMessage } from './gemini.js';
 import { SKIN_DATA } from './data/skins.js';
 import { UI_THEME_DATA } from './data/uithemes.js';
 import { TAP_SOUND_DATA } from './data/tapsounds.js';
@@ -3549,6 +3549,43 @@ function getTodayHomeContext(){
   };
 }
 setGeminiHomeContextProvider(getTodayHomeContext);
+
+// Geminiチャットが「今日の株価は？」のような質問に画面と同じ実データで
+// 答えられるよう、保有株（ポートフォリオ）とウォッチリストの現在値をまとめて
+// 返す。保有株の評価額は株価タブ（renderPortfolio）と同じ基準値
+// （STOCKS/JP_STOCKS）を使いつつ、Finnhubから実際の現在値が取れた銘柄は
+// そちらを優先する。ウォッチリストは現在値が取れた銘柄のみを渡す
+async function buildStockContextForGemini(){
+  const pf = loadPortfolio();
+  const heldTickers = Object.keys(pf);
+  const watchTickers = loadWatchlist();
+  const tickers = [...new Set([...heldTickers, ...watchTickers])].slice(0, 20);
+  const marketOpen = isUSMarketHoursJST();
+  if(!tickers.length) return { holdings: [], watchlist: [], cash: S.coins || 0, marketOpen };
+
+  const allStocks = [...STOCKS, ...JP_STOCKS];
+  const { quotes } = await fetchStockQuotes(tickers);
+
+  const holdings = heldTickers.map(t => {
+    const meta = allStocks.find(s => s.ticker === t);
+    const live = quotes[t];
+    const price = live ? live.price : (meta ? meta.price : null);
+    const shares = pf[t].shares;
+    const value = price !== null ? tradeAmount(price, shares) : pf[t].cost;
+    return { ticker: t, name: meta ? meta.name : t, shares, price, value };
+  });
+
+  const watchlist = watchTickers.map(t => {
+    const live = quotes[t];
+    if(!live) return null;
+    const meta = WATCH_STOCKS.find(s => s.ticker === t);
+    const changePercent = live.prevClose ? ((live.price - live.prevClose) / live.prevClose) * 100 : null;
+    return { ticker: t, name: meta ? meta.name : t, price: live.price, changePercent };
+  }).filter(Boolean);
+
+  return { holdings, watchlist, cash: S.coins || 0, marketOpen };
+}
+setGeminiStockContextProvider(buildStockContextForGemini);
 
 function gcalBindConnectBar(root){
   const connectBtn = root.querySelector("#gcal-google-connect");
