@@ -24,9 +24,9 @@ function genId(prefix){
   return prefix + Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
 }
 
-function newBoard(name){
+function newBoard(name, parentId){
   const now = Date.now();
-  return { id: genId("b"), name: (name || "").trim() || "無題のキャンバス", notes: [], links: [], groups: [], createdAt: now, updatedAt: now };
+  return { id: genId("b"), name: (name || "").trim() || "無題のキャンバス", notes: [], links: [], groups: [], parentId: parentId || null, createdAt: now, updatedAt: now };
 }
 
 function normalizeBoard(b){
@@ -36,6 +36,7 @@ function normalizeBoard(b){
   if(!Array.isArray(b.notes)) b.notes = [];
   if(!Array.isArray(b.links)) b.links = [];
   if(!Array.isArray(b.groups)) b.groups = [];
+  if(!b.parentId) b.parentId = null;
   if(!b.createdAt) b.createdAt = Date.now();
   if(!b.updatedAt) b.updatedAt = b.createdAt;
   return b;
@@ -44,6 +45,9 @@ function normalizeBoard(b){
 function normalize(raw){
   if(raw && Array.isArray(raw.boards) && raw.boards.length){
     raw.boards = raw.boards.map(normalizeBoard);
+    // 親フォルダが既に存在しない（削除済み等）場合は最上位に戻す
+    const ids = new Set(raw.boards.map(b => b.id));
+    raw.boards.forEach(b => { if(b.parentId && !ids.has(b.parentId)) b.parentId = null; });
     if(!raw.activeBoardId || !raw.boards.some(b => b.id === raw.activeBoardId)){
       raw.activeBoardId = raw.boards[0].id;
     }
@@ -71,8 +75,36 @@ function load(){
   return cache;
 }
 
+// Firestoreの users/{uid}.mindPalette へ同期し、別端末でも同じフォルダ構成・
+// 付箋がそのまま引き継げるようにする（gcal・portfolioと同じ方式）
+function syncToCloud(){
+  if(!state.db || !state.currentUserId || !window.FirebaseSync) return;
+  try{
+    window.FirebaseSync.setDoc(window.FirebaseSync.doc(state.db, "users", state.currentUserId), {
+      mindPalette: cache,
+      updatedAt: new Date().toISOString()
+    }, { merge: true });
+  }catch(e){ console.error("mind palette cloud sync failed:", e); }
+}
+
 function save(){
   try{ localStorage.setItem(mpKey(), JSON.stringify(cache)); }catch(e){}
+  syncToCloud();
+}
+
+// 新規アカウント時、この端末に既にあるローカルのキャンバスをクラウドへ
+// 初期投入するために使う（core.jsのseedCloudFromLocalから呼ばれる）
+export function mpExportRaw(){ return load(); }
+
+// クラウド（Firestoreのusers/{uid}.mindPalette）から届いたデータをこの端末の
+// キャッシュ・localStorageへ反映する。db.jsのonSnapshotから呼ばれる。
+// save()ではなく直接書き込むのは、save()を使うとsyncToCloud()が呼ばれ、
+// onSnapshotとの間で無限ループになってしまうため（gcalと同じ理由）
+export function mpApplyCloud(data){
+  if(!data || typeof data !== "object" || !Array.isArray(data.boards) || !data.boards.length) return false;
+  cache = normalize(JSON.parse(JSON.stringify(data)));
+  try{ localStorage.setItem(mpKey(), JSON.stringify(cache)); }catch(e){}
+  return true;
 }
 
 function activeBoard(){
@@ -102,19 +134,56 @@ export function mpGetState(){ return activeBoard(); }
 export const MP_COLORS = ["blue", "gold", "teal", "violet", "rose"];
 export function mpRandomColor(){ return MP_COLORS[(Math.random() * MP_COLORS.length) | 0]; }
 
-/* ---- ボード（フォルダ）管理 ---- */
-export function mpListBoards(){
+/* ---- ボード（フォルダ）管理 ----
+   ボードは親子関係（parentId）を持ち、フォルダの中にサブフォルダを
+   ネストして作成できる。各ボードはそれ自体が付箋キャンバスであり、
+   同時に子ボード（サブフォルダ）を持つコンテナにもなれる */
+function childCountOf(st, id){
+  return st.boards.filter(b => (b.parentId || null) === id).length;
+}
+
+// parentId を指定した階層（省略時は最上位）の直下にあるボード一覧を返す
+export function mpListBoards(parentId){
   const st = load();
+  const pid = parentId || null;
   return st.boards
-    .map(b => ({ id: b.id, name: b.name, count: b.notes.length, updatedAt: b.updatedAt }))
+    .filter(b => (b.parentId || null) === pid)
+    .map(b => ({ id: b.id, name: b.name, count: b.notes.length, childCount: childCountOf(st, b.id), parentId: b.parentId || null, updatedAt: b.updatedAt }))
     .sort((a, b) => b.updatedAt - a.updatedAt);
 }
 
 export function mpActiveBoardId(){ return load().activeBoardId; }
 
-export function mpCreateBoard(name){
+// 指定ボードの情報（付箋数・サブフォルダ数など）を単体で取得
+export function mpBoardMeta(id){
   const st = load();
-  const b = newBoard(name || `無題のキャンバス${st.boards.length + 1}`);
+  const b = st.boards.find(x => x.id === id);
+  if(!b) return null;
+  return { id: b.id, name: b.name, count: b.notes.length, childCount: childCountOf(st, b.id), parentId: b.parentId || null, updatedAt: b.updatedAt };
+}
+
+// ルートから指定ボードまでの祖先チェーン（パンくずリスト用）
+export function mpBoardChain(id){
+  const st = load();
+  const chain = [];
+  const seen = new Set();
+  let cur = id;
+  while(cur && !seen.has(cur)){
+    seen.add(cur);
+    const b = st.boards.find(x => x.id === cur);
+    if(!b) break;
+    chain.unshift({ id: b.id, name: b.name });
+    cur = b.parentId || null;
+  }
+  return chain;
+}
+
+export function mpTotalBoardCount(){ return load().boards.length; }
+
+export function mpCreateBoard(name, parentId){
+  const st = load();
+  const pid = (parentId && st.boards.some(b => b.id === parentId)) ? parentId : null;
+  const b = newBoard(name || `無題のキャンバス${st.boards.length + 1}`, pid);
   st.boards.push(b);
   st.activeBoardId = b.id;
   save();
@@ -141,12 +210,26 @@ export function mpRenameBoard(id, name){
   return true;
 }
 
-// 最低1枚はボードを残す（全消去してもキャンバス自体は失わせない）
+// 最低1枚はボードを残す（全消去してもキャンバス自体は失わせない）。
+// サブフォルダを持つボードを削除する場合は、配下のサブフォルダ・
+// キャンバスもまとめて削除する
 export function mpDeleteBoard(id){
   const st = load();
   if(st.boards.length <= 1) return false;
-  st.boards = st.boards.filter(b => b.id !== id);
-  if(st.activeBoardId === id) st.activeBoardId = st.boards[0].id;
+  const toDelete = new Set([id]);
+  let changed = true;
+  while(changed){
+    changed = false;
+    st.boards.forEach(b => {
+      if(b.parentId && toDelete.has(b.parentId) && !toDelete.has(b.id)){
+        toDelete.add(b.id);
+        changed = true;
+      }
+    });
+  }
+  if(toDelete.size >= st.boards.length) return false;
+  st.boards = st.boards.filter(b => !toDelete.has(b.id));
+  if(toDelete.has(st.activeBoardId)) st.activeBoardId = st.boards[0].id;
   save();
   return true;
 }
