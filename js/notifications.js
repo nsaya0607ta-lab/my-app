@@ -98,15 +98,17 @@ export function notifyReminder(title, startLabel){
 /* ---- 4) 朝7時の「今日の予定」一括通知（デイリーサマリー） ----
    events: [{title, start}] を開始時刻の昇順で渡す */
 export function notifyDailySummary(events){
+  const now = new Date();
+  const title = `${now.getMonth() + 1}月${now.getDate()}日の予定`;
   const list = (events || []).filter(ev => ev && ev.title);
   if(!list.length){
     const msg = "☀️ おはようございます！今日の予定はありません。今日も良い一日を！";
     showToast("summary", msg, { duration: 10000 });
-    notifyBrowser("☀️ 今日の予定", "今日の予定はありません。今日も良い一日を！");
+    notifyBrowser(title, "今日の予定はありません。今日も良い一日を！");
     return;
   }
   const items = list.map((ev, i) => `${circledNum(i + 1)}${ev.start ? `${ev.start}〜` : "終日"} ${ev.title}`).join("、");
   const msg = `☀️ おはようございます！今日の予定は ${list.length} 件あります：${items}`;
   showToast("summary", msg, { duration: 12000 });
-  notifyBrowser("☀️ 今日の予定", `本日は${list.length}件の予定があります。`);
+  notifyBrowser(title, `本日は${list.length}件の予定があります。`);
 }
