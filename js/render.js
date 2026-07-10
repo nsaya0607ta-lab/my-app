@@ -11,7 +11,7 @@ import { playTapSound } from './audio.js';
 import { notifyDailySummary, notifyMindPaletteSent, notifyReminder, notifyScheduleCreated, notifyScheduleDeleted } from './notifications.js';
 import { S, state } from './state.js';
 import { markPetActivity, petHandleIdentityChange, petIsNeglected, petNextStage, petStageForLevel } from './pet.js';
-import { mpActiveBoardId, mpAddLink, mpAddNote, mpClearAll, mpCreateBoard, mpDeleteBoard, mpDeleteNote, mpGetState, mpGroupNotes, mpHandleIdentityChange, mpListBoards, mpRandomColor, mpRemoveLink, mpRenameBoard, mpSuggestKeywords, mpSwitchBoard, mpUpdateNote } from './mindpalette.js';
+import { mpActiveBoardId, mpAddLink, mpAddNote, mpBoardChain, mpBoardMeta, mpClearAll, mpCreateBoard, mpDeleteBoard, mpDeleteNote, mpGetState, mpGroupNotes, mpHandleIdentityChange, mpListBoards, mpRandomColor, mpRemoveLink, mpRenameBoard, mpSuggestKeywords, mpSwitchBoard, mpTotalBoardCount, mpUpdateNote } from './mindpalette.js';
 
 export const app = document.getElementById("app");
 
@@ -67,7 +67,7 @@ export function renderStatusBar(){
              || (!state.guestMode && !state.currentUser)
              || (!state.guestMode && state.currentUser && (!state.profileChecked || !getProfileName()));
   const screen = resolveScreen();
-  const otherScreens = ["ranking","profile","settings","skins","analytics","portfolio","news-japan","news-world","news-detail","calendar","gemini","gemini-edit-event","mind-palette"];
+  const otherScreens = ["ranking","profile","settings","skins","analytics","portfolio","news-japan","news-world","news-detail","calendar","gemini","gemini-edit-event","mind-palette","mind-palette-folders"];
   if(gated || otherScreens.includes(screen)){ el.classList.remove("show"); el.innerHTML=""; return; }
   const ov = overallStat();          // 総合Lvと次Lvまでの進捗(%)
   const coins = (S.coins||0);
@@ -133,7 +133,7 @@ export function renderStatusBar(){
 // render()末尾の分岐と同じ優先順位で判定する）ため、ヘッダー周りの表示制御は
 // この「実際に描画される画面名」を使って判断する。
 function resolveScreen(){
-  const noCertScreens = ["ranking","profile","settings","skins","analytics","certs","lpic-certs","portfolio","news-japan","news-world","news-detail","calendar","gemini","gemini-edit-event","mind-palette"];
+  const noCertScreens = ["ranking","profile","settings","skins","analytics","certs","lpic-certs","portfolio","news-japan","news-world","news-detail","calendar","gemini","gemini-edit-event","mind-palette","mind-palette-folders"];
   if(noCertScreens.includes(S.screen)) return S.screen;
   if(S.screen==="select" || !S.cert) return "select";
   return S.screen; // home/quiz/result/review/dict/transfer/history
@@ -212,6 +212,7 @@ export function render(){
   if(S.screen==="news-detail") return renderNewsDetail();
   if(S.screen==="calendar") return renderCalendarScreen();
   if(S.screen==="mind-palette") return renderMindPalette();
+  if(S.screen==="mind-palette-folders") return renderMindPaletteFolders();
   if(S.screen==="gemini") return renderGeminiChat();
   if(S.screen==="gemini-edit-event") return renderGeminiEditEvent();
   // 大元：資格選択画面
@@ -5417,6 +5418,36 @@ function mpRelativeTime(ts){
   return `${d.getMonth() + 1}/${d.getDate()}`;
 }
 
+// キャンバス（フォルダ）の名前変更モーダル。マインド・パレット画面／
+// フォルダ画面のどちらからも呼べるよう、どの画面固有の状態にも依存しない
+// モジュールスコープの関数にしている
+function openBoardRenameModal(boardId, currentName, onSaved){
+  const ov = document.createElement("div");
+  ov.className = "modal-ov";
+  ov.innerHTML = `
+    <div class="modal">
+      <div class="modal-title" style="color:var(--text)">✏️ キャンバスの名前</div>
+      <input type="text" class="gcal-ev-input gcal-newcal-input" id="mp-board-name-input" placeholder="例：経済ニュースまとめ" maxlength="30" value="${esc(currentName || "")}">
+      <button class="cta" id="mp-board-name-save">保存する</button>
+      <button class="ghost" id="mp-board-name-cancel" style="margin-top:8px">キャンセル</button>
+    </div>`;
+  document.body.appendChild(ov);
+  const close = () => { try{ ov.remove(); }catch(e){} };
+  ov.addEventListener("click", (e) => { if(e.target === ov) close(); });
+  ov.querySelector("#mp-board-name-cancel").onclick = close;
+  const input = ov.querySelector("#mp-board-name-input");
+  const submit = () => {
+    const name = (input.value || "").trim();
+    if(!name){ input.focus(); return; }
+    mpRenameBoard(boardId, name);
+    close();
+    if(onSaved) onSaved();
+  };
+  ov.querySelector("#mp-board-name-save").onclick = submit;
+  input.onkeydown = (e) => { if(e.key === "Enter") submit(); };
+  input.focus(); input.select();
+}
+
 // 画面固有の一時UI状態（モード・選択中付箋・ズーム/パン量など）を閉じ込めた
 // ファクトリー。createNewsScreen()と同じ構成方針
 function createMindPaletteScreen(){
@@ -5488,107 +5519,6 @@ function createMindPaletteScreen(){
     setTimeout(() => ta.focus(), 60);
   }
 
-  /* ---- キャンバス（フォルダ）の一覧・切替・名前変更モーダル ---- */
-  function openBoardRenameModal(boardId, currentName, onSaved){
-    const ov = document.createElement("div");
-    ov.className = "modal-ov";
-    ov.innerHTML = `
-      <div class="modal">
-        <div class="modal-title" style="color:var(--text)">✏️ キャンバスの名前</div>
-        <input type="text" class="gcal-ev-input gcal-newcal-input" id="mp-board-name-input" placeholder="例：経済ニュースまとめ" maxlength="30" value="${esc(currentName || "")}">
-        <button class="cta" id="mp-board-name-save">保存する</button>
-        <button class="ghost" id="mp-board-name-cancel" style="margin-top:8px">キャンセル</button>
-      </div>`;
-    document.body.appendChild(ov);
-    const close = () => { try{ ov.remove(); }catch(e){} };
-    ov.addEventListener("click", (e) => { if(e.target === ov) close(); });
-    ov.querySelector("#mp-board-name-cancel").onclick = close;
-    const input = ov.querySelector("#mp-board-name-input");
-    const submit = () => {
-      const name = (input.value || "").trim();
-      if(!name){ input.focus(); return; }
-      mpRenameBoard(boardId, name);
-      close();
-      if(onSaved) onSaved();
-    };
-    ov.querySelector("#mp-board-name-save").onclick = submit;
-    input.onkeydown = (e) => { if(e.key === "Enter") submit(); };
-    input.focus(); input.select();
-  }
-
-  function mpFolderModalBodyHTML(){
-    const boards = mpListBoards();
-    const activeId = mpActiveBoardId();
-    const rows = boards.map(b => `
-      <div class="mp-board-row${b.id === activeId ? " active" : ""}">
-        <button type="button" class="mp-board-row-main" data-board-open="${esc(b.id)}">
-          <span class="mp-board-row-name">📂 ${esc(b.name)}${b.id === activeId ? " <em>（表示中）</em>" : ""}</span>
-          <span class="mp-board-row-meta">付箋 ${b.count}件・${esc(mpRelativeTime(b.updatedAt))}</span>
-        </button>
-        <button type="button" class="mp-board-row-icon" data-board-rename="${esc(b.id)}" aria-label="名前を変更" title="名前を変更">✎</button>
-        <button type="button" class="mp-board-row-icon mp-board-row-del" data-board-del="${esc(b.id)}" aria-label="このキャンバスを削除" title="削除"${boards.length <= 1 ? " disabled" : ""}>🗑</button>
-      </div>`).join("");
-    return `
-      <button type="button" class="mp-board-createbtn" id="mp-board-create">＋ 新しいキャンバスを作成</button>
-      <div class="mp-board-list">${rows}</div>`;
-  }
-
-  function wireFolderModal(ov){
-    const body = ov.querySelector("#mp-folder-modal-body");
-    const refreshBody = () => { body.innerHTML = mpFolderModalBodyHTML(); wireFolderModal(ov); };
-
-    const createBtn = ov.querySelector("#mp-board-create");
-    if(createBtn) createBtn.onclick = () => {
-      const b = mpCreateBoard();
-      closeFolderModal(ov);
-      mode = "idle"; pendingLinkId = null; selectedIds = new Set();
-      mpRender();
-      openBoardRenameModal(b.id, b.name, () => mpRender());
-    };
-
-    ov.querySelectorAll("[data-board-open]").forEach(btn => btn.onclick = () => {
-      const id = btn.dataset.boardOpen;
-      if(id === mpActiveBoardId()){ closeFolderModal(ov); return; }
-      mpSwitchBoard(id);
-      mode = "idle"; pendingLinkId = null; selectedIds = new Set();
-      closeFolderModal(ov);
-      mpRender();
-    });
-    ov.querySelectorAll("[data-board-rename]").forEach(btn => btn.onclick = (e) => {
-      e.stopPropagation();
-      const id = btn.dataset.boardRename;
-      const b = mpListBoards().find(x => x.id === id);
-      openBoardRenameModal(id, b ? b.name : "", () => { refreshBody(); if(id === mpActiveBoardId()) mpRender(); });
-    });
-    ov.querySelectorAll("[data-board-del]").forEach(btn => btn.onclick = (e) => {
-      e.stopPropagation();
-      if(btn.disabled) return;
-      const id = btn.dataset.boardDel;
-      if(!confirm("このキャンバスを削除しますか？中の付箋・接続もすべて失われます。")) return;
-      const wasActive = id === mpActiveBoardId();
-      mpDeleteBoard(id);
-      refreshBody();
-      if(wasActive){ mode = "idle"; pendingLinkId = null; selectedIds = new Set(); mpRender(); }
-    });
-  }
-
-  function closeFolderModal(ov){ try{ ov.remove(); }catch(e){} }
-
-  function openFolderModal(){
-    const ov = document.createElement("div");
-    ov.className = "modal-ov";
-    ov.innerHTML = `
-      <div class="modal mp-folder-modal">
-        <div class="modal-title mp-folder-modal-title">📁 キャンバス一覧</div>
-        <div id="mp-folder-modal-body" class="mp-folder-modal-body">${mpFolderModalBodyHTML()}</div>
-        <button type="button" class="settings-modal-close" id="mp-folder-modal-close">閉じる</button>
-      </div>`;
-    document.body.appendChild(ov);
-    wireFolderModal(ov);
-    ov.querySelector("#mp-folder-modal-close").onclick = () => closeFolderModal(ov);
-    ov.addEventListener("click", (e) => { if(e.target === ov) closeFolderModal(ov); });
-  }
-
   function wireToolbar(){
     document.getElementById("mp-tool-link").onclick = () => {
       mode = mode === "link" ? "idle" : "link";
@@ -5615,17 +5545,16 @@ function createMindPaletteScreen(){
       mpRender();
     };
     const folderBtn = document.getElementById("mp-folder-btn");
-    if(folderBtn) folderBtn.onclick = openFolderModal;
+    if(folderBtn) folderBtn.onclick = () => { mpFoldersReset(); go("mind-palette-folders"); };
     const renameBtn = document.getElementById("mp-board-rename-btn");
     if(renameBtn) renameBtn.onclick = () => {
       const id = mpActiveBoardId();
-      const b = mpListBoards().find(x => x.id === id);
+      const b = mpBoardMeta(id);
       openBoardRenameModal(id, b ? b.name : "", () => mpRender());
     };
     const newBtn = document.getElementById("mp-board-new-btn");
     if(newBtn) newBtn.onclick = () => {
       const b = mpCreateBoard();
-      mode = "idle"; pendingLinkId = null; selectedIds = new Set();
       mpRender();
       openBoardRenameModal(b.id, b.name, () => mpRender());
     };
@@ -5712,8 +5641,17 @@ function createMindPaletteScreen(){
           if(isDouble){
             lastTap = { t: 0, x: 0, y: 0 };
             const rect = canvasEl.getBoundingClientRect();
-            const x = mpClamp((e.clientX - rect.left) / zoom - MP_NOTE_W / 2, 0, MP_CANVAS_W - MP_NOTE_W);
-            const y = mpClamp((e.clientY - rect.top) / zoom - MP_NOTE_H / 2, 0, MP_CANVAS_H - MP_NOTE_H);
+            const rawX = (e.clientX - rect.left) / zoom, rawY = (e.clientY - rect.top) / zoom;
+            // ズーム・パンで見えている「キャンバスの外側（点線の枠の外）」は
+            // 付箋を置けない領域。以前はここをタップしても座標が枠内に
+            // 強制的にクランプされ、意図しない位置に付箋が出来て分かりにくかった
+            if(rawX < 0 || rawY < 0 || rawX > MP_CANVAS_W || rawY > MP_CANVAS_H){
+              canvasEl.classList.add("mp-canvas-flash");
+              setTimeout(() => canvasEl.classList.remove("mp-canvas-flash"), 260);
+              return;
+            }
+            const x = mpClamp(rawX - MP_NOTE_W / 2, 0, MP_CANVAS_W - MP_NOTE_W);
+            const y = mpClamp(rawY - MP_NOTE_H / 2, 0, MP_CANVAS_H - MP_NOTE_H);
             const note = mpAddNote({ x, y, text: "", color: mpRandomColor() });
             markPetActivity();
             mpRender();
@@ -5818,7 +5756,10 @@ function createMindPaletteScreen(){
 
   function mpRender(){
     const st = mpGetState();
-    if(st.id !== lastBoardId){ zoom = 1; panX = 20; panY = 20; lastBoardId = st.id; }
+    if(st.id !== lastBoardId){
+      zoom = 1; panX = 20; panY = 20; lastBoardId = st.id;
+      mode = "idle"; pendingLinkId = null; selectedIds = new Set();
+    }
     const groupColorOf = (gid) => gid ? ((st.groups.find(g => g.id === gid) || {}).color || null) : null;
 
     const notesHTML = st.notes.map(n => mpNoteHTML(n, mode, pendingLinkId, selectedIds, groupColorOf(n.groupId))).join("");
@@ -5828,7 +5769,7 @@ function createMindPaletteScreen(){
       ? (pendingLinkId ? "つなげたい相手の付箋をタップ（同じ付箋の再タップで取消）" : "起点にする付箋をタップしてください")
       : mode === "group"
         ? "グループ化したい付箋を2つ以上タップして選んでください"
-        : "空いている場所をダブルタップで付箋を作成。2本指でピンチしてズームできます";
+        : "点線の枠の中をダブルタップで付箋を作成（枠の外には置けません）。2本指でピンチしてズームできます";
 
     const groupBarHTML = mode === "group"
       ? `<div class="mp-groupbar">
@@ -5877,6 +5818,115 @@ function createMindPaletteScreen(){
 }
 
 export const renderMindPalette = createMindPaletteScreen();
+
+/* =========================================================================
+   📁 マインド・パレットのフォルダ画面
+   フォルダボタンを押すとモーダルではなくこの専用画面（mind-palette-folders）
+   に遷移する。ボードは親子関係（parentId）を持てるため、この画面では
+   パンくずリストで階層を辿りながら「フォルダの中にさらにサブフォルダを
+   作る」「フォルダ内のキャンバスをそのまま開く」ができる
+   ========================================================================= */
+function createMindPaletteFoldersScreen(){
+  let parentId = null; // 現在表示中の階層（null＝最上位）
+
+  function resetToRoot(){ parentId = null; }
+
+  function crumbHTML(){
+    const chain = parentId ? mpBoardChain(parentId) : [];
+    const items = [{ id: "", name: "すべて", icon: "📁" }, ...chain.map(c => ({ id: c.id, name: c.name, icon: "📂" }))];
+    return `<div class="mp-breadcrumb">${items.map((it, i) => `${i > 0 ? '<span class="mp-crumb-sep">›</span>' : ""}<button type="button" class="mp-crumb${i === items.length - 1 ? " active" : ""}" data-crumb="${esc(it.id)}">${it.icon} ${esc(it.name)}</button>`).join("")}</div>`;
+  }
+
+  function currentOpenHTML(){
+    if(!parentId) return "";
+    const meta = mpBoardMeta(parentId);
+    if(!meta) return "";
+    return `<button type="button" class="mp-folder-open-current" id="mp-folder-open-current">📝 「${esc(meta.name)}」のキャンバスを開く（付箋 ${meta.count}件）</button>`;
+  }
+
+  function rowsHTML(){
+    const boards = mpListBoards(parentId);
+    const activeId = mpActiveBoardId();
+    const total = mpTotalBoardCount();
+    if(!boards.length){
+      return `<div class="mp-folder-empty">まだフォルダがありません。上のボタンから作成できます。</div>`;
+    }
+    return boards.map(b => `
+      <div class="mp-board-row${b.id === activeId ? " active" : ""}">
+        <button type="button" class="mp-board-row-main" data-board-enter="${esc(b.id)}">
+          <span class="mp-board-row-name">📂 ${esc(b.name)}${b.id === activeId ? " <em>（表示中）</em>" : ""} <span class="mp-board-row-chevron">›</span></span>
+          <span class="mp-board-row-meta">付箋 ${b.count}件${b.childCount ? ` ・ 📁 サブフォルダ${b.childCount}件` : ""}・${esc(mpRelativeTime(b.updatedAt))}</span>
+        </button>
+        <button type="button" class="mp-board-row-icon" data-board-open="${esc(b.id)}" aria-label="このキャンバスを開く" title="このキャンバスを開く">📝</button>
+        <button type="button" class="mp-board-row-icon" data-board-rename="${esc(b.id)}" aria-label="名前を変更" title="名前を変更">✎</button>
+        <button type="button" class="mp-board-row-icon mp-board-row-del" data-board-del="${esc(b.id)}" aria-label="削除" title="削除"${total <= 1 ? " disabled" : ""}>🗑</button>
+      </div>`).join("");
+  }
+
+  function render(){
+    app.innerHTML = `
+      <div class="q-head">
+        <button class="quit" data-go="mind-palette">← マインド・パレット</button>
+        <span class="q-count">📁 フォルダ</span>
+      </div>
+      ${crumbHTML()}
+      ${currentOpenHTML()}
+      <button type="button" class="mp-board-createbtn" id="mp-board-create">＋ ${parentId ? "この中に新しいサブフォルダを作成" : "新しいキャンバスを作成"}</button>
+      <div class="mp-board-list">${rowsHTML()}</div>
+    `;
+    app.querySelectorAll("[data-go]").forEach(b => b.onclick = () => go(b.dataset.go));
+
+    app.querySelectorAll("[data-crumb]").forEach(btn => btn.onclick = () => {
+      parentId = btn.dataset.crumb || null;
+      render();
+    });
+
+    const openCurrentBtn = document.getElementById("mp-folder-open-current");
+    if(openCurrentBtn) openCurrentBtn.onclick = () => {
+      mpSwitchBoard(parentId);
+      go("mind-palette");
+    };
+
+    const createBtn = document.getElementById("mp-board-create");
+    if(createBtn) createBtn.onclick = () => {
+      const b = mpCreateBoard(undefined, parentId);
+      render();
+      openBoardRenameModal(b.id, b.name, () => render());
+    };
+
+    app.querySelectorAll("[data-board-enter]").forEach(btn => btn.onclick = () => {
+      parentId = btn.dataset.boardEnter;
+      render();
+    });
+    app.querySelectorAll("[data-board-open]").forEach(btn => btn.onclick = (e) => {
+      e.stopPropagation();
+      mpSwitchBoard(btn.dataset.boardOpen);
+      go("mind-palette");
+    });
+    app.querySelectorAll("[data-board-rename]").forEach(btn => btn.onclick = (e) => {
+      e.stopPropagation();
+      const id = btn.dataset.boardRename;
+      const meta = mpBoardMeta(id);
+      openBoardRenameModal(id, meta ? meta.name : "", () => render());
+    });
+    app.querySelectorAll("[data-board-del]").forEach(btn => btn.onclick = (e) => {
+      e.stopPropagation();
+      if(btn.disabled) return;
+      const id = btn.dataset.boardDel;
+      const meta = mpBoardMeta(id);
+      const warnExtra = meta && meta.childCount ? "中のサブフォルダもすべて" : "中の付箋・接続もすべて";
+      if(!confirm(`このキャンバスを削除しますか？${warnExtra}失われます。`)) return;
+      if(!mpDeleteBoard(id)){ alert("最後の1枚のキャンバスは削除できません。"); return; }
+      render();
+    });
+  }
+
+  return { render, resetToRoot };
+}
+
+const mpFoldersScreen = createMindPaletteFoldersScreen();
+export const renderMindPaletteFolders = mpFoldersScreen.render;
+export function mpFoldersReset(){ mpFoldersScreen.resetToRoot(); }
 
 /* =========================================================================
    ニュース画面（日本経済・世界経済）共通ロジック

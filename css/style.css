@@ -1462,18 +1462,26 @@ body[data-theme="dark"] .menu-btn:active{box-shadow:0 4px 10px rgba(0,0,0,.3), i
 .mp-groupbar button:disabled{ opacity:.4; cursor:default; }
 
 /* キャンバスの可視領域：overflow:hiddenで固定し、中の.mp-canvasをtransformで
-   一括パン／ズームする（ノート座標・コネクタの相対位置は常に一致したまま） */
+   一括パン／ズームする（ノート座標・コネクタの相対位置は常に一致したまま）。
+   ズーム・パンで生じる.mp-canvasの外側（＝付箋を置けない領域）は、斜線の
+   ハッチング柄でわざと「置けない場所」だと分かる見た目にしている */
 .mp-canvas-viewport{
   margin-top:12px; height:64vh; min-height:360px; overflow:hidden; border-radius:16px;
-  border:1px solid var(--line); background:var(--bg2);
-  position:relative; touch-action:none;
+  border:1px solid var(--line); position:relative; touch-action:none;
   box-shadow:inset 0 2px 10px rgba(0,0,0,.18);
+  background-color:var(--bg2);
+  background-image:repeating-linear-gradient(135deg, rgba(148,163,184,.14) 0 3px, transparent 3px 13px);
 }
 .mp-canvas{
   position:absolute; top:0; left:0; transform-origin:0 0; will-change:transform;
+  background-color:var(--bg2);
   background-image:radial-gradient(rgba(148,163,184,.25) 1px, transparent 1px);
   background-size:22px 22px;
+  border:2px dashed rgba(56,189,248,.55);
+  box-shadow:0 0 0 3px rgba(56,189,248,.08), 0 0 24px rgba(56,189,248,.08);
+  transition:box-shadow .15s;
 }
+.mp-canvas.mp-canvas-flash{ box-shadow:0 0 0 3px rgba(251,191,36,.35), 0 0 26px rgba(251,191,36,.3); }
 .mp-empty{
   position:absolute; top:40%; left:50%; transform:translate(-50%,-50%); width:220px;
   text-align:center; font-size:12.5px; color:var(--muted); line-height:1.7; pointer-events:none;
@@ -1579,10 +1587,27 @@ body[data-theme="dark"] .menu-btn:active{box-shadow:0 4px 10px rgba(0,0,0,.3), i
 .mp-edit-del{ background:var(--bg2); color:var(--bad); border:1px solid var(--line); }
 .mp-edit-done{ background:linear-gradient(90deg,#38bdf8,#fbbf24); color:#0b1120; }
 
-/* ---- キャンバス（フォルダ）一覧モーダル ---- */
-.mp-folder-modal{ max-width:420px; }
-.mp-folder-modal-title{ color:var(--accent); }
-.mp-folder-modal-body{ max-height:58vh; overflow-y:auto; padding-right:2px; margin-bottom:14px; }
+/* ---- フォルダ画面（📁ボタンから遷移する専用画面） ---- */
+.mp-breadcrumb{
+  display:flex; flex-wrap:wrap; align-items:center; gap:2px; margin:12px 0 14px;
+}
+.mp-crumb{
+  border:none; background:none; color:var(--muted); font-size:12.5px; font-weight:700;
+  padding:4px 6px; border-radius:8px; cursor:pointer;
+}
+.mp-crumb:active{ background:rgba(56,189,248,.12); }
+.mp-crumb.active{ color:#38bdf8; }
+.mp-crumb-sep{ color:var(--muted); opacity:.5; font-size:12px; }
+.mp-folder-open-current{
+  width:100%; padding:12px; margin-bottom:12px; border-radius:12px; border:1px solid rgba(56,189,248,.4);
+  background:linear-gradient(90deg,rgba(56,189,248,.14),rgba(251,191,36,.1)); color:var(--text);
+  font-size:13px; font-weight:700; cursor:pointer;
+}
+.mp-folder-open-current:active{ transform:scale(.98); }
+.mp-folder-empty{
+  text-align:center; font-size:12.5px; color:var(--muted); line-height:1.7; padding:28px 10px;
+}
+.mp-board-row-chevron{ color:var(--muted); font-weight:400; margin-left:2px; }
 .mp-board-createbtn{
   width:100%; padding:11px; margin-bottom:12px; border-radius:12px; border:1px dashed #38bdf8;
   background:rgba(56,189,248,.08); color:#38bdf8; font-size:13px; font-weight:700; cursor:pointer;
