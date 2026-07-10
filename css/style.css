@@ -1710,3 +1710,31 @@ body[data-theme="dark"] .menu-btn:active{box-shadow:0 4px 10px rgba(0,0,0,.3), i
 @media (max-width:360px){
   .mp-note{ width:138px; }
 }
+
+/* =========================================================================
+   🎵 イントロドン（曲当て3択クイズ）モーダル：既存の.modal-ov/.modalを土台に使う
+   ========================================================================= */
+.menu-btn--introquiz .menu-btn-icon{background:linear-gradient(150deg,#f0abfc,#a21caf 78%);box-shadow:0 6px 14px rgba(162,28,175,.32);}
+
+.iq-modal{max-width:400px;position:relative;}
+.iq-close{position:absolute;top:14px;right:14px;width:28px;height:28px;border:none;border-radius:50%;
+  background:var(--bg2);color:var(--muted);font-size:13px;cursor:pointer;}
+.iq-close:active{transform:scale(.92);}
+.iq-loading,.iq-msg{font-size:13.5px;color:var(--muted);line-height:1.7;text-align:center;padding:10px 0 16px;}
+
+/* 回答前：非表示（見えないサイズ）で音声だけ鳴らすプレイヤー */
+.iq-player-hidden{position:absolute;width:1px;height:1px;overflow:hidden;left:-9999px;top:-9999px;}
+
+.iq-playbtn{width:100%;margin-bottom:12px;}
+.iq-playbtn:disabled{opacity:.55;cursor:default;}
+.iq-hint{font-size:11.5px;color:var(--muted);text-align:center;margin-bottom:12px;}
+.iq-opts .opt{cursor:pointer;}
+.iq-opts .opt:disabled{cursor:default;}
+
+.iq-verdict{font-size:19px;font-weight:800;text-align:center;margin-bottom:8px;}
+.iq-verdict.pass{color:var(--good);}
+.iq-verdict.fail{color:var(--bad);}
+.iq-reward{margin-bottom:10px;}
+.iq-reveal-wrap{margin:14px 0;border-radius:13px;overflow:hidden;background:#000;}
+.iq-reveal-wrap iframe{display:block;width:100%;}
+.iq-actions{display:flex;flex-direction:column;gap:8px;}
