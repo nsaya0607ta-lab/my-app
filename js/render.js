@@ -8,8 +8,10 @@ import { SKIN_DATA } from './data/skins.js';
 import { UI_THEME_DATA } from './data/uithemes.js';
 import { TAP_SOUND_DATA } from './data/tapsounds.js';
 import { playTapSound } from './audio.js';
-import { notifyDailySummary, notifyReminder, notifyScheduleCreated, notifyScheduleDeleted } from './notifications.js';
+import { notifyDailySummary, notifyMindPaletteSent, notifyReminder, notifyScheduleCreated, notifyScheduleDeleted } from './notifications.js';
 import { S, state } from './state.js';
+import { markPetActivity, petHandleIdentityChange, petIsNeglected, petNextStage, petStageForLevel } from './pet.js';
+import { mpAddLink, mpAddNote, mpClearAll, mpDeleteNote, mpGetState, mpGroupNotes, mpHandleIdentityChange, mpRandomColor, mpRemoveLink, mpSuggestKeywords, mpUpdateNote } from './mindpalette.js';
 
 export const app = document.getElementById("app");
 
@@ -65,7 +67,7 @@ export function renderStatusBar(){
              || (!state.guestMode && !state.currentUser)
              || (!state.guestMode && state.currentUser && (!state.profileChecked || !getProfileName()));
   const screen = resolveScreen();
-  const otherScreens = ["ranking","profile","settings","skins","analytics","portfolio","news-japan","news-world","news-detail","calendar","gemini","gemini-edit-event"];
+  const otherScreens = ["ranking","profile","settings","skins","analytics","portfolio","news-japan","news-world","news-detail","calendar","gemini","gemini-edit-event","mind-palette"];
   if(gated || otherScreens.includes(screen)){ el.classList.remove("show"); el.innerHTML=""; return; }
   const ov = overallStat();          // 総合Lvと次Lvまでの進捗(%)
   const coins = (S.coins||0);
@@ -131,7 +133,7 @@ export function renderStatusBar(){
 // render()末尾の分岐と同じ優先順位で判定する）ため、ヘッダー周りの表示制御は
 // この「実際に描画される画面名」を使って判断する。
 function resolveScreen(){
-  const noCertScreens = ["ranking","profile","settings","skins","analytics","certs","lpic-certs","portfolio","news-japan","news-world","news-detail","calendar","gemini","gemini-edit-event"];
+  const noCertScreens = ["ranking","profile","settings","skins","analytics","certs","lpic-certs","portfolio","news-japan","news-world","news-detail","calendar","gemini","gemini-edit-event","mind-palette"];
   if(noCertScreens.includes(S.screen)) return S.screen;
   if(S.screen==="select" || !S.cert) return "select";
   return S.screen; // home/quiz/result/review/dict/transfer/history
@@ -178,6 +180,8 @@ function applyUiTheme(){
 export function render(){
   gcalHandleIdentityChange(); // ログインユーザーの切替を検知し、前の人のGoogle連携状態を破棄
   skinHandleIdentityChange(); // ログインユーザーの切替を検知し、前の人のスキン状態を読み直す
+  petHandleIdentityChange();  // ログインユーザーの切替を検知し、デジタル盆栽の放置判定を読み直す
+  mpHandleIdentityChange();   // ログインユーザーの切替を検知し、マインド・パレットのキャンバスを読み直す
   renderStatusBar();   // 画面が変わっても常に最新の Lv/BP/AC を反映
   updateHeaderNav(false); // デフォルトは非表示。表示すべき画面側で個別に true にする
   updateHeaderTitle();
@@ -207,6 +211,7 @@ export function render(){
   if(S.screen==="news-world") return renderNewsWorld();
   if(S.screen==="news-detail") return renderNewsDetail();
   if(S.screen==="calendar") return renderCalendarScreen();
+  if(S.screen==="mind-palette") return renderMindPalette();
   if(S.screen==="gemini") return renderGeminiChat();
   if(S.screen==="gemini-edit-event") return renderGeminiEditEvent();
   // 大元：資格選択画面
@@ -1702,6 +1707,7 @@ function watchRowHTML(ticker){
     <div class="pf-watch-right">
       ${priceHTML}
     </div>
+    <button type="button" class="mp-send-mini" data-mp-ticker="${esc(ticker)}" aria-label="マインド・パレットに送る" title="マインド・パレットに送る">💡</button>
     <button type="button" class="pf-watch-rm" data-rm-ticker="${esc(ticker)}" aria-label="ウォッチリストから削除">×</button>
   </div>`;
 }
@@ -1723,6 +1729,17 @@ function bindWatchListRowEvents(){
   app.querySelectorAll("[data-rm-ticker]").forEach(btn => btn.onclick = () => {
     removeFromWatchlist(btn.dataset.rmTicker);
     renderPortfolio();
+  });
+  app.querySelectorAll("[data-mp-ticker]").forEach(btn => btn.onclick = () => {
+    const ticker = btn.dataset.mpTicker;
+    const meta = WATCH_STOCKS.find(s => s.ticker === ticker);
+    const live = ensureWatchLive(ticker);
+    const priceLabel = live.loaded ? `$${live.price.toFixed(2)}` : "";
+    sendToMindPalette({
+      title: `📈 ${ticker}${meta ? " " + meta.name : ""}`,
+      text: `ウォッチ中の銘柄：${ticker}${meta ? "（"+meta.name+"）" : ""}${priceLabel ? " 現在値 "+priceLabel : ""}`,
+      source: { kind:"stock", label: ticker },
+    });
   });
 }
 
@@ -1877,6 +1894,7 @@ export function renderPortfolio(){
         <span class="pf-shares">${h.shares}株</span>
         <span class="pf-val">${val.toLocaleString()} AC</span>
       </div>
+      <button type="button" class="mp-send-mini" data-mp-holding="${esc(t)}" aria-label="マインド・パレットに送る" title="マインド・パレットに送る">💡</button>
     </div>`;
   }).join("");
   const cash = S.coins || 0;
@@ -1888,6 +1906,7 @@ export function renderPortfolio(){
       <div class="pf-hero-lab">総資産（評価額）</div>
       <div class="pf-hero-total">${(cash + stockValue).toLocaleString()} <small>AC</small></div>
       <div class="pf-hero-sub">💰 現金 ${cash.toLocaleString()} AC ・ 📈 株式 ${stockValue.toLocaleString()} AC</div>
+      <button type="button" class="mp-send-btn mp-send-btn-hero" id="pf-send-mp">💡 マインド・パレットに送る</button>
     </div>
     ${rows ? `<div class="section-lab">保有株</div><div class="pf-list">${rows}</div>` : ""}
     <div class="section-lab" style="margin-top:${rows?"22px":"0"}">ウォッチリスト</div>
@@ -1900,6 +1919,23 @@ export function renderPortfolio(){
   app.querySelectorAll("[data-go]").forEach(b => b.onclick = () => go(b.dataset.go));
   const addBtn = document.getElementById("pf-watch-add-btn");
   if(addBtn) addBtn.onclick = openStockSearchModal;
+  const heroSendBtn = document.getElementById("pf-send-mp");
+  if(heroSendBtn) heroSendBtn.onclick = () => sendToMindPalette({
+    title: "📈 ポートフォリオ状況",
+    text: `総資産 ${(cash + stockValue).toLocaleString()} AC（現金 ${cash.toLocaleString()} AC・株式 ${stockValue.toLocaleString()} AC）。保有 ${tickers.length} 銘柄。`,
+    source: { kind:"stock", label:"ポートフォリオ" },
+  });
+  app.querySelectorAll("[data-mp-holding]").forEach(btn => btn.onclick = () => {
+    const t = btn.dataset.mpHolding;
+    const s = allStocks.find(x => x.ticker === t);
+    const h = pf[t];
+    const val = s ? tradeAmount(s.price, h.shares) : h.cost;
+    sendToMindPalette({
+      title: `📈 ${t}${s ? " " + s.name : ""}`,
+      text: `保有株：${t}${s ? "（"+s.name+"）" : ""} ${h.shares}株・評価額 ${val.toLocaleString()} AC`,
+      source: { kind:"stock", label: t },
+    });
+  });
   bindWatchListRowEvents();
   refreshWatchQuotes(); // 未取得の銘柄と、前回取得から1分以上経った銘柄だけを更新する（画面を開き直しただけでは動かない）
   startWatchLiveRefresh(); // 以後は市場時間中のみ1分ごとにバックグラウンド更新
@@ -2314,6 +2350,7 @@ function homeLauncherCardHTML(){
     { iconHTML: `<span class="launcher-emoji" aria-hidden="true">🌐</span>`, label: "F-NEWS", dataGo: "news-world", ariaLabel: "海外ニュース", variant: "news-world" },
     { iconHTML: STOCK_LAUNCHER_ICON_SVG, label: "株価", dataGo: "portfolio", ariaLabel: "株価", variant: "stock" },
     { iconHTML: CALENDAR_APP_LAUNCHER_ICON_SVG, label: "カレンダー", dataGo: "calendar", ariaLabel: "カレンダー", variant: "calendar" },
+    { iconHTML: `<span class="launcher-emoji" aria-hidden="true">💡</span>`, label: "パレット", dataGo: "mind-palette", ariaLabel: "マインド・パレット", variant: "palette" },
   ];
   return `
     <div class="news-card ms-cert-card home-launcher-card" id="home-launcher-card">
@@ -4070,6 +4107,7 @@ function renderGcalDailyWidget(){
       const item = (s2[dateKey] || []).find(t => t.id === cb.dataset.todoToggle);
       if(item) item.done = cb.checked;
       saveGcalTodoStore(s2);
+      if(cb.checked && dateKey === todayKey) markPetActivity();   // 🔮 今日のタスク完了→デジタル盆栽が輝きを取り戻す
       renderGcalDailyWidget();
     });
     root.querySelectorAll("[data-todo-del]").forEach(btn => btn.onclick = () => {
@@ -5021,6 +5059,7 @@ export function renderSelect(){
     ${gcalDayWidgetHTML()}
     ${homeLauncherCardHTML()}
     ${vendorCertLauncherRowHTML()}
+    ${petCardHTML()}
     ${state.currentUser
       ? `<div class="acct-bar">👤 ${esc(state.currentUser.email||"ログイン中")}<button class="link2" data-logout>ログアウト</button></div>`
       : (state.guestMode ? `<div class="acct-bar">ゲストモード（この端末のみ・同期なし）<button class="link2" data-login>ログイン / 新規登録</button></div>` : "")}
@@ -5166,6 +5205,14 @@ function rulesModalBodyHTML(){
     <div class="rules-section">
       <div class="rules-section-title">📖 用語辞典・💾 データ引き継ぎ</div>
       <div class="rules-text">資格学習用の用語辞典に加え、コードを発行してこの端末のデータ（進捗・コイン・スキン等）を別端末へ引き継ぐ機能があります。</div>
+    </div>
+    <div class="rules-section">
+      <div class="rules-section-title">💡 マインド・パレット</div>
+      <div class="rules-text">ニュースや株価などで気になった情報・思いついたアイデアを自由なキャンバスに付箋として集められます。空いている場所をダブルタップで付箋を作成し、ドラッグで移動、「線でつなぐ」「グループ化」で関連づけできます。付箋のまわりにはAIが考える関連キーワードがふわっと浮かびます。</div>
+    </div>
+    <div class="rules-section">
+      <div class="rules-section-title">🔮 デジタル盆栽</div>
+      <div class="rules-text">ホーム画面の一番下に、総合ランクの成長と連動して進化する幾何学的なクリスタル盆栽がいます。今日タスクをこなさなかったり、しばらくアプリを開かないでいると輝きが鈍くなり、学習やタスク消化を再開すると輝きを取り戻します。</div>
     </div>`;
 }
 
@@ -5198,6 +5245,343 @@ export function renderCalendarScreen(){
   renderGcalMonthCard();
   window.scrollTo(0,0);
 }
+
+/* =========================================================================
+   🔮 デジタル・デトックス・ペット（幾何学的クリスタル盆栽）
+   ホーム画面最下部（ログアウト行の上）に置く育成ギミック。進化段階の判定・
+   放置判定はjs/pet.jsが計算し、ここでは見た目（手続き的に生成するSVG）と
+   カードHTMLの組み立てのみを行う。
+   ========================================================================= */
+function petFacetPoints(fx, fy, s){
+  return `${fx},${(fy-s).toFixed(1)} ${(fx+s*0.72).toFixed(1)},${fy} ${fx},${(fy+s).toFixed(1)} ${(fx-s*0.72).toFixed(1)},${fy}`;
+}
+
+// 段階(tier)が上がるほど facets が増え、枝ぶりが複雑・大ぶりになる
+function petCrystalSVG(stage){
+  const n = stage.facets, tier = stage.tier;
+  const cx = 70, cy = 96;
+  const baseR = 24 + tier * 7;
+  let facetsSVG = "";
+  for(let i = 0; i < n; i++){
+    const t = n <= 1 ? 0.5 : i / (n - 1);
+    const angle = (-58 + 116 * t) * Math.PI / 180;
+    const layer = i % 3;
+    const r = baseR * (0.5 + layer * 0.26);
+    const fx = +(cx + Math.sin(angle) * r).toFixed(1);
+    const fy = +(cy - Math.cos(angle) * r * 0.7 - layer * 2).toFixed(1);
+    const size = +(6.5 + tier * 0.9 + (layer === 2 ? 2.2 : 0)).toFixed(1);
+    const gold = i % 4 === 0;
+    const delay = (i * 0.23).toFixed(2);
+    facetsSVG += `<polygon class="pet-facet ${gold ? "pet-facet-gold" : "pet-facet-blue"}" style="--pet-delay:${delay}s" points="${petFacetPoints(fx, fy, size)}"></polygon>`;
+  }
+  const coreSize = +(12 + tier * 1.6).toFixed(1);
+  return `
+    <svg viewBox="0 0 140 176" class="pet-svg" aria-hidden="true">
+      <defs>
+        <linearGradient id="petGradBlue" x1="0" y1="0" x2="1" y2="1">
+          <stop offset="0%" stop-color="#93e2ff"></stop>
+          <stop offset="100%" stop-color="#0284c7"></stop>
+        </linearGradient>
+        <linearGradient id="petGradGold" x1="0" y1="0" x2="1" y2="1">
+          <stop offset="0%" stop-color="#fde68a"></stop>
+          <stop offset="100%" stop-color="#d97706"></stop>
+        </linearGradient>
+        <radialGradient id="petGradCore" cx="35%" cy="30%" r="75%">
+          <stop offset="0%" stop-color="#ffffff"></stop>
+          <stop offset="55%" stop-color="#93e2ff"></stop>
+          <stop offset="100%" stop-color="#0ea5e9"></stop>
+        </radialGradient>
+      </defs>
+      <polygon class="pet-pot" points="40,160 100,160 112,172 28,172"></polygon>
+      <polygon class="pet-trunk" points="65,158 68,100 72,100 75,158"></polygon>
+      <g class="pet-facets">${facetsSVG}</g>
+      <polygon class="pet-core" points="${petFacetPoints(cx, cy, coreSize)}"></polygon>
+    </svg>`;
+}
+
+// 直前の描画時点で「放置」だったかを覚えておき、放置→元気 に変わった瞬間
+// だけワンショットの「輝きを取り戻す」演出クラスを付ける
+let petPrevNeglected = null;
+function petCardHTML(){
+  const ov = overallStat();
+  const stage = petStageForLevel(ov.lv);
+  const next = petNextStage(ov.lv);
+  const neglected = petIsNeglected();
+  const justRevived = petPrevNeglected === true && !neglected;
+  petPrevNeglected = neglected;
+  const nextLabel = next
+    ? `次の進化「${next.name}」まで あと ${ov.remain.toLocaleString()} BP`
+    : "最終形態まで育て上げました";
+  const statusLabel = neglected
+    ? "しばらく元気がありません…今日のタスクをひとつ終えて輝きを取り戻そう"
+    : "今日も静かに輝いています";
+  const classes = ["news-card", "pet-card"];
+  if(neglected) classes.push("pet-dim");
+  if(justRevived) classes.push("pet-revive");
+  return `
+    <div class="${classes.join(" ")}" id="pet-card">
+      <div class="pet-card-head">
+        <span class="pet-card-ttl">🔮 デジタル盆栽</span>
+        <span class="pet-card-lv">総合Lv.${ov.lv}</span>
+      </div>
+      <div class="pet-stage-wrap">${petCrystalSVG(stage)}</div>
+      <div class="pet-stage-name">${esc(stage.name)}</div>
+      <div class="pet-status${neglected ? "" : " glow"}">${esc(statusLabel)}</div>
+      <div class="pet-progress-track"><div class="pet-progress-fill" style="width:${ov.pct}%"></div></div>
+      <div class="pet-progress-lab">${esc(nextLabel)}</div>
+    </div>`;
+}
+
+/* =========================================================================
+   💡 マインド・パレット（AIアイデア整理ノート）
+   自由なキャンバスに付箋（アイデア）を置き、ドラッグで移動・線でつないで
+   関連づけ・複数選択してグループ化できる、疑似マインドマップ画面。
+   データの永続化・AIキーワード提案（モック）はjs/mindpalette.jsが担当し、
+   ここではドラッグ操作やダブルタップ検知などDOM寄りの処理のみを行う。
+   ========================================================================= */
+const MP_CANVAS_W = 1200, MP_CANVAS_H = 1500;
+const MP_NOTE_W = 156, MP_NOTE_H = 118;
+function mpClamp(v, min, max){ return Math.max(min, Math.min(max, v)); }
+
+function mpTagsHTML(tags){
+  return (tags || []).map((t, i) => `<span class="mp-tag" style="--mp-tag-delay:${(i * 0.35).toFixed(2)}s">${esc(t)}</span>`).join("");
+}
+
+function mpSourceBadgeHTML(source){
+  if(!source) return "";
+  const icon = source.kind === "news" ? "📰" : source.kind === "stock" ? "📈" : "💡";
+  return `<div class="mp-note-source">${icon} ${esc(source.label || "")}</div>`;
+}
+
+function mpLinksSVGContent(st){
+  return st.links.map(l => {
+    const a = st.notes.find(n => n.id === l.a), b = st.notes.find(n => n.id === l.b);
+    if(!a || !b) return "";
+    const ax = a.x + MP_NOTE_W / 2, ay = a.y + MP_NOTE_H / 2, bx = b.x + MP_NOTE_W / 2, by = b.y + MP_NOTE_H / 2;
+    return `<line class="mp-link-line" data-link-id="${esc(l.id)}" x1="${ax}" y1="${ay}" x2="${bx}" y2="${by}"></line>`;
+  }).join("");
+}
+
+function mpNoteHTML(note, mode, pendingId, selectedIds, groupColor){
+  const classes = ["mp-note", `mp-note-${note.color}`];
+  if(mode === "link" && pendingId === note.id) classes.push("mp-link-pending");
+  if(mode === "group" && selectedIds.has(note.id)) classes.push("mp-note-selected");
+  const style = `left:${note.x}px;top:${note.y}px;${groupColor ? `--mp-group-color:${groupColor}` : ""}`;
+  // 「線でつなぐ」「グループ化」モード中は、本文タップも選択操作として扱いたいので
+  // textareaがクリックを奪わないようpointer-eventsを止める（通常モードでは編集可能）
+  const textareaStyle = mode !== "idle" ? ` style="pointer-events:none"` : "";
+  return `
+    <div class="${classes.join(" ")}" style="${style}" data-note-id="${esc(note.id)}"${note.groupId ? " data-grouped" : ""}>
+      <div class="mp-note-handle" data-drag-handle aria-label="ドラッグして移動">⠿</div>
+      <button type="button" class="mp-note-del" aria-label="この付箋を削除">×</button>
+      ${mpSourceBadgeHTML(note.source)}
+      <textarea class="mp-note-text" placeholder="アイデアを入力…" maxlength="240"${textareaStyle}>${esc(note.text)}</textarea>
+      <div class="mp-note-tags">${mpTagsHTML(mpSuggestKeywords(note.text))}</div>
+    </div>`;
+}
+
+// 他画面（ニュース詳細・株価）の「💡 マインド・パレットに送る」ボタンから
+// 呼ばれる共通処理。既存の付箋数に応じて少しずつ位置をずらして配置する
+function sendToMindPalette({ title, text, source }){
+  const st = mpGetState();
+  const idx = st.notes.length;
+  const col = 4;
+  const x = mpClamp(24 + (idx % col) * 46, 0, MP_CANVAS_W - MP_NOTE_W);
+  const y = mpClamp(24 + (Math.floor(idx / col) % 6) * 42, 0, MP_CANVAS_H - MP_NOTE_H);
+  const body = (text || "").trim();
+  const noteText = (title ? `${title}\n${body}` : body).trim().slice(0, 240);
+  const color = source && source.kind === "stock" ? "gold" : source && source.kind === "news" ? "teal" : mpRandomColor();
+  mpAddNote({ x, y, text: noteText, color, source });
+  markPetActivity();
+  notifyMindPaletteSent(title || (source && source.label) || "アイデア");
+}
+
+// 画面固有の一時UI状態（線でつなぐモード／グループ化モードの選択中付箋など）
+// を閉じ込めたファクトリー。createNewsScreen()と同じ構成方針
+function createMindPaletteScreen(){
+  let mode = "idle"; // idle | link | group
+  let pendingLinkId = null;
+  let selectedIds = new Set();
+  const saveTimers = {};
+
+  function wireToolbar(){
+    document.getElementById("mp-tool-link").onclick = () => {
+      mode = mode === "link" ? "idle" : "link";
+      pendingLinkId = null; selectedIds = new Set();
+      mpRender();
+    };
+    document.getElementById("mp-tool-group").onclick = () => {
+      mode = mode === "group" ? "idle" : "group";
+      pendingLinkId = null; selectedIds = new Set();
+      mpRender();
+    };
+    document.getElementById("mp-tool-clear").onclick = () => {
+      if(!mpGetState().notes.length) return;
+      if(!confirm("キャンバス上の付箋・接続をすべて削除しますか？この操作は取り消せません。")) return;
+      mpClearAll();
+      mode = "idle"; pendingLinkId = null; selectedIds = new Set();
+      mpRender();
+    };
+    const gc = document.getElementById("mp-group-confirm");
+    if(gc) gc.onclick = () => {
+      if(selectedIds.size < 2) return;
+      mpGroupNotes([...selectedIds]);
+      mode = "idle"; selectedIds = new Set();
+      mpRender();
+    };
+  }
+
+  function wireCanvas(st){
+    const canvas = document.getElementById("mp-canvas");
+    const svgEl = document.getElementById("mp-links-svg");
+    if(!canvas) return;
+
+    // 空いている場所のダブルタップ（ダブルクリック）で新しい付箋を作成
+    let lastTap = { t: 0, x: 0, y: 0 };
+    canvas.addEventListener("pointerup", (e) => {
+      if(e.target !== canvas) return;
+      const now = Date.now();
+      const dx = e.clientX - lastTap.x, dy = e.clientY - lastTap.y;
+      const isDouble = (now - lastTap.t) < 420 && Math.hypot(dx, dy) < 26;
+      if(isDouble){
+        lastTap = { t: 0, x: 0, y: 0 };
+        const rect = canvas.getBoundingClientRect();
+        const x = mpClamp(e.clientX - rect.left - MP_NOTE_W / 2, 0, MP_CANVAS_W - MP_NOTE_W);
+        const y = mpClamp(e.clientY - rect.top - MP_NOTE_H / 2, 0, MP_CANVAS_H - MP_NOTE_H);
+        const note = mpAddNote({ x, y, text: "", color: mpRandomColor() });
+        markPetActivity();
+        mpRender();
+        requestAnimationFrame(() => {
+          const ta = canvas.querySelector(`[data-note-id="${CSS.escape(note.id)}"] .mp-note-text`);
+          if(ta) ta.focus();
+        });
+        return;
+      }
+      lastTap = { t: now, x: e.clientX, y: e.clientY };
+    });
+
+    canvas.querySelectorAll(".mp-note").forEach(noteEl => {
+      const id = noteEl.dataset.noteId;
+      const note = st.notes.find(n => n.id === id);
+      if(!note) return;
+
+      const handle = noteEl.querySelector("[data-drag-handle]");
+      handle.addEventListener("pointerdown", (e) => {
+        e.preventDefault(); e.stopPropagation();
+        const startX = e.clientX, startY = e.clientY, origX = note.x, origY = note.y;
+        try{ handle.setPointerCapture(e.pointerId); }catch(err){}
+        noteEl.classList.add("dragging");
+        const onMove = (ev) => {
+          note.x = mpClamp(origX + (ev.clientX - startX), 0, MP_CANVAS_W - MP_NOTE_W);
+          note.y = mpClamp(origY + (ev.clientY - startY), 0, MP_CANVAS_H - MP_NOTE_H);
+          noteEl.style.left = note.x + "px"; noteEl.style.top = note.y + "px";
+          if(svgEl) svgEl.innerHTML = mpLinksSVGContent(st);
+        };
+        const onUp = () => {
+          document.removeEventListener("pointermove", onMove);
+          document.removeEventListener("pointerup", onUp);
+          noteEl.classList.remove("dragging");
+          mpUpdateNote(note.id, { x: note.x, y: note.y });
+        };
+        document.addEventListener("pointermove", onMove);
+        document.addEventListener("pointerup", onUp);
+      });
+
+      const delBtn = noteEl.querySelector(".mp-note-del");
+      delBtn.onclick = (e) => {
+        e.stopPropagation();
+        if(!confirm("この付箋を削除しますか？")) return;
+        mpDeleteNote(note.id);
+        mpRender();
+      };
+
+      const textarea = noteEl.querySelector(".mp-note-text");
+      textarea.addEventListener("pointerdown", (e) => e.stopPropagation());
+      textarea.addEventListener("input", () => {
+        note.text = textarea.value;
+        clearTimeout(saveTimers[note.id]);
+        saveTimers[note.id] = setTimeout(() => {
+          mpUpdateNote(note.id, { text: note.text });
+          const tagsEl = noteEl.querySelector(".mp-note-tags");
+          if(tagsEl) tagsEl.innerHTML = mpTagsHTML(mpSuggestKeywords(note.text));
+        }, 650);
+      });
+      textarea.addEventListener("blur", () => {
+        clearTimeout(saveTimers[note.id]);
+        mpUpdateNote(note.id, { text: note.text });
+      });
+
+      noteEl.addEventListener("click", (e) => {
+        if(e.target.closest("[data-drag-handle]") || e.target.closest(".mp-note-del") || e.target.tagName === "TEXTAREA") return;
+        if(mode === "link"){
+          if(!pendingLinkId){ pendingLinkId = note.id; mpRender(); }
+          else if(pendingLinkId === note.id){ pendingLinkId = null; mpRender(); }
+          else { mpAddLink(pendingLinkId, note.id); pendingLinkId = null; mpRender(); }
+        } else if(mode === "group"){
+          if(selectedIds.has(note.id)) selectedIds.delete(note.id); else selectedIds.add(note.id);
+          mpRender();
+        }
+      });
+    });
+
+    if(svgEl){
+      svgEl.querySelectorAll(".mp-link-line").forEach(line => {
+        line.addEventListener("click", (e) => {
+          e.stopPropagation();
+          if(!confirm("この接続を解除しますか？")) return;
+          mpRemoveLink(line.dataset.linkId);
+          mpRender();
+        });
+      });
+    }
+  }
+
+  function mpRender(){
+    const st = mpGetState();
+    const groupColorOf = (gid) => gid ? ((st.groups.find(g => g.id === gid) || {}).color || null) : null;
+
+    const notesHTML = st.notes.map(n => mpNoteHTML(n, mode, pendingLinkId, selectedIds, groupColorOf(n.groupId))).join("");
+    const linksHTML = mpLinksSVGContent(st);
+
+    const modeHint = mode === "link"
+      ? (pendingLinkId ? "つなげたい相手の付箋をタップ（同じ付箋の再タップで取消）" : "起点にする付箋をタップしてください")
+      : mode === "group"
+        ? "グループ化したい付箋を2つ以上タップして選んでください"
+        : "空いている場所をダブルタップで付箋を作成。ハンドル「⠿」をドラッグで移動できます";
+
+    const groupBarHTML = mode === "group"
+      ? `<div class="mp-groupbar">
+          <span>選択中：${selectedIds.size}件</span>
+          <button type="button" id="mp-group-confirm"${selectedIds.size < 2 ? " disabled" : ""}>🗂 グループ化する</button>
+        </div>`
+      : "";
+
+    app.innerHTML = `
+      <div class="q-head"><button class="quit" data-go="select">← ホーム</button><span class="q-count">💡 マインド・パレット</span></div>
+      <div class="mp-toolbar">
+        <button type="button" class="mp-tool-btn${mode === "link" ? " active" : ""}" id="mp-tool-link">🔗 線でつなぐ</button>
+        <button type="button" class="mp-tool-btn${mode === "group" ? " active" : ""}" id="mp-tool-group">🗂 グループ化</button>
+        <button type="button" class="mp-tool-btn mp-tool-danger" id="mp-tool-clear">🧹 全消去</button>
+      </div>
+      <div class="mp-hint">${esc(modeHint)}</div>
+      ${groupBarHTML}
+      <div class="mp-canvas-scroll" id="mp-canvas-scroll">
+        <div class="mp-canvas" id="mp-canvas" style="width:${MP_CANVAS_W}px;height:${MP_CANVAS_H}px">
+          <svg class="mp-links-svg" id="mp-links-svg" width="${MP_CANVAS_W}" height="${MP_CANVAS_H}">${linksHTML}</svg>
+          ${notesHTML}
+          ${!st.notes.length ? `<div class="mp-empty">ここはあなたの発想キャンバスです。<br>ダブルタップして最初の付箋を置いてみましょう。</div>` : ""}
+        </div>
+      </div>
+    `;
+    app.querySelectorAll("[data-go]").forEach(b => b.onclick = () => go(b.dataset.go));
+    wireToolbar();
+    wireCanvas(st);
+  }
+
+  return mpRender;
+}
+
+export const renderMindPalette = createMindPaletteScreen();
 
 /* =========================================================================
    ニュース画面（日本経済・世界経済）共通ロジック
@@ -5420,14 +5804,20 @@ export const renderNewsWorld = createNewsScreen({
 function renderNewsDetail(){
   const d = S.newsDetail;
   if(!d){ go("select"); return; }
+  markPetActivity();   // 🔮 ニュースを読んだことを「今日の活動」として記録
   app.innerHTML = `
     <div class="q-head"><button class="quit" data-go="${esc(d.returnScreen||"select")}">← 戻る</button><span class="q-count">${d.icon||""} ${esc(d.label||"ニュース")}</span></div>
     <div class="njp-detail">
       <div class="njp-detail-date">${esc(newsDetailDateLabel(d.dateKey))}</div>
       <h2 class="njp-detail-title">${esc(d.title)}</h2>
       <div class="njp-detail-body">${newsDetailBodyHTML(d.content)}</div>
+      <button type="button" class="mp-send-btn" id="njp-send-mp">💡 マインド・パレットに送る</button>
     </div>`;
   app.querySelectorAll("[data-go]").forEach(b=>b.onclick=()=>go(b.dataset.go));
+  const sendBtn = document.getElementById("njp-send-mp");
+  if(sendBtn) sendBtn.onclick = () => {
+    sendToMindPalette({ title:d.title, text:d.content, source:{ kind:"news", label:(d.label||"ニュース") } });
+  };
   window.scrollTo(0,0);
 }
 

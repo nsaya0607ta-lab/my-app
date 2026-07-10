@@ -95,6 +95,12 @@ export function notifyReminder(title, startLabel){
   notifyBrowser("⏰ まもなく予定が始まります", `『${t}』が${startLabel ? `${startLabel}〜` : ""}始まります。`);
 }
 
+/* ---- 5) マインド・パレットへ送信した際の通知 ---- */
+export function notifyMindPaletteSent(label){
+  const t = (label || "").trim() || "アイデア";
+  showToast("mindpalette", `💡 『${t}』をマインド・パレットに送りました。`, { duration: 3400 });
+}
+
 /* ---- 4) 朝7時の「今日の予定」一括通知（デイリーサマリー） ----
    events: [{title, start}] を開始時刻の昇順で渡す */
 export function notifyDailySummary(events){
