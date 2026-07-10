@@ -1417,6 +1417,29 @@ body[data-theme="dark"] .menu-btn:active{box-shadow:0 4px 10px rgba(0,0,0,.3), i
 /* =========================================================================
    💡 マインド・パレット画面（自由キャンバス）
    ========================================================================= */
+.mp-folder-btn{
+  flex:none; width:38px; height:38px; border-radius:12px; cursor:pointer; font-size:16px;
+  color:var(--text); background:var(--surface); border:1.5px solid var(--line);
+  display:flex; align-items:center; justify-content:center;
+  box-shadow:0 0 0 rgba(56,189,248,0); transition:transform .12s,box-shadow .12s,border-color .12s;
+}
+.mp-folder-btn:active{ transform:scale(.92); box-shadow:0 0 12px rgba(56,189,248,.4); border-color:#38bdf8; }
+
+.mp-board-bar{ display:flex; align-items:center; justify-content:space-between; gap:8px; margin-bottom:10px; }
+.mp-board-name-btn{
+  flex:1; min-width:0; display:flex; align-items:center; gap:6px; padding:8px 12px; border-radius:11px;
+  background:rgba(56,189,248,.08); border:1px solid rgba(56,189,248,.28); color:var(--text);
+  font-size:12.5px; font-weight:700; cursor:pointer; text-align:left;
+  overflow:hidden; white-space:nowrap; text-overflow:ellipsis;
+}
+.mp-board-name-btn:active{ transform:scale(.98); }
+.mp-board-edit-ico{ flex:none; opacity:.6; font-size:11px; }
+.mp-board-new-inline{
+  flex:none; padding:8px 12px; border-radius:11px; font-size:12px; font-weight:700; cursor:pointer;
+  color:#0b1120; background:linear-gradient(90deg,#fbbf24,#38bdf8); border:none;
+}
+.mp-board-new-inline:active{ transform:scale(.94); }
+
 .mp-toolbar{ display:flex; gap:8px; margin-top:2px; }
 .mp-tool-btn{
   flex:1; padding:10px 8px; border-radius:12px; font-size:12.5px; font-weight:700; cursor:pointer;
@@ -1438,14 +1461,16 @@ body[data-theme="dark"] .menu-btn:active{box-shadow:0 4px 10px rgba(0,0,0,.3), i
 }
 .mp-groupbar button:disabled{ opacity:.4; cursor:default; }
 
-.mp-canvas-scroll{
-  margin-top:12px; height:64vh; min-height:360px; overflow:auto; border-radius:16px;
+/* キャンバスの可視領域：overflow:hiddenで固定し、中の.mp-canvasをtransformで
+   一括パン／ズームする（ノート座標・コネクタの相対位置は常に一致したまま） */
+.mp-canvas-viewport{
+  margin-top:12px; height:64vh; min-height:360px; overflow:hidden; border-radius:16px;
   border:1px solid var(--line); background:var(--bg2);
-  -webkit-overflow-scrolling:touch; position:relative;
+  position:relative; touch-action:none;
   box-shadow:inset 0 2px 10px rgba(0,0,0,.18);
 }
 .mp-canvas{
-  position:relative;
+  position:absolute; top:0; left:0; transform-origin:0 0; will-change:transform;
   background-image:radial-gradient(rgba(148,163,184,.25) 1px, transparent 1px);
   background-size:22px 22px;
 }
@@ -1459,6 +1484,22 @@ body[data-theme="dark"] .menu-btn:active{box-shadow:0 4px 10px rgba(0,0,0,.3), i
   pointer-events:stroke; cursor:pointer;
 }
 .mp-link-line:hover{ stroke:#fbbf24; }
+
+/* キャンバス右下のズームコントロール：canvas-viewportの直接の子として
+   配置するため、内側のtransform（パン／ズーム）の影響を受けない */
+.mp-zoom-controls{
+  position:absolute; right:10px; bottom:10px; z-index:30; display:flex; align-items:center; gap:2px;
+  background:rgba(11,17,32,.82); border:1px solid rgba(56,189,248,.3); border-radius:99px;
+  padding:4px; -webkit-backdrop-filter:blur(6px); backdrop-filter:blur(6px);
+  box-shadow:0 6px 16px rgba(0,0,0,.3);
+}
+.mp-zoom-controls button{
+  flex:none; width:26px; height:26px; border-radius:50%; border:none; cursor:pointer;
+  color:#e7ecf5; background:rgba(255,255,255,.08); font-size:14px; line-height:1;
+  display:flex; align-items:center; justify-content:center; transition:transform .1s,background .12s;
+}
+.mp-zoom-controls button:active{ transform:scale(.88); background:rgba(56,189,248,.3); }
+.mp-zoom-label{ flex:none; min-width:38px; text-align:center; font-size:10.5px; font-weight:700; color:#93e2ff; font-variant-numeric:tabular-nums; }
 
 .mp-note{
   position:absolute; width:156px; min-height:118px; border-radius:14px; padding:8px 9px 10px;
@@ -1488,11 +1529,11 @@ body[data-theme="dark"] .menu-btn:active{box-shadow:0 4px 10px rgba(0,0,0,.3), i
   background:var(--bg2); color:var(--muted); font-size:13px; line-height:1; cursor:pointer;
 }
 .mp-note-source{ font-size:9.5px; font-weight:700; color:var(--accent); margin:14px 2px 2px; }
-.mp-note-text{
-  width:100%; min-height:56px; margin-top:14px; resize:none; border:none; background:transparent;
-  color:var(--text); font-family:inherit; font-size:12.5px; line-height:1.5; padding:0;
+.mp-note-text-preview{
+  margin-top:14px; min-height:56px; color:var(--text); font-size:12.5px; line-height:1.5;
+  cursor:pointer; word-break:break-word;
 }
-.mp-note-text:focus{ outline:none; }
+.mp-note-placeholder{ color:var(--muted); font-style:italic; }
 .mp-note-tags{
   position:absolute; left:4px; right:4px; top:100%; margin-top:6px;
   display:flex; flex-wrap:wrap; gap:4px; pointer-events:none;
@@ -1506,6 +1547,67 @@ body[data-theme="dark"] .menu-btn:active{box-shadow:0 4px 10px rgba(0,0,0,.3), i
 }
 @keyframes mpTagIn{ from{ opacity:0; transform:translateY(4px) scale(.9); } to{ opacity:.92; transform:translateY(0) scale(1); } }
 @keyframes mpTagFloat{ 0%,100%{ transform:translateY(0); } 50%{ transform:translateY(-4px); } }
+
+/* ---- 付箋テキストの編集オーバーレイ：キーボード表示中も画面中央に固定 ---- */
+.mp-edit-backdrop{
+  position:fixed; inset:0; z-index:500; display:flex; align-items:flex-start; justify-content:center;
+  padding-top:14vh; background:rgba(3,7,18,0); -webkit-backdrop-filter:blur(0);
+  transition:background .22s ease; touch-action:none;
+}
+.mp-edit-backdrop.show{ background:rgba(3,7,18,.62); -webkit-backdrop-filter:blur(2px); backdrop-filter:blur(2px); }
+.mp-edit-card{
+  width:min(86vw,340px); max-height:72vh; overflow:auto; border-radius:18px; padding:16px 16px 14px;
+  background:linear-gradient(165deg,var(--surface),var(--bg2)); border:1.5px solid var(--line);
+  box-shadow:0 20px 50px rgba(0,0,0,.5); transform:scale(.88) translateY(10px); opacity:0;
+  transition:transform .26s cubic-bezier(.34,1.56,.64,1), opacity .22s ease;
+}
+.mp-edit-backdrop.show .mp-edit-card{ transform:scale(1) translateY(0); opacity:1; }
+.mp-edit-textarea{
+  width:100%; min-height:120px; margin-top:10px; resize:vertical; border:1.5px solid var(--line);
+  border-radius:12px; background:var(--bg2); color:var(--text); font-family:inherit; font-size:16px;
+  line-height:1.6; padding:10px 12px;
+}
+.mp-edit-textarea:focus{ outline:none; border-color:#38bdf8; box-shadow:0 0 0 3px rgba(56,189,248,.15); }
+.mp-edit-tags{ display:flex; flex-wrap:wrap; gap:6px; margin-top:12px; min-height:22px; }
+.mp-edit-tags .mp-tag{ position:static; }
+.mp-edit-actions{ display:flex; gap:8px; margin-top:14px; }
+.mp-edit-btn{
+  flex:1; padding:11px; border-radius:12px; border:none; font-size:13.5px; font-weight:700; cursor:pointer;
+  transition:transform .1s,opacity .15s;
+}
+.mp-edit-btn:active{ transform:scale(.96); }
+.mp-edit-del{ background:var(--bg2); color:var(--bad); border:1px solid var(--line); }
+.mp-edit-done{ background:linear-gradient(90deg,#38bdf8,#fbbf24); color:#0b1120; }
+
+/* ---- キャンバス（フォルダ）一覧モーダル ---- */
+.mp-folder-modal{ max-width:420px; }
+.mp-folder-modal-title{ color:var(--accent); }
+.mp-folder-modal-body{ max-height:58vh; overflow-y:auto; padding-right:2px; margin-bottom:14px; }
+.mp-board-createbtn{
+  width:100%; padding:11px; margin-bottom:12px; border-radius:12px; border:1px dashed #38bdf8;
+  background:rgba(56,189,248,.08); color:#38bdf8; font-size:13px; font-weight:700; cursor:pointer;
+}
+.mp-board-createbtn:active{ transform:scale(.98); }
+.mp-board-list{ display:flex; flex-direction:column; gap:8px; }
+.mp-board-row{
+  display:flex; align-items:center; gap:6px; border-radius:12px; border:1px solid var(--line);
+  background:var(--surface); padding:4px;
+}
+.mp-board-row.active{ border-color:#38bdf8; box-shadow:0 0 0 2px rgba(56,189,248,.18); }
+.mp-board-row-main{
+  flex:1; min-width:0; display:flex; flex-direction:column; align-items:flex-start; gap:2px;
+  background:none; border:none; padding:7px 8px; text-align:left; cursor:pointer;
+}
+.mp-board-row-name{ font-size:13px; font-weight:700; color:var(--text); }
+.mp-board-row-name em{ color:#38bdf8; font-style:normal; font-weight:700; }
+.mp-board-row-meta{ font-size:10.5px; color:var(--muted); }
+.mp-board-row-icon{
+  flex:none; width:30px; height:30px; border-radius:50%; border:none; background:var(--bg2);
+  color:var(--muted); font-size:13px; cursor:pointer;
+}
+.mp-board-row-icon:active{ transform:scale(.9); }
+.mp-board-row-del{ color:var(--bad); }
+.mp-board-row-del:disabled{ opacity:.3; cursor:default; }
 
 @media (max-width:360px){
   .mp-note{ width:138px; }

@@ -11,7 +11,7 @@ import { playTapSound } from './audio.js';
 import { notifyDailySummary, notifyMindPaletteSent, notifyReminder, notifyScheduleCreated, notifyScheduleDeleted } from './notifications.js';
 import { S, state } from './state.js';
 import { markPetActivity, petHandleIdentityChange, petIsNeglected, petNextStage, petStageForLevel } from './pet.js';
-import { mpAddLink, mpAddNote, mpClearAll, mpDeleteNote, mpGetState, mpGroupNotes, mpHandleIdentityChange, mpRandomColor, mpRemoveLink, mpSuggestKeywords, mpUpdateNote } from './mindpalette.js';
+import { mpActiveBoardId, mpAddLink, mpAddNote, mpClearAll, mpCreateBoard, mpDeleteBoard, mpDeleteNote, mpGetState, mpGroupNotes, mpHandleIdentityChange, mpListBoards, mpRandomColor, mpRemoveLink, mpRenameBoard, mpSuggestKeywords, mpSwitchBoard, mpUpdateNote } from './mindpalette.js';
 
 export const app = document.getElementById("app");
 
@@ -5336,11 +5336,14 @@ function petCardHTML(){
    💡 マインド・パレット（AIアイデア整理ノート）
    自由なキャンバスに付箋（アイデア）を置き、ドラッグで移動・線でつないで
    関連づけ・複数選択してグループ化できる、疑似マインドマップ画面。
+   キャンバスは「ボード」単位で複数保存でき（フォルダボタンから切替・
+   名前変更）、2本指ピンチでズーム・パンできる。
    データの永続化・AIキーワード提案（モック）はjs/mindpalette.jsが担当し、
-   ここではドラッグ操作やダブルタップ検知などDOM寄りの処理のみを行う。
+   ここではドラッグ・ピンチズーム・ダブルタップ検知などDOM寄りの処理のみを行う。
    ========================================================================= */
 const MP_CANVAS_W = 1200, MP_CANVAS_H = 1500;
 const MP_NOTE_W = 156, MP_NOTE_H = 118;
+const MP_ZOOM_MIN = 0.5, MP_ZOOM_MAX = 2.5;
 function mpClamp(v, min, max){ return Math.max(min, Math.min(max, v)); }
 
 function mpTagsHTML(tags){
@@ -5362,26 +5365,30 @@ function mpLinksSVGContent(st){
   }).join("");
 }
 
+// 付箋本体はプレビュー表示のみ（タップで編集用オーバーレイを開く）。
+// これによりキャンバスのピンチズーム／パン中にtextareaがフォーカスを奪ったり、
+// モバイルのキーボード表示でレイアウトが崩れたりする問題を避けている
 function mpNoteHTML(note, mode, pendingId, selectedIds, groupColor){
   const classes = ["mp-note", `mp-note-${note.color}`];
   if(mode === "link" && pendingId === note.id) classes.push("mp-link-pending");
   if(mode === "group" && selectedIds.has(note.id)) classes.push("mp-note-selected");
   const style = `left:${note.x}px;top:${note.y}px;${groupColor ? `--mp-group-color:${groupColor}` : ""}`;
-  // 「線でつなぐ」「グループ化」モード中は、本文タップも選択操作として扱いたいので
-  // textareaがクリックを奪わないようpointer-eventsを止める（通常モードでは編集可能）
-  const textareaStyle = mode !== "idle" ? ` style="pointer-events:none"` : "";
+  const previewHTML = note.text
+    ? esc(note.text).replace(/\n/g, "<br>")
+    : `<span class="mp-note-placeholder">タップして入力…</span>`;
   return `
     <div class="${classes.join(" ")}" style="${style}" data-note-id="${esc(note.id)}"${note.groupId ? " data-grouped" : ""}>
       <div class="mp-note-handle" data-drag-handle aria-label="ドラッグして移動">⠿</div>
       <button type="button" class="mp-note-del" aria-label="この付箋を削除">×</button>
       ${mpSourceBadgeHTML(note.source)}
-      <textarea class="mp-note-text" placeholder="アイデアを入力…" maxlength="240"${textareaStyle}>${esc(note.text)}</textarea>
+      <div class="mp-note-text-preview" data-note-preview>${previewHTML}</div>
       <div class="mp-note-tags">${mpTagsHTML(mpSuggestKeywords(note.text))}</div>
     </div>`;
 }
 
 // 他画面（ニュース詳細・株価）の「💡 マインド・パレットに送る」ボタンから
-// 呼ばれる共通処理。既存の付箋数に応じて少しずつ位置をずらして配置する
+// 呼ばれる共通処理。現在アクティブなボードへ、既存の付箋数に応じて
+// 少しずつ位置をずらして配置する
 function sendToMindPalette({ title, text, source }){
   const st = mpGetState();
   const idx = st.notes.length;
@@ -5396,13 +5403,191 @@ function sendToMindPalette({ title, text, source }){
   notifyMindPaletteSent(title || (source && source.label) || "アイデア");
 }
 
-// 画面固有の一時UI状態（線でつなぐモード／グループ化モードの選択中付箋など）
-// を閉じ込めたファクトリー。createNewsScreen()と同じ構成方針
+// 更新日時を「たった今／n分前／n時間前／n日前／M/D」のようなラベルに変換
+function mpRelativeTime(ts){
+  const diff = Date.now() - (ts || 0);
+  const min = Math.floor(diff / 60000);
+  if(min < 1) return "たった今";
+  if(min < 60) return `${min}分前`;
+  const hr = Math.floor(min / 60);
+  if(hr < 24) return `${hr}時間前`;
+  const day = Math.floor(hr / 24);
+  if(day < 7) return `${day}日前`;
+  const d = new Date(ts);
+  return `${d.getMonth() + 1}/${d.getDate()}`;
+}
+
+// 画面固有の一時UI状態（モード・選択中付箋・ズーム/パン量など）を閉じ込めた
+// ファクトリー。createNewsScreen()と同じ構成方針
 function createMindPaletteScreen(){
   let mode = "idle"; // idle | link | group
   let pendingLinkId = null;
   let selectedIds = new Set();
-  const saveTimers = {};
+  let zoom = 1, panX = 20, panY = 20;
+  let lastBoardId = null;
+
+  /* ---- 付箋テキストの編集オーバーレイ ----
+     キーボードが立ち上がってもキャンバスの表示位置がずれたり、フォーカスが
+     迷子にならないよう、編集中はposition:fixedで画面中央に固定表示する。
+     visualViewportの変化（キーボード表示による可視領域の縮小）にも追従する */
+  function openNoteEditor(noteId){
+    const st = mpGetState();
+    const note = st.notes.find(n => n.id === noteId);
+    if(!note) return;
+
+    const backdrop = document.createElement("div");
+    backdrop.className = "mp-edit-backdrop";
+    backdrop.innerHTML = `
+      <div class="mp-edit-card mp-note-${note.color}">
+        ${mpSourceBadgeHTML(note.source)}
+        <textarea class="mp-edit-textarea" placeholder="アイデアを入力…" maxlength="240">${esc(note.text)}</textarea>
+        <div class="mp-edit-tags" id="mp-edit-tags">${mpTagsHTML(mpSuggestKeywords(note.text))}</div>
+        <div class="mp-edit-actions">
+          <button type="button" class="mp-edit-btn mp-edit-del">🗑 削除</button>
+          <button type="button" class="mp-edit-btn mp-edit-done">完了</button>
+        </div>
+      </div>`;
+    document.body.appendChild(backdrop);
+    requestAnimationFrame(() => backdrop.classList.add("show"));
+
+    const ta = backdrop.querySelector(".mp-edit-textarea");
+    const tagsEl = backdrop.querySelector("#mp-edit-tags");
+    let tagTimer = null;
+    ta.addEventListener("input", () => {
+      clearTimeout(tagTimer);
+      tagTimer = setTimeout(() => { tagsEl.innerHTML = mpTagsHTML(mpSuggestKeywords(ta.value)); }, 500);
+    });
+
+    const vv = window.visualViewport;
+    const card = backdrop.querySelector(".mp-edit-card");
+    const reposition = () => { if(vv) card.style.maxHeight = Math.round(vv.height * 0.72) + "px"; };
+    reposition();
+    if(vv) vv.addEventListener("resize", reposition);
+
+    let closed = false;
+    const close = (save) => {
+      if(closed) return;
+      closed = true;
+      clearTimeout(tagTimer);
+      if(vv) vv.removeEventListener("resize", reposition);
+      if(save) mpUpdateNote(note.id, { text: ta.value });
+      backdrop.classList.remove("show");
+      setTimeout(() => { backdrop.remove(); mpRender(); }, 220);
+    };
+    backdrop.querySelector(".mp-edit-done").onclick = () => close(true);
+    backdrop.querySelector(".mp-edit-del").onclick = () => {
+      if(!confirm("この付箋を削除しますか？")) return;
+      mpDeleteNote(note.id);
+      closed = true;
+      clearTimeout(tagTimer);
+      if(vv) vv.removeEventListener("resize", reposition);
+      backdrop.classList.remove("show");
+      setTimeout(() => { backdrop.remove(); mpRender(); }, 220);
+    };
+    backdrop.addEventListener("click", (e) => { if(e.target === backdrop) close(true); });
+    setTimeout(() => ta.focus(), 60);
+  }
+
+  /* ---- キャンバス（フォルダ）の一覧・切替・名前変更モーダル ---- */
+  function openBoardRenameModal(boardId, currentName, onSaved){
+    const ov = document.createElement("div");
+    ov.className = "modal-ov";
+    ov.innerHTML = `
+      <div class="modal">
+        <div class="modal-title" style="color:var(--text)">✏️ キャンバスの名前</div>
+        <input type="text" class="gcal-ev-input gcal-newcal-input" id="mp-board-name-input" placeholder="例：経済ニュースまとめ" maxlength="30" value="${esc(currentName || "")}">
+        <button class="cta" id="mp-board-name-save">保存する</button>
+        <button class="ghost" id="mp-board-name-cancel" style="margin-top:8px">キャンセル</button>
+      </div>`;
+    document.body.appendChild(ov);
+    const close = () => { try{ ov.remove(); }catch(e){} };
+    ov.addEventListener("click", (e) => { if(e.target === ov) close(); });
+    ov.querySelector("#mp-board-name-cancel").onclick = close;
+    const input = ov.querySelector("#mp-board-name-input");
+    const submit = () => {
+      const name = (input.value || "").trim();
+      if(!name){ input.focus(); return; }
+      mpRenameBoard(boardId, name);
+      close();
+      if(onSaved) onSaved();
+    };
+    ov.querySelector("#mp-board-name-save").onclick = submit;
+    input.onkeydown = (e) => { if(e.key === "Enter") submit(); };
+    input.focus(); input.select();
+  }
+
+  function mpFolderModalBodyHTML(){
+    const boards = mpListBoards();
+    const activeId = mpActiveBoardId();
+    const rows = boards.map(b => `
+      <div class="mp-board-row${b.id === activeId ? " active" : ""}">
+        <button type="button" class="mp-board-row-main" data-board-open="${esc(b.id)}">
+          <span class="mp-board-row-name">📂 ${esc(b.name)}${b.id === activeId ? " <em>（表示中）</em>" : ""}</span>
+          <span class="mp-board-row-meta">付箋 ${b.count}件・${esc(mpRelativeTime(b.updatedAt))}</span>
+        </button>
+        <button type="button" class="mp-board-row-icon" data-board-rename="${esc(b.id)}" aria-label="名前を変更" title="名前を変更">✎</button>
+        <button type="button" class="mp-board-row-icon mp-board-row-del" data-board-del="${esc(b.id)}" aria-label="このキャンバスを削除" title="削除"${boards.length <= 1 ? " disabled" : ""}>🗑</button>
+      </div>`).join("");
+    return `
+      <button type="button" class="mp-board-createbtn" id="mp-board-create">＋ 新しいキャンバスを作成</button>
+      <div class="mp-board-list">${rows}</div>`;
+  }
+
+  function wireFolderModal(ov){
+    const body = ov.querySelector("#mp-folder-modal-body");
+    const refreshBody = () => { body.innerHTML = mpFolderModalBodyHTML(); wireFolderModal(ov); };
+
+    const createBtn = ov.querySelector("#mp-board-create");
+    if(createBtn) createBtn.onclick = () => {
+      const b = mpCreateBoard();
+      closeFolderModal(ov);
+      mode = "idle"; pendingLinkId = null; selectedIds = new Set();
+      mpRender();
+      openBoardRenameModal(b.id, b.name, () => mpRender());
+    };
+
+    ov.querySelectorAll("[data-board-open]").forEach(btn => btn.onclick = () => {
+      const id = btn.dataset.boardOpen;
+      if(id === mpActiveBoardId()){ closeFolderModal(ov); return; }
+      mpSwitchBoard(id);
+      mode = "idle"; pendingLinkId = null; selectedIds = new Set();
+      closeFolderModal(ov);
+      mpRender();
+    });
+    ov.querySelectorAll("[data-board-rename]").forEach(btn => btn.onclick = (e) => {
+      e.stopPropagation();
+      const id = btn.dataset.boardRename;
+      const b = mpListBoards().find(x => x.id === id);
+      openBoardRenameModal(id, b ? b.name : "", () => { refreshBody(); if(id === mpActiveBoardId()) mpRender(); });
+    });
+    ov.querySelectorAll("[data-board-del]").forEach(btn => btn.onclick = (e) => {
+      e.stopPropagation();
+      if(btn.disabled) return;
+      const id = btn.dataset.boardDel;
+      if(!confirm("このキャンバスを削除しますか？中の付箋・接続もすべて失われます。")) return;
+      const wasActive = id === mpActiveBoardId();
+      mpDeleteBoard(id);
+      refreshBody();
+      if(wasActive){ mode = "idle"; pendingLinkId = null; selectedIds = new Set(); mpRender(); }
+    });
+  }
+
+  function closeFolderModal(ov){ try{ ov.remove(); }catch(e){} }
+
+  function openFolderModal(){
+    const ov = document.createElement("div");
+    ov.className = "modal-ov";
+    ov.innerHTML = `
+      <div class="modal mp-folder-modal">
+        <div class="modal-title mp-folder-modal-title">📁 キャンバス一覧</div>
+        <div id="mp-folder-modal-body" class="mp-folder-modal-body">${mpFolderModalBodyHTML()}</div>
+        <button type="button" class="settings-modal-close" id="mp-folder-modal-close">閉じる</button>
+      </div>`;
+    document.body.appendChild(ov);
+    wireFolderModal(ov);
+    ov.querySelector("#mp-folder-modal-close").onclick = () => closeFolderModal(ov);
+    ov.addEventListener("click", (e) => { if(e.target === ov) closeFolderModal(ov); });
+  }
 
   function wireToolbar(){
     document.getElementById("mp-tool-link").onclick = () => {
@@ -5417,7 +5602,7 @@ function createMindPaletteScreen(){
     };
     document.getElementById("mp-tool-clear").onclick = () => {
       if(!mpGetState().notes.length) return;
-      if(!confirm("キャンバス上の付箋・接続をすべて削除しますか？この操作は取り消せません。")) return;
+      if(!confirm("このキャンバス上の付箋・接続をすべて削除しますか？この操作は取り消せません。")) return;
       mpClearAll();
       mode = "idle"; pendingLinkId = null; selectedIds = new Set();
       mpRender();
@@ -5429,36 +5614,145 @@ function createMindPaletteScreen(){
       mode = "idle"; selectedIds = new Set();
       mpRender();
     };
+    const folderBtn = document.getElementById("mp-folder-btn");
+    if(folderBtn) folderBtn.onclick = openFolderModal;
+    const renameBtn = document.getElementById("mp-board-rename-btn");
+    if(renameBtn) renameBtn.onclick = () => {
+      const id = mpActiveBoardId();
+      const b = mpListBoards().find(x => x.id === id);
+      openBoardRenameModal(id, b ? b.name : "", () => mpRender());
+    };
+    const newBtn = document.getElementById("mp-board-new-btn");
+    if(newBtn) newBtn.onclick = () => {
+      const b = mpCreateBoard();
+      mode = "idle"; pendingLinkId = null; selectedIds = new Set();
+      mpRender();
+      openBoardRenameModal(b.id, b.name, () => mpRender());
+    };
+  }
+
+  /* ---- 2本指ピンチでズーム・1本指ドラッグ（空欄部分）でパン ----
+     canvasEl自体はtranslate+scaleの1つのtransformで一括制御するため、
+     ズーム状態が変わっても付箋の座標・コネクタの接続はズレない */
+  function wireViewport(canvasEl, viewport){
+    const applyTransform = () => {
+      canvasEl.style.transform = `translate(${panX}px,${panY}px) scale(${zoom})`;
+      const lab = document.getElementById("mp-zoom-label");
+      if(lab) lab.textContent = Math.round(zoom * 100) + "%";
+    };
+    applyTransform();
+
+    // prevX/prevYを基準に「その画面座標にあったコンテンツ点」がnewX/newYに
+    // 来るようズーム・パンを同時に適用する（ピンチ・1本指パン共通の式）
+    const step = (prevX, prevY, newX, newY, factor) => {
+      const newZoom = mpClamp(zoom * factor, MP_ZOOM_MIN, MP_ZOOM_MAX);
+      const actual = newZoom / zoom;
+      panX = newX - (prevX - panX) * actual;
+      panY = newY - (prevY - panY) * actual;
+      zoom = newZoom;
+      applyTransform();
+    };
+
+    const pointers = new Map();
+    let prevMid = null, prevDist = null, singlePan = false, dragMoved = false;
+    let lastTap = { t: 0, x: 0, y: 0 };
+
+    const mid2 = (a, b) => ({ x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 });
+    const dist2 = (a, b) => Math.hypot(a.x - b.x, a.y - b.y);
+
+    viewport.addEventListener("pointerdown", (e) => {
+      // 1本目の指が付箋やボタンなど「空いている場所」以外から始まった操作には
+      // 介入しない（setPointerCaptureで捕捉すると、その要素本来のclickが
+      // viewport側に奪われてボタンが反応しなくなってしまうため）。
+      // 2本目以降（ピンチ）は既にキャンバス上でジェスチャーが始まっているので追跡する
+      if(pointers.size === 0 && e.target !== canvasEl) return;
+      pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+      try{ viewport.setPointerCapture(e.pointerId); }catch(err){}
+      const pts = [...pointers.values()];
+      if(pts.length === 1){
+        prevMid = pts[0]; prevDist = null; dragMoved = false; singlePan = true;
+      } else if(pts.length === 2){
+        prevMid = mid2(pts[0], pts[1]); prevDist = dist2(pts[0], pts[1]); singlePan = false;
+      }
+    });
+
+    viewport.addEventListener("pointermove", (e) => {
+      if(!pointers.has(e.pointerId)) return;
+      pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+      const pts = [...pointers.values()];
+      if(pts.length === 2){
+        const m = mid2(pts[0], pts[1]), d = dist2(pts[0], pts[1]);
+        if(prevDist) step(prevMid.x, prevMid.y, m.x, m.y, d / prevDist);
+        prevMid = m; prevDist = d;
+      } else if(pts.length === 1 && singlePan){
+        const p = pts[0];
+        if(Math.hypot(p.x - prevMid.x, p.y - prevMid.y) > 3) dragMoved = true;
+        step(prevMid.x, prevMid.y, p.x, p.y, 1);
+        prevMid = p;
+      }
+    });
+
+    const endPointer = (e) => {
+      const wasSingle = pointers.size === 1 && pointers.has(e.pointerId);
+      pointers.delete(e.pointerId);
+      if(pointers.size === 1){
+        prevMid = [...pointers.values()][0]; prevDist = null;
+      } else if(pointers.size === 0){
+        prevMid = null; prevDist = null;
+      }
+      if(wasSingle && singlePan){
+        singlePan = false;
+        // 空いている場所のダブルタップ（動いていない場合のみ）で新しい付箋を作成。
+        // pointerdown時にsetPointerCaptureしているため、ここでのe.targetは常に
+        // viewport自身になる（実際にどこで指を離したかは反映されない）ので判定に使わない
+        if(!dragMoved){
+          const now = Date.now();
+          const dx = e.clientX - lastTap.x, dy = e.clientY - lastTap.y;
+          const isDouble = (now - lastTap.t) < 420 && Math.hypot(dx, dy) < 26;
+          if(isDouble){
+            lastTap = { t: 0, x: 0, y: 0 };
+            const rect = canvasEl.getBoundingClientRect();
+            const x = mpClamp((e.clientX - rect.left) / zoom - MP_NOTE_W / 2, 0, MP_CANVAS_W - MP_NOTE_W);
+            const y = mpClamp((e.clientY - rect.top) / zoom - MP_NOTE_H / 2, 0, MP_CANVAS_H - MP_NOTE_H);
+            const note = mpAddNote({ x, y, text: "", color: mpRandomColor() });
+            markPetActivity();
+            mpRender();
+            openNoteEditor(note.id);
+            return;
+          }
+          lastTap = { t: now, x: e.clientX, y: e.clientY };
+        }
+      }
+    };
+    viewport.addEventListener("pointerup", endPointer);
+    viewport.addEventListener("pointercancel", endPointer);
+
+    // デスクトップ：ホイールでパン、Ctrl/⌘+ホイール（トラックパッドのピンチ含む）でズーム
+    viewport.addEventListener("wheel", (e) => {
+      e.preventDefault();
+      if(e.ctrlKey || e.metaKey){
+        const factor = Math.exp(-e.deltaY * 0.01);
+        step(e.clientX, e.clientY, e.clientX, e.clientY, factor);
+      } else {
+        panX -= e.deltaX; panY -= e.deltaY; applyTransform();
+      }
+    }, { passive: false });
+
+    const zoomIn = document.getElementById("mp-zoom-in");
+    const zoomOut = document.getElementById("mp-zoom-out");
+    const zoomReset = document.getElementById("mp-zoom-reset");
+    if(zoomIn) zoomIn.onclick = () => { const r = viewport.getBoundingClientRect(); step(r.left + r.width / 2, r.top + r.height / 2, r.left + r.width / 2, r.top + r.height / 2, 1.25); };
+    if(zoomOut) zoomOut.onclick = () => { const r = viewport.getBoundingClientRect(); step(r.left + r.width / 2, r.top + r.height / 2, r.left + r.width / 2, r.top + r.height / 2, 0.8); };
+    if(zoomReset) zoomReset.onclick = () => { zoom = 1; panX = 20; panY = 20; applyTransform(); };
   }
 
   function wireCanvas(st){
     const canvas = document.getElementById("mp-canvas");
+    const viewport = document.getElementById("mp-canvas-viewport");
     const svgEl = document.getElementById("mp-links-svg");
-    if(!canvas) return;
+    if(!canvas || !viewport) return;
 
-    // 空いている場所のダブルタップ（ダブルクリック）で新しい付箋を作成
-    let lastTap = { t: 0, x: 0, y: 0 };
-    canvas.addEventListener("pointerup", (e) => {
-      if(e.target !== canvas) return;
-      const now = Date.now();
-      const dx = e.clientX - lastTap.x, dy = e.clientY - lastTap.y;
-      const isDouble = (now - lastTap.t) < 420 && Math.hypot(dx, dy) < 26;
-      if(isDouble){
-        lastTap = { t: 0, x: 0, y: 0 };
-        const rect = canvas.getBoundingClientRect();
-        const x = mpClamp(e.clientX - rect.left - MP_NOTE_W / 2, 0, MP_CANVAS_W - MP_NOTE_W);
-        const y = mpClamp(e.clientY - rect.top - MP_NOTE_H / 2, 0, MP_CANVAS_H - MP_NOTE_H);
-        const note = mpAddNote({ x, y, text: "", color: mpRandomColor() });
-        markPetActivity();
-        mpRender();
-        requestAnimationFrame(() => {
-          const ta = canvas.querySelector(`[data-note-id="${CSS.escape(note.id)}"] .mp-note-text`);
-          if(ta) ta.focus();
-        });
-        return;
-      }
-      lastTap = { t: now, x: e.clientX, y: e.clientY };
-    });
+    wireViewport(canvas, viewport);
 
     canvas.querySelectorAll(".mp-note").forEach(noteEl => {
       const id = noteEl.dataset.noteId;
@@ -5472,8 +5766,8 @@ function createMindPaletteScreen(){
         try{ handle.setPointerCapture(e.pointerId); }catch(err){}
         noteEl.classList.add("dragging");
         const onMove = (ev) => {
-          note.x = mpClamp(origX + (ev.clientX - startX), 0, MP_CANVAS_W - MP_NOTE_W);
-          note.y = mpClamp(origY + (ev.clientY - startY), 0, MP_CANVAS_H - MP_NOTE_H);
+          note.x = mpClamp(origX + (ev.clientX - startX) / zoom, 0, MP_CANVAS_W - MP_NOTE_W);
+          note.y = mpClamp(origY + (ev.clientY - startY) / zoom, 0, MP_CANVAS_H - MP_NOTE_H);
           noteEl.style.left = note.x + "px"; noteEl.style.top = note.y + "px";
           if(svgEl) svgEl.innerHTML = mpLinksSVGContent(st);
         };
@@ -5495,24 +5789,8 @@ function createMindPaletteScreen(){
         mpRender();
       };
 
-      const textarea = noteEl.querySelector(".mp-note-text");
-      textarea.addEventListener("pointerdown", (e) => e.stopPropagation());
-      textarea.addEventListener("input", () => {
-        note.text = textarea.value;
-        clearTimeout(saveTimers[note.id]);
-        saveTimers[note.id] = setTimeout(() => {
-          mpUpdateNote(note.id, { text: note.text });
-          const tagsEl = noteEl.querySelector(".mp-note-tags");
-          if(tagsEl) tagsEl.innerHTML = mpTagsHTML(mpSuggestKeywords(note.text));
-        }, 650);
-      });
-      textarea.addEventListener("blur", () => {
-        clearTimeout(saveTimers[note.id]);
-        mpUpdateNote(note.id, { text: note.text });
-      });
-
       noteEl.addEventListener("click", (e) => {
-        if(e.target.closest("[data-drag-handle]") || e.target.closest(".mp-note-del") || e.target.tagName === "TEXTAREA") return;
+        if(e.target.closest("[data-drag-handle]") || e.target.closest(".mp-note-del")) return;
         if(mode === "link"){
           if(!pendingLinkId){ pendingLinkId = note.id; mpRender(); }
           else if(pendingLinkId === note.id){ pendingLinkId = null; mpRender(); }
@@ -5520,6 +5798,8 @@ function createMindPaletteScreen(){
         } else if(mode === "group"){
           if(selectedIds.has(note.id)) selectedIds.delete(note.id); else selectedIds.add(note.id);
           mpRender();
+        } else {
+          openNoteEditor(note.id);
         }
       });
     });
@@ -5538,6 +5818,7 @@ function createMindPaletteScreen(){
 
   function mpRender(){
     const st = mpGetState();
+    if(st.id !== lastBoardId){ zoom = 1; panX = 20; panY = 20; lastBoardId = st.id; }
     const groupColorOf = (gid) => gid ? ((st.groups.find(g => g.id === gid) || {}).color || null) : null;
 
     const notesHTML = st.notes.map(n => mpNoteHTML(n, mode, pendingLinkId, selectedIds, groupColorOf(n.groupId))).join("");
@@ -5547,7 +5828,7 @@ function createMindPaletteScreen(){
       ? (pendingLinkId ? "つなげたい相手の付箋をタップ（同じ付箋の再タップで取消）" : "起点にする付箋をタップしてください")
       : mode === "group"
         ? "グループ化したい付箋を2つ以上タップして選んでください"
-        : "空いている場所をダブルタップで付箋を作成。ハンドル「⠿」をドラッグで移動できます";
+        : "空いている場所をダブルタップで付箋を作成。2本指でピンチしてズームできます";
 
     const groupBarHTML = mode === "group"
       ? `<div class="mp-groupbar">
@@ -5557,7 +5838,15 @@ function createMindPaletteScreen(){
       : "";
 
     app.innerHTML = `
-      <div class="q-head"><button class="quit" data-go="select">← ホーム</button><span class="q-count">💡 マインド・パレット</span></div>
+      <div class="q-head">
+        <button class="quit" data-go="select">← ホーム</button>
+        <span class="q-count">💡 マインド・パレット</span>
+        <button type="button" class="mp-folder-btn" id="mp-folder-btn" aria-label="キャンバス一覧" title="キャンバス一覧">📁</button>
+      </div>
+      <div class="mp-board-bar">
+        <button type="button" class="mp-board-name-btn" id="mp-board-rename-btn" title="名前を変更">📂 ${esc(st.name)} <span class="mp-board-edit-ico">✎</span></button>
+        <button type="button" class="mp-board-new-inline" id="mp-board-new-btn" title="新しいキャンバスを作成">＋ 新規</button>
+      </div>
       <div class="mp-toolbar">
         <button type="button" class="mp-tool-btn${mode === "link" ? " active" : ""}" id="mp-tool-link">🔗 線でつなぐ</button>
         <button type="button" class="mp-tool-btn${mode === "group" ? " active" : ""}" id="mp-tool-group">🗂 グループ化</button>
@@ -5565,11 +5854,17 @@ function createMindPaletteScreen(){
       </div>
       <div class="mp-hint">${esc(modeHint)}</div>
       ${groupBarHTML}
-      <div class="mp-canvas-scroll" id="mp-canvas-scroll">
+      <div class="mp-canvas-viewport" id="mp-canvas-viewport">
         <div class="mp-canvas" id="mp-canvas" style="width:${MP_CANVAS_W}px;height:${MP_CANVAS_H}px">
           <svg class="mp-links-svg" id="mp-links-svg" width="${MP_CANVAS_W}" height="${MP_CANVAS_H}">${linksHTML}</svg>
           ${notesHTML}
           ${!st.notes.length ? `<div class="mp-empty">ここはあなたの発想キャンバスです。<br>ダブルタップして最初の付箋を置いてみましょう。</div>` : ""}
+        </div>
+        <div class="mp-zoom-controls">
+          <button type="button" id="mp-zoom-out" aria-label="縮小">－</button>
+          <span class="mp-zoom-label" id="mp-zoom-label">${Math.round(zoom * 100)}%</span>
+          <button type="button" id="mp-zoom-in" aria-label="拡大">＋</button>
+          <button type="button" id="mp-zoom-reset" aria-label="表示をリセット" title="表示をリセット">⟳</button>
         </div>
       </div>
     `;
