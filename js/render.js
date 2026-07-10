@@ -11,7 +11,7 @@ import { playTapSound } from './audio.js';
 import { notifyDailySummary, notifyMindPaletteSent, notifyReminder, notifyScheduleCreated, notifyScheduleDeleted } from './notifications.js';
 import { S, state } from './state.js';
 import { markPetActivity, petHandleIdentityChange, petIsNeglected, petNextStage, petStageForLevel } from './pet.js';
-import { mpActiveBoardId, mpAddLink, mpAddNote, mpBoardChain, mpBoardMeta, mpClearAll, mpCreateBoard, mpDeleteBoard, mpDeleteNote, mpGetState, mpGroupNotes, mpHandleIdentityChange, mpListBoards, mpRandomColor, mpRemoveLink, mpRenameBoard, mpSuggestKeywords, mpSwitchBoard, mpTotalBoardCount, mpUpdateNote } from './mindpalette.js';
+import { mpActiveBoardId, mpAddLink, mpAddNote, mpApplyCloud, mpBoardChain, mpBoardMeta, mpClearAll, mpCreateBoard, mpDeleteBoard, mpDeleteNote, mpGetState, mpGroupNotes, mpHandleIdentityChange, mpListBoards, mpRandomColor, mpRemoveLink, mpRenameBoard, mpSuggestKeywords, mpSwitchBoard, mpTotalBoardCount, mpUpdateNote } from './mindpalette.js';
 
 export const app = document.getElementById("app");
 
@@ -5446,6 +5446,15 @@ function openBoardRenameModal(boardId, currentName, onSaved){
   ov.querySelector("#mp-board-name-save").onclick = submit;
   input.onkeydown = (e) => { if(e.key === "Enter") submit(); };
   input.focus(); input.select();
+}
+
+// クラウド（Firestoreの users/{uid}.mindPalette）から届いたデータをこの端末へ
+// 反映する。db.jsのonSnapshotから呼ばれる。今マインド・パレット関連の画面を
+// 見ている場合のみ、その場で再描画して反映する
+export function applyCloudMindPalette(data){
+  if(!mpApplyCloud(data)) return;
+  if(S.screen === "mind-palette") renderMindPalette();
+  else if(S.screen === "mind-palette-folders") renderMindPaletteFolders();
 }
 
 // 画面固有の一時UI状態（モード・選択中付箋・ズーム/パン量など）を閉じ込めた

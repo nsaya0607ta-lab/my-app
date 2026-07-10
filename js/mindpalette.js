@@ -75,8 +75,36 @@ function load(){
   return cache;
 }
 
+// Firestoreの users/{uid}.mindPalette へ同期し、別端末でも同じフォルダ構成・
+// 付箋がそのまま引き継げるようにする（gcal・portfolioと同じ方式）
+function syncToCloud(){
+  if(!state.db || !state.currentUserId || !window.FirebaseSync) return;
+  try{
+    window.FirebaseSync.setDoc(window.FirebaseSync.doc(state.db, "users", state.currentUserId), {
+      mindPalette: cache,
+      updatedAt: new Date().toISOString()
+    }, { merge: true });
+  }catch(e){ console.error("mind palette cloud sync failed:", e); }
+}
+
 function save(){
   try{ localStorage.setItem(mpKey(), JSON.stringify(cache)); }catch(e){}
+  syncToCloud();
+}
+
+// 新規アカウント時、この端末に既にあるローカルのキャンバスをクラウドへ
+// 初期投入するために使う（core.jsのseedCloudFromLocalから呼ばれる）
+export function mpExportRaw(){ return load(); }
+
+// クラウド（Firestoreのusers/{uid}.mindPalette）から届いたデータをこの端末の
+// キャッシュ・localStorageへ反映する。db.jsのonSnapshotから呼ばれる。
+// save()ではなく直接書き込むのは、save()を使うとsyncToCloud()が呼ばれ、
+// onSnapshotとの間で無限ループになってしまうため（gcalと同じ理由）
+export function mpApplyCloud(data){
+  if(!data || typeof data !== "object" || !Array.isArray(data.boards) || !data.boards.length) return false;
+  cache = normalize(JSON.parse(JSON.stringify(data)));
+  try{ localStorage.setItem(mpKey(), JSON.stringify(cache)); }catch(e){}
+  return true;
 }
 
 function activeBoard(){

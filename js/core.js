@@ -4,6 +4,7 @@ import { SKIN_DATA } from './data/skins.js';
 import { gcalLoadAuthorName, go, loadGcalStore, loadGcalTodoStore, loadPortfolio, render } from './render.js';
 import { S, state } from './state.js';
 import { markPetActivity } from './pet.js';
+import { mpExportRaw } from './mindpalette.js';
 
 export let PASS = 700;   // 選択中の資格の合格ライン（loadCertで設定）
 
@@ -437,10 +438,14 @@ export function seedCloudFromLocal(){
     || Object.keys(gcalTodos).length > 0
     || gcalStore.calendars.length > 1
     || Object.values(gcalStore.events || {}).some(m => m && Object.keys(m).length > 0);
-  if(Object.keys(patch).length || loadCoins() || hasPortfolio || hasGcal){
+  const mindPalette = mpExportRaw();
+  const hasMindPalette = Array.isArray(mindPalette.boards)
+    && mindPalette.boards.some(b => (b.notes && b.notes.length) || (b.links && b.links.length));
+  if(Object.keys(patch).length || loadCoins() || hasPortfolio || hasGcal || hasMindPalette){
     const payload = { certs: patch, coins: loadCoins(), updatedAt:new Date().toISOString() };
     if(hasPortfolio) payload.portfolio = portfolio;
     if(hasGcal) payload.gcal = { store: gcalStore, todos: gcalTodos, authorName: gcalAuthorName };
+    if(hasMindPalette) payload.mindPalette = mindPalette;
     try{
       window.FirebaseSync.setDoc(window.FirebaseSync.doc(state.db,"users",state.currentUserId),
         payload, { merge:true });
