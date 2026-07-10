@@ -539,12 +539,6 @@ export function renderHome(){
         <span class="menu-btn-text"><span class="menu-btn-label">用語辞典</span></span>
         <span class="menu-btn-chevron">›</span>
       </button>
-
-      <button class="menu-btn menu-btn--introquiz" data-introquiz>
-        <span class="menu-btn-icon">🎵</span>
-        <span class="menu-btn-text"><span class="menu-btn-label">イントロドンに挑戦</span></span>
-        <span class="menu-btn-chevron">›</span>
-      </button>
     </div>
     ${h.length?`<button class="link" data-go="history">スコア履歴を見る（${h.length}件）</button>`:
       `<div class="install">ヒント：ブラウザの共有メニューから「ホーム画面に追加」すると、アプリのように起動できます。</div>`}
@@ -563,7 +557,6 @@ export function renderHome(){
   const pcn=app.querySelector("[data-pcancel]"); if(pcn)pcn.onclick=()=>{ state.practicePick=false; render(); };
   app.querySelectorAll("[data-pc]").forEach(b=>b.onclick=()=>start("practice", +b.dataset.pc));
   const rv=app.querySelector("[data-review]"); if(rv)rv.onclick=()=>startReview();
-  const iq=app.querySelector("[data-introquiz]"); if(iq)iq.onclick=()=>openIntroQuiz();
   app.querySelectorAll("[data-go]").forEach(b=>b.onclick=()=>go(b.dataset.go));
   const lo=app.querySelector("[data-logout]"); if(lo)lo.onclick=()=>logout();
   const li=app.querySelector("[data-login]"); if(li)li.onclick=()=>{ state.guestMode=false; state.authMode="login"; render(); };
@@ -2351,6 +2344,20 @@ function rulesLauncherItemHTML(){
     </div>`;
 }
 
+// イントロドンボタン専用のアイコン。設定・ルールと同じく画面遷移(data-go)
+// ではなくポップアップ（openIntroQuiz）を開くため、専用HTMLを組む
+function introQuizLauncherItemHTML(){
+  return `
+    <div class="launcher-item">
+      <button type="button" class="ms-logo-btn launcher-icon-introquiz" data-open-introquiz aria-label="イントロドンに挑戦" title="イントロドンに挑戦">
+        <span class="launcher-emoji" aria-hidden="true">🎵</span>
+      </button>
+      <button type="button" class="ms-cert-link" data-open-introquiz title="イントロドンに挑戦">
+        <span class="ms-cert-textwrap"><span class="ms-cert-static">イントロドン</span></span>
+      </button>
+    </div>`;
+}
+
 function homeLauncherCardHTML(){
   const items = [
     { iconHTML: `<span class="launcher-emoji" aria-hidden="true">🇯🇵</span>`, label: "J-NEWS", dataGo: "news-japan", ariaLabel: "日本NEWS", variant: "news-jp" },
@@ -2362,6 +2369,7 @@ function homeLauncherCardHTML(){
     <div class="news-card ms-cert-card home-launcher-card" id="home-launcher-card">
       <div class="home-launcher-row">
         ${items.map(it => launcherItemHTML(it)).join("")}
+        ${introQuizLauncherItemHTML()}
         ${settingsLauncherItemHTML()}
         ${rulesLauncherItemHTML()}
       </div>
@@ -5076,6 +5084,7 @@ export function renderSelect(){
   app.querySelectorAll("[data-go]").forEach(b=>b.onclick=()=>{ if(isLongPressSuppressed(b)) return; go(b.dataset.go); });
   app.querySelectorAll("[data-open-settings]").forEach(b=>b.onclick=()=>openSettingsModal());
   app.querySelectorAll("[data-open-rules]").forEach(b=>b.onclick=()=>openRulesModal());
+  app.querySelectorAll("[data-open-introquiz]").forEach(b=>b.onclick=()=>openIntroQuiz());
   app.querySelectorAll("[data-open-pet]").forEach(b=>b.onclick=()=>{ playTapSound(); openPetModal(); });
   const lo=app.querySelector("[data-logout]"); if(lo)lo.onclick=()=>logout();
   const li=app.querySelector("[data-login]"); if(li)li.onclick=()=>{ state.guestMode=false; state.authMode="login"; render(); };

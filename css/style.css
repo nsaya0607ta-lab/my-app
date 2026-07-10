@@ -1054,6 +1054,9 @@ h1.title.title--badge{margin:2px 0 0;}
 .launcher-icon-rules{background:linear-gradient(150deg,#eef2ff,#c7d2fe);box-shadow:0 5px 14px rgba(79,70,229,.20),inset 0 1px 0 rgba(255,255,255,.6);}
 .rules-list-btn:active{transform:scale(.90);box-shadow:0 2px 6px rgba(79,70,229,.24),inset 0 1px 0 rgba(255,255,255,.6);}
 
+/* 🎵 イントロドンボタン：同じ.ms-logo-btnベースの専用バリエーション */
+.launcher-icon-introquiz{background:linear-gradient(150deg,#fae8ff,#f0abfc);box-shadow:0 5px 14px rgba(162,28,175,.22),inset 0 1px 0 rgba(255,255,255,.6);}
+
 /* 「MS」「LPIC」の2項目を1枚のカードに横並びで表示する行。
    外枠は.ms-cert-cardを流用し、中身だけ.launcher-item2個を等間隔で
    中央に並べたものに差し替えている */
@@ -1714,8 +1717,6 @@ body[data-theme="dark"] .menu-btn:active{box-shadow:0 4px 10px rgba(0,0,0,.3), i
 /* =========================================================================
    🎵 イントロドン（曲当て3択クイズ）モーダル：既存の.modal-ov/.modalを土台に使う
    ========================================================================= */
-.menu-btn--introquiz .menu-btn-icon{background:linear-gradient(150deg,#f0abfc,#a21caf 78%);box-shadow:0 6px 14px rgba(162,28,175,.32);}
-
 .iq-modal{max-width:400px;position:relative;}
 .iq-close{position:absolute;top:14px;right:14px;width:28px;height:28px;border:none;border-radius:50%;
   background:var(--bg2);color:var(--muted);font-size:13px;cursor:pointer;}
