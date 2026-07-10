@@ -12,6 +12,7 @@ import { notifyDailySummary, notifyMindPaletteSent, notifyReminder, notifySchedu
 import { S, state } from './state.js';
 import { markPetActivity, petHandleIdentityChange, petIsNeglected, petNextStage, petStageForLevel } from './pet.js';
 import { mpActiveBoardId, mpAddLink, mpAddNote, mpApplyCloud, mpBoardChain, mpBoardMeta, mpClearAll, mpCreateBoard, mpDeleteBoard, mpDeleteNote, mpGetState, mpGroupNotes, mpHandleIdentityChange, mpListBoards, mpRandomColor, mpRemoveLink, mpRenameBoard, mpSuggestKeywords, mpSwitchBoard, mpTotalBoardCount, mpUpdateNote } from './mindpalette.js';
+import { checkNewsQuizPopup } from './newsQuiz.js';
 import { applyCustomButtonColors, isLongPressSuppressed, wireButtonColorLongPress } from './buttonColors.js';
 
 export const app = document.getElementById("app");
@@ -5075,6 +5076,10 @@ export function renderSelect(){
   applyCustomButtonColors(app);
   wireButtonColorLongPress(app);
   window.scrollTo(0,0);
+  // 夜20:00〜23:59にこのダッシュボードを開いた瞬間、当日ニュースが存在し
+  // まだ挑戦/スキップしていなければクイズポップアップを出す（1日1回）。
+  // 判定・AC加算はサーバー側で行うため、ここでは呼び出すだけでよい。
+  checkNewsQuizPopup();
 }
 
 /* =========================================================================

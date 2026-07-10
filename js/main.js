@@ -3,6 +3,7 @@ import { loadCoins, loadTapSound, loadUiTheme, migrateOldData } from './core.js'
 import { go, render, renderSettings } from './render.js';
 import { playTapSound } from './audio.js';
 import { S, state } from './state.js';
+import { checkNewsQuizPopup } from './newsQuiz.js';
 
 /* ===== タップ音（音声ファイル不要・Web Audio APIでその場合成／設定＞タップ音設定で切替） =====
    問題の選択肢（.opt）と設定モーダル内（.settings-modal。選択と同時に自前で
@@ -29,3 +30,11 @@ render();
 setTimeout(function(){
   if(!state.authReady && !state.guestMode){ state.authReady = true; render(); }
 }, 8000);
+
+// 別タブ/別アプリから戻ってきてこのタブが再び前面表示された瞬間にも、
+// 「今日のニュース検定」の出題条件を確認する（ホーム画面を開きっぱなしで
+// 20時をまたいだ場合の再訪トリガーに対応するため、render()経由の呼び出し
+// だけでなくここでも明示的にチェックする）
+document.addEventListener("visibilitychange", () => {
+  if(document.visibilityState === "visible") checkNewsQuizPopup();
+});
