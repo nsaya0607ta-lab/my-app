@@ -24,11 +24,11 @@ function shuffle(arr) {
 }
 
 // 正解の曲＋ランダムに選んだ2曲のダミーをシャッフルし、
-// { key(0/1/2をシャッフルした位置), title, _songId } の配列を返す
+// { key(0/1/2をシャッフルした位置), title, artist, _songId } の配列を返す
 function buildChoices(songs, correctSong) {
   const distractors = shuffle(songs.filter((s) => s.id !== correctSong.id)).slice(0, 2);
   const shuffled = shuffle([correctSong, ...distractors]);
-  return shuffled.map((s, i) => ({ key: String(i), title: s.title, _songId: s.id }));
+  return shuffled.map((s, i) => ({ key: String(i), title: s.title, artist: s.artist, _songId: s.id }));
 }
 
 module.exports = async (req, res) => {
@@ -71,6 +71,7 @@ module.exports = async (req, res) => {
       uid,
       videoId: correctSong.videoId,
       title: correctSong.title,
+      artist: correctSong.artist,
       correctKey: correctChoice.key,
       used: false,
       createdAt: Date.now(),
@@ -86,7 +87,7 @@ module.exports = async (req, res) => {
     available: true,
     sessionId,
     videoId: correctSong.videoId,
-    // 曲名だけのシャッフル済み選択肢。正解フラグは含めない
-    choices: choices.map((c) => ({ key: c.key, title: c.title })),
+    // 曲名・アーティスト名だけのシャッフル済み選択肢。正解フラグは含めない
+    choices: choices.map((c) => ({ key: c.key, title: c.title, artist: c.artist })),
   });
 };
