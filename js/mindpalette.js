@@ -4,8 +4,14 @@
    ニュース・株価・資格学習で得た「ひらめき」を自由なキャンバスに付箋として
    ストックする機能のデータ・ロジック部分。見た目（キャンバスDOM・ドラッグ・
    コネクタの描画）はjs/render.js側で組み立て、ここでは
-   「付箋／コネクタ／グループの永続化」と「AIのフワフワ提案（モック）」の
-   計算だけを受け持つ（他のローカル保存機能と同じくlocalStorageベース）。
+   「キャンバス（ボード）単位のフォルダ管理」「付箋／コネクタ／グループの
+   永続化」と「AIのフワフワ提案（モック）」の計算だけを受け持つ（他の
+   ローカル保存機能と同じくlocalStorageベース）。
+
+   保存構造：{ boards:[{id,name,notes,links,groups,createdAt,updatedAt}],
+              activeBoardId }
+   旧バージョン（単一キャンバス {notes,links,groups}）のデータは、初回読込
+   時に自動で「マイキャンバス」という1枚目のボードへ移行する。
    ========================================================================= */
 import { state } from './state.js';
 
@@ -18,16 +24,45 @@ function genId(prefix){
   return prefix + Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
 }
 
-let cache = null;
-let mpIdentityToken;
+function newBoard(name){
+  const now = Date.now();
+  return { id: genId("b"), name: (name || "").trim() || "無題のキャンバス", notes: [], links: [], groups: [], createdAt: now, updatedAt: now };
+}
+
+function normalizeBoard(b){
+  if(!b || typeof b !== "object") b = {};
+  if(!b.id) b.id = genId("b");
+  if(!b.name) b.name = "無題のキャンバス";
+  if(!Array.isArray(b.notes)) b.notes = [];
+  if(!Array.isArray(b.links)) b.links = [];
+  if(!Array.isArray(b.groups)) b.groups = [];
+  if(!b.createdAt) b.createdAt = Date.now();
+  if(!b.updatedAt) b.updatedAt = b.createdAt;
+  return b;
+}
 
 function normalize(raw){
-  const st = (raw && typeof raw === "object") ? raw : {};
-  if(!Array.isArray(st.notes)) st.notes = [];
-  if(!Array.isArray(st.links)) st.links = [];
-  if(!Array.isArray(st.groups)) st.groups = [];
-  return st;
+  if(raw && Array.isArray(raw.boards) && raw.boards.length){
+    raw.boards = raw.boards.map(normalizeBoard);
+    if(!raw.activeBoardId || !raw.boards.some(b => b.id === raw.activeBoardId)){
+      raw.activeBoardId = raw.boards[0].id;
+    }
+    return raw;
+  }
+  // 旧バージョン（単一キャンバス）からの移行、または初回利用
+  if(raw && (Array.isArray(raw.notes) || Array.isArray(raw.links))){
+    const b = newBoard("マイキャンバス");
+    b.notes = Array.isArray(raw.notes) ? raw.notes : [];
+    b.links = Array.isArray(raw.links) ? raw.links : [];
+    b.groups = Array.isArray(raw.groups) ? raw.groups : [];
+    return { boards: [b], activeBoardId: b.id };
+  }
+  const b = newBoard("マイキャンバス");
+  return { boards: [b], activeBoardId: b.id };
 }
+
+let cache = null;
+let mpIdentityToken;
 
 function load(){
   if(cache) return cache;
@@ -38,6 +73,15 @@ function load(){
 
 function save(){
   try{ localStorage.setItem(mpKey(), JSON.stringify(cache)); }catch(e){}
+}
+
+function activeBoard(){
+  const st = load();
+  return st.boards.find(b => b.id === st.activeBoardId) || st.boards[0];
+}
+
+function touch(board){
+  board.updatedAt = Date.now();
 }
 
 // ログインユーザーが切り替わったら、前のユーザーのキャンバスデータが
@@ -51,13 +95,65 @@ export function mpHandleIdentityChange(){
   cache = null;
 }
 
-export function mpGetState(){ return load(); }
+// 現在アクティブなボード（{id,name,notes,links,groups,...}）を返す。
+// 呼び出し側（render.js）は従来どおり .notes/.links/.groups を参照できる
+export function mpGetState(){ return activeBoard(); }
 
 export const MP_COLORS = ["blue", "gold", "teal", "violet", "rose"];
 export function mpRandomColor(){ return MP_COLORS[(Math.random() * MP_COLORS.length) | 0]; }
 
-export function mpAddNote({ x, y, text, color, source } = {}){
+/* ---- ボード（フォルダ）管理 ---- */
+export function mpListBoards(){
   const st = load();
+  return st.boards
+    .map(b => ({ id: b.id, name: b.name, count: b.notes.length, updatedAt: b.updatedAt }))
+    .sort((a, b) => b.updatedAt - a.updatedAt);
+}
+
+export function mpActiveBoardId(){ return load().activeBoardId; }
+
+export function mpCreateBoard(name){
+  const st = load();
+  const b = newBoard(name || `無題のキャンバス${st.boards.length + 1}`);
+  st.boards.push(b);
+  st.activeBoardId = b.id;
+  save();
+  return b;
+}
+
+export function mpSwitchBoard(id){
+  const st = load();
+  if(!st.boards.some(b => b.id === id)) return false;
+  st.activeBoardId = id;
+  save();
+  return true;
+}
+
+export function mpRenameBoard(id, name){
+  const st = load();
+  const b = st.boards.find(x => x.id === id);
+  if(!b) return false;
+  const trimmed = (name || "").trim();
+  if(!trimmed) return false;
+  b.name = trimmed.slice(0, 30);
+  touch(b);
+  save();
+  return true;
+}
+
+// 最低1枚はボードを残す（全消去してもキャンバス自体は失わせない）
+export function mpDeleteBoard(id){
+  const st = load();
+  if(st.boards.length <= 1) return false;
+  st.boards = st.boards.filter(b => b.id !== id);
+  if(st.activeBoardId === id) st.activeBoardId = st.boards[0].id;
+  save();
+  return true;
+}
+
+/* ---- 付箋／コネクタ／グループ（すべてアクティブなボードに対して操作） ---- */
+export function mpAddNote({ x, y, text, color, source } = {}){
+  const b = activeBoard();
   const note = {
     id: genId("n"),
     x: Math.round(x || 0), y: Math.round(y || 0),
@@ -67,58 +163,64 @@ export function mpAddNote({ x, y, text, color, source } = {}){
     source: source || null,
     createdAt: Date.now(),
   };
-  st.notes.push(note);
+  b.notes.push(note);
+  touch(b);
   save();
   return note;
 }
 
 export function mpUpdateNote(id, patch){
-  const st = load();
-  const n = st.notes.find(n => n.id === id);
+  const b = activeBoard();
+  const n = b.notes.find(n => n.id === id);
   if(!n) return null;
   Object.assign(n, patch);
+  touch(b);
   save();
   return n;
 }
 
 export function mpDeleteNote(id){
-  const st = load();
-  st.notes = st.notes.filter(n => n.id !== id);
-  st.links = st.links.filter(l => l.a !== id && l.b !== id);
+  const b = activeBoard();
+  b.notes = b.notes.filter(n => n.id !== id);
+  b.links = b.links.filter(l => l.a !== id && l.b !== id);
+  touch(b);
   save();
 }
 
 export function mpAddLink(a, b){
   if(!a || !b || a === b) return null;
-  const st = load();
-  if(st.links.some(l => (l.a === a && l.b === b) || (l.a === b && l.b === a))) return null;
+  const board = activeBoard();
+  if(board.links.some(l => (l.a === a && l.b === b) || (l.a === b && l.b === a))) return null;
   const link = { id: genId("l"), a, b };
-  st.links.push(link);
+  board.links.push(link);
+  touch(board);
   save();
   return link;
 }
 
 export function mpRemoveLink(id){
-  const st = load();
-  st.links = st.links.filter(l => l.id !== id);
+  const b = activeBoard();
+  b.links = b.links.filter(l => l.id !== id);
+  touch(b);
   save();
 }
 
 export function mpRemoveLinksBetween(a, b){
-  const st = load();
-  const before = st.links.length;
-  st.links = st.links.filter(l => !((l.a === a && l.b === b) || (l.a === b && l.b === a)));
-  if(st.links.length !== before) save();
+  const board = activeBoard();
+  const before = board.links.length;
+  board.links = board.links.filter(l => !((l.a === a && l.b === b) || (l.a === b && l.b === a)));
+  if(board.links.length !== before){ touch(board); save(); }
 }
 
 const GROUP_COLORS = ["#38bdf8", "#fbbf24", "#a855f7", "#34d399", "#f472b6"];
 export function mpGroupNotes(ids){
   if(!ids || ids.length < 2) return null;
-  const st = load();
+  const b = activeBoard();
   const gid = genId("g");
-  const color = GROUP_COLORS[st.groups.length % GROUP_COLORS.length];
-  st.groups.push({ id: gid, color });
-  st.notes.forEach(n => { if(ids.includes(n.id)) n.groupId = gid; });
+  const color = GROUP_COLORS[b.groups.length % GROUP_COLORS.length];
+  b.groups.push({ id: gid, color });
+  b.notes.forEach(n => { if(ids.includes(n.id)) n.groupId = gid; });
+  touch(b);
   save();
   return gid;
 }
@@ -127,8 +229,11 @@ export function mpUngroupNote(id){
   mpUpdateNote(id, { groupId: null });
 }
 
+// アクティブなボードの中身だけを空にする（ボード自体・他のボードは残す）
 export function mpClearAll(){
-  cache = normalize(null);
+  const b = activeBoard();
+  b.notes = []; b.links = []; b.groups = [];
+  touch(b);
   save();
 }
 
