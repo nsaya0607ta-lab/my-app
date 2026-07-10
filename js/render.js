@@ -3344,6 +3344,7 @@ async function geminiConfirmSchedule(msg){
   const timeLabel = msg.preview.timeLabel;
   const recurrenceLabel = msg.preview.recurrenceLabel;
   let localOccurrenceCount = 0;
+  let localCalIdForNotify = null;
 
   try{
     if(gcalGoogleAccessToken){
@@ -3380,6 +3381,7 @@ async function geminiConfirmSchedule(msg){
       });
       saveGcalStore(store);
       localOccurrenceCount = occurrences.length;
+      localCalIdForNotify = store.activeId;
       geminiLastSchedule = { source: "local", storeActiveId: store.activeId, eventId: first.newEvent.id, dateKey: first.dateKey, y: first.y, m: first.m, d: first.d, start, end, title };
     }
   }catch(e){
@@ -3393,7 +3395,9 @@ async function geminiConfirmSchedule(msg){
     ? `（${recurrenceLabel}${localOccurrenceCount > 1 ? `・直近${localOccurrenceCount}回分をこの端末に登録` : ""}）`
     : "";
   pushGeminiMessage({ role: "model", text: `✅ ${dateLabel} ${timeLabel} に「${title}」を登録しました${recurrenceSuffix}。` });
-  notifyScheduleCreated(gcalActorName(), title, `${dateLabel} ${timeLabel}`);
+  const actorName = gcalActorName();
+  notifyScheduleCreated(actorName, title, `${dateLabel} ${timeLabel}`);
+  if(localCalIdForNotify) gcalNotifyCalendarMembers(localCalIdForNotify, "create", { authorName: actorName, title, whenLabel: `${dateLabel} ${timeLabel}` });
 }
 
 // 確認カードの「キャンセル・修正する」（またはチャットでの「キャンセル」相当の
@@ -3437,7 +3441,9 @@ async function geminiDeleteSchedule(args){
   }
 
   if(geminiLastSchedule === ref) geminiLastSchedule = null;
-  notifyScheduleDeleted(gcalActorName(), ref.title);
+  const deleteActorName = gcalActorName();
+  notifyScheduleDeleted(deleteActorName, ref.title);
+  if(ref.source !== "google") gcalNotifyCalendarMembers(ref.storeActiveId, "delete", { authorName: deleteActorName, title: ref.title });
   return { text: `🗑️ 「${ref.title}」の予定を削除しました。` };
 }
 
@@ -4153,7 +4159,9 @@ function renderGcalDailyWidget(){
     if(s2.events[active.id] && s2.events[active.id][dateKey]){
       s2.events[active.id][dateKey] = s2.events[active.id][dateKey].filter(ev => ev.id !== btn.dataset.del);
       saveGcalStore(s2);
-      notifyScheduleDeleted(gcalActorName(), evTitle);
+      const delActorName = gcalActorName();
+      notifyScheduleDeleted(delActorName, evTitle);
+      gcalNotifyCalendarMembers(active.id, "delete", { authorName: delActorName, title: evTitle });
     }
     renderGcalDailyWidget();
   });
@@ -4273,7 +4281,9 @@ function gcalBindSelectedDaySection(root, src, y, m, d){
     if(s2.events[src.calId] && s2.events[src.calId][dateKey]){
       s2.events[src.calId][dateKey] = s2.events[src.calId][dateKey].filter(ev => ev.id !== evId);
       saveGcalStore(s2);
-      notifyScheduleDeleted(gcalActorName(), evTitle);
+      const delActorName = gcalActorName();
+      notifyScheduleDeleted(delActorName, evTitle);
+      gcalNotifyCalendarMembers(src.calId, "delete", { authorName: delActorName, title: evTitle });
     }
     src.refresh();
     renderGcalMonthCard();
@@ -4311,6 +4321,9 @@ function gcalBindSelectedDaySection(root, src, y, m, d){
     gcalSelDayError = null;
     src.refresh();
     renderGcalMonthCard();
+    const addActorName = gcalActorName();
+    notifyScheduleCreated(addActorName, title, gcalWhenLabel(y, m, d, start, end));
+    gcalNotifyCalendarMembers(src.calId, "create", { authorName: addActorName, title, whenLabel: gcalWhenLabel(y, m, d, start, end) });
     notifyScheduleCreated(gcalActorName(), title, gcalWhenLabel(y, m, d, start, end));
   };
   root.querySelector("#gcal-selday-add").onclick = submit;
@@ -4618,7 +4631,9 @@ function openGcalEventModal(src, y, m, d, opts){
       if(s2.events[src.calId] && s2.events[src.calId][dateKey]){
         s2.events[src.calId][dateKey] = s2.events[src.calId][dateKey].filter(ev => ev.id !== evId);
         saveGcalStore(s2);
-        notifyScheduleDeleted(gcalActorName(), evTitle);
+        const delActorName = gcalActorName();
+        notifyScheduleDeleted(delActorName, evTitle);
+        gcalNotifyCalendarMembers(src.calId, "delete", { authorName: delActorName, title: evTitle });
       }
       src.refresh();
       draw();
@@ -4653,7 +4668,9 @@ function openGcalEventModal(src, y, m, d, opts){
       if(!s2.events[src.calId][dateKey]) s2.events[src.calId][dateKey] = [];
       s2.events[src.calId][dateKey].push({ id: gcalGenId("e"), title, start, end, author });
       saveGcalStore(s2);
-      notifyScheduleCreated(gcalActorName(), title, gcalWhenLabel(y, m, d, start, end));
+      const addActorName = gcalActorName();
+      notifyScheduleCreated(addActorName, title, gcalWhenLabel(y, m, d, start, end));
+      gcalNotifyCalendarMembers(src.calId, "create", { authorName: addActorName, title, whenLabel: gcalWhenLabel(y, m, d, start, end) });
       src.refresh();
       close(); // 登録に成功したら手動で閉じなくても自動でモーダルを閉じる
     };
@@ -4670,7 +4687,10 @@ function openGcalEventModal(src, y, m, d, opts){
 }
 
 // カレンダー横の👥ボタンから開く、共有ユーザー（メールアドレス）の設定
-// ポップアップ。実際の通知・同期は行わない端末内限定の設定
+// ポップアップ。ここに登録したメールアドレス宛てには、このカレンダーでの
+// 予定の登録・削除が起きるたびに通知が届く（gcalNotifyCalendarMembers参照）。
+// ただし予定データ自体（一覧の中身）はこの端末のローカル限定のままで、
+// 相手の画面にその予定が表示されるようになるわけではない
 function openGcalShareModal(calId){
   const ov = document.createElement("div");
   ov.className = "modal-ov";
@@ -4693,7 +4713,7 @@ function openGcalShareModal(calId){
           <input type="email" class="gcal-ev-input" id="gcal-share-input" placeholder="共有相手のメールアドレス">
           <button type="button" class="gcal-ev-add-btn" id="gcal-share-add">追加</button>
         </div>
-        <div class="gcal-share-note">※このカレンダーの共有相手をこの端末に登録するだけの簡易設定です。相手への招待通知や実際のデータ同期は行われません。</div>
+        <div class="gcal-share-note">※ここに登録した相手が、このアプリに同じメールアドレスでログインしている場合、このカレンダーでの予定の登録・削除を通知でお知らせします（他のカレンダーの操作は届きません）。予定データそのものが相手の画面に表示されるわけではありません。</div>
         <button class="ghost" id="gcal-share-close" style="margin-top:12px">閉じる</button>
       </div>`;
 
@@ -4821,6 +4841,51 @@ function gcalActorName(){
 
 function gcalWhenLabel(y, m, d, start, end){
   return `${m + 1}月${d}日 ${start ? `${start}${end ? `〜${end}` : ""}` : "終日"}`;
+}
+
+/* ---- カレンダーに紐づくユーザーだけへの通知配信（ローカル／デモカレンダー限定） ----
+   ローカル（デモ）カレンダーは「共有ユーザー設定」（openGcalShareModal）で
+   紐づけたメールアドレスの一覧を持っている。予定の登録・削除が起きたとき、
+   このカレンダーに紐づくメールアドレス宛てにだけFirestore経由で通知を配る
+   （＝Aだけのカレンダーの操作はB・Cには届かず、A・Bで共有しているカレンダー
+   の操作はA・Bにだけ届き、Cには届かない）。宛先はwindow.CalNotify.send()で
+   Firestoreの受信箱に積み、宛先本人が（別端末で）ログイン中なら
+   gcalStartNotifyListener()のリアルタイム購読で受け取ってトースト表示する。
+   Google連携カレンダーは、実際の共有相手をアプリ側から特定できないため対象外
+   （操作した本人のトーストのみ。Google Calendar自体の通知に委ねる） */
+function gcalCalendarById(calId){
+  const store = loadGcalStore();
+  return store.calendars.find(c => c.id === calId) || null;
+}
+
+function gcalNotifyCalendarMembers(calId, kind, payload){
+  if(!window.CalNotify || !state.currentUserId || state.guestMode) return;
+  const cal = gcalCalendarById(calId);
+  if(!cal || !Array.isArray(cal.shared) || !cal.shared.length) return;
+  const selfEmail = ((state.currentUser && state.currentUser.email) || "").trim().toLowerCase();
+  const seen = new Set();
+  cal.shared.forEach(raw => {
+    const email = (raw || "").trim().toLowerCase();
+    if(!email || email === selfEmail || seen.has(email)) return;
+    seen.add(email);
+    try{ window.CalNotify.send(email, Object.assign({ kind }, payload)); }catch(e){}
+  });
+}
+
+// 自分宛て（ログイン中のメールアドレス宛て）の通知受信箱をリアルタイム購読する。
+// db.jsのonAuthStateChangedから、ログイン時に開始・ログアウト時に停止する
+let gcalNotifyUnsub = null;
+export function gcalStartNotifyListener(email){
+  gcalStopNotifyListener();
+  if(!window.CalNotify || !email) return;
+  gcalNotifyUnsub = window.CalNotify.listen(email, (item) => {
+    if(!item) return;
+    if(item.kind === "create") notifyScheduleCreated(item.authorName, item.title, item.whenLabel);
+    else if(item.kind === "delete") notifyScheduleDeleted(item.authorName, item.title);
+  });
+}
+export function gcalStopNotifyListener(){
+  if(gcalNotifyUnsub){ try{ gcalNotifyUnsub(); }catch(e){} gcalNotifyUnsub = null; }
 }
 
 // 「今日」ぶんの予定を、表示中のデータソース（Google連携中ならキャッシュ済みの

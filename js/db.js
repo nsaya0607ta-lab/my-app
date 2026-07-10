@@ -2,7 +2,7 @@
   import { getFirestore, doc, setDoc, getDoc, deleteDoc, onSnapshot, collection, query, where, orderBy, limit, getDocs, getCountFromServer, writeBatch, increment, runTransaction } from "https://www.gstatic.com/firebasejs/10.0.0/firebase-firestore.js";
   import { getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword, signOut, onAuthStateChanged, deleteUser, reauthenticateWithCredential, EmailAuthProvider } from "https://www.gstatic.com/firebasejs/10.0.0/firebase-auth.js";
 import { applyCloud, applyCloudSkins, commit, getProfileName, publishLeaderboard, saveCoins, seedCloudFromLocal, totalBP } from './core.js';
-import { app, applyCloudGcal, applyCloudPortfolio, logout, render } from './render.js';
+import { app, applyCloudGcal, applyCloudPortfolio, gcalStartNotifyListener, gcalStopNotifyListener, logout, render } from './render.js';
 import { S, state } from './state.js';
 
   const firebaseConfig = {
@@ -179,6 +179,41 @@ import { S, state } from './state.js';
       }
     };
 
+    // カレンダー通知の受信箱：ローカル（デモ）カレンダーの「共有ユーザー設定」に
+    // 登録されたメールアドレス宛てに、予定の登録・削除通知を配る。宛先の
+    // メールアドレスをドキュメントIDにせず別フィールド(toEmail)に持たせ、
+    // where句で絞り込む方式にしているのは、宛先が実際にこのアプリのアカウントを
+    // 持っているとは限らない（招待前提の簡易実装）ため、存在確認をせず送りっぱなし
+    // にできるようにするため。受信側はonSnapshotで自分宛てのものだけを購読し、
+    // 表示後は用済みとして削除する（同じ通知を毎回再表示しないため）
+    window.CalNotify = {
+      send: async (toEmail, payload) => {
+        const email = (toEmail || "").trim().toLowerCase();
+        if (!state.db || !email || !payload) return;
+        try {
+          const id = "cn" + Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
+          await setDoc(doc(state.db, "calNotify", id), Object.assign({
+            toEmail: email,
+            createdAt: new Date().toISOString()
+          }, payload));
+        } catch (e) { console.error("calNotify send failed:", e); }
+      },
+      // 自分宛て(email)の通知をリアルタイム購読する。戻り値は購読解除関数。
+      // 届いた通知は表示側のコールバックへ渡した直後にFirestoreから削除する
+      listen: (email, onItem) => {
+        const key = (email || "").trim().toLowerCase();
+        if (!state.db || !key) return () => {};
+        const q = query(collection(state.db, "calNotify"), where("toEmail", "==", key), orderBy("createdAt"));
+        return onSnapshot(q, (snap) => {
+          snap.docChanges().forEach((change) => {
+            if (change.type !== "added") return;
+            try { onItem(change.doc.data()); } catch (e) {}
+            deleteDoc(doc(state.db, "calNotify", change.doc.id)).catch(() => {});
+          });
+        }, () => {});
+      }
+    };
+
     // ログイン状態の監視。ログイン中はそのアカウントのデータをリアルタイム同期
     onAuthStateChanged(auth, (user) => {
       state.authReady = true;
@@ -196,6 +231,8 @@ import { S, state } from './state.js';
         }
         if (state.unsub) { state.unsub(); state.unsub = null; }
         state.lbAutoDone = false;
+        // 自分宛てのカレンダー通知（共有カレンダーの登録・削除）の受信を開始
+        if (user.email) gcalStartNotifyListener(user.email);
         state.unsub = onSnapshot(doc(state.db, "users", state.currentUserId), (docSnap) => {
           if (docSnap.exists()) {
             const data = docSnap.data();
@@ -234,6 +271,7 @@ import { S, state } from './state.js';
         state.currentUser = null;
         state.currentUserId = null;
         if (state.unsub) { state.unsub(); state.unsub = null; }
+        gcalStopNotifyListener();
       }
       render();
     });
