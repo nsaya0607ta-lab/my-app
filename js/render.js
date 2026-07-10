@@ -5845,8 +5845,8 @@ function createMindPaletteScreen(){
         <div class="mp-canvas" id="mp-canvas" style="width:${MP_CANVAS_W}px;height:${MP_CANVAS_H}px">
           <svg class="mp-links-svg" id="mp-links-svg" width="${MP_CANVAS_W}" height="${MP_CANVAS_H}">${linksHTML}</svg>
           ${notesHTML}
-          ${!st.notes.length ? `<div class="mp-empty">ここはあなたの発想キャンバスです。<br>ダブルタップして最初の付箋を置いてみましょう。</div>` : ""}
         </div>
+        ${!st.notes.length ? `<div class="mp-empty">ここはあなたの発想キャンバスです。<br>ダブルタップして最初の付箋を置いてみましょう。</div>` : ""}
         <div class="mp-zoom-controls">
           <button type="button" id="mp-zoom-out" aria-label="縮小">－</button>
           <span class="mp-zoom-label" id="mp-zoom-label">${Math.round(zoom * 100)}%</span>
