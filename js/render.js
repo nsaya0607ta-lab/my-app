@@ -1029,7 +1029,8 @@ const WEATHER_REFRESH_MS = 20 * 60 * 1000; // 20分ごとに天気を自動で�
 
 // カードは左（比率2.4）＝「日付＋デジタル時計｜天気（地名・アイコン・気温）」
 // ＋その下の降水確率の推移を示す滑らかな曲線グラフ、
-// 右（比率1）＝Gemini相談へ遷移するボタンの2エリア構成。
+// 右（比率1）＝デジタル盆栽の簡易表示（タップで詳細モーダル）の2エリア構成。
+// Gemini相談への導線はホーム画面右下の常設フローティングボタン（geminiFabHTML）に集約した。
 function weatherCardHTML(){
   return `
     <div class="news-card weather-card" id="weather-card">
@@ -1063,13 +1064,7 @@ function weatherCardHTML(){
           </div>
           <div class="weather-pop-chart" id="weather-pop-chart"></div>
         </div>
-        <div class="weather-gemini">
-          <button type="button" class="weather-gemini-btn" data-go="gemini" aria-label="Geminiに相談する" title="Geminiに相談する">
-            <svg class="weather-gemini-btn-icon" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
-              <path d="M12 0C12 6.75 6.75 12 0 12C6.75 12 12 17.25 12 24C12 17.25 17.25 12 24 12C17.25 12 12 6.75 12 0Z" fill="#fff"/>
-            </svg>
-          </button>
-        </div>
+        <div class="weather-pet">${petMiniWidgetHTML()}</div>
       </div>
     </div>`;
 }
@@ -5059,14 +5054,15 @@ export function renderSelect(){
     ${gcalDayWidgetHTML()}
     ${homeLauncherCardHTML()}
     ${vendorCertLauncherRowHTML()}
-    ${petCardHTML()}
     ${state.currentUser
       ? `<div class="acct-bar">👤 ${esc(state.currentUser.email||"ログイン中")}<button class="link2" data-logout>ログアウト</button></div>`
       : (state.guestMode ? `<div class="acct-bar">ゲストモード（この端末のみ・同期なし）<button class="link2" data-login>ログイン / 新規登録</button></div>` : "")}
+    ${geminiFabHTML()}
   `;
   app.querySelectorAll("[data-go]").forEach(b=>b.onclick=()=>go(b.dataset.go));
   app.querySelectorAll("[data-open-settings]").forEach(b=>b.onclick=()=>openSettingsModal());
   app.querySelectorAll("[data-open-rules]").forEach(b=>b.onclick=()=>openRulesModal());
+  app.querySelectorAll("[data-open-pet]").forEach(b=>b.onclick=()=>{ playTapSound(); openPetModal(); });
   const lo=app.querySelector("[data-logout]"); if(lo)lo.onclick=()=>logout();
   const li=app.querySelector("[data-login]"); if(li)li.onclick=()=>{ state.guestMode=false; state.authMode="login"; render(); };
   loadWeatherCard();
@@ -5212,7 +5208,7 @@ function rulesModalBodyHTML(){
     </div>
     <div class="rules-section">
       <div class="rules-section-title">🔮 デジタル盆栽</div>
-      <div class="rules-text">ホーム画面の一番下に、総合ランクの成長と連動して進化する幾何学的なクリスタル盆栽がいます。今日タスクをこなさなかったり、しばらくアプリを開かないでいると輝きが鈍くなり、学習やタスク消化を再開すると輝きを取り戻します。</div>
+      <div class="rules-text">お天気カード右側の小さな結晶アイコンが、総合ランクの成長と連動して進化する幾何学的なクリスタル盆栽です。タップすると進化段階や進捗の詳細を確認できます。今日タスクをこなさなかったり、しばらくアプリを開かないでいると輝きが鈍くなり、学習やタスク消化を再開すると輝きを取り戻します。</div>
     </div>`;
 }
 
@@ -5248,9 +5244,10 @@ export function renderCalendarScreen(){
 
 /* =========================================================================
    🔮 デジタル・デトックス・ペット（幾何学的クリスタル盆栽）
-   ホーム画面最下部（ログアウト行の上）に置く育成ギミック。進化段階の判定・
-   放置判定はjs/pet.jsが計算し、ここでは見た目（手続き的に生成するSVG）と
-   カードHTMLの組み立てのみを行う。
+   お天気カード右側の小さなアイコン（petMiniWidgetHTML）として常設し、
+   タップすると詳細（進化段階・放置状態）をモーダル（openPetModal）で見せる。
+   進化段階の判定・放置判定はjs/pet.jsが計算し、ここでは見た目（手続き的に
+   生成するSVG）とHTMLの組み立てのみを行う。
    ========================================================================= */
 function petFacetPoints(fx, fy, s){
   return `${fx},${(fy-s).toFixed(1)} ${(fx+s*0.72).toFixed(1)},${fy} ${fx},${(fy+s).toFixed(1)} ${(fx-s*0.72).toFixed(1)},${fy}`;
@@ -5330,6 +5327,46 @@ function petCardHTML(){
       <div class="pet-progress-track"><div class="pet-progress-fill" style="width:${ov.pct}%"></div></div>
       <div class="pet-progress-lab">${esc(nextLabel)}</div>
     </div>`;
+}
+
+// お天気カード右側に置く簡易表示。結晶SVGのみの小さなボタンで、
+// タップすると詳細（進化段階名・ステータス・進捗）をopenPetModal()で見せる
+function petMiniWidgetHTML(){
+  const ov = overallStat();
+  const stage = petStageForLevel(ov.lv);
+  const neglected = petIsNeglected();
+  return `
+    <button type="button" class="weather-pet-btn${neglected ? " pet-dim" : ""}" data-open-pet
+      aria-label="デジタル盆栽：総合Lv.${ov.lv} ${esc(stage.name)}" title="デジタル盆栽：総合Lv.${ov.lv} ${esc(stage.name)}">
+      <span class="weather-pet-svgwrap">${petCrystalSVG(stage)}</span>
+    </button>`;
+}
+
+function closePetModal(ov){ try{ ov.remove(); }catch(e){} }
+
+function openPetModal(){
+  const ov = document.createElement("div");
+  ov.className = "modal-ov";
+  ov.innerHTML = `
+    <div class="modal pet-modal">
+      ${petCardHTML()}
+      <button type="button" class="settings-modal-close" id="pet-modal-close">閉じる</button>
+    </div>`;
+  document.body.appendChild(ov);
+  const closeBtn = ov.querySelector("#pet-modal-close");
+  if(closeBtn) closeBtn.onclick = () => { playTapSound(); closePetModal(ov); };
+  ov.addEventListener("click", (e) => { if(e.target === ov) closePetModal(ov); });
+}
+
+// ホーム画面右下に常設するフローティングボタン。Gemini相談画面への唯一の入口。
+// data-goは他の[data-go]ボタンと同じ仕組みでrenderSelect()側から配線される
+function geminiFabHTML(){
+  return `
+    <button type="button" class="gemini-fab" data-go="gemini" aria-label="Geminiに相談する" title="Geminiに相談する">
+      <svg class="gemini-fab-icon" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+        <path d="M12 0C12 6.75 6.75 12 0 12C6.75 12 12 17.25 12 24C12 17.25 17.25 12 24 12C17.25 12 12 6.75 12 0Z" fill="#fff"/>
+      </svg>
+    </button>`;
 }
 
 /* =========================================================================
