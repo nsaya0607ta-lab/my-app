@@ -12,6 +12,7 @@ import { notifyDailySummary, notifyMindPaletteSent, notifyReminder, notifySchedu
 import { S, state } from './state.js';
 import { markPetActivity, petHandleIdentityChange, petIsNeglected, petNextStage, petStageForLevel } from './pet.js';
 import { mpActiveBoardId, mpAddLink, mpAddNote, mpApplyCloud, mpBoardChain, mpBoardMeta, mpClearAll, mpCreateBoard, mpDeleteBoard, mpDeleteNote, mpGetState, mpGroupNotes, mpHandleIdentityChange, mpListBoards, mpRandomColor, mpRemoveLink, mpRenameBoard, mpSuggestKeywords, mpSwitchBoard, mpTotalBoardCount, mpUpdateNote } from './mindpalette.js';
+import { openIntroQuiz } from './introQuiz.js';
 
 export const app = document.getElementById("app");
 
@@ -536,6 +537,12 @@ export function renderHome(){
         <span class="menu-btn-text"><span class="menu-btn-label">用語辞典</span></span>
         <span class="menu-btn-chevron">›</span>
       </button>
+
+      <button class="menu-btn menu-btn--introquiz" data-introquiz>
+        <span class="menu-btn-icon">🎵</span>
+        <span class="menu-btn-text"><span class="menu-btn-label">イントロドンに挑戦</span></span>
+        <span class="menu-btn-chevron">›</span>
+      </button>
     </div>
     ${h.length?`<button class="link" data-go="history">スコア履歴を見る（${h.length}件）</button>`:
       `<div class="install">ヒント：ブラウザの共有メニューから「ホーム画面に追加」すると、アプリのように起動できます。</div>`}
@@ -554,6 +561,7 @@ export function renderHome(){
   const pcn=app.querySelector("[data-pcancel]"); if(pcn)pcn.onclick=()=>{ state.practicePick=false; render(); };
   app.querySelectorAll("[data-pc]").forEach(b=>b.onclick=()=>start("practice", +b.dataset.pc));
   const rv=app.querySelector("[data-review]"); if(rv)rv.onclick=()=>startReview();
+  const iq=app.querySelector("[data-introquiz]"); if(iq)iq.onclick=()=>openIntroQuiz();
   app.querySelectorAll("[data-go]").forEach(b=>b.onclick=()=>go(b.dataset.go));
   const lo=app.querySelector("[data-logout]"); if(lo)lo.onclick=()=>logout();
   const li=app.querySelector("[data-login]"); if(li)li.onclick=()=>{ state.guestMode=false; state.authMode="login"; render(); };
