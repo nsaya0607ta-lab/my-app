@@ -358,6 +358,21 @@ h1.title.title--badge{margin:2px 0 0;}
 .danger-solid{background:var(--bad)!important;color:#fff!important;box-shadow:0 4px 12px rgba(220,38,38,.25);}
 .bp-unlock{margin-top:10px;font-size:13px;color:var(--gold);font-weight:700;line-height:1.6;}
 
+/* ===== 📰 今日のニュース検定（.modal-ov/.modalを土台に使う） ===== */
+.nq-modal{text-align:center;}
+.nq-badge{display:inline-block;font-size:12px;font-weight:800;color:var(--accent);background:rgba(2,132,199,.08);border-radius:20px;padding:4px 12px;margin-bottom:10px;}
+.nq-title{color:var(--text);text-align:center;}
+.nq-question{text-align:left;margin:4px 0 14px;}
+.nq-opts{margin-bottom:4px;}
+.nq-result{padding:8px 0 18px;}
+.nq-result-emoji{font-size:44px;line-height:1;margin-bottom:8px;}
+.nq-result-title{font-size:20px;font-weight:800;margin-bottom:8px;}
+.nq-result-good .nq-result-title{color:var(--good);}
+.nq-result-bad .nq-result-title{color:var(--bad);}
+.nq-result-coin{font-size:17px;font-weight:800;color:var(--gold);margin-bottom:8px;}
+.nq-result-answer{font-size:14px;color:var(--text);margin-bottom:8px;line-height:1.6;}
+.nq-result-exp{font-size:12.5px;color:var(--muted);line-height:1.7;}
+
 /* ===== 通知トースト（予定の登録・削除・5分前リマインダー・朝の一括通知）=====
    画面上部中央にスタック表示する、アプリ全体のトーンに合わせた角丸カード。
    body[data-theme]で切り替わる --surface/--line/--text 等をそのまま使うため、
