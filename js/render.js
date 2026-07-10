@@ -8,6 +8,7 @@ import { SKIN_DATA } from './data/skins.js';
 import { UI_THEME_DATA } from './data/uithemes.js';
 import { TAP_SOUND_DATA } from './data/tapsounds.js';
 import { playTapSound } from './audio.js';
+import { notifyDailySummary, notifyReminder, notifyScheduleCreated, notifyScheduleDeleted } from './notifications.js';
 import { S, state } from './state.js';
 
 export const app = document.getElementById("app");
@@ -3392,6 +3393,7 @@ async function geminiConfirmSchedule(msg){
     ? `（${recurrenceLabel}${localOccurrenceCount > 1 ? `・直近${localOccurrenceCount}回分をこの端末に登録` : ""}）`
     : "";
   pushGeminiMessage({ role: "model", text: `✅ ${dateLabel} ${timeLabel} に「${title}」を登録しました${recurrenceSuffix}。` });
+  notifyScheduleCreated(gcalActorName(), title, `${dateLabel} ${timeLabel}`);
 }
 
 // 確認カードの「キャンセル・修正する」（またはチャットでの「キャンセル」相当の
@@ -3435,6 +3437,7 @@ async function geminiDeleteSchedule(args){
   }
 
   if(geminiLastSchedule === ref) geminiLastSchedule = null;
+  notifyScheduleDeleted(gcalActorName(), ref.title);
   return { text: `🗑️ 「${ref.title}」の予定を削除しました。` };
 }
 
@@ -4110,9 +4113,12 @@ function renderGcalDailyWidget(){
     } else {
       root.querySelectorAll("[data-del]").forEach(btn => btn.onclick = async () => {
         if(!confirm("この予定を削除しますか？")) return;
+        const targetEv = (evMap[dateKey] || []).find(ev => ev.id === btn.dataset.del);
+        const evTitle = targetEv ? targetEv.title : "予定";
         try{
           await gcalDeleteGoogleEvent(btn.dataset.cal || active.id, btn.dataset.del);
           await src.refresh();
+          notifyScheduleDeleted(gcalActorName(), evTitle);
         }catch(e){
           gcalGoogleError = "削除に失敗しました。もう一度お試しください。";
           renderGcalDailyWidget();
@@ -4142,9 +4148,12 @@ function renderGcalDailyWidget(){
   root.querySelectorAll("[data-del]").forEach(btn => btn.onclick = () => {
     if(!confirm("この予定を削除しますか？")) return;
     const s2 = loadGcalStore();
+    const targetEv = ((s2.events[active.id] && s2.events[active.id][dateKey]) || []).find(ev => ev.id === btn.dataset.del);
+    const evTitle = targetEv ? targetEv.title : "予定";
     if(s2.events[active.id] && s2.events[active.id][dateKey]){
       s2.events[active.id][dateKey] = s2.events[active.id][dateKey].filter(ev => ev.id !== btn.dataset.del);
       saveGcalStore(s2);
+      notifyScheduleDeleted(gcalActorName(), evTitle);
     }
     renderGcalDailyWidget();
   });
@@ -4244,6 +4253,8 @@ function gcalBindSelectedDaySection(root, src, y, m, d){
   root.querySelectorAll(".gcal-selday-events [data-del]").forEach(btn => btn.onclick = async () => {
     if(gcalSelDayBusy) return;
     const evId = btn.dataset.del;
+    const targetEv = (src.getEventsMap()[dateKey] || []).find(ev => ev.id === evId);
+    const evTitle = targetEv ? targetEv.title : "予定";
     if(src.mode === "google"){
       gcalSelDayBusy = true; gcalSelDayError = null; renderGcalMonthCard();
       try{
@@ -4251,6 +4262,7 @@ function gcalBindSelectedDaySection(root, src, y, m, d){
         // 削除は各予定が実際に属するカレンダー（data-cal）を優先して使う
         await gcalDeleteGoogleEvent(btn.dataset.cal || src.calId, evId);
         await src.refresh();
+        notifyScheduleDeleted(gcalActorName(), evTitle);
       }catch(e){
         gcalSelDayError = "削除に失敗しました。もう一度お試しください。";
       }
@@ -4261,6 +4273,7 @@ function gcalBindSelectedDaySection(root, src, y, m, d){
     if(s2.events[src.calId] && s2.events[src.calId][dateKey]){
       s2.events[src.calId][dateKey] = s2.events[src.calId][dateKey].filter(ev => ev.id !== evId);
       saveGcalStore(s2);
+      notifyScheduleDeleted(gcalActorName(), evTitle);
     }
     src.refresh();
     renderGcalMonthCard();
@@ -4283,6 +4296,7 @@ function gcalBindSelectedDaySection(root, src, y, m, d){
         await gcalCreateGoogleEvent(src.calId, y, m, d, title, start, end);
         await src.refresh();
         gcalSelDayBusy = false; renderGcalMonthCard();
+        notifyScheduleCreated(gcalActorName(), title, gcalWhenLabel(y, m, d, start, end));
       }catch(e){
         gcalSelDayBusy = false; gcalSelDayError = "追加に失敗しました。もう一度お試しください。"; renderGcalMonthCard();
       }
@@ -4297,6 +4311,7 @@ function gcalBindSelectedDaySection(root, src, y, m, d){
     gcalSelDayError = null;
     src.refresh();
     renderGcalMonthCard();
+    notifyScheduleCreated(gcalActorName(), title, gcalWhenLabel(y, m, d, start, end));
   };
   root.querySelector("#gcal-selday-add").onclick = submit;
   if(!gcalSelDayBusy){
@@ -4585,12 +4600,15 @@ function openGcalEventModal(src, y, m, d, opts){
     ov.querySelectorAll("[data-del]").forEach(btn => btn.onclick = async () => {
       if(busy) return;
       const evId = btn.dataset.del;
+      const targetEv = getEvents().find(ev => ev.id === evId);
+      const evTitle = targetEv ? targetEv.title : "予定";
       if(src.mode === "google"){
         busy = true; draw();
         try{
           await gcalDeleteGoogleEvent(src.calId, evId);
           await src.refresh();
           busy = false; draw();
+          notifyScheduleDeleted(gcalActorName(), evTitle);
         }catch(e){
           busy = false; draw("削除に失敗しました。もう一度お試しください。");
         }
@@ -4600,6 +4618,7 @@ function openGcalEventModal(src, y, m, d, opts){
       if(s2.events[src.calId] && s2.events[src.calId][dateKey]){
         s2.events[src.calId][dateKey] = s2.events[src.calId][dateKey].filter(ev => ev.id !== evId);
         saveGcalStore(s2);
+        notifyScheduleDeleted(gcalActorName(), evTitle);
       }
       src.refresh();
       draw();
@@ -4622,6 +4641,7 @@ function openGcalEventModal(src, y, m, d, opts){
           await gcalCreateGoogleEvent(src.calId, y, m, d, title, start, end);
           await src.refresh();
           close(); // 登録に成功したら手動で閉じなくても自動でモーダルを閉じる
+          notifyScheduleCreated(gcalActorName(), title, gcalWhenLabel(y, m, d, start, end));
         }catch(e){
           busy = false; draw("追加に失敗しました。もう一度お試しください。");
         }
@@ -4633,6 +4653,7 @@ function openGcalEventModal(src, y, m, d, opts){
       if(!s2.events[src.calId][dateKey]) s2.events[src.calId][dateKey] = [];
       s2.events[src.calId][dateKey].push({ id: gcalGenId("e"), title, start, end, author });
       saveGcalStore(s2);
+      notifyScheduleCreated(gcalActorName(), title, gcalWhenLabel(y, m, d, start, end));
       src.refresh();
       close(); // 登録に成功したら手動で閉じなくても自動でモーダルを閉じる
     };
@@ -4780,6 +4801,116 @@ function openGcalRenameCalendarModal(calId){
   ov.addEventListener("click", (e) => { if(e.target === ov) close(); });
   input.focus();
   input.select();
+}
+
+/* =========================================================================
+   🔔 通知エンジン（予定登録／削除・5分前リマインダー・朝7時のデイリーサマリー）
+   ・登録／削除の通知は、各操作の成功直後にnotifyScheduleCreated/Deleted()を
+     呼ぶ形（このファイル内の各create/delete処理を参照）。
+   ・5分前リマインダーと朝7時サマリーはサーバー側のスケジューラを持たない
+     ため、アプリが開いている間だけ動くポーリング（setInterval）で判定する
+     フロントエンド完結の実装（モック）。判定結果はjs/notifications.jsの
+     トースト＋ブラウザローカル通知として表示する。
+   ========================================================================= */
+
+// 予定を「今まさに操作している本人」の呼び名。予定に手動入力する登録者名
+// (gcalLoadAuthorName)を優先し、無ければアプリのプロフィール名にフォールバックする
+function gcalActorName(){
+  return gcalLoadAuthorName() || getProfileName() || "ゲスト";
+}
+
+function gcalWhenLabel(y, m, d, start, end){
+  return `${m + 1}月${d}日 ${start ? `${start}${end ? `〜${end}` : ""}` : "終日"}`;
+}
+
+// 「今日」ぶんの予定を、表示中のデータソース（Google連携中ならキャッシュ済みの
+// 連携カレンダー、未連携ならローカル（デモ）カレンダーの全カレンダー分）から
+// かき集める。5分前リマインダーと朝のデイリーサマリーの両方が共通で使う
+function gcalCollectTodayEvents(){
+  const now = new Date();
+  const todayKey = newsDateKey(now.getFullYear(), now.getMonth(), now.getDate());
+  if(gcalGoogleAccessToken && gcalGoogleCalendars && gcalGoogleCalendars.length){
+    const evMap = gcalGoogleDayEventsCache[gcalDayCacheKey(todayKey)];
+    return (evMap && evMap[todayKey]) || [];
+  }
+  const store = loadGcalStore();
+  const events = [];
+  store.calendars.forEach(c => {
+    const evs = (store.events[c.id] && store.events[c.id][todayKey]) || [];
+    events.push(...evs);
+  });
+  return events;
+}
+
+// 5分前リマインダー送信済みIDの記録（同じ予定・同じ日に何度も通知しないため）
+function gcalReminderSentKey(){ return gcalStorageKey("gcal_reminder_sent_v1"); }
+function gcalLoadReminderSent(){
+  try{ return new Set(JSON.parse(localStorage.getItem(gcalReminderSentKey())||"[]")); }catch(e){ return new Set(); }
+}
+function gcalSaveReminderSent(set){
+  try{ localStorage.setItem(gcalReminderSentKey(), JSON.stringify([...set].slice(-200))); }catch(e){}
+}
+
+// 開始5分前判定：今日の予定のうち、開始まで残り0〜5分のウィンドウに入った
+// ものを検出して1回だけ通知する。ポーリング間隔（30秒）より長いウィンドウ
+// なので、取りこぼしなく必ず1回はウィンドウに引っかかる
+function gcalCheckReminders(){
+  const now = new Date();
+  const todayKey = newsDateKey(now.getFullYear(), now.getMonth(), now.getDate());
+  const events = gcalCollectTodayEvents();
+  if(!events.length) return;
+  const sent = gcalLoadReminderSent();
+  let changed = false;
+  events.forEach(ev => {
+    if(!ev || !ev.start) return;
+    const mm = /^([01]\d|2[0-3]):([0-5]\d)$/.exec(ev.start);
+    if(!mm) return;
+    const startAt = new Date(now.getFullYear(), now.getMonth(), now.getDate(), Number(mm[1]), Number(mm[2]), 0, 0);
+    const diffMin = (startAt.getTime() - now.getTime()) / 60000;
+    const sentKey = `${todayKey}|${ev.id}`;
+    if(diffMin > 0 && diffMin <= 5 && !sent.has(sentKey)){
+      notifyReminder(ev.title, ev.start);
+      sent.add(sentKey); changed = true;
+    }
+  });
+  if(changed) gcalSaveReminderSent(sent);
+}
+
+// 朝7時のデイリーサマリー：日付が変わって初めて7:00を過ぎたタイミングで
+// 一度だけ発火する。アプリを開いていない状態で7:00を過ぎていた場合も、
+// 次にアプリを開いた（＝このポーリングが動き出した）時点で追いついて発火する
+function gcalDailySummaryKey(){ return gcalStorageKey("gcal_daily_summary_sent_v1"); }
+function gcalCheckDailySummary(){
+  const now = new Date();
+  if(now.getHours() < 7) return;
+  const todayKey = newsDateKey(now.getFullYear(), now.getMonth(), now.getDate());
+  let last = null;
+  try{ last = localStorage.getItem(gcalDailySummaryKey()); }catch(e){}
+  if(last === todayKey) return;
+  // Google連携中でまだ今日ぶんのキャッシュが無い場合は、取得を促してから
+  // 次回のポーリングで判定し直す（未取得のまま「予定なし」と誤判定しないため）
+  if(gcalGoogleAccessToken && gcalGoogleCalendars && gcalGoogleCalendars.length){
+    const cacheKey = gcalDayCacheKey(todayKey);
+    if(!gcalGoogleDayEventsCache[cacheKey]){
+      gcalRefreshGoogleDayEvents(now.getFullYear(), now.getMonth(), now.getDate());
+      return;
+    }
+  }
+  try{ localStorage.setItem(gcalDailySummaryKey(), todayKey); }catch(e){}
+  const events = gcalCollectTodayEvents()
+    .filter(ev => ev && ev.title)
+    .slice()
+    .sort((a, b) => (a.start || "99:99").localeCompare(b.start || "99:99"));
+  notifyDailySummary(events);
+}
+
+// エンジン起動：30秒間隔でリマインダー／デイリーサマリーを判定する。
+// 起動直後にも一度評価しておくことで、アプリを開いた時点で既に該当時刻を
+// 過ぎていたケース（5分前を過ぎた予定・7時を過ぎた朝）にも追いつける
+if(typeof window !== "undefined"){
+  setInterval(gcalCheckReminders, 30000);
+  setInterval(gcalCheckDailySummary, 30000);
+  setTimeout(() => { gcalCheckReminders(); gcalCheckDailySummary(); }, 3000);
 }
 
 export function renderSelect(){

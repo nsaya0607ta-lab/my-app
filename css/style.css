@@ -357,6 +357,33 @@ h1.title.title--badge{margin:2px 0 0;}
 .modal-body{font-size:13px;color:var(--text);line-height:1.7;margin-bottom:14px;}
 .danger-solid{background:var(--bad)!important;color:#fff!important;box-shadow:0 4px 12px rgba(220,38,38,.25);}
 .bp-unlock{margin-top:10px;font-size:13px;color:var(--gold);font-weight:700;line-height:1.6;}
+
+/* ===== 通知トースト（予定の登録・削除・5分前リマインダー・朝の一括通知）=====
+   画面上部中央にスタック表示する、アプリ全体のトーンに合わせた角丸カード。
+   body[data-theme]で切り替わる --surface/--line/--text 等をそのまま使うため、
+   ダーク／さくら／森テーマでも自動的に馴染む */
+.app-toast-root{
+  position:fixed; top:calc(14px + env(safe-area-inset-top)); left:50%;
+  transform:translateX(-50%); width:100%; max-width:440px; padding:0 16px;
+  display:flex; flex-direction:column; gap:10px; z-index:4000; pointer-events:none;
+}
+.app-toast{
+  pointer-events:auto; display:flex; align-items:flex-start; gap:10px;
+  background:var(--surface); border:1px solid var(--line); border-left:4px solid var(--accent);
+  border-radius:16px; padding:13px 14px; box-shadow:0 12px 28px rgba(15,23,42,.16);
+  opacity:0; transform:translateY(-14px) scale(.98);
+  transition:opacity .22s ease, transform .22s cubic-bezier(.22,1,.36,1);
+  font-size:14px; line-height:1.55; color:var(--text);
+}
+.app-toast.show{opacity:1; transform:translateY(0) scale(1);}
+.app-toast.hide{opacity:0; transform:translateY(-10px) scale(.98);}
+.app-toast-msg{flex:1; min-width:0; word-break:break-word;}
+.app-toast-close{flex:none; background:none; border:none; color:var(--muted); font-size:16px; line-height:1; cursor:pointer; padding:2px 4px; border-radius:8px;}
+.app-toast-close:active{background:var(--bg2);}
+.app-toast-create{border-left-color:var(--accent);}
+.app-toast-delete{border-left-color:var(--bad);}
+.app-toast-reminder{border-left-color:var(--gold);}
+.app-toast-summary{border-left-color:var(--good);}
 .bp-link{margin-top:12px;width:100%;background:none;border:1px solid var(--line);border-radius:10px;padding:10px;color:var(--accent);font-size:13px;font-weight:600;cursor:pointer;}
 .dc-hero{background:linear-gradient(160deg,#e0f2fe,#f0f9ff);border:1px solid var(--line);border-radius:18px;padding:20px;margin-bottom:16px;box-shadow:0 4px 12px rgba(15,23,42,.02);}
 .dc-lvl{font-size:11px;letter-spacing:.14em;color:var(--accent);font-weight:700;}
