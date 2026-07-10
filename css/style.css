@@ -595,13 +595,58 @@ h1.title.title--badge{margin:2px 0 0;}
 /* ホーム画面右下に常設するフローティングボタン。Gemini相談画面への入口
    （元は天気カード内にあったweather-gemini-btnをここへ移設） */
 .gemini-fab{position:fixed;right:calc(16px + env(safe-area-inset-right));bottom:calc(16px + env(safe-area-inset-bottom));
-  width:56px;height:56px;border:none;border-radius:50%;
+  width:56px;height:56px;border:none;border-radius:50%;color:#fff;
   background:linear-gradient(135deg,var(--accent),#0ea5e9 55%,#6366f1);
   display:flex;align-items:center;justify-content:center;
   box-shadow:0 6px 18px rgba(2,132,199,.4),inset 0 1px 0 rgba(255,255,255,.25);
-  cursor:pointer;z-index:500;transition:transform .1s;}
+  cursor:pointer;z-index:500;transition:transform .1s,background .28s ease,box-shadow .28s ease,color .28s ease;}
 .gemini-fab:active{transform:scale(.94);}
 .gemini-fab-icon{width:26px;height:26px;}
+
+/* ホーム画面左下に常設するフローティングボタン。マインド・パレットへの入口。
+   右下のGeminiボタンと形状・サイズ・シャドウの効果を完全に統一し、左右の
+   バランスが取れたレイアウトにする（色味だけ「ネオンブルー×ゴールド」で
+   パレットらしさを出す。既存の.launcher-icon-paletteと同系統の配色） */
+.palette-fab{position:fixed;left:calc(16px + env(safe-area-inset-left));bottom:calc(16px + env(safe-area-inset-bottom));
+  width:56px;height:56px;border:none;border-radius:50%;color:#fbbf24;
+  background:linear-gradient(135deg,#1e293b,#0f172a 55%,#0f172a);
+  display:flex;align-items:center;justify-content:center;
+  box-shadow:0 6px 18px rgba(56,189,248,.34),inset 0 1px 0 rgba(255,255,255,.14),0 0 0 1px rgba(251,191,36,.22);
+  cursor:pointer;z-index:500;transition:transform .1s,background .28s ease,box-shadow .28s ease,color .28s ease;}
+.palette-fab:active{transform:scale(.94);}
+.palette-fab-icon{width:26px;height:26px;}
+
+/* 🎨 主要ボタンの長押しカラーカスタム機能：カラー選択ポップアップ（js/buttonColors.js）。
+   #appの外・document.body直下に生成するので、ホーム画面の再描画をまたいでも
+   意図せず閉じない。背景は薄い暗幕＋ポップアップ本体はvar(--surface)を使い、
+   ライト／ダークどちらのテーマでも文字とコントラストが保たれるようにする */
+.cpick-ov{position:fixed;inset:0;z-index:900;background:rgba(15,23,42,0);
+  transition:background .18s ease;}
+.cpick-ov.show{background:rgba(15,23,42,.28);}
+.cpick-pop{position:fixed;z-index:901;width:236px;max-width:calc(100vw - 24px);
+  background:var(--surface);border:1px solid var(--line);border-radius:18px;
+  padding:14px;box-shadow:0 16px 40px rgba(15,23,42,.30),0 2px 8px rgba(15,23,42,.14);
+  opacity:0;transform:translateY(10px) scale(.9);
+  transform-origin:var(--cpick-origin-x,50%) var(--cpick-origin-y,100%);
+  transition:opacity .2s cubic-bezier(.34,1.56,.64,1),transform .22s cubic-bezier(.34,1.56,.64,1);}
+.cpick-ov.show .cpick-pop{opacity:1;transform:translateY(0) scale(1);}
+.cpick-title{font-size:12.5px;font-weight:700;color:var(--text);margin-bottom:10px;letter-spacing:.02em;}
+.cpick-grid{display:grid;grid-template-columns:repeat(6,1fr);gap:8px;margin-bottom:12px;}
+.cpick-swatch{width:100%;aspect-ratio:1;border-radius:50%;border:2px solid rgba(255,255,255,.65);
+  box-shadow:0 2px 6px rgba(15,23,42,.20),inset 0 1px 0 rgba(255,255,255,.35);
+  cursor:pointer;padding:0;transition:transform .12s;}
+.cpick-swatch:active{transform:scale(.84);}
+.cpick-swatch.picked{border-color:var(--text);box-shadow:0 0 0 2px var(--surface),0 0 0 4px var(--text);}
+.cpick-row{display:flex;align-items:center;gap:8px;}
+.cpick-custom-wrap{position:relative;width:26px;height:26px;flex:none;}
+.cpick-custom-dot{position:absolute;inset:0;border-radius:50%;pointer-events:none;
+  border:2px solid var(--line);
+  background:conic-gradient(from 180deg,#ef4444,#f97316,#f59e0b,#22c55e,#06b6d4,#3b82f6,#8b5cf6,#ec4899,#ef4444);}
+.cpick-custom-input{position:absolute;inset:0;width:100%;height:100%;opacity:0;cursor:pointer;padding:0;border:none;}
+.cpick-custom-txt{flex:1;font-size:11px;font-weight:600;color:var(--text);}
+.cpick-reset{flex:none;background:var(--surface2);border:1px solid var(--line);color:var(--text);
+  font-size:10.5px;font-weight:600;border-radius:99px;padding:6px 10px;cursor:pointer;white-space:nowrap;}
+.cpick-reset:active{filter:brightness(.95);}
 
 /* デジタル盆栽の詳細モーダル：pet-card自体が濃色カードなので、モーダル側は
    透明な入れ物にしてカードをそのまま浮かせる */
@@ -961,13 +1006,13 @@ h1.title.title--badge{margin:2px 0 0;}
   background:linear-gradient(150deg,#f8fafc,#e2e8f0);
   display:flex;align-items:center;justify-content:center;padding:0;cursor:pointer;
   box-shadow:0 5px 14px rgba(15,23,42,.10),inset 0 1px 0 rgba(255,255,255,.6);
-  transition:transform .16s cubic-bezier(.34,1.56,.64,1),box-shadow .16s;}
+  transition:transform .16s cubic-bezier(.34,1.56,.64,1),box-shadow .22s ease,background .28s ease,color .22s ease;}
 .ms-logo-btn:active{transform:scale(.90);box-shadow:0 2px 6px rgba(15,23,42,.14),inset 0 1px 0 rgba(255,255,255,.6);}
 /* カテゴリごとのグラデーション配色。角丸スクエア＋シャドウでスタイリッシュに統一しつつ、
    一目でジャンルを識別できるようアクセントカラーだけ変える */
 .launcher-icon-news-jp{background:linear-gradient(150deg,#fff1f2,#fecaca);box-shadow:0 5px 14px rgba(220,38,38,.20),inset 0 1px 0 rgba(255,255,255,.6);}
 .launcher-icon-news-world{background:linear-gradient(150deg,#eff6ff,#bfdbfe);box-shadow:0 5px 14px rgba(37,99,235,.20),inset 0 1px 0 rgba(255,255,255,.6);}
-.launcher-icon-stock{background:linear-gradient(150deg,#6ee7a0,#34a866);border-color:transparent;box-shadow:0 5px 14px rgba(52,168,102,.24),inset 0 1px 0 rgba(255,255,255,.3);}
+.launcher-icon-stock{background:linear-gradient(150deg,#6ee7a0,#34a866);border-color:transparent;color:#fff;box-shadow:0 5px 14px rgba(52,168,102,.24),inset 0 1px 0 rgba(255,255,255,.3);}
 .launcher-icon-calendar{background:linear-gradient(150deg,#eff6ff,#dbeafe);box-shadow:0 5px 14px rgba(37,99,235,.16),inset 0 1px 0 rgba(255,255,255,.6);}
 .launcher-icon-ms{background:linear-gradient(150deg,#ffffff,#eef2f7);box-shadow:0 5px 14px rgba(15,23,42,.12),inset 0 1px 0 rgba(255,255,255,.7);}
 .launcher-icon-lpic{background:linear-gradient(150deg,#fef3c7,#fcd34d);box-shadow:0 5px 14px rgba(217,119,6,.22),inset 0 1px 0 rgba(255,255,255,.5);}
@@ -1008,10 +1053,6 @@ h1.title.title--badge{margin:2px 0 0;}
 /* 📋 ルールボタン：設定ボタンの隣に並ぶ、同じ.ms-logo-btnベースの専用バリエーション */
 .launcher-icon-rules{background:linear-gradient(150deg,#eef2ff,#c7d2fe);box-shadow:0 5px 14px rgba(79,70,229,.20),inset 0 1px 0 rgba(255,255,255,.6);}
 .rules-list-btn:active{transform:scale(.90);box-shadow:0 2px 6px rgba(79,70,229,.24),inset 0 1px 0 rgba(255,255,255,.6);}
-
-/* 💡 マインド・パレット起動ボタン：ネオンブルー×ゴールドのグロー配色 */
-.launcher-icon-palette{background:linear-gradient(150deg,#1e293b,#0f172a);border-color:transparent;
-  box-shadow:0 5px 14px rgba(56,189,248,.28),inset 0 1px 0 rgba(255,255,255,.12),0 0 0 1px rgba(251,191,36,.25);}
 
 /* 「MS」「LPIC」の2項目を1枚のカードに横並びで表示する行。
    外枠は.ms-cert-cardを流用し、中身だけ.launcher-item2個を等間隔で

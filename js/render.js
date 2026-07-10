@@ -13,6 +13,7 @@ import { S, state } from './state.js';
 import { markPetActivity, petHandleIdentityChange, petIsNeglected, petNextStage, petStageForLevel } from './pet.js';
 import { mpActiveBoardId, mpAddLink, mpAddNote, mpApplyCloud, mpBoardChain, mpBoardMeta, mpClearAll, mpCreateBoard, mpDeleteBoard, mpDeleteNote, mpGetState, mpGroupNotes, mpHandleIdentityChange, mpListBoards, mpRandomColor, mpRemoveLink, mpRenameBoard, mpSuggestKeywords, mpSwitchBoard, mpTotalBoardCount, mpUpdateNote } from './mindpalette.js';
 import { checkNewsQuizPopup } from './newsQuiz.js';
+import { applyCustomButtonColors, isLongPressSuppressed, wireButtonColorLongPress } from './buttonColors.js';
 
 export const app = document.getElementById("app");
 
@@ -2239,8 +2240,9 @@ function launcherItemHTML({ iconHTML, label, dataGo, ariaLabel, variant }){
        </span>`
     : `<span class="ms-cert-static">${esc(label)}</span>`;
   const variantClass = variant ? ` launcher-icon-${variant}` : "";
+  const colorKeyAttr = variant ? ` data-color-key="${esc(variant)}"` : "";
   return `
-    <div class="launcher-item">
+    <div class="launcher-item"${colorKeyAttr}>
       <button type="button" class="ms-logo-btn${variantClass}" data-go="${dataGo}" aria-label="${esc(ariaLabel)}" title="${esc(ariaLabel)}">
         ${iconHTML}
       </button>
@@ -2281,7 +2283,7 @@ function vendorCertLauncherRowHTML(){
 // 差し替えている。5個目以降のアイコンが増えても.home-launcher-row側の
 // overflow-x:autoにより、はみ出た分は手動スワイプで表示できる
 const STOCK_LAUNCHER_ICON_SVG = `
-  <svg viewBox="0 0 24 24" width="21" height="21" fill="none" stroke="#ffffff" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round">
+  <svg viewBox="0 0 24 24" width="21" height="21" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round">
     <polyline points="3 17 9.5 10.5 13.5 14.5 21 6"></polyline>
     <polyline points="14.5 6 21 6 21 12.5"></polyline>
   </svg>`;
@@ -2347,7 +2349,6 @@ function homeLauncherCardHTML(){
     { iconHTML: `<span class="launcher-emoji" aria-hidden="true">🌐</span>`, label: "F-NEWS", dataGo: "news-world", ariaLabel: "海外ニュース", variant: "news-world" },
     { iconHTML: STOCK_LAUNCHER_ICON_SVG, label: "株価", dataGo: "portfolio", ariaLabel: "株価", variant: "stock" },
     { iconHTML: CALENDAR_APP_LAUNCHER_ICON_SVG, label: "カレンダー", dataGo: "calendar", ariaLabel: "カレンダー", variant: "calendar" },
-    { iconHTML: `<span class="launcher-emoji" aria-hidden="true">💡</span>`, label: "パレット", dataGo: "mind-palette", ariaLabel: "マインド・パレット", variant: "palette" },
   ];
   return `
     <div class="news-card ms-cert-card home-launcher-card" id="home-launcher-card">
@@ -5059,9 +5060,12 @@ export function renderSelect(){
     ${state.currentUser
       ? `<div class="acct-bar">👤 ${esc(state.currentUser.email||"ログイン中")}<button class="link2" data-logout>ログアウト</button></div>`
       : (state.guestMode ? `<div class="acct-bar">ゲストモード（この端末のみ・同期なし）<button class="link2" data-login>ログイン / 新規登録</button></div>` : "")}
+    ${paletteFabHTML()}
     ${geminiFabHTML()}
   `;
-  app.querySelectorAll("[data-go]").forEach(b=>b.onclick=()=>go(b.dataset.go));
+  // 長押し／右クリックでカラー選択ポップアップを開いた直後に発火する合成クリックは
+  // isLongPressSuppressed()で検知して無視し、意図しない画面遷移を防ぐ
+  app.querySelectorAll("[data-go]").forEach(b=>b.onclick=()=>{ if(isLongPressSuppressed(b)) return; go(b.dataset.go); });
   app.querySelectorAll("[data-open-settings]").forEach(b=>b.onclick=()=>openSettingsModal());
   app.querySelectorAll("[data-open-rules]").forEach(b=>b.onclick=()=>openRulesModal());
   app.querySelectorAll("[data-open-pet]").forEach(b=>b.onclick=()=>{ playTapSound(); openPetModal(); });
@@ -5069,6 +5073,8 @@ export function renderSelect(){
   const li=app.querySelector("[data-login]"); if(li)li.onclick=()=>{ state.guestMode=false; state.authMode="login"; render(); };
   loadWeatherCard();
   renderGcalDailyWidget();
+  applyCustomButtonColors(app);
+  wireButtonColorLongPress(app);
   window.scrollTo(0,0);
   // 夜20:00〜23:59にこのダッシュボードを開いた瞬間、当日ニュースが存在し
   // まだ挑戦/スキップしていなければクイズポップアップを出す（1日1回）。
@@ -5365,12 +5371,32 @@ function openPetModal(){
 }
 
 // ホーム画面右下に常設するフローティングボタン。Gemini相談画面への唯一の入口。
-// data-goは他の[data-go]ボタンと同じ仕組みでrenderSelect()側から配線される
+// data-goは他の[data-go]ボタンと同じ仕組みでrenderSelect()側から配線される。
+// data-color-keyは長押し（右クリック）カラーカスタム機能（js/buttonColors.js）が
+// このボタンを識別するためのキー
 function geminiFabHTML(){
   return `
-    <button type="button" class="gemini-fab" data-go="gemini" aria-label="Geminiに相談する" title="Geminiに相談する">
+    <button type="button" class="gemini-fab" data-go="gemini" data-color-key="gemini" aria-label="Geminiに相談する" title="Geminiに相談する">
       <svg class="gemini-fab-icon" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
-        <path d="M12 0C12 6.75 6.75 12 0 12C6.75 12 12 17.25 12 24C12 17.25 17.25 12 24 12C17.25 12 12 6.75 12 0Z" fill="#fff"/>
+        <path d="M12 0C12 6.75 6.75 12 0 12C6.75 12 12 17.25 12 24C12 17.25 17.25 12 24 12C17.25 12 12 6.75 12 0Z" fill="currentColor"/>
+      </svg>
+    </button>`;
+}
+
+// ホーム画面左下に常設するフローティングボタン。マインド・パレット画面への
+// 唯一の入口（以前は中段の横スクロールカードにあった「パレット」アイコンを
+// ここへ移設）。右下のGeminiボタンと形状・サイズ・シャドウを完全に統一し、
+// 左右対称のレイアウトにする
+function paletteFabHTML(){
+  return `
+    <button type="button" class="palette-fab" data-go="mind-palette" data-color-key="palette" aria-label="マインド・パレットを開く" title="マインド・パレット">
+      <svg class="palette-fab-icon" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+        <path d="M12 2.2C6.6 2.2 2.2 6.2 2.2 11.1c0 3.4 2.7 5.7 5.7 5.7h1.1c.8 0 1.4.62 1.4 1.38 0 .35-.14.66-.36.9-.24.25-.36.56-.36.92 0 1 .84 1.8 1.9 1.8 5.34 0 9.7-3.98 9.7-8.9 0-5.5-4.4-9.7-9.7-9.7Z" fill="currentColor" opacity=".16"/>
+        <path d="M12 2.2C6.6 2.2 2.2 6.2 2.2 11.1c0 3.4 2.7 5.7 5.7 5.7h1.1c.8 0 1.4.62 1.4 1.38 0 .35-.14.66-.36.9-.24.25-.36.56-.36.92 0 1 .84 1.8 1.9 1.8 5.34 0 9.7-3.98 9.7-8.9 0-5.5-4.4-9.7-9.7-9.7Z" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/>
+        <circle cx="7.1" cy="10.3" r="1.3" fill="currentColor"/>
+        <circle cx="10.2" cy="6.9" r="1.3" fill="currentColor"/>
+        <circle cx="14.7" cy="7.1" r="1.3" fill="currentColor"/>
+        <circle cx="17.1" cy="10.9" r="1.3" fill="currentColor"/>
       </svg>
     </button>`;
 }
