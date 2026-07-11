@@ -1197,15 +1197,24 @@ function precipMmLabel(mm){
   return Number.isInteger(v) ? String(v) : v.toFixed(1);
 }
 
-// コメント欄は最大2行までの折り返し表示（CSSのline-clampで制御）にしたため、
-// 横スクロールのマーキー表示は不要。既存の呼び出し元はそのまま残し、
-// 万一残っている旧クラス・インラインスタイルだけ確実に取り除く
+// コメント欄のテキストが表示枠に収まりきらない場合のみ、右→左へ流れる
+// マーキー表示にする。収まる場合は静止表示のままにして、無用なアニメーションを避ける
 function updatePrecipAlertMarquee(){
+  const container = document.getElementById("weather-precip-comment");
   const track = document.getElementById("weather-precip-comment-track");
-  if(!track) return;
+  if(!container || !track) return;
   track.classList.remove("weather-precip-marquee");
   track.style.removeProperty("--weather-precip-marquee-distance");
   track.style.animationDuration = "";
+  const containerW = container.clientWidth;
+  const trackW = track.scrollWidth;
+  if(trackW > containerW){
+    const distance = containerW + trackW;
+    const duration = Math.max(6, distance / 45); // 45px/秒の速さでスクロールする
+    track.style.setProperty("--weather-precip-marquee-distance", `${distance}px`);
+    track.style.animationDuration = `${duration}s`;
+    track.classList.add("weather-precip-marquee");
+  }
 }
 
 // 目盛りのインデックス位置（0=一番上、tickCount-1=一番下）をSVGのY座標に変換する。
