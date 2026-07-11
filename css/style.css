@@ -1471,25 +1471,6 @@ body[data-theme="dark"] .menu-btn:active{box-shadow:0 4px 10px rgba(0,0,0,.3), i
 .gemini-send{ flex:none; padding:11px 18px; border:none; border-radius:99px; font-size:14px; font-weight:700; color:#fff; background:linear-gradient(90deg,var(--accent),#0ea5e9); cursor:pointer; box-shadow:0 3px 10px rgba(2,132,199,.25); transition:transform .1s,opacity .15s; }
 .gemini-send:active{ transform:scale(.97); }
 .gemini-send:disabled{ opacity:.45; cursor:default; box-shadow:none; }
-/* =========================================================================
-   💡 マインド・パレットへ送るボタン（ニュース詳細・株価画面などから使う共通部品）
-   ========================================================================= */
-.mp-send-btn{
-  margin-top:14px; width:100%; padding:12px; border-radius:13px; cursor:pointer;
-  font-size:13.5px; font-weight:700; color:#0b1120; text-align:center;
-  background:linear-gradient(90deg,#fbbf24,#38bdf8);
-  border:none; box-shadow:0 6px 16px rgba(56,189,248,.22);
-  transition:transform .12s,opacity .15s;
-}
-.mp-send-btn:active{ transform:scale(.97); }
-.mp-send-btn-hero{ margin-top:14px; }
-.mp-send-mini{
-  flex:none; width:26px; height:26px; border-radius:50%; border:1px solid var(--line);
-  background:var(--bg2); font-size:12px; line-height:1; cursor:pointer; padding:0;
-  display:flex; align-items:center; justify-content:center;
-  box-shadow:0 0 0 rgba(251,191,36,0); transition:transform .12s,box-shadow .12s;
-}
-.mp-send-mini:active{ transform:scale(.88); box-shadow:0 0 10px rgba(251,191,36,.5); }
 
 /* =========================================================================
    🔮 デジタル・デトックス・ペット（幾何学的クリスタル盆栽）カード
@@ -1776,7 +1757,7 @@ body[data-theme="dark"] .menu-btn:active{box-shadow:0 4px 10px rgba(0,0,0,.3), i
 }
 
 /* =========================================================================
-   🎵 イントロドン（曲当て3択クイズ）－ 専用フルスクリーン画面
+   🎵 イントロドン（曲名を入力して当てるクイズ）－ 専用フルスクリーン画面
    本体は.stats-dashと同系統の「白基調・丸み・淡いシャドウ」のカードを土台にする
    ========================================================================= */
 .iq-card{
@@ -1804,8 +1785,6 @@ body[data-theme="dark"] .menu-btn:active{box-shadow:0 4px 10px rgba(0,0,0,.3), i
 .iq-playbtn{width:100%;margin-bottom:12px;padding:16px;font-size:15px;border-radius:16px;}
 .iq-playbtn:disabled{opacity:.55;cursor:default;}
 .iq-hint{font-size:11.5px;color:var(--muted);text-align:center;margin-bottom:14px;}
-.iq-opts .opt{cursor:pointer;}
-.iq-opts .opt:disabled{cursor:default;}
 .iq-opt-artist{color:var(--muted);font-size:11.5px;font-weight:600;}
 
 .iq-verdict{font-size:21px;font-weight:800;text-align:center;margin-bottom:8px;}
@@ -1828,3 +1807,49 @@ body[data-theme="dark"] .menu-btn:active{box-shadow:0 4px 10px rgba(0,0,0,.3), i
 .iq-fallback-play:disabled{cursor:default;}
 .iq-actions{display:flex;flex-direction:column;gap:8px;margin-top:4px;}
 .iq-retry-btn{width:100%;margin-top:4px;}
+
+/* モード選択（ランダム／アーティストを選ぶ） */
+.iq-mode-grid{display:flex;flex-direction:column;gap:10px;margin-top:6px;}
+.iq-mode-btn{
+  display:grid;grid-template-columns:32px 1fr;align-items:center;column-gap:12px;
+  width:100%;padding:14px 16px;border-radius:16px;border:1px solid var(--line);
+  background:var(--surface);cursor:pointer;text-align:left;transition:transform .12s ease;
+}
+.iq-mode-btn:active{transform:scale(.98);}
+.iq-mode-emoji{font-size:24px;grid-row:1 / span 2;}
+.iq-mode-label{font-size:14.5px;font-weight:800;color:var(--text);display:block;}
+.iq-mode-desc{font-size:11.5px;color:var(--muted);display:block;margin-top:2px;}
+
+/* アーティスト選択リスト */
+.iq-artist-list{display:flex;flex-direction:column;gap:8px;max-height:52vh;overflow-y:auto;margin-top:6px;}
+.iq-artist-btn{
+  display:flex;align-items:center;justify-content:space-between;width:100%;
+  padding:12px 14px;border-radius:14px;border:1px solid var(--line);
+  background:var(--surface);cursor:pointer;text-align:left;
+}
+.iq-artist-btn:active{transform:scale(.98);}
+.iq-artist-name{font-size:13.5px;font-weight:700;color:var(--text);}
+.iq-artist-count{font-size:11px;color:var(--muted);flex:none;margin-left:10px;}
+
+/* テキスト回答フォーム */
+.iq-answer-form{display:flex;flex-direction:column;gap:10px;margin-bottom:10px;}
+.iq-answer-input{
+  width:100%;padding:14px 16px;border-radius:14px;border:1.5px solid var(--line);
+  background:var(--bg2);color:var(--text);font-size:15px;box-sizing:border-box;
+}
+.iq-answer-input:focus{outline:none;border-color:var(--accent);}
+.iq-submit-btn{width:100%;padding:14px;font-size:14.5px;border-radius:14px;}
+.iq-giveup-btn{width:100%;margin-top:10px;}
+
+/* 「もしかして」サジェスト確認カード */
+.iq-suggest-card{
+  border-radius:16px;border:1px dashed var(--accent);background:var(--bg2);
+  padding:14px 16px;margin-bottom:10px;text-align:center;
+}
+.iq-suggest-q{font-size:12.5px;color:var(--muted);margin-bottom:6px;}
+.iq-suggest-title{font-size:15px;font-weight:800;color:var(--text);margin-bottom:12px;}
+
+/* 送信結果のフィードバック（不正解メッセージ・正誤の一瞬の表示） */
+.iq-feedback{font-size:12.5px;color:var(--bad);text-align:center;margin-bottom:8px;}
+.iq-feedback--good{font-size:18px;font-weight:800;color:var(--good);}
+.iq-feedback--bad{font-size:18px;font-weight:800;color:var(--bad);}
