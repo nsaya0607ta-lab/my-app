@@ -14,6 +14,8 @@
   --home-muted:#5f7898;
   --home-shadow:0 14px 34px rgba(52,105,158,.11),0 3px 10px rgba(52,105,158,.07);
   --home-radius:26px;
+  --home-badge-border:rgba(7,140,237,.32);
+  --home-badge-bg:#eaf6ff;
 }
 
 html{background:#f4f9ff;}
@@ -131,11 +133,16 @@ body{
 }
 #app>.weather-card::before{
   content:"ホーム";
-  display:block;
-  margin:0 0 6px 2px;
+  display:inline-block;
+  margin:0 0 8px 2px;
+  padding:3px 12px;
+  border:1px solid var(--home-badge-border);
+  border-radius:10px;
+  background:var(--home-badge-bg);
   color:var(--home-text);
   font-size:12px;
   font-weight:800;
+  line-height:1.4;
 }
 .weather-card .weather-body{
   display:flex;
@@ -281,11 +288,21 @@ body{
   margin-bottom:7px;
 }
 .gcal-card .gcal-day-title{
+  display:inline-block;
+  justify-self:center;
+  max-width:100%;
+  padding:4px 14px;
+  border:1px solid var(--home-badge-border);
+  border-radius:10px;
+  background:var(--home-badge-bg);
   color:var(--home-text);
   font-size:14px;
   font-weight:800;
+  line-height:1.4;
   text-align:center;
   white-space:nowrap;
+  overflow:hidden;
+  text-overflow:ellipsis;
 }
 .gcal-card .gcal-day-title::before{content:"";}
 .gcal-card .gcal-day-head-right{display:flex;align-items:center;gap:5px;}
