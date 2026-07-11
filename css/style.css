@@ -584,8 +584,8 @@ h1.title.title--badge{margin:2px 0 0;}
    大きな数値／下段）にそろえ、時刻・気温・降水量の数値本体（.weather-value-row）
    を常に3行目へ固定することで、列ごとにDOM構成（補足テキストの有無など）が
    違っても「大きな数字」の高さと位置が完全に揃う */
-.weather-metrics{display:grid;grid-template-columns:minmax(min-content,1.15fr) minmax(min-content,1.1fr) minmax(min-content,1fr) minmax(min-content,1.05fr);align-items:start;}
-.weather-metric{min-width:0;padding:0 10px;display:grid;grid-template-rows:24px 18px 38px 24px;align-items:center;}
+.weather-metrics{display:grid;grid-template-columns:1.2fr 1.5fr 1.45fr 0.95fr;align-items:stretch;}
+.weather-metric{min-width:0;padding:0 12px;display:grid;grid-template-rows:24px 18px 38px 24px;align-items:center;}
 .weather-metric:first-child{padding-left:0;}
 .weather-metric:last-child{padding-right:0;}
 .weather-metric + .weather-metric{border-left:1px solid var(--line);}
@@ -657,7 +657,7 @@ h1.title.title--badge{margin:2px 0 0;}
 .weather-pet{grid-row:1/-1;grid-column:4;min-width:0;
   display:flex;flex-direction:column;justify-content:center;align-items:center;}
 .weather-pet-btn{display:flex;align-items:center;justify-content:center;
-  width:100%;aspect-ratio:1;padding:10px;border:none;border-radius:24px;
+  width:100%;height:112px;padding:10px;border:none;border-radius:24px;
   background:linear-gradient(180deg,rgba(2,132,199,.14),rgba(2,132,199,.28));
   cursor:pointer;transition:transform .1s;}
 .weather-pet-btn:active{transform:scale(.94);}
@@ -672,7 +672,7 @@ h1.title.title--badge{margin:2px 0 0;}
   .weather-time-sec{font-size:11px;}
   .weather-value-unit{font-size:11px;}
   .weather-icon{font-size:16px;margin-right:3px;}
-  .weather-pet-btn{padding:8px;}
+  .weather-pet-btn{height:96px;padding:8px;}
   .weather-pet-svgwrap{width:60px;height:74px;}
 }
 
