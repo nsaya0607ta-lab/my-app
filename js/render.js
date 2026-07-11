@@ -1148,7 +1148,7 @@ function catmullRomSmoothPath(points){
   return d;
 }
 
-const POP_CHART_W = 220, POP_CHART_H = 60, POP_CHART_PAD = 4;
+const POP_CHART_W = 220, POP_CHART_H = 120, POP_CHART_PAD = 4;
 const POP_CHART_Y_TICKS = [100, 80, 60, 40, 20, 0]; // 縦軸目盛り・％（左軸、上→下）
 // 縦軸目盛り・降水量mm（右軸、上→下）。天気アプリでよく使われる区切り
 // （弱い雨〜激しい雨の目安）に合わせているため値の間隔は不均等だが、
