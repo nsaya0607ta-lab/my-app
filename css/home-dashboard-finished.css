@@ -114,7 +114,8 @@ body{
   background:linear-gradient(
     180deg,
     #ffffff 0%,
-    #eef8ff 55%,
+    #ffffff 45%,
+    #eef8ff 75%,
     #dff2ff 100%
   );
 }
