@@ -16,8 +16,8 @@
        controls:1・autoplay:1でそのままMVを最後まで観られるようにする。
 
    videoId・正解の曲名・挑戦回数・BP/AC加算は一切クライアントで持たず、
-   /api/intro-quiz/start・answer・confirm・reveal （サーバー側）だけが
-   正解を知っている状態を保つ。videoId自体はIFrame APIで再生する以上
+   /api/intro-quiz （action: start・answer・confirm・reveal、サーバー側）
+   だけが正解を知っている状態を保つ。videoId自体はIFrame APIで再生する以上
    ネットワークタブから見えてしまうが、曲名・サムネイル・正解フラグは
    回答確定までレスポンスに一切含めない。
 
@@ -210,7 +210,7 @@ async function renderArtistSelect(myGen) {
 
   let data;
   try {
-    data = await postJSON("/api/intro-quiz/artists", {});
+    data = await postJSON("/api/intro-quiz", { action: "artists" });
   } catch (e) {
     if (myGen !== renderGeneration) return;
     renderErrorState(myGen, "アーティスト一覧の取得に失敗しました。時間をおいて再度お試しください。", () => renderArtistSelect(myGen));
@@ -255,7 +255,7 @@ async function renderArtistSelect(myGen) {
 async function startQuiz(myGen, params) {
   let data;
   try {
-    data = await postJSON("/api/intro-quiz/start", params || { mode: "random" });
+    data = await postJSON("/api/intro-quiz", Object.assign({ action: "start" }, params || { mode: "random" }));
   } catch (e) {
     if (myGen !== renderGeneration) return;
     renderErrorState(myGen, "通信に失敗しました。時間をおいて再度お試しください。", () => startQuiz(myGen, params));
@@ -403,7 +403,7 @@ function renderQuizState(myGen, sessionId, videoId, startParams) {
     setBusy(true);
     let data;
     try {
-      data = await postJSON("/api/intro-quiz/answer", { sessionId, answerText: text });
+      data = await postJSON("/api/intro-quiz", { action: "answer", sessionId, answerText: text });
     } catch (e) {
       if (myGen !== renderGeneration) return;
       renderErrorState(myGen, "回答の送信に失敗しました。時間をおいて再度お試しください。", () => startQuiz(myGen, startParams));
@@ -418,7 +418,7 @@ function renderQuizState(myGen, sessionId, videoId, startParams) {
     setBusy(true);
     let data;
     try {
-      data = await postJSON("/api/intro-quiz/confirm", { sessionId, accept });
+      data = await postJSON("/api/intro-quiz", { action: "confirm", sessionId, accept });
     } catch (e) {
       if (myGen !== renderGeneration) return;
       renderErrorState(myGen, "通信に失敗しました。時間をおいて再度お試しください。", () => startQuiz(myGen, startParams));
@@ -456,7 +456,7 @@ function renderQuizState(myGen, sessionId, videoId, startParams) {
     setBusy(true);
     let data;
     try {
-      data = await postJSON("/api/intro-quiz/reveal", { sessionId });
+      data = await postJSON("/api/intro-quiz", { action: "reveal", sessionId });
     } catch (e) {
       if (myGen !== renderGeneration) return;
       setBusy(false);
