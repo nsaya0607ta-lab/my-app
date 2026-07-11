@@ -5619,8 +5619,14 @@ export function renderSelect(){
     ${weatherCardHTML()}
     ${gcalDayWidgetHTML()}
     ${state.currentUser
-      ? `<div class="acct-bar">👤 ${esc(state.currentUser.email||"ログイン中")}<button class="link2" data-logout>ログアウト</button></div>`
-      : (state.guestMode ? `<div class="acct-bar">ゲストモード（この端末のみ・同期なし）<button class="link2" data-login>ログイン / 新規登録</button></div>` : "")}
+      ? `<div class="dash-acct-bar">
+           <span class="dash-acct-info"><span class="dash-acct-avatar">👤</span><span class="dash-acct-email">${esc(state.currentUser.email||"ログイン中")}</span></span>
+           <button type="button" class="dash-acct-action" data-logout><span class="dash-acct-action-ico">⎋</span>ログアウト</button>
+         </div>`
+      : (state.guestMode ? `<div class="dash-acct-bar">
+           <span class="dash-acct-info dash-acct-info--guest">ゲストモード（この端末のみ・同期なし）</span>
+           <button type="button" class="dash-acct-action" data-login>ログイン / 新規登録</button>
+         </div>` : "")}
     ${paletteFabHTML()}
     ${geminiFabHTML()}
   `;
