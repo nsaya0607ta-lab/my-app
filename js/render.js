@@ -8,7 +8,7 @@ import { SKIN_DATA } from './data/skins.js';
 import { UI_THEME_DATA } from './data/uithemes.js';
 import { TAP_SOUND_DATA } from './data/tapsounds.js';
 import { playTapSound } from './audio.js';
-import { notifyDailySummary, notifyMindPaletteSent, notifyReminder, notifyScheduleCreated, notifyScheduleDeleted } from './notifications.js';
+import { notifyDailySummary, notifyReminder, notifyScheduleCreated, notifyScheduleDeleted } from './notifications.js';
 import { S, state } from './state.js';
 import { markPetActivity, petHandleIdentityChange, petIsNeglected, petNextStage, petStageForLevel } from './pet.js';
 import { mpActiveBoardId, mpAddLink, mpAddNote, mpApplyCloud, mpBoardChain, mpBoardMeta, mpClearAll, mpCreateBoard, mpDeleteBoard, mpDeleteNote, mpGetState, mpGroupNotes, mpHandleIdentityChange, mpListBoards, mpRandomColor, mpRemoveLink, mpRenameBoard, mpSuggestKeywords, mpSwitchBoard, mpTotalBoardCount, mpUpdateNote } from './mindpalette.js';
@@ -1707,7 +1707,6 @@ function watchRowHTML(ticker){
     <div class="pf-watch-right">
       ${priceHTML}
     </div>
-    <button type="button" class="mp-send-mini" data-mp-ticker="${esc(ticker)}" aria-label="マインド・パレットに送る" title="マインド・パレットに送る">💡</button>
     <button type="button" class="pf-watch-rm" data-rm-ticker="${esc(ticker)}" aria-label="ウォッチリストから削除">×</button>
   </div>`;
 }
@@ -1729,17 +1728,6 @@ function bindWatchListRowEvents(){
   app.querySelectorAll("[data-rm-ticker]").forEach(btn => btn.onclick = () => {
     removeFromWatchlist(btn.dataset.rmTicker);
     renderPortfolio();
-  });
-  app.querySelectorAll("[data-mp-ticker]").forEach(btn => btn.onclick = () => {
-    const ticker = btn.dataset.mpTicker;
-    const meta = WATCH_STOCKS.find(s => s.ticker === ticker);
-    const live = ensureWatchLive(ticker);
-    const priceLabel = live.loaded ? `$${live.price.toFixed(2)}` : "";
-    sendToMindPalette({
-      title: `📈 ${ticker}${meta ? " " + meta.name : ""}`,
-      text: `ウォッチ中の銘柄：${ticker}${meta ? "（"+meta.name+"）" : ""}${priceLabel ? " 現在値 "+priceLabel : ""}`,
-      source: { kind:"stock", label: ticker },
-    });
   });
 }
 
@@ -1894,7 +1882,6 @@ export function renderPortfolio(){
         <span class="pf-shares">${h.shares}株</span>
         <span class="pf-val">${val.toLocaleString()} AC</span>
       </div>
-      <button type="button" class="mp-send-mini" data-mp-holding="${esc(t)}" aria-label="マインド・パレットに送る" title="マインド・パレットに送る">💡</button>
     </div>`;
   }).join("");
   const cash = S.coins || 0;
@@ -1906,7 +1893,6 @@ export function renderPortfolio(){
       <div class="pf-hero-lab">総資産（評価額）</div>
       <div class="pf-hero-total">${(cash + stockValue).toLocaleString()} <small>AC</small></div>
       <div class="pf-hero-sub">💰 現金 ${cash.toLocaleString()} AC ・ 📈 株式 ${stockValue.toLocaleString()} AC</div>
-      <button type="button" class="mp-send-btn mp-send-btn-hero" id="pf-send-mp">💡 マインド・パレットに送る</button>
     </div>
     ${rows ? `<div class="section-lab">保有株</div><div class="pf-list">${rows}</div>` : ""}
     <div class="section-lab" style="margin-top:${rows?"22px":"0"}">ウォッチリスト</div>
@@ -1919,23 +1905,6 @@ export function renderPortfolio(){
   app.querySelectorAll("[data-go]").forEach(b => b.onclick = () => go(b.dataset.go));
   const addBtn = document.getElementById("pf-watch-add-btn");
   if(addBtn) addBtn.onclick = openStockSearchModal;
-  const heroSendBtn = document.getElementById("pf-send-mp");
-  if(heroSendBtn) heroSendBtn.onclick = () => sendToMindPalette({
-    title: "📈 ポートフォリオ状況",
-    text: `総資産 ${(cash + stockValue).toLocaleString()} AC（現金 ${cash.toLocaleString()} AC・株式 ${stockValue.toLocaleString()} AC）。保有 ${tickers.length} 銘柄。`,
-    source: { kind:"stock", label:"ポートフォリオ" },
-  });
-  app.querySelectorAll("[data-mp-holding]").forEach(btn => btn.onclick = () => {
-    const t = btn.dataset.mpHolding;
-    const s = allStocks.find(x => x.ticker === t);
-    const h = pf[t];
-    const val = s ? tradeAmount(s.price, h.shares) : h.cost;
-    sendToMindPalette({
-      title: `📈 ${t}${s ? " " + s.name : ""}`,
-      text: `保有株：${t}${s ? "（"+s.name+"）" : ""} ${h.shares}株・評価額 ${val.toLocaleString()} AC`,
-      source: { kind:"stock", label: t },
-    });
-  });
   bindWatchListRowEvents();
   refreshWatchQuotes(); // 未取得の銘柄と、前回取得から1分以上経った銘柄だけを更新する（画面を開き直しただけでは動かない）
   startWatchLiveRefresh(); // 以後は市場時間中のみ1分ごとにバックグラウンド更新
@@ -5458,23 +5427,6 @@ function mpNoteHTML(note, mode, pendingId, selectedIds, groupColor){
     </div>`;
 }
 
-// 他画面（ニュース詳細・株価）の「💡 マインド・パレットに送る」ボタンから
-// 呼ばれる共通処理。現在アクティブなボードへ、既存の付箋数に応じて
-// 少しずつ位置をずらして配置する
-function sendToMindPalette({ title, text, source }){
-  const st = mpGetState();
-  const idx = st.notes.length;
-  const col = 4;
-  const x = mpClamp(24 + (idx % col) * 46, 0, MP_CANVAS_W - MP_NOTE_W);
-  const y = mpClamp(24 + (Math.floor(idx / col) % 6) * 42, 0, MP_CANVAS_H - MP_NOTE_H);
-  const body = (text || "").trim();
-  const noteText = (title ? `${title}\n${body}` : body).trim().slice(0, 240);
-  const color = source && source.kind === "stock" ? "gold" : source && source.kind === "news" ? "teal" : mpRandomColor();
-  mpAddNote({ x, y, text: noteText, color, source });
-  markPetActivity();
-  notifyMindPaletteSent(title || (source && source.label) || "アイデア");
-}
-
 // 更新日時を「たった今／n分前／n時間前／n日前／M/D」のようなラベルに変換
 function mpRelativeTime(ts){
   const diff = Date.now() - (ts || 0);
@@ -6249,13 +6201,8 @@ function renderNewsDetail(){
       <div class="njp-detail-date">${esc(newsDetailDateLabel(d.dateKey))}</div>
       <h2 class="njp-detail-title">${esc(d.title)}</h2>
       <div class="njp-detail-body">${newsDetailBodyHTML(d.content)}</div>
-      <button type="button" class="mp-send-btn" id="njp-send-mp">💡 マインド・パレットに送る</button>
     </div>`;
   app.querySelectorAll("[data-go]").forEach(b=>b.onclick=()=>go(b.dataset.go));
-  const sendBtn = document.getElementById("njp-send-mp");
-  if(sendBtn) sendBtn.onclick = () => {
-    sendToMindPalette({ title:d.title, text:d.content, source:{ kind:"news", label:(d.label||"ニュース") } });
-  };
   window.scrollTo(0,0);
 }
 
