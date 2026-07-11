@@ -1168,7 +1168,7 @@ function catmullRomSmoothPath(points){
   return d;
 }
 
-const POP_CHART_W = 220, POP_CHART_H = 40, POP_CHART_PAD = 4;
+const POP_CHART_W = 620, POP_CHART_H = 96, POP_CHART_PAD = 6;
 const POP_CHART_Y_TICKS = [100, 80, 60, 40, 20, 0]; // 縦軸目盛り・％（左軸、上→下）
 // 縦軸目盛り・降水量mm（右軸、上→下）。天気アプリでよく使われる区切り
 // （弱い雨〜激しい雨の目安）に合わせているため値の間隔は不均等だが、
@@ -1284,7 +1284,7 @@ function renderWeatherPopChart(w){
   // 共有し、ラベルの数字だけ左右で意味（％ / mm）を変える
   const gridlines = POP_CHART_Y_TICKS.map((_, i) => {
     const y = axisTickY(i, POP_CHART_Y_TICKS.length);
-    return `<line x1="0" y1="${y.toFixed(1)}" x2="${POP_CHART_W}" y2="${y.toFixed(1)}" stroke="var(--line)" stroke-width="1" opacity=".5"></line>`;
+    return `<line x1="0" y1="${y.toFixed(1)}" x2="${POP_CHART_W}" y2="${y.toFixed(1)}" stroke="var(--line)" stroke-width="1" stroke-dasharray="4 4" opacity=".75"></line>`;
   }).join("");
   const yTicks = POP_CHART_Y_TICKS.map((v, i) => `<span style="top:${(axisTickY(i, POP_CHART_Y_TICKS.length)/POP_CHART_H*100).toFixed(2)}%">${v}</span>`).join("");
   const mmTicks = PRECIP_Y_TICKS.map((v, i) => `<span style="top:${(axisTickY(i, PRECIP_Y_TICKS.length)/POP_CHART_H*100).toFixed(2)}%">${v}</span>`).join("");
