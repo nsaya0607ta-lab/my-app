@@ -261,7 +261,7 @@ body{
   text-align:center;
   white-space:nowrap;
 }
-.gcal-card .gcal-day-title::before{content:"📅 ";}
+.gcal-card .gcal-day-title::before{content:"";}
 .gcal-card .gcal-day-head-right{display:flex;align-items:center;gap:5px;}
 .gcal-card .gcal-nav-btn,
 .gcal-card .gcal-reload-btn{
@@ -299,8 +299,8 @@ body{
   font-size:11px;
   font-weight:750;
 }
-.gcal-card .gcal-day-timeline::before{content:"📅 今日の予定";}
-.gcal-card .gcal-day-todo-title::before{content:"☑ ";}
+.gcal-card .gcal-day-timeline::before{content:"今日の予定";}
+.gcal-card .gcal-day-todo-title::before{content:"";}
 .gcal-card .gcal-day-events,
 .gcal-card .gcal-day-todo-list{min-height:44px;}
 .gcal-card .gcal-day-empty,
@@ -316,7 +316,7 @@ body{
   text-align:center;
 }
 .gcal-card .gcal-day-empty::before{
-  content:"📋";
+  content:"✐”;
   margin-right:6px;
   font-size:19px;
   filter:saturate(.65);
