@@ -71,12 +71,21 @@ function terminalBodyEl(){ return app.querySelector("#pg-terminal-body"); }
 
 function isNearBottom(el){ return el.scrollHeight - el.scrollTop - el.clientHeight < 40; }
 
+function liveLineHTML(){
+  return `<form class="pg-term-line pg-term-live" id="pg-term-input-form" autocomplete="off">
+    <span class="pg-term-prompt">student@linux:${esc(vfs.promptPath())}$</span>
+    <input type="text" id="pg-term-input" class="pg-term-input" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" inputmode="text">
+    <span class="pg-term-cursor" id="pg-term-cursor"></span>
+    <button type="submit" class="pg-term-send-btn" aria-label="送信">➤</button>
+  </form>`;
+}
+
 function renderTerminalBody(){
   const el = terminalBodyEl();
   if(!el) return;
-  el.innerHTML = terminalRecords.map(recordToHTML).join("") +
-    `<div class="pg-term-line pg-term-live"><span class="pg-term-prompt">student@linux:${esc(vfs.promptPath())}$</span> <span class="pg-term-cursor"></span></div>`;
+  el.innerHTML = terminalRecords.map(recordToHTML).join("") + liveLineHTML();
   el.scrollTop = el.scrollHeight;
+  wireCommandInput();
 }
 
 function appendTerminalRecords(records){
@@ -94,8 +103,13 @@ function appendTerminalRecords(records){
 }
 
 function clearTerminal(){
+  const hadFocus = app.querySelector("#pg-term-input") === document.activeElement;
   terminalRecords = [];
   renderTerminalBody();
+  if(hadFocus){
+    const input = app.querySelector("#pg-term-input");
+    if(input) input.focus();
+  }
 }
 
 // ------------------------------------------------------------------------
@@ -137,8 +151,8 @@ function runCommand(raw){
 // CommandInput
 // ------------------------------------------------------------------------
 function wireCommandInput(){
-  const form = app.querySelector("#pg-input-form");
-  const input = app.querySelector("#pg-input");
+  const form = app.querySelector("#pg-term-input-form");
+  const input = app.querySelector("#pg-term-input");
   if(!form || !input) return;
   form.onsubmit = (e) => {
     e.preventDefault();
@@ -160,10 +174,22 @@ function wireCommandInput(){
   };
 }
 
+// ターミナル部分をタップしたときだけ入力欄へフォーカスし、キーボードを表示する。
+// 拡大・移動・強調表示は一切行わない（フォーカスするだけ）。
+function wireTerminalTap(){
+  const el = terminalBodyEl();
+  if(!el) return;
+  el.addEventListener("click", (e) => {
+    if(e.target.closest(".pg-term-send-btn")) return;
+    const input = app.querySelector("#pg-term-input");
+    if(input && document.activeElement !== input) input.focus();
+  });
+}
+
 function wireChips(){
   app.querySelectorAll("[data-pg-chip]").forEach(btn => {
     btn.onclick = () => {
-      const input = app.querySelector("#pg-input");
+      const input = app.querySelector("#pg-term-input");
       if(!input) return;
       const cmd = btn.dataset.pgChip;
       const needsArg = btn.dataset.pgArg === "1";
@@ -291,11 +317,6 @@ export function renderPlaygroundScreen(){
       </div>
       <div class="pg-terminal-body" id="pg-terminal-body"></div>
     </div>
-    <form class="pg-input-row" id="pg-input-form" autocomplete="off">
-      <span class="pg-input-prompt">&gt;_</span>
-      <input type="text" id="pg-input" class="pg-input" placeholder="コマンドを入力..." autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false">
-      <button type="submit" class="pg-send-btn" aria-label="送信">➤</button>
-    </form>
     <div class="pg-chip-row">${chipsHTML}</div>
     <div class="pg-cards">
       <div class="pg-card pg-mission-card" id="pg-mission-card"></div>
@@ -306,7 +327,7 @@ export function renderPlaygroundScreen(){
   renderTerminalBody();
   renderMissionCard();
   renderHintCard();
-  wireCommandInput();
+  wireTerminalTap();
   wireChips();
 
   const resetBtn = app.querySelector("#pg-reset");
@@ -316,6 +337,5 @@ export function renderPlaygroundScreen(){
   const clearBtn = app.querySelector("#pg-terminal-clear");
   if(clearBtn) clearBtn.onclick = () => clearTerminal();
 
-  app.querySelector("#pg-input").focus();
   window.scrollTo(0,0);
 }
