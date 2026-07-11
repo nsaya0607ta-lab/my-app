@@ -593,7 +593,7 @@ h1.title.title--badge{margin:2px 0 0;}
 .weather-card{padding:20px 18px 18px;border-radius:28px;}
 
 /* カード見出し：ピンアイコン＋「◯◯の天気」 */
-.weather-card-heading{display:flex;align-items:center;gap:8px;margin-bottom:20px;font-size:17px;font-weight:800;color:var(--text);}
+.weather-card-heading{display:flex;align-items:center;gap:8px;margin-bottom:20px;font-size:16px;font-weight:800;color:var(--text);}
 .weather-heading-icon{width:16px;height:16px;color:var(--accent);}
 .weather-label-icon{width:12px;height:12px;color:var(--accent);opacity:.85;}
 
@@ -613,9 +613,9 @@ h1.title.title--badge{margin:2px 0 0;}
 .weather-value-row{grid-row:3;min-height:38px;display:flex;align-items:baseline;justify-content:flex-start;gap:3px;min-width:0;white-space:nowrap;line-height:1;}
 
 /* 日付＋秒まで動くデジタル時計 */
-.weather-date{grid-row:2;font-size:13px;font-weight:700;color:var(--text);letter-spacing:.01em;white-space:nowrap;}
-.weather-time{font-size:26px;font-weight:800;letter-spacing:-.04em;color:var(--text);font-variant-numeric:tabular-nums;white-space:nowrap;line-height:1;}
-.weather-time-sec{margin-left:2px;font-size:12px;font-weight:700;color:var(--accent);opacity:.8;font-variant-numeric:tabular-nums;}
+.weather-date{grid-row:2;font-size:14px;font-weight:700;color:var(--text);letter-spacing:.01em;white-space:nowrap;}
+.weather-time{font-size:24px;font-weight:800;letter-spacing:-.04em;color:var(--text);font-variant-numeric:tabular-nums;white-space:nowrap;line-height:1;}
+.weather-time-sec{margin-left:2px;font-size:15px;font-weight:700;color:var(--accent);opacity:.8;font-variant-numeric:tabular-nums;}
 
 /* 地名・基準時間・天気アイコン・気温 */
 .weather-city{font-size:11px;font-weight:700;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0;}
@@ -624,15 +624,15 @@ h1.title.title--badge{margin:2px 0 0;}
 .weather-retry-btn:disabled{cursor:default;opacity:.6;}
 .weather-retry-btn.weather-retry-spin{animation:weather-retry-spin .8s linear infinite;}
 @keyframes weather-retry-spin{from{transform:rotate(0deg);}to{transform:rotate(360deg);}}
-.weather-asof{grid-row:2;font-size:10px;font-weight:600;color:var(--muted);opacity:.85;letter-spacing:.02em;white-space:nowrap;}
+.weather-asof{grid-row:2;font-size:14px;font-weight:600;color:var(--muted);opacity:.85;letter-spacing:.02em;white-space:nowrap;}
 .weather-icon{align-self:center;margin-right:4px;font-size:19px;line-height:1;}
-.weather-temp{font-size:26px;font-weight:800;letter-spacing:-.04em;color:var(--text);font-variant-numeric:tabular-nums;}
+.weather-temp{font-size:24px;font-weight:800;letter-spacing:-.04em;color:var(--text);font-variant-numeric:tabular-nums;}
 
 /* 現在の降水量(mm/h)＋その量に応じた注意喚起コメントのピル表示。
    ピルの文言が幅に収まらない場合だけ横スクロール（右→左に流れるマーキー）
    で全文を見せる */
-.weather-precip-now-value{font-size:26px;font-weight:800;letter-spacing:-.04em;color:var(--text);font-variant-numeric:tabular-nums;}
-.weather-value-unit{margin-left:5px;font-size:13px;font-weight:700;color:var(--text);}
+.weather-precip-now-value{font-size:24px;font-weight:800;letter-spacing:-.04em;color:var(--text);font-variant-numeric:tabular-nums;}
+.weather-value-unit{margin-left:5px;font-size:15px;font-weight:700;color:var(--text);}
 .weather-condition-pill{grid-row:4;justify-self:start;min-width:40px;max-width:100%;overflow:hidden;padding:5px 12px;border-radius:10px;background:var(--bg2);font-size:12px;font-weight:700;color:var(--muted);}
 .weather-precip-comment-track{display:inline-block;white-space:nowrap;font-size:11px;font-weight:700;color:var(--text);}
 .weather-precip-comment-track.weather-precip-marquee{position:relative;left:100%;
@@ -650,22 +650,22 @@ h1.title.title--badge{margin:2px 0 0;}
    1回だけ表示する。カードの直接の子要素なのでカード全幅まで広がる */
 .weather-pop-chart{width:100%;margin-top:18px;}
 .weather-pop-chart-units{display:flex;justify-content:space-between;margin-bottom:6px;}
-.pop-axis-yunit{width:20px;font-size:10px;font-weight:700;color:var(--muted);line-height:1;}
-.pop-axis-yunit-right{width:20px;font-size:10px;font-weight:700;color:var(--muted);line-height:1;text-align:right;}
+.pop-axis-yunit{width:20px;font-size:11px;font-weight:700;color:var(--muted);line-height:1;}
+.pop-axis-yunit-right{width:20px;font-size:11px;font-weight:700;color:var(--muted);line-height:1;text-align:right;}
 .weather-pop-chart-row{display:flex;align-items:stretch;gap:3px;}
 .pop-axis-ycol{flex:none;width:20px;}
 .pop-axis-yticks,.pop-axis-yticks-right{position:relative;}
 .pop-axis-yticks span{position:absolute;right:0;transform:translateY(-50%);
-  font-size:10px;font-weight:600;color:var(--muted);line-height:1;font-variant-numeric:tabular-nums;white-space:nowrap;}
+  font-size:11px;font-weight:600;color:var(--muted);line-height:1;font-variant-numeric:tabular-nums;white-space:nowrap;}
 .pop-axis-yticks-right span{position:absolute;left:0;transform:translateY(-50%);
-  font-size:10px;font-weight:600;color:var(--muted);line-height:1;font-variant-numeric:tabular-nums;white-space:nowrap;}
+  font-size:11px;font-weight:600;color:var(--muted);line-height:1;font-variant-numeric:tabular-nums;white-space:nowrap;}
 .weather-pop-chart-plot{flex:1;min-width:0;}
 .weather-pop-chart-svg{display:block;width:100%;height:105px;}
 .weather-pop-chart-xrow{display:flex;gap:3px;margin-top:2px;}
 .weather-pop-chart-labels{flex:1;min-width:0;position:relative;height:18px;}
 .weather-pop-chart-labels span{position:absolute;top:0;transform:translateX(-50%);
-  font-size:10px;font-weight:600;color:var(--muted);white-space:nowrap;}
-.pop-axis-xunit{font-size:10px;font-weight:700;color:var(--muted);white-space:nowrap;padding-left:4px;}
+  font-size:11px;font-weight:600;color:var(--muted);white-space:nowrap;}
+.pop-axis-xunit{font-size:11px;font-weight:700;color:var(--muted);white-space:nowrap;padding-left:4px;}
 
 /* 右：天気カードに常設する「デジタル盆栽」の簡易表示。タップすると
    openPetModal()で進化段階・進捗の詳細モーダルを開く。
@@ -682,13 +682,13 @@ h1.title.title--badge{margin:2px 0 0;}
 .weather-pet-svgwrap{display:block;width:72px;height:88px;}
 .weather-pet-svgwrap svg{width:100%;height:100%;overflow:visible;}
 .weather-pet-btn.pet-dim .weather-pet-svgwrap{filter:grayscale(.55) brightness(.62) saturate(.55);opacity:.75;}
+/* 375〜430px幅（対象とするiPhoneサイズ全域）では時刻・気温・降水量の数字を
+   24px（秒・単位は15px）で統一する。以前はここで26px→22pxへさらに縮小して
+   いたが、完成イメージの実測に合わせて幅にかかわらず同じ大きさにする */
 @media (max-width:400px){
   .weather-card{padding:16px 12px 14px;}
-  .weather-metric{padding:0 8px;grid-template-rows:22px 16px 32px 22px;}
-  .weather-value-row{min-height:32px;}
-  .weather-time,.weather-temp,.weather-precip-now-value{font-size:22px;}
-  .weather-time-sec{font-size:11px;}
-  .weather-value-unit{font-size:11px;}
+  .weather-metric{padding:0 8px;grid-template-rows:22px 16px 30px 22px;}
+  .weather-value-row{min-height:30px;}
   .weather-icon{font-size:16px;margin-right:3px;}
   .weather-pet-btn{padding:8px;}
   .weather-pet-svgwrap{width:60px;height:74px;}
