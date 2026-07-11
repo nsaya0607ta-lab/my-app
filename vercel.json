@@ -5,6 +5,15 @@
     },
     "api/news-quiz/today.js": {
       "maxDuration": 30
+    },
+    "api/push/dispatch.js": {
+      "maxDuration": 30
     }
-  }
+  },
+  "crons": [
+    {
+      "path": "/api/push/dispatch",
+      "schedule": "*/5 * * * *"
+    }
+  ]
 }

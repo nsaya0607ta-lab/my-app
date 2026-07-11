@@ -4,6 +4,7 @@ import { go, openQuickMenuSheet, openStudyMenuSheet, render, renderSettings } fr
 import { playTapSound } from './audio.js';
 import { S, state } from './state.js';
 import { checkNewsQuizPopup } from './newsQuiz.js';
+import { bootPushServiceWorker, onPushNotificationClick } from './push.js';
 
 /* ===== タップ音（音声ファイル不要・Web Audio APIでその場合成／設定＞タップ音設定で切替） =====
    問題の選択肢（.opt）と設定モーダル内（.settings-modal。選択と同時に自前で
@@ -47,3 +48,29 @@ setTimeout(function(){
 document.addEventListener("visibilitychange", () => {
   if(document.visibilityState === "visible") checkNewsQuizPopup();
 });
+
+/* ===== プッシュ通知（FCM）：許可を求めずService Workerだけ先に登録しておく =====
+   実際の許可要求は設定画面の「プッシュ通知を有効にする」ボタン（ユーザー
+   操作）から行う（js/render.jsの設定モーダル参照） */
+bootPushServiceWorker();
+
+// 通知タップ（アプリが既に開いていたケース）は firebase-messaging-sw.js の
+// notificationclick から postMessage で届く
+onPushNotificationClick((screen) => go(screen || "calendar"));
+
+// 通知タップで新しいタブ／ウィンドウとして開かれたケース
+// （?openScreen=calendar）。認証判定（ゲスト/ログイン確定）が終わるまで
+// 待ってから遷移する。使い終わったURLパラメータはすぐ取り除く
+(function handleOpenScreenParam(){
+  const params = new URLSearchParams(window.location.search);
+  const target = params.get("openScreen");
+  if(!target) return;
+  history.replaceState(null, "", window.location.pathname);
+  let tries = 0;
+  const tryGo = () => {
+    tries++;
+    if(state.authReady){ go(target); return; }
+    if(tries < 40) setTimeout(tryGo, 250);
+  };
+  tryGo();
+})();

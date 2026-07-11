@@ -4,6 +4,7 @@
 import { applyCloud, applyCloudSkins, commit, getProfileName, publishLeaderboard, saveCoins, seedCloudFromLocal, totalBP } from './core.js';
 import { app, applyCloudGcal, applyCloudMindPalette, applyCloudPendingOrders, applyCloudPortfolio, applyCloudTradeLog, gcalStartNotifyListener, gcalStopNotifyListener, logout, render } from './render.js';
 import { S, state } from './state.js';
+import { syncPushTokenIfGranted } from './push.js';
 
   const firebaseConfig = {
     apiKey: "AIzaSyCg3zD2xkq_3e5MclG9YK_uVqVzWulO9Ws",
@@ -233,6 +234,8 @@ import { S, state } from './state.js';
         state.lbAutoDone = false;
         // 自分宛てのカレンダー通知（共有カレンダーの登録・削除）の受信を開始
         if (user.email) gcalStartNotifyListener(user.email);
+        // 通知を許可済みの端末なら、FCMトークンを無言で最新化しておく
+        syncPushTokenIfGranted();
         state.unsub = onSnapshot(doc(state.db, "users", state.currentUserId), (docSnap) => {
           if (docSnap.exists()) {
             const data = docSnap.data();
