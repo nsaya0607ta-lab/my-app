@@ -222,12 +222,8 @@ body{
   line-height:1.25;
 }
 .weather-card .weather-precip-comment-track{
-  display:-webkit-box;
-  overflow:hidden;
-  -webkit-line-clamp:2;
-  -webkit-box-orient:vertical;
-  white-space:normal;
-  word-break:break-word;
+  display:inline-block;
+  white-space:nowrap;
 }
 .weather-card .weather-pet>*{
   width:100%;
