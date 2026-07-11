@@ -1419,25 +1419,6 @@ body[data-theme="dark"] .menu-btn:active{box-shadow:0 4px 10px rgba(0,0,0,.3), i
 .gemini-send{ flex:none; padding:11px 18px; border:none; border-radius:99px; font-size:14px; font-weight:700; color:#fff; background:linear-gradient(90deg,var(--accent),#0ea5e9); cursor:pointer; box-shadow:0 3px 10px rgba(2,132,199,.25); transition:transform .1s,opacity .15s; }
 .gemini-send:active{ transform:scale(.97); }
 .gemini-send:disabled{ opacity:.45; cursor:default; box-shadow:none; }
-/* =========================================================================
-   💡 マインド・パレットへ送るボタン（ニュース詳細・株価画面などから使う共通部品）
-   ========================================================================= */
-.mp-send-btn{
-  margin-top:14px; width:100%; padding:12px; border-radius:13px; cursor:pointer;
-  font-size:13.5px; font-weight:700; color:#0b1120; text-align:center;
-  background:linear-gradient(90deg,#fbbf24,#38bdf8);
-  border:none; box-shadow:0 6px 16px rgba(56,189,248,.22);
-  transition:transform .12s,opacity .15s;
-}
-.mp-send-btn:active{ transform:scale(.97); }
-.mp-send-btn-hero{ margin-top:14px; }
-.mp-send-mini{
-  flex:none; width:26px; height:26px; border-radius:50%; border:1px solid var(--line);
-  background:var(--bg2); font-size:12px; line-height:1; cursor:pointer; padding:0;
-  display:flex; align-items:center; justify-content:center;
-  box-shadow:0 0 0 rgba(251,191,36,0); transition:transform .12s,box-shadow .12s;
-}
-.mp-send-mini:active{ transform:scale(.88); box-shadow:0 0 10px rgba(251,191,36,.5); }
 
 /* =========================================================================
    🔮 デジタル・デトックス・ペット（幾何学的クリスタル盆栽）カード
