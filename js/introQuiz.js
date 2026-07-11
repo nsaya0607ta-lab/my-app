@@ -1,39 +1,73 @@
-// 「イントロドンに挑戦」ポップアップ。
-// ・YouTube IFrame Player APIを画面に見えない状態で読み込み、
-//   「再生/一時停止」ボタンだけで手動再生する（自動再生・シークバー操作はさせない）。
-// ・videoIdや正解の選択肢はフロントの変数として保持しない設計にできない
-//   （YouTube IFrame APIで音を鳴らす以上、videoId自体はどうしても
-//   ネットワークタブ等から見えてしまう）。そのため「正解がどれか」は最後まで
-//   サーバー側だけが知っている状態を保つことに寄せている：
-//     - /api/intro-quiz/start は「シャッフル済みの選択肢（曲名）」と
-//       「再生用videoId」だけを返し、どれが正解かは含めない。
-//     - 正誤判定・挑戦回数のカウント・BP/AC加算はすべて
-//       /api/intro-quiz/answer （サーバー側）で行う。
-//     - 曲のタイトル・サムネイルは、回答が確定するまで一切表示しない。
-import { esc } from './core.js';
-import { state } from './state.js';
+/* =========================================================================
+   🎵 イントロドン（曲当て3択クイズ）－ 専用フルスクリーン画面
+   =========================================================================
+   ホーム画面の起動アイコンから go("introquiz") で遷移してくる、独立した
+   1画面（ポップアップではない）。#app を丸ごとこの画面のマークアップに
+   差し替え、他の画面（quiz/result/dict等）と同じ「画面遷移」の作法に揃える。
 
-let activeOverlay = null;   // 二重起動防止（同時に1つしか開かない）
-let hiddenPlayer = null;    // 回答前：非表示で再生/一時停止する側のプレイヤー
-let revealPlayer = null;    // 回答後：答え合わせのフルサイズMVプレイヤー
-let hiddenStarted = false;  // 「1回目の再生ボタン」で0秒から再生済みか
+   YouTube IFrame Player APIは2つのプレイヤーを使い分ける：
+     ・hiddenPlayer … 回答前。画面外（position:absolute; left:-9999px）に
+       置き、「再生/一時停止」ボタンだけで手動操作する。controls:0で
+       ネイティブのシークバー・タイトル表示は出さない。
+     ・revealPlayer … 回答後。画面中央の専用エリアにフルサイズで表示し、
+       controls:1・autoplay:1でそのままMVを最後まで観られるようにする。
+
+   videoId・正解の選択肢・挑戦回数・BP/AC加算は一切クライアントで持たず、
+   /api/intro-quiz/start と /api/intro-quiz/answer （サーバー側）だけが
+   正解を知っている状態を保つ。videoId自体はIFrame APIで再生する以上
+   ネットワークタブから見えてしまうが、曲名・サムネイル・正解フラグは
+   回答確定までレスポンスに一切含めない。
+   ========================================================================= */
+import { esc, saveCoins } from './core.js';
+import { S, state } from './state.js';
+import { app, go, renderStatusBar } from './render.js';
+
+// ---- 画面内の状態管理 ----
+// このモジュールが管理するのは「イントロドン画面がマウントされている間」
+// だけのローカル状態。renderGenerationは画面を出入りする（または画面内で
+// 状態遷移する）たびにインクリメントし、既に古くなった非同期処理
+// （YouTube API読み込み・fetch応答）がDOMを触らないようにするための世代番号。
+let renderGeneration = 0;
+let hiddenPlayer = null;
+let revealPlayer = null;
+let hiddenStarted = false;   // 「1回目の再生ボタン」で0秒から再生済みか
+let fallbackPlayTimer = null;
+
+const YT_API_LOAD_TIMEOUT_MS = 12000;
+const YT_READY_TIMEOUT_MS = 10000;
 
 // ---- YouTube IFrame API の遅延読み込み（アプリ全体で一度だけ読み込めばよい） ----
 let ytApiPromise = null;
 function loadYouTubeApi() {
   if (window.YT && window.YT.Player) return Promise.resolve();
   if (ytApiPromise) return ytApiPromise;
-  ytApiPromise = new Promise((resolve) => {
+  ytApiPromise = new Promise((resolve, reject) => {
     const prevCb = window.onYouTubeIframeAPIReady;
+    const timer = setTimeout(() => reject(new Error("yt-api-timeout")), YT_API_LOAD_TIMEOUT_MS);
     window.onYouTubeIframeAPIReady = () => {
+      clearTimeout(timer);
       if (typeof prevCb === "function") { try { prevCb(); } catch (e) {} }
       resolve();
     };
     const tag = document.createElement("script");
     tag.src = "https://www.youtube.com/iframe_api";
+    tag.onerror = () => { clearTimeout(timer); reject(new Error("yt-api-script-error")); };
     document.head.appendChild(tag);
+  }).catch((e) => {
+    ytApiPromise = null; // 失敗時は次回また読み込みをやり直せるようにする
+    throw e;
   });
   return ytApiPromise;
+}
+
+// YouTubeのonErrorイベントコード → 人間向けメッセージ
+// https://developers.google.com/youtube/iframe_api_reference#onError
+function ytErrorMessage(code) {
+  if (code === 2) return "動画IDが正しくありません。";
+  if (code === 5) return "この端末のプレーヤーでは再生できませんでした。";
+  if (code === 100) return "動画が見つからないか、非公開に設定されています。";
+  if (code === 101 || code === 150) return "この動画は他サイトでの再生が許可されていません。";
+  return "動画の読み込みに失敗しました。";
 }
 
 async function authFetch(path, options) {
@@ -45,91 +79,134 @@ async function authFetch(path, options) {
 }
 
 function destroyPlayers() {
+  if (fallbackPlayTimer) { clearTimeout(fallbackPlayTimer); fallbackPlayTimer = null; }
   if (hiddenPlayer) { try { hiddenPlayer.destroy(); } catch (e) {} hiddenPlayer = null; }
   if (revealPlayer) { try { revealPlayer.destroy(); } catch (e) {} revealPlayer = null; }
   hiddenStarted = false;
 }
 
-export function closeIntroQuiz() {
+// ヘッダー左上「← ホーム」。再生中の音を必ず止めてから画面を離れる
+function leaveIntroQuiz() {
+  renderGeneration++; // 進行中の非同期処理をすべて無効化
   destroyPlayers();
-  if (activeOverlay) { try { activeOverlay.remove(); } catch (e) {} activeOverlay = null; }
+  go("select");
 }
 
-export function openIntroQuiz() {
-  if (activeOverlay) return; // 既に開いている
+function screenShellHTML(bodyHTML) {
+  return `
+    <div class="q-head" style="margin-bottom:14px">
+      <button class="quit" id="iq-back">← ホーム</button>
+      <span class="q-count">🎵 イントロドン</span>
+    </div>
+    <div class="iq-card">${bodyHTML}</div>`;
+}
+
+function wireBackButton() {
+  const back = app.querySelector("#iq-back");
+  if (back) back.onclick = () => leaveIntroQuiz();
+}
+
+// ========================================================================
+// 画面エントリポイント（render.jsのrender()ディスパッチから呼ばれる）
+// ========================================================================
+export function renderIntroQuizScreen() {
+  renderGeneration++;
+  destroyPlayers(); // 前回の画面表示分が残っていれば必ず片付けてから始める
+  const myGen = renderGeneration;
+
   if (state.guestMode || !state.currentUser) {
-    window.alert("イントロドンで遊ぶにはログインが必要です（ゲストモードでは挑戦できません）。");
+    app.innerHTML = screenShellHTML(`
+      <div class="iq-headline">🔒 ログインが必要です</div>
+      <div class="iq-msg">イントロドンで遊ぶにはログインしてください（ゲストモードでは挑戦できません）。</div>`);
+    wireBackButton();
     return;
   }
 
-  const ov = document.createElement("div");
-  ov.className = "modal-ov iq-ov";
-  ov.innerHTML = `
-    <div class="modal iq-modal">
-      <div class="modal-title">🎵 イントロドンに挑戦</div>
-      <button type="button" class="iq-close" aria-label="閉じる">✕</button>
-      <div id="iq-body"><div class="iq-loading">出題を準備しています…</div></div>
-    </div>`;
-  document.body.appendChild(ov);
-  activeOverlay = ov;
-  ov.querySelector(".iq-close").onclick = () => closeIntroQuiz();
-  ov.addEventListener("click", (e) => { if (e.target === ov) closeIntroQuiz(); });
-
-  startQuiz();
+  app.innerHTML = screenShellHTML(`
+    <div class="iq-loading"><span class="iq-spinner"></span>出題を準備しています…</div>`);
+  wireBackButton();
+  startQuiz(myGen);
 }
 
-async function startQuiz() {
-  const body = activeOverlay && activeOverlay.querySelector("#iq-body");
-  if (!body) return;
+async function startQuiz(myGen) {
   let data;
   try {
     const res = await authFetch("/api/intro-quiz/start", { method: "POST" });
     if (!res.ok) throw new Error("http-" + res.status);
     data = await res.json();
   } catch (e) {
-    body.innerHTML = `<div class="iq-msg">通信に失敗しました。時間をおいて再度お試しください。</div>
-      <button class="ghost iq-close-btn">閉じる</button>`;
-    body.querySelector(".iq-close-btn").onclick = () => closeIntroQuiz();
+    if (myGen !== renderGeneration) return;
+    renderErrorState(myGen, "通信に失敗しました。時間をおいて再度お試しください。", () => startQuiz(myGen));
     return;
   }
+  if (myGen !== renderGeneration) return;
 
   if (!data || !data.ok) {
-    body.innerHTML = `<div class="iq-msg">通信に失敗しました。時間をおいて再度お試しください。</div>
-      <button class="ghost iq-close-btn">閉じる</button>`;
-    body.querySelector(".iq-close-btn").onclick = () => closeIntroQuiz();
+    renderErrorState(myGen, "通信に失敗しました。時間をおいて再度お試しください。", () => startQuiz(myGen));
     return;
   }
-
   if (!data.available) {
-    body.innerHTML = `<div class="iq-msg">本日出題できる曲がありません。またの機会にお試しください。</div>
-      <button class="ghost iq-close-btn">閉じる</button>`;
-    body.querySelector(".iq-close-btn").onclick = () => closeIntroQuiz();
+    renderCard(`
+      <div class="iq-headline">😴 本日出題できる曲がありません</div>
+      <div class="iq-msg">またの機会にお試しください。</div>`);
     return;
   }
 
-  renderQuizState(body, data.sessionId, data.videoId, data.choices);
+  renderQuizState(myGen, data.sessionId, data.videoId, data.choices);
 }
 
-function renderQuizState(body, sessionId, videoId, choices) {
+function renderCard(bodyHTML) {
+  const card = app.querySelector(".iq-card");
+  if (card) card.innerHTML = bodyHTML;
+  else app.innerHTML = screenShellHTML(bodyHTML); // 念のためのフォールバック（通常は既にシェルが存在する）
+  wireBackButton();
+}
+
+function renderErrorState(myGen, message, onRetry) {
+  renderCard(`
+    <div class="iq-headline iq-headline--error">⚠️ エラー</div>
+    <div class="iq-msg">${esc(message)}</div>
+    <button class="cta iq-retry-btn" id="iq-error-retry">もう一度試す</button>`);
+  const btn = app.querySelector("#iq-error-retry");
+  if (btn) btn.onclick = () => {
+    if (myGen !== renderGeneration) return;
+    renderCard(`<div class="iq-loading"><span class="iq-spinner"></span>出題を準備しています…</div>`);
+    onRetry();
+  };
+}
+
+function renderQuizState(myGen, sessionId, videoId, choices) {
   const LETTERS = ["A", "B", "C"];
-  body.innerHTML = `
+  renderCard(`
+    <div class="iq-headline">🎧 イントロを聴いて曲を当てよう</div>
     <div class="iq-player-hidden"><div id="iq-yt-hidden"></div></div>
     <button type="button" class="cta iq-playbtn" id="iq-playbtn" disabled>読み込み中…</button>
     <div class="iq-hint">何度でも一時停止して聞き直せます。聞き終えたら曲名を選んでください。</div>
     <div class="opts iq-opts">
       ${choices.map((c, i) => `
         <button class="opt" data-choice="${esc(c.key)}">
-          <span class="opt-key">${LETTERS[i] || i + 1}</span><span class="opt-label">${esc(c.title)}</span>
+          <span class="opt-key">${LETTERS[i] || i + 1}</span>
+          <span class="opt-label">${esc(c.title)}${c.artist ? ` <span class="iq-opt-artist">／ ${esc(c.artist)}</span>` : ""}</span>
         </button>`).join("")}
-    </div>`;
+    </div>`);
 
-  const playBtn = body.querySelector("#iq-playbtn");
-  const choiceBtns = Array.from(body.querySelectorAll("[data-choice]"));
+  const playBtn = app.querySelector("#iq-playbtn");
+  const choiceBtns = Array.from(app.querySelectorAll("[data-choice]"));
   let answering = false;
 
   loadYouTubeApi().then(() => {
-    if (!activeOverlay || !body.isConnected) return; // 読み込み中に閉じられた場合は何もしない
-    hiddenPlayer = new window.YT.Player("iq-yt-hidden", {
+    if (myGen !== renderGeneration) return; // 読み込み中に画面が切り替わっていたら何もしない
+    const container = app.querySelector("#iq-yt-hidden");
+    if (!container) return;
+
+    let readyFired = false;
+    const readyTimer = setTimeout(() => {
+      if (myGen !== renderGeneration || readyFired) return;
+      destroyPlayers();
+      renderErrorState(myGen, "YouTubeプレーヤーの起動がタイムアウトしました。通信環境や広告ブロッカーの設定をご確認ください。", () => startQuiz(myGen));
+    }, YT_READY_TIMEOUT_MS);
+
+    hiddenPlayer = new window.YT.Player(container, {
       width: "1", height: "1",
       videoId,
       playerVars: {
@@ -138,15 +215,29 @@ function renderQuizState(body, sessionId, videoId, choices) {
       },
       events: {
         onReady: () => {
+          readyFired = true;
+          clearTimeout(readyTimer);
+          if (myGen !== renderGeneration) return;
           playBtn.disabled = false;
-          playBtn.textContent = "▶ 再生";
+          playBtn.textContent = "🎧 イントロを聴く";
         },
         onStateChange: (ev) => {
+          if (myGen !== renderGeneration) return;
           if (ev.data === window.YT.PlayerState.PLAYING) playBtn.textContent = "⏸ 一時停止";
-          else if (ev.data === window.YT.PlayerState.PAUSED) playBtn.textContent = "▶ 再生";
+          else if (ev.data === window.YT.PlayerState.PAUSED) playBtn.textContent = "▶ 続きを聴く";
+          else if (ev.data === window.YT.PlayerState.BUFFERING) playBtn.textContent = "⏳ 読み込み中…";
+        },
+        onError: (ev) => {
+          clearTimeout(readyTimer);
+          if (myGen !== renderGeneration) return;
+          destroyPlayers();
+          renderErrorState(myGen, ytErrorMessage(ev.data), () => startQuiz(myGen));
         },
       },
     });
+  }).catch(() => {
+    if (myGen !== renderGeneration) return;
+    renderErrorState(myGen, "YouTubeプレーヤーの読み込みに失敗しました。ネットワーク接続や広告ブロッカーの設定をご確認の上、再度お試しください。", () => startQuiz(myGen));
   });
 
   playBtn.onclick = () => {
@@ -182,11 +273,11 @@ function renderQuizState(body, sessionId, videoId, choices) {
         }
         data = await res.json();
       } catch (e) {
-        body.innerHTML = `<div class="iq-msg">回答の送信に失敗しました。時間をおいて再度お試しください。</div>
-          <button class="ghost iq-close-btn">閉じる</button>`;
-        body.querySelector(".iq-close-btn").onclick = () => closeIntroQuiz();
+        if (myGen !== renderGeneration) return;
+        renderErrorState(myGen, "回答の送信に失敗しました。時間をおいて再度お試しください。", () => startQuiz(myGen));
         return;
       }
+      if (myGen !== renderGeneration) return;
 
       // 選んだ選択肢に正誤マークを付ける（この時点でchoiceBtnsはもう操作不能）
       choiceBtns.forEach((b) => {
@@ -194,12 +285,20 @@ function renderQuizState(body, sessionId, videoId, choices) {
         else if (b === btn) { b.classList.add("wrong"); b.innerHTML += '<span class="opt-mark">✕</span>'; }
       });
 
-      renderResultState(body, data);
+      // サーバーが確定させた増分だけをこの端末のAC表示にも即時反映する
+      // （計算はサーバー側のみで行い、ここでは加算結果を表示に使うだけ）
+      if (data.ac > 0) {
+        S.coins = (S.coins || 0) + data.ac;
+        saveCoins(S.coins);
+        renderStatusBar();
+      }
+
+      setTimeout(() => { if (myGen === renderGeneration) renderResultState(myGen, data); }, 550);
     };
   });
 }
 
-function renderResultState(body, data) {
+function renderResultState(myGen, data) {
   if (hiddenPlayer) { try { hiddenPlayer.destroy(); } catch (e) {} hiddenPlayer = null; }
 
   let rewardHtml;
@@ -215,29 +314,66 @@ function renderResultState(body, data) {
     rewardHtml = "";
   }
 
-  body.innerHTML = `
+  renderCard(`
     <div class="iq-verdict ${data.correct ? "pass" : "fail"}">${data.correct ? "🎉 正解！" : "😢 残念！"}</div>
-    ${!data.correct ? `<div class="iq-msg">正解は「${esc(data.title)}」でした。</div>` : ""}
+    <div class="iq-answer-line">正解は「${esc(data.title)}」${data.artist ? `／${esc(data.artist)}` : ""} でした</div>
     ${rewardHtml}
-    <div class="iq-reveal-wrap"><div id="iq-yt-reveal"></div></div>
+    <div class="iq-reveal-wrap" id="iq-reveal-wrap">
+      <div id="iq-yt-reveal"></div>
+      <button type="button" class="iq-fallback-play" id="iq-fallback-play" hidden>▶ 動画を再生する</button>
+    </div>
     <div class="actions iq-actions">
       <button class="ghost" id="iq-retry">もう一度挑戦する</button>
-      <button class="cta" id="iq-done">閉じる</button>
-    </div>`;
+      <button class="cta" id="iq-done">ホームに戻る</button>
+    </div>`);
 
   loadYouTubeApi().then(() => {
-    if (!activeOverlay || !body.isConnected) return;
-    revealPlayer = new window.YT.Player("iq-yt-reveal", {
-      width: "100%", height: "220",
+    if (myGen !== renderGeneration) return;
+    const container = app.querySelector("#iq-yt-reveal");
+    if (!container) return;
+    const fallbackBtn = app.querySelector("#iq-fallback-play");
+
+    revealPlayer = new window.YT.Player(container, {
+      width: "100%", height: "100%",
       videoId: data.videoId,
       playerVars: { autoplay: 1, controls: 1, rel: 0, playsinline: 1 },
+      events: {
+        onReady: (ev) => {
+          if (myGen !== renderGeneration) return;
+          try { ev.target.playVideo(); } catch (e) {}
+          // モバイルSafari等で自動再生がブロックされた場合の保険：
+          // 1.5秒後もまだ再生されていなければ、手動再生ボタンを表示する
+          // （この手動クリックなら確実にユーザー操作起点になり再生できる）
+          fallbackPlayTimer = setTimeout(() => {
+            if (myGen !== renderGeneration || !revealPlayer) return;
+            const st = revealPlayer.getPlayerState ? revealPlayer.getPlayerState() : -1;
+            if (st !== window.YT.PlayerState.PLAYING && fallbackBtn) fallbackBtn.hidden = false;
+          }, 1500);
+        },
+        onStateChange: (ev) => {
+          if (ev.data === window.YT.PlayerState.PLAYING && fallbackBtn) fallbackBtn.hidden = true;
+        },
+        onError: () => {
+          if (myGen !== renderGeneration || !fallbackBtn) return;
+          fallbackBtn.hidden = false;
+          fallbackBtn.textContent = "⚠️ 動画を読み込めませんでした";
+          fallbackBtn.disabled = true;
+        },
+      },
     });
+
+    if (fallbackBtn) fallbackBtn.onclick = () => { try { revealPlayer.playVideo(); } catch (e) {} };
+  }).catch(() => {
+    const wrap = app.querySelector("#iq-reveal-wrap");
+    if (wrap && myGen === renderGeneration) wrap.innerHTML = `<div class="iq-msg">動画の読み込みに失敗しました。</div>`;
   });
 
-  body.querySelector("#iq-done").onclick = () => closeIntroQuiz();
-  body.querySelector("#iq-retry").onclick = () => {
+  const doneBtn = app.querySelector("#iq-done");
+  if (doneBtn) doneBtn.onclick = () => leaveIntroQuiz();
+  const retryBtn = app.querySelector("#iq-retry");
+  if (retryBtn) retryBtn.onclick = () => {
     destroyPlayers();
-    body.innerHTML = `<div class="iq-loading">出題を準備しています…</div>`;
-    startQuiz();
+    renderCard(`<div class="iq-loading"><span class="iq-spinner"></span>出題を準備しています…</div>`);
+    startQuiz(myGen);
   };
 }

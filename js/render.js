@@ -12,7 +12,7 @@ import { notifyDailySummary, notifyMindPaletteSent, notifyReminder, notifySchedu
 import { S, state } from './state.js';
 import { markPetActivity, petHandleIdentityChange, petIsNeglected, petNextStage, petStageForLevel } from './pet.js';
 import { mpActiveBoardId, mpAddLink, mpAddNote, mpApplyCloud, mpBoardChain, mpBoardMeta, mpClearAll, mpCreateBoard, mpDeleteBoard, mpDeleteNote, mpGetState, mpGroupNotes, mpHandleIdentityChange, mpListBoards, mpRandomColor, mpRemoveLink, mpRenameBoard, mpSuggestKeywords, mpSwitchBoard, mpTotalBoardCount, mpUpdateNote } from './mindpalette.js';
-import { openIntroQuiz } from './introQuiz.js';
+import { renderIntroQuizScreen } from './introQuiz.js';
 import { checkNewsQuizPopup } from './newsQuiz.js';
 import { applyCustomButtonColors, isLongPressSuppressed, wireButtonColorLongPress } from './buttonColors.js';
 
@@ -136,7 +136,7 @@ export function renderStatusBar(){
 // render()末尾の分岐と同じ優先順位で判定する）ため、ヘッダー周りの表示制御は
 // この「実際に描画される画面名」を使って判断する。
 function resolveScreen(){
-  const noCertScreens = ["ranking","profile","settings","skins","analytics","certs","lpic-certs","portfolio","news-japan","news-world","news-detail","calendar","gemini","gemini-edit-event","mind-palette","mind-palette-folders"];
+  const noCertScreens = ["ranking","profile","settings","skins","analytics","certs","lpic-certs","portfolio","news-japan","news-world","news-detail","calendar","gemini","gemini-edit-event","mind-palette","mind-palette-folders","introquiz"];
   if(noCertScreens.includes(S.screen)) return S.screen;
   if(S.screen==="select" || !S.cert) return "select";
   return S.screen; // home/quiz/result/review/dict/transfer/history
@@ -218,6 +218,7 @@ export function render(){
   if(S.screen==="mind-palette-folders") return renderMindPaletteFolders();
   if(S.screen==="gemini") return renderGeminiChat();
   if(S.screen==="gemini-edit-event") return renderGeminiEditEvent();
+  if(S.screen==="introquiz") return renderIntroQuizScreen();
   // 大元：資格選択画面
   if(S.screen==="select" || !S.cert) return renderSelect();
   if(S.screen==="home") return renderHome();
@@ -2344,32 +2345,18 @@ function rulesLauncherItemHTML(){
     </div>`;
 }
 
-// イントロドンボタン専用のアイコン。設定・ルールと同じく画面遷移(data-go)
-// ではなくポップアップ（openIntroQuiz）を開くため、専用HTMLを組む
-function introQuizLauncherItemHTML(){
-  return `
-    <div class="launcher-item">
-      <button type="button" class="ms-logo-btn launcher-icon-introquiz" data-open-introquiz aria-label="イントロドンに挑戦" title="イントロドンに挑戦">
-        <span class="launcher-emoji" aria-hidden="true">🎵</span>
-      </button>
-      <button type="button" class="ms-cert-link" data-open-introquiz title="イントロドンに挑戦">
-        <span class="ms-cert-textwrap"><span class="ms-cert-static">イントロドン</span></span>
-      </button>
-    </div>`;
-}
-
 function homeLauncherCardHTML(){
   const items = [
     { iconHTML: `<span class="launcher-emoji" aria-hidden="true">🇯🇵</span>`, label: "J-NEWS", dataGo: "news-japan", ariaLabel: "日本NEWS", variant: "news-jp" },
     { iconHTML: `<span class="launcher-emoji" aria-hidden="true">🌐</span>`, label: "F-NEWS", dataGo: "news-world", ariaLabel: "海外ニュース", variant: "news-world" },
     { iconHTML: STOCK_LAUNCHER_ICON_SVG, label: "株価", dataGo: "portfolio", ariaLabel: "株価", variant: "stock" },
     { iconHTML: CALENDAR_APP_LAUNCHER_ICON_SVG, label: "カレンダー", dataGo: "calendar", ariaLabel: "カレンダー", variant: "calendar" },
+    { iconHTML: `<span class="launcher-emoji" aria-hidden="true">🎵</span>`, label: "イントロドン", dataGo: "introquiz", ariaLabel: "イントロドンに挑戦", variant: "introquiz" },
   ];
   return `
     <div class="news-card ms-cert-card home-launcher-card" id="home-launcher-card">
       <div class="home-launcher-row">
         ${items.map(it => launcherItemHTML(it)).join("")}
-        ${introQuizLauncherItemHTML()}
         ${settingsLauncherItemHTML()}
         ${rulesLauncherItemHTML()}
       </div>
@@ -5084,7 +5071,6 @@ export function renderSelect(){
   app.querySelectorAll("[data-go]").forEach(b=>b.onclick=()=>{ if(isLongPressSuppressed(b)) return; go(b.dataset.go); });
   app.querySelectorAll("[data-open-settings]").forEach(b=>b.onclick=()=>openSettingsModal());
   app.querySelectorAll("[data-open-rules]").forEach(b=>b.onclick=()=>openRulesModal());
-  app.querySelectorAll("[data-open-introquiz]").forEach(b=>b.onclick=()=>openIntroQuiz());
   app.querySelectorAll("[data-open-pet]").forEach(b=>b.onclick=()=>{ playTapSound(); openPetModal(); });
   const lo=app.querySelector("[data-logout]"); if(lo)lo.onclick=()=>logout();
   const li=app.querySelector("[data-login]"); if(li)li.onclick=()=>{ state.guestMode=false; state.authMode="login"; render(); };

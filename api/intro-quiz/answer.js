@@ -106,6 +106,7 @@ module.exports = async (req, res) => {
         reward,
         videoId: session.videoId,
         title: session.title,
+        artist: session.artist || "",
         correctKey: session.correctKey,
       };
     });
@@ -120,6 +121,7 @@ module.exports = async (req, res) => {
       // 正誤に関わらず、答え合わせとしてここで初めて動画情報を開示する
       videoId: result.videoId,
       title: result.title,
+      artist: result.artist,
       correctKey: result.correctKey,
     });
   } catch (e) {
