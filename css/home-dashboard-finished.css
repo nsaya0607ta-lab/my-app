@@ -132,8 +132,8 @@ body{
 }
 .weather-card .weather-col{min-width:0;padding:0 8px;}
 .weather-card .weather-datetime{padding-left:0;border-right:1px solid #dce8f4;}
-.weather-card .weather-info{border-right:1px solid #dce8f4;padding-right:6px;}
-.weather-card .weather-precip-alert{border-right:2px solid #dce8f4;padding-left:6px;}
+.weather-card .weather-info{border-right:2px solid #dce8f4;padding-right:6px;}
+.weather-card .weather-precip-alert{border-right:1px solid #dce8f4;padding-left:6px;}
 .weather-card .weather-pet{padding-right:0;padding-left:8px;display:flex;align-items:stretch;}
 .weather-card .weather-date,
 .weather-card .weather-city,
