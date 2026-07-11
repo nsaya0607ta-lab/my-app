@@ -34,7 +34,9 @@ input, textarea, [contenteditable]{
    全体ルールで確実に上書きし、モーダルを開いた際の意図しないズームを防ぐ */
 input, select, textarea{font-size:16px !important;}
 body{
-  font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","Hiragino Sans","Yu Gothic UI",sans-serif;
+  /* 数字・英字はInterで統一する（Interに無い日本語グリフは1文字単位で
+     自動的に-apple-system等の既存フォントへフォールバックする） */
+  font-family:"Inter",-apple-system,BlinkMacSystemFont,"Segoe UI","Hiragino Sans","Yu Gothic UI",sans-serif;
   /* 上部から明るい青空のようなグラデーションが広がる清潔感のある背景 */
   background:radial-gradient(120% 90% at 50% -10%, #e0f2fe 0%, var(--bg) 65%) fixed;
   color:var(--text); min-height:100vh; -webkit-font-smoothing:antialiased;
@@ -597,12 +599,12 @@ h1.title.title--badge{margin:2px 0 0;}
 .weather-heading-icon{width:16px;height:16px;color:var(--accent);}
 .weather-label-icon{width:12px;height:12px;color:var(--accent);opacity:.85;}
 
-/* 上段：4つの指標（日付＋デジタル時計／天気／現在の降水量／デジタル盆栽）を
-   CSS Gridの4カラムで表示する。各列を4行のグリッド（ラベル／補足テキスト／
-   大きな数値／下段）にそろえ、時刻・気温・降水量の数値本体（.weather-value-row）
+/* 上段：3つの指標（日付＋デジタル時計／天気／デジタル盆栽）を
+   CSS Gridの3カラムで表示する。各列を4行のグリッド（ラベル／補足テキスト／
+   大きな数値／下段）にそろえ、時刻・気温の数値本体（.weather-value-row）
    を常に3行目へ固定することで、列ごとにDOM構成（補足テキストの有無など）が
    違っても「大きな数字」の高さと位置が完全に揃う */
-.weather-metrics{display:grid;grid-template-columns:minmax(min-content,1.15fr) minmax(min-content,1.1fr) minmax(min-content,1fr) minmax(min-content,1.05fr);align-items:start;}
+.weather-metrics{display:grid;grid-template-columns:minmax(min-content,1.2fr) minmax(min-content,1.1fr) minmax(min-content,1.1fr);align-items:start;}
 .weather-metric{min-width:0;padding:0 10px;display:grid;grid-template-rows:24px 18px 38px 24px;align-items:center;}
 .weather-metric:first-child{padding-left:0;}
 .weather-metric:last-child{padding-right:0;}
@@ -627,20 +629,7 @@ h1.title.title--badge{margin:2px 0 0;}
 .weather-asof{grid-row:2;font-size:14px;font-weight:600;color:var(--muted);opacity:.85;letter-spacing:.02em;white-space:nowrap;}
 .weather-icon{align-self:center;margin-right:4px;font-size:19px;line-height:1;}
 .weather-temp{font-size:24px;font-weight:800;letter-spacing:-.04em;color:var(--text);font-variant-numeric:tabular-nums;}
-
-/* 現在の降水量(mm/h)＋その量に応じた注意喚起コメントのピル表示。
-   ピルの文言が幅に収まらない場合だけ横スクロール（右→左に流れるマーキー）
-   で全文を見せる */
-.weather-precip-now-value{font-size:24px;font-weight:800;letter-spacing:-.04em;color:var(--text);font-variant-numeric:tabular-nums;}
 .weather-value-unit{margin-left:5px;font-size:15px;font-weight:700;color:var(--text);}
-.weather-condition-pill{grid-row:4;justify-self:start;min-width:40px;max-width:100%;overflow:hidden;padding:5px 12px;border-radius:10px;background:var(--bg2);font-size:12px;font-weight:700;color:var(--muted);}
-.weather-precip-comment-track{display:inline-block;white-space:nowrap;font-size:11px;font-weight:700;color:var(--text);}
-.weather-precip-comment-track.weather-precip-marquee{position:relative;left:100%;
-  animation-name:weather-precip-marquee;animation-timing-function:linear;animation-iteration-count:infinite;}
-@keyframes weather-precip-marquee{
-  from{ transform:translateX(0); }
-  to{ transform:translateX(calc(-1 * var(--weather-precip-marquee-distance, 100%))); }
-}
 
 /* 降水確率の推移を示す滑らかな曲線グラフ＋降水量(mm)のヒストグラムの
    重ね合わせ。1時間ごとの点をドットとして打ち、縦軸は左（0〜100%の目盛り）・
@@ -672,7 +661,7 @@ h1.title.title--badge{margin:2px 0 0;}
    他の3列と違って「大きな数値」を持たないため、grid-row:1/-1で
    4行すべてにまたがせ、ボタン自体を大きな角丸パネルとしてカード右側
    エリアの上下左右中央に配置する */
-.weather-pet{grid-row:1/-1;grid-column:4;min-width:0;
+.weather-pet{grid-row:1/-1;grid-column:3;min-width:0;
   display:flex;flex-direction:column;justify-content:center;align-items:center;}
 .weather-pet-btn{display:flex;align-items:center;justify-content:center;
   width:100%;aspect-ratio:1;padding:10px;border:none;border-radius:24px;
