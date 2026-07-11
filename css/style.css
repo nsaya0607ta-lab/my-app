@@ -410,6 +410,10 @@ h1.title.title--badge{margin:2px 0 0;}
   display:flex;flex-direction:column;
   transform:translateY(100%);transition:transform .3s cubic-bezier(.22,1,.36,1);}
 .bottom-sheet.bottom-sheet-show{transform:translateY(0);}
+/* ハンドルとタイトルをまとめたドラッグ領域。touch-action:noneでブラウザの
+   既定スクロール／ズームジェスチャーを無効化し、JS側のtouchmoveで
+   ボトムシートをtranslateYで指に追従させるドラッグ操作と競合しないようにする */
+.bottom-sheet-drag-handle{flex:none;touch-action:none;}
 /* ハンドル・タイトルと最初の項目の間は、スマホの「タップ位置がずれても近くの
    要素を拾う」補正機能で誤タップされないよう、十分な余白（20px）を空ける。
    同じ理由で項目自体も左右の余白を持たせず.bottom-sheetいっぱいまで広げ、
