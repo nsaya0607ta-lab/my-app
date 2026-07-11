@@ -94,7 +94,12 @@ body{
 #app>.weather-card,
 #app>.gcal-card,
 #app>.acct-bar{
-  background:var(--home-card);
+  background:linear-gradient(
+    135deg,
+    #dff2ff 0%,
+    #eef8ff 42%,
+    #ffffff 100%
+  );
   border:1px solid var(--home-line);
   border-radius:var(--home-radius);
   box-shadow:var(--home-shadow);
