@@ -94,17 +94,29 @@ body{
 #app>.weather-card,
 #app>.gcal-card,
 #app>.acct-bar{
+  border:1px solid var(--home-line);
+  border-radius:var(--home-radius);
+  box-shadow:var(--home-shadow);
+  backdrop-filter:blur(18px);
+  -webkit-backdrop-filter:blur(18px);
+}
+#app>.acct-bar{
   background:linear-gradient(
     135deg,
     #dff2ff 0%,
     #eef8ff 42%,
     #ffffff 100%
   );
-  border:1px solid var(--home-line);
-  border-radius:var(--home-radius);
-  box-shadow:var(--home-shadow);
-  backdrop-filter:blur(18px);
-  -webkit-backdrop-filter:blur(18px);
+}
+/* 天気カード・今日の予定/タスクカードは上から下へ白→水色のグラデーション */
+#app>.weather-card,
+#app>.gcal-card{
+  background:linear-gradient(
+    180deg,
+    #ffffff 0%,
+    #eef8ff 55%,
+    #dff2ff 100%
+  );
 }
 
 /* ===== 天気カード =====
