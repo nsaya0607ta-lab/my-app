@@ -10,7 +10,6 @@ import { TAP_SOUND_DATA } from './data/tapsounds.js';
 import { playTapSound } from './audio.js';
 import { notifyDailySummary, notifyReminder, notifyScheduleCreated, notifyScheduleDeleted } from './notifications.js';
 import { S, state } from './state.js';
-import { markPetActivity, petHandleIdentityChange, petIsNeglected, petNextStage, petStageForLevel } from './pet.js';
 import { mpActiveBoardId, mpAddLink, mpAddNote, mpApplyCloud, mpBoardChain, mpBoardMeta, mpClearAll, mpCreateBoard, mpDeleteBoard, mpDeleteNote, mpGetState, mpGroupNotes, mpHandleIdentityChange, mpListBoards, mpRandomColor, mpRemoveLink, mpRenameBoard, mpSuggestKeywords, mpSwitchBoard, mpTotalBoardCount, mpUpdateNote } from './mindpalette.js';
 import { renderIntroQuizScreen } from './introQuiz.js';
 import { checkNewsQuizPopup } from './newsQuiz.js';
@@ -207,7 +206,6 @@ function applyUiTheme(){
 export function render(){
   gcalHandleIdentityChange(); // ログインユーザーの切替を検知し、前の人のGoogle連携状態を破棄
   skinHandleIdentityChange(); // ログインユーザーの切替を検知し、前の人のスキン状態を読み直す
-  petHandleIdentityChange();  // ログインユーザーの切替を検知し、デジタル盆栽の放置判定を読み直す
   mpHandleIdentityChange();   // ログインユーザーの切替を検知し、マインド・パレットのキャンバスを読み直す
   renderStatusBar();   // 画面が変わっても常に最新の Lv/BP/AC を反映
   updateHeaderNav(false); // デフォルトは非表示。表示すべき画面側で個別に true にする
@@ -1111,8 +1109,6 @@ function weatherCardHTML(){
             <span class="weather-precip-comment-track" id="weather-precip-comment-track"></span>
           </div>
         </div>
-
-        <div class="weather-metric weather-pet">${petMiniWidgetHTML()}</div>
       </div>
 
       <div class="weather-pop-chart" id="weather-pop-chart"></div>
@@ -4689,7 +4685,6 @@ function renderGcalDailyWidget(){
       const item = (s2[dateKey] || []).find(t => t.id === cb.dataset.todoToggle);
       if(item) item.done = cb.checked;
       saveGcalTodoStore(s2);
-      if(cb.checked && dateKey === todayKey) markPetActivity();   // 🔮 今日のタスク完了→デジタル盆栽が輝きを取り戻す
       renderGcalDailyWidget();
     });
     root.querySelectorAll("[data-todo-del]").forEach(btn => btn.onclick = () => {
@@ -5656,7 +5651,6 @@ export function renderSelect(){
   app.querySelectorAll("[data-go]").forEach(b=>b.onclick=()=>{ if(isLongPressSuppressed(b)) return; go(b.dataset.go); });
   app.querySelectorAll("[data-open-settings]").forEach(b=>b.onclick=()=>openSettingsModal());
   app.querySelectorAll("[data-open-rules]").forEach(b=>b.onclick=()=>openRulesModal());
-  app.querySelectorAll("[data-open-pet]").forEach(b=>b.onclick=()=>{ playTapSound(); openPetModal(); });
   const lo=app.querySelector("[data-logout]"); if(lo)lo.onclick=()=>logout();
   const li=app.querySelector("[data-login]"); if(li)li.onclick=()=>{ state.guestMode=false; state.authMode="login"; render(); };
   loadWeatherCard();
@@ -5840,122 +5834,6 @@ export function renderCalendarScreen(){
   app.querySelectorAll("[data-go]").forEach(b=>b.onclick=()=>go(b.dataset.go));
   renderGcalMonthCard();
   window.scrollTo(0,0);
-}
-
-/* =========================================================================
-   🔮 デジタル・デトックス・ペット（幾何学的クリスタル盆栽）
-   お天気カード右側の小さなアイコン（petMiniWidgetHTML）として常設し、
-   タップすると詳細（進化段階・放置状態）をモーダル（openPetModal）で見せる。
-   進化段階の判定・放置判定はjs/pet.jsが計算し、ここでは見た目（手続き的に
-   生成するSVG）とHTMLの組み立てのみを行う。
-   ========================================================================= */
-function petFacetPoints(fx, fy, s){
-  return `${fx},${(fy-s).toFixed(1)} ${(fx+s*0.72).toFixed(1)},${fy} ${fx},${(fy+s).toFixed(1)} ${(fx-s*0.72).toFixed(1)},${fy}`;
-}
-
-// 段階(tier)が上がるほど facets が増え、枝ぶりが複雑・大ぶりになる
-function petCrystalSVG(stage){
-  const n = stage.facets, tier = stage.tier;
-  const cx = 70, cy = 96;
-  const baseR = 24 + tier * 7;
-  let facetsSVG = "";
-  for(let i = 0; i < n; i++){
-    const t = n <= 1 ? 0.5 : i / (n - 1);
-    const angle = (-58 + 116 * t) * Math.PI / 180;
-    const layer = i % 3;
-    const r = baseR * (0.5 + layer * 0.26);
-    const fx = +(cx + Math.sin(angle) * r).toFixed(1);
-    const fy = +(cy - Math.cos(angle) * r * 0.7 - layer * 2).toFixed(1);
-    const size = +(6.5 + tier * 0.9 + (layer === 2 ? 2.2 : 0)).toFixed(1);
-    const gold = i % 4 === 0;
-    const delay = (i * 0.23).toFixed(2);
-    facetsSVG += `<polygon class="pet-facet ${gold ? "pet-facet-gold" : "pet-facet-blue"}" style="--pet-delay:${delay}s" points="${petFacetPoints(fx, fy, size)}"></polygon>`;
-  }
-  const coreSize = +(12 + tier * 1.6).toFixed(1);
-  return `
-    <svg viewBox="0 0 140 176" class="pet-svg" aria-hidden="true">
-      <defs>
-        <linearGradient id="petGradBlue" x1="0" y1="0" x2="1" y2="1">
-          <stop offset="0%" stop-color="#93e2ff"></stop>
-          <stop offset="100%" stop-color="#0284c7"></stop>
-        </linearGradient>
-        <linearGradient id="petGradGold" x1="0" y1="0" x2="1" y2="1">
-          <stop offset="0%" stop-color="#fde68a"></stop>
-          <stop offset="100%" stop-color="#d97706"></stop>
-        </linearGradient>
-        <radialGradient id="petGradCore" cx="35%" cy="30%" r="75%">
-          <stop offset="0%" stop-color="#ffffff"></stop>
-          <stop offset="55%" stop-color="#93e2ff"></stop>
-          <stop offset="100%" stop-color="#0ea5e9"></stop>
-        </radialGradient>
-      </defs>
-      <polygon class="pet-pot" points="40,160 100,160 112,172 28,172"></polygon>
-      <polygon class="pet-trunk" points="65,158 68,100 72,100 75,158"></polygon>
-      <g class="pet-facets">${facetsSVG}</g>
-      <polygon class="pet-core" points="${petFacetPoints(cx, cy, coreSize)}"></polygon>
-    </svg>`;
-}
-
-// 直前の描画時点で「放置」だったかを覚えておき、放置→元気 に変わった瞬間
-// だけワンショットの「輝きを取り戻す」演出クラスを付ける
-let petPrevNeglected = null;
-function petCardHTML(){
-  const ov = overallStat();
-  const stage = petStageForLevel(ov.lv);
-  const next = petNextStage(ov.lv);
-  const neglected = petIsNeglected();
-  const justRevived = petPrevNeglected === true && !neglected;
-  petPrevNeglected = neglected;
-  const nextLabel = next
-    ? `次の進化「${next.name}」まで あと ${ov.remain.toLocaleString()} BP`
-    : "最終形態まで育て上げました";
-  const statusLabel = neglected
-    ? "しばらく元気がありません…今日のタスクをひとつ終えて輝きを取り戻そう"
-    : "今日も静かに輝いています";
-  const classes = ["news-card", "pet-card"];
-  if(neglected) classes.push("pet-dim");
-  if(justRevived) classes.push("pet-revive");
-  return `
-    <div class="${classes.join(" ")}" id="pet-card">
-      <div class="pet-card-head">
-        <span class="pet-card-ttl">🔮 デジタル盆栽</span>
-        <span class="pet-card-lv">総合Lv.${ov.lv}</span>
-      </div>
-      <div class="pet-stage-wrap">${petCrystalSVG(stage)}</div>
-      <div class="pet-stage-name">${esc(stage.name)}</div>
-      <div class="pet-status${neglected ? "" : " glow"}">${esc(statusLabel)}</div>
-      <div class="pet-progress-track"><div class="pet-progress-fill" style="width:${ov.pct}%"></div></div>
-      <div class="pet-progress-lab">${esc(nextLabel)}</div>
-    </div>`;
-}
-
-// お天気カード右側に置く簡易表示。結晶SVGのみの小さなボタンで、
-// タップすると詳細（進化段階名・ステータス・進捗）をopenPetModal()で見せる
-function petMiniWidgetHTML(){
-  const ov = overallStat();
-  const stage = petStageForLevel(ov.lv);
-  const neglected = petIsNeglected();
-  return `
-    <button type="button" class="weather-pet-btn${neglected ? " pet-dim" : ""}" data-open-pet
-      aria-label="デジタル盆栽：総合Lv.${ov.lv} ${esc(stage.name)}" title="デジタル盆栽：総合Lv.${ov.lv} ${esc(stage.name)}">
-      <span class="weather-pet-svgwrap">${petCrystalSVG(stage)}</span>
-    </button>`;
-}
-
-function closePetModal(ov){ try{ ov.remove(); }catch(e){} }
-
-function openPetModal(){
-  const ov = document.createElement("div");
-  ov.className = "modal-ov";
-  ov.innerHTML = `
-    <div class="modal pet-modal">
-      ${petCardHTML()}
-      <button type="button" class="settings-modal-close" id="pet-modal-close">閉じる</button>
-    </div>`;
-  document.body.appendChild(ov);
-  const closeBtn = ov.querySelector("#pet-modal-close");
-  if(closeBtn) closeBtn.onclick = () => { playTapSound(); closePetModal(ov); };
-  ov.addEventListener("click", (e) => { if(e.target === ov) closePetModal(ov); });
 }
 
 // ホーム画面右下に常設するフローティングボタン。Gemini相談画面への唯一の入口。
@@ -6308,7 +6186,6 @@ function createMindPaletteScreen(){
             const x = mpClamp(rawX - MP_NOTE_W / 2, 0, MP_CANVAS_W - MP_NOTE_W);
             const y = mpClamp(rawY - MP_NOTE_H / 2, 0, MP_CANVAS_H - MP_NOTE_H);
             const note = mpAddNote({ x, y, text: "", color: mpRandomColor() });
-            markPetActivity();
             mpRender();
             openNoteEditor(note.id);
             return;
@@ -6810,7 +6687,6 @@ export const renderNewsWorld = createNewsScreen({
 function renderNewsDetail(){
   const d = S.newsDetail;
   if(!d){ go("select"); return; }
-  markPetActivity();   // 🔮 ニュースを読んだことを「今日の活動」として記録
   app.innerHTML = `
     <div class="q-head"><button class="quit" data-go="${esc(d.returnScreen||"select")}">← 戻る</button><span class="q-count">${d.icon||""} ${esc(d.label||"ニュース")}</span></div>
     <div class="njp-detail">
