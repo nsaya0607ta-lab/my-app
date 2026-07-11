@@ -986,7 +986,7 @@ export function renderAnalytics(){
     <div class="an-card">
       <div class="an-ttl">📡 直近クリアした匿名エンジニア</div>
       <div class="an-log">${logHTML}</div>
-      <button class="ghost" id="an-refresh" style="margin-top:10px">🔄 最新を取得</button>
+      <button class="ghost" id="an-refresh" style="margin-top:10px">⟲ 最新を取得</button>
     </div>
   `;
   app.querySelectorAll("[data-go]").forEach(b=>b.onclick=()=>go(b.dataset.go));
@@ -4687,7 +4687,7 @@ function renderGcalDailyWidget(){
         <button type="button" class="gcal-nav-btn" id="gcal-day-prev" aria-label="前の日">‹</button>
         <div class="gcal-day-title">${esc(dateLabel)}</div>
         <div class="gcal-day-head-right">
-          <button type="button" class="gcal-reload-btn${gcalDayReloading?" spinning":""}" id="gcal-day-reload" aria-label="変更を反映（最新の予定を再取得）" title="変更を反映"${gcalDayReloading?" disabled":""}>🔄</button>
+          <button type="button" class="gcal-reload-btn${gcalDayReloading?" spinning":""}" id="gcal-day-reload" aria-label="変更を反映（最新の予定を再取得）" title="変更を反映"${gcalDayReloading?" disabled":""}>⟲</button>
           <button type="button" class="gcal-nav-btn" id="gcal-day-next" aria-label="次の日">›</button>
         </div>
       </div>
@@ -5051,7 +5051,7 @@ function renderGcalMonthCard(){
           <button type="button" class="gcal-nav-btn" id="gcal-prev" aria-label="前の月">‹</button>
           <div class="gcal-cal-title">${gcalViewY}年${gcalViewM+1}月</div>
           <div class="gcal-cal-head-right">
-            <button type="button" class="gcal-reload-btn${gcalMonthReloading?" spinning":""}" id="gcal-month-reload" aria-label="変更を反映（最新の予定を再取得）" title="変更を反映"${gcalMonthReloading?" disabled":""}>🔄</button>
+            <button type="button" class="gcal-reload-btn${gcalMonthReloading?" spinning":""}" id="gcal-month-reload" aria-label="変更を反映（最新の予定を再取得）" title="変更を反映"${gcalMonthReloading?" disabled":""}>⟲</button>
             <button type="button" class="gcal-nav-btn" id="gcal-next" aria-label="次の月">›</button>
           </div>
         </div>
@@ -5126,7 +5126,7 @@ function renderGcalMonthCard(){
         <button type="button" class="gcal-nav-btn" id="gcal-prev" aria-label="前の月">‹</button>
         <div class="gcal-cal-title">${gcalViewY}年${gcalViewM+1}月</div>
         <div class="gcal-cal-head-right">
-          <button type="button" class="gcal-reload-btn${gcalMonthReloading?" spinning":""}" id="gcal-month-reload" aria-label="変更を反映（最新の予定を再取得）" title="変更を反映"${gcalMonthReloading?" disabled":""}>🔄</button>
+          <button type="button" class="gcal-reload-btn${gcalMonthReloading?" spinning":""}" id="gcal-month-reload" aria-label="変更を反映（最新の予定を再取得）" title="変更を反映"${gcalMonthReloading?" disabled":""}>⟲</button>
           <button type="button" class="gcal-nav-btn" id="gcal-next" aria-label="次の月">›</button>
         </div>
       </div>
