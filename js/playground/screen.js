@@ -1,30 +1,37 @@
 /* =========================================================================
    🐧 Linux プレイグラウンド — 専用フルスクリーン画面（PlaygroundScreen）
    実OS・Dockerには一切アクセスせず、ブラウザのメモリ上だけで完結する
-   仮想Linux環境（VirtualFileSystem）に対して、対応コマンドだけを解釈・
-   実行する学習用サンドボックス。
+   仮想Linux環境（VirtualFileSystem + ShellState）に対して、LPIC Level1で
+   学習する範囲を中心としたコマンド（commands/配下、レジストリはcommands/
+   index.js）を解釈・実行する学習用サンドボックス。
 
    このファイルが担う「コンポーネント」：
      ・Terminal      … renderTerminalBody() / appendTerminalRecords()
-     ・CommandInput   … wireCommandInput()（Enter送信・↑↓履歴・チップ挿入）
+     ・CommandInput   … wireCommandInput()（Enter送信・↑↓履歴・Tab補完・
+                        Ctrl+C・モバイル向け補助キー行）
      ・MissionCard    … renderMissionCard()
      ・HintCard       … renderHintCard()
-   VirtualFileSystem・CommandParser・CommandExecutor・HistoryManagerは
+     ・nano/lessの疑似エディタ／ページャ（openNanoModal/openLessModal）
+   VirtualFileSystem・ShellState・CommandParser・CommandExecutorは
    それぞれ専用ファイルに分離し、ここではその実行結果を画面に反映するだけ。
 
-   状態（vfs/history/ミッション進捗/ターミナルの表示履歴）はモジュール変数
-   として画面をまたいで保持する（js/introQuiz.jsと同じ作法）。「リセット」
-   ボタンを押すか、初回読み込み時のみ初期状態に戻る。
+   状態（vfs/shellState/history/ミッション進捗/ターミナルの表示履歴）は
+   モジュール変数として画面をまたいで保持する。「リセット」ボタンを押すか、
+   初回読み込み時のみ初期状態に戻る。
    ========================================================================= */
 import { esc } from '../core.js';
 import { app } from '../render.js';
 import { VirtualFileSystem } from './vfs.js';
+import { ShellState } from './shellState.js';
 import { parseCommand } from './commandParser.js';
 import { executeCommand } from './commandExecutor.js';
 import { HistoryManager } from './historyManager.js';
+import { getCompletions } from './completion.js';
 import { MISSIONS } from './missions.js';
+import { COMMAND_NAMES } from './commands/index.js';
 
 const vfs = new VirtualFileSystem();
+const shellState = new ShellState();
 const history = new HistoryManager();
 let missionIndex = 0;
 let answerRevealed = false;
@@ -32,24 +39,29 @@ let terminalRecords = []; // {kind:"cmd", promptPath, text} | {kind:"line", toke
 let bootstrapped = false;
 
 const QUICK_COMMANDS = [
-  { cmd:"ls", needsArg:false },
+  { cmd:"ls -l", needsArg:false },
   { cmd:"cd", needsArg:true },
   { cmd:"pwd", needsArg:false },
   { cmd:"mkdir", needsArg:true },
   { cmd:"touch", needsArg:true },
   { cmd:"cat", needsArg:true },
+  { cmd:"grep", needsArg:true },
+  { cmd:"chmod", needsArg:true },
+  { cmd:"find .", needsArg:false },
   { cmd:"echo", needsArg:true },
+  { cmd:"man", needsArg:true },
   { cmd:"clear", needsArg:false },
   { cmd:"help", needsArg:false },
 ];
 
 function resetPlaygroundState(){
   vfs.reset();
+  shellState.reset();
   history.reset();
   missionIndex = 0;
   answerRevealed = false;
   terminalRecords = [
-    { kind:"line", tokens:[{ text:"student ホームディレクトリへようこそ。help と入力すると使えるコマンド一覧を確認できます。", cls:"pg-muted" }] },
+    { kind:"line", tokens:[{ text:"student ホームディレクトリへようこそ。help と入力すると使えるコマンド一覧を確認できます（Tabキーで補完、| でパイプ、> でリダイレクトも使えます）。", cls:"pg-muted" }] },
   ];
 }
 
@@ -57,7 +69,7 @@ function resetPlaygroundState(){
 // Terminal
 // ------------------------------------------------------------------------
 function tokensToHTML(tokens){
-  return tokens.map(t => `<span${t.cls ? ` class="${t.cls}"` : ""}>${esc(t.text)}</span>`).join(" ");
+  return tokens.map(t => `<span${t.cls ? ` class="${t.cls}"` : ""}>${esc(t.text)}</span>`).join("");
 }
 
 function recordToHTML(record){
@@ -135,21 +147,115 @@ function evaluateMission(parsed){
 function runCommand(raw){
   const promptPath = vfs.promptPath();
   history.push(raw);
-  const parsed = parseCommand(raw); // raw is guaranteed non-blank by the caller
-  const result = executeCommand(vfs, parsed);
+  const pipeline = parseCommand(raw); // raw is guaranteed non-blank by the caller
+  if(!pipeline) return;
+  const result = executeCommand({ vfs, state: shellState, history: history.items }, pipeline);
   if(result.clear){
     clearTerminal();
     return;
   }
   const records = [{ kind:"cmd", promptPath, text: raw }];
-  (result.lines||[]).forEach(tokens => records.push({ kind:"line", tokens }));
+  (result.lines || []).forEach(tokens => records.push({ kind:"line", tokens }));
+  (result.err || []).forEach(tokens => records.push({ kind:"line", tokens }));
   appendTerminalRecords(records);
-  if(!result.isError) evaluateMission(parsed);
+  if(result.overlay) openCommandOverlay(result.overlay);
+  if(!result.isError && pipeline.length === 1) evaluateMission(pipeline[0]);
 }
 
 // ------------------------------------------------------------------------
-// CommandInput
+// nano（簡易版）／ less のオーバーレイ画面
 // ------------------------------------------------------------------------
+function openCommandOverlay(overlay){
+  if(overlay.type === "nano") openNanoModal(overlay);
+  else if(overlay.type === "less") openLessModal(overlay);
+}
+
+function openNanoModal(payload){
+  const ov = document.createElement("div");
+  ov.className = "modal-ov pg-nano-ov";
+  ov.innerHTML = `
+    <div class="pg-nano-modal">
+      <div class="pg-nano-head">GNU nano &nbsp; ${esc(payload.path)}</div>
+      <textarea class="pg-nano-textarea" id="pg-nano-textarea" autocapitalize="off" autocorrect="off" spellcheck="false">${esc(payload.content)}</textarea>
+      <div class="pg-nano-status" id="pg-nano-status">&nbsp;</div>
+      <div class="pg-nano-foot">
+        <button type="button" class="pg-nano-btn" id="pg-nano-save">^O 保存</button>
+        <button type="button" class="pg-nano-btn pg-nano-btn--exit" id="pg-nano-exit">^X 終了</button>
+      </div>
+    </div>`;
+  document.body.appendChild(ov);
+  const ta = ov.querySelector("#pg-nano-textarea");
+  const status = ov.querySelector("#pg-nano-status");
+  const save = () => {
+    const res = vfs.writeFile(payload.path, ta.value, { append:false });
+    status.textContent = res.error ? `[ 保存に失敗しました: ${payload.path} ]` : `[ ${payload.path} に書き込みました ]`;
+  };
+  const exit = () => {
+    ov.remove();
+    renderTerminalBody();
+  };
+  ov.querySelector("#pg-nano-save").onclick = save;
+  ov.querySelector("#pg-nano-exit").onclick = exit;
+  ta.addEventListener("keydown", (e) => {
+    if(e.ctrlKey && (e.key === "o" || e.key === "O")){ e.preventDefault(); save(); }
+    else if(e.ctrlKey && (e.key === "x" || e.key === "X")){ e.preventDefault(); exit(); }
+  });
+  ta.focus();
+  ta.setSelectionRange(ta.value.length, ta.value.length);
+}
+
+function openLessModal(payload){
+  const ov = document.createElement("div");
+  ov.className = "modal-ov pg-less-ov";
+  const body = payload.content.endsWith("\n") ? payload.content.slice(0, -1) : payload.content;
+  ov.innerHTML = `
+    <div class="pg-less-modal">
+      <pre class="pg-less-content">${esc(body)}</pre>
+      <div class="pg-less-foot">
+        <span class="pg-less-filename">${esc(payload.path)}</span>
+        <span class="pg-less-end">(END)</span>
+        <button type="button" class="pg-less-btn" id="pg-less-close">閉じる (q)</button>
+      </div>
+    </div>`;
+  document.body.appendChild(ov);
+  const close = () => { ov.remove(); document.removeEventListener("keydown", onKey); };
+  const onKey = (e) => { if(e.key === "q") close(); };
+  document.addEventListener("keydown", onKey);
+  ov.querySelector("#pg-less-close").onclick = close;
+  ov.addEventListener("click", (e) => { if(e.target === ov) close(); });
+}
+
+// ------------------------------------------------------------------------
+// CommandInput（Enter送信・↑↓履歴・Tab補完・Ctrl+C）
+// ------------------------------------------------------------------------
+function historyStep(input, dir){
+  const v = dir < 0 ? history.prev(input.value) : history.next();
+  if(v !== null){
+    input.value = v;
+    requestAnimationFrame(() => input.setSelectionRange(input.value.length, input.value.length));
+  }
+}
+
+function tabComplete(input){
+  const pos = input.selectionStart ?? input.value.length;
+  const commandNames = [...COMMAND_NAMES, ...shellState.aliases.keys()];
+  const result = getCompletions(input.value, pos, { vfs, commandNames });
+  if(result.completion){
+    const before = input.value.slice(0, result.wordStart);
+    const after = input.value.slice(pos);
+    input.value = before + result.completion + after;
+    const newPos = before.length + result.completion.length;
+    requestAnimationFrame(() => input.setSelectionRange(newPos, newPos));
+  } else if(result.matches.length > 1){
+    appendTerminalRecords([{ kind:"line", tokens:[{ text: result.matches.map(m => m.label).join("  ") }] }]);
+  }
+}
+
+function ctrlC(input){
+  appendTerminalRecords([{ kind:"cmd", promptPath: vfs.promptPath(), text: `${input.value}^C` }]);
+  input.value = "";
+}
+
 function wireCommandInput(){
   const form = app.querySelector("#pg-term-input-form");
   const input = app.querySelector("#pg-term-input");
@@ -162,15 +268,10 @@ function wireCommandInput(){
     runCommand(raw);
   };
   input.onkeydown = (e) => {
-    if(e.key === "ArrowUp"){
-      e.preventDefault();
-      const v = history.prev(input.value);
-      if(v !== null){ input.value = v; requestAnimationFrame(() => input.setSelectionRange(input.value.length, input.value.length)); }
-    } else if(e.key === "ArrowDown"){
-      e.preventDefault();
-      const v = history.next();
-      if(v !== null){ input.value = v; requestAnimationFrame(() => input.setSelectionRange(input.value.length, input.value.length)); }
-    }
+    if(e.key === "Tab"){ e.preventDefault(); tabComplete(input); }
+    else if(e.key === "ArrowUp"){ e.preventDefault(); historyStep(input, -1); }
+    else if(e.key === "ArrowDown"){ e.preventDefault(); historyStep(input, 1); }
+    else if(e.key === "c" && e.ctrlKey){ e.preventDefault(); ctrlC(input); }
   };
 }
 
@@ -184,6 +285,27 @@ function wireTerminalTap(){
     const input = app.querySelector("#pg-term-input");
     if(input && document.activeElement !== input) input.focus();
   });
+}
+
+// モバイル向け補助キー行（Tab補完・履歴・Ctrl+C）。物理キーボードが無い
+// 端末でもTab補完や↑↓履歴を使えるようにする。pointerdownでボタン自身への
+// フォーカス移動を止め、入力欄のフォーカス（＝ソフトキーボード表示）を保つ。
+function wireTermKeys(){
+  const bind = (id, handler) => {
+    const btn = app.querySelector(id);
+    if(!btn) return;
+    btn.addEventListener("pointerdown", (e) => {
+      e.preventDefault();
+      const input = app.querySelector("#pg-term-input");
+      if(!input) return;
+      input.focus();
+      handler(input);
+    });
+  };
+  bind("#pg-key-tab", (input) => tabComplete(input));
+  bind("#pg-key-up", (input) => historyStep(input, -1));
+  bind("#pg-key-down", (input) => historyStep(input, 1));
+  bind("#pg-key-ctrlc", (input) => ctrlC(input));
 }
 
 function wireChips(){
@@ -255,20 +377,19 @@ function openHelpModal(){
       <div class="pg-help-body">
         <div class="rules-section">
           <div class="rules-section-title">📝 これは何？</div>
-          <div class="rules-text">本物のLinux／Dockerには一切アクセスしない、ブラウザ上だけで動く仮想の学習環境です。安心してコマンドを試せます。</div>
+          <div class="rules-text">本物のLinux／Dockerには一切アクセスしない、ブラウザ上だけで動く仮想の学習環境です。LPIC Level1で学習する範囲を中心に、実際のLinuxに近い書式・エラーメッセージを再現しています。安心してコマンドを試せます。</div>
         </div>
         <div class="rules-section">
           <div class="rules-section-title">⌨️ 対応コマンド</div>
+          <div class="rules-text">ファイル操作・テキスト処理・パーミッション・プロセス／リソース確認・シェル操作など40種類以上に対応しています。ターミナルに <code>help</code> と入力すると一覧を、<code>man コマンド名</code> と入力すると詳しい使い方を確認できます。</div>
+        </div>
+        <div class="rules-section">
+          <div class="rules-section-title">🔧 便利な機能</div>
           <ul class="rules-list">
-            <li><code>pwd</code> … 現在のディレクトリを表示</li>
-            <li><code>ls</code> … 中身を一覧表示</li>
-            <li><code>cd &lt;dir&gt;</code> … ディレクトリを移動</li>
-            <li><code>mkdir &lt;name&gt;</code> … ディレクトリを作成</li>
-            <li><code>touch &lt;name&gt;</code> … 空のファイルを作成</li>
-            <li><code>cat &lt;file&gt;</code> … ファイルの中身を表示</li>
-            <li><code>echo テキスト</code> … 文字列を表示（<code>&gt; file</code>で書き込み）</li>
-            <li><code>clear</code> … 画面をクリア</li>
-            <li><code>help</code> … コマンド一覧を表示</li>
+            <li><b>Tab補完</b> … コマンド名やファイル名を入力途中でTabキー（画面下の「Tab」ボタンでも可）を押すと補完できます</li>
+            <li><b>↑ / ↓</b> … 入力履歴を呼び出せます（画面下のボタンでも可）</li>
+            <li><code>|</code> パイプ … <code>cat file | grep 語句</code> のように前のコマンドの出力を次のコマンドへ渡せます</li>
+            <li><code>&gt;</code> / <code>&gt;&gt;</code> リダイレクト … コマンドの出力をファイルへ書き込み／追記できます</li>
           </ul>
         </div>
         <div class="rules-section">
@@ -316,6 +437,12 @@ export function renderPlaygroundScreen(){
         <button type="button" class="pg-terminal-clear" id="pg-terminal-clear">🗑 クリア</button>
       </div>
       <div class="pg-terminal-body" id="pg-terminal-body"></div>
+      <div class="pg-term-keys">
+        <button type="button" class="pg-term-key pg-term-key--wide" id="pg-key-tab">Tab補完</button>
+        <button type="button" class="pg-term-key" id="pg-key-up">↑</button>
+        <button type="button" class="pg-term-key" id="pg-key-down">↓</button>
+        <button type="button" class="pg-term-key" id="pg-key-ctrlc">Ctrl+C</button>
+      </div>
     </div>
     <div class="pg-chip-row">${chipsHTML}</div>
     <div class="pg-cards">
@@ -328,6 +455,7 @@ export function renderPlaygroundScreen(){
   renderMissionCard();
   renderHintCard();
   wireTerminalTap();
+  wireTermKeys();
   wireChips();
 
   const resetBtn = app.querySelector("#pg-reset");

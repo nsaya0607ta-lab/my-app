@@ -2009,3 +2009,66 @@ body[data-theme="dark"] .menu-btn:active{box-shadow:0 4px 10px rgba(0,0,0,.3), i
 .pg-help-modal-title{color:var(--accent);}
 .pg-help-body{max-height:60vh;overflow-y:auto;padding-right:2px;margin-bottom:14px;}
 .pg-help-body code{background:var(--bg2);border-radius:6px;padding:1px 6px;font-size:11.5px;}
+
+/* ===== ターミナル配色の追加トークン（リンク・manページ・calの当日ハイライト） ===== */
+.pg-tok-link{color:#67e8f9;font-weight:700;}
+.pg-man-head{color:#facc15;font-weight:800;}
+.pg-cal-today{background:#4ade80;color:#0b1220;font-weight:800;border-radius:3px;}
+
+/* ===== モバイル向け補助キー行（Tab補完／履歴／Ctrl+C） =====
+   物理キーボードが無い端末でも、ソフトキーボードのTabキーに頼らず
+   コマンド練習を快適に行えるようにするための固定ツールバー。 */
+.pg-term-keys{
+  display:flex;gap:6px;padding:8px 10px;background:#111a2e;border-top:1px solid #1e293b;
+  overflow-x:auto;-webkit-overflow-scrolling:touch;
+}
+.pg-term-key{
+  flex:none;background:#1e293b;border:1px solid #334155;color:#cbd5e1;
+  font-family:ui-monospace,"SFMono-Regular",Menlo,Consolas,monospace;font-weight:700;font-size:11.5px;
+  padding:8px 12px;border-radius:8px;cursor:pointer;-webkit-tap-highlight-color:transparent;
+}
+.pg-term-key:active{background:#334155;}
+.pg-term-key--wide{flex:none;padding:8px 16px;}
+
+/* ===== nano（簡易版）の疑似エディタ画面 ===== */
+.pg-nano-ov{padding:0;align-items:stretch;justify-content:stretch;background:rgba(8,12,22,.6);}
+.pg-nano-modal{
+  width:100%;height:100%;display:flex;flex-direction:column;
+  background:#0b1220;color:#e2e8f0;
+  padding-top:env(safe-area-inset-top);padding-bottom:env(safe-area-inset-bottom);
+}
+.pg-nano-head{
+  flex:none;background:#f8fafc;color:#0b1220;font-weight:800;font-size:13px;text-align:center;
+  padding:10px 12px;font-family:ui-monospace,"SFMono-Regular",Menlo,Consolas,monospace;
+}
+.pg-nano-textarea{
+  flex:1 1 auto;width:100%;border:none;outline:none;resize:none;
+  background:#0b1220;color:#f8fafc;caret-color:#4ade80;
+  font-family:ui-monospace,"SFMono-Regular",Menlo,Consolas,monospace;font-size:16px;line-height:1.7;
+  padding:12px 14px;-webkit-appearance:none;appearance:none;
+}
+.pg-nano-status{flex:none;padding:4px 14px;font-size:11.5px;color:#4ade80;min-height:18px;}
+.pg-nano-foot{flex:none;display:flex;gap:8px;padding:10px 12px;background:#111a2e;border-top:1px solid #1e293b;}
+.pg-nano-btn{
+  flex:1;background:#1e293b;border:1px solid #334155;color:#f8fafc;font-weight:700;font-size:12.5px;
+  padding:12px;border-radius:10px;cursor:pointer;
+}
+.pg-nano-btn--exit{background:none;border-color:#475569;color:#94a3b8;}
+.pg-nano-btn:active{transform:scale(.97);}
+
+/* ===== less の疑似ページャ画面 ===== */
+.pg-less-ov{padding:0;align-items:stretch;justify-content:stretch;background:rgba(8,12,22,.6);}
+.pg-less-modal{
+  width:100%;height:100%;display:flex;flex-direction:column;background:#0b1220;color:#e2e8f0;
+  padding-top:env(safe-area-inset-top);padding-bottom:env(safe-area-inset-bottom);
+}
+.pg-less-content{
+  flex:1 1 auto;margin:0;overflow:auto;padding:14px;white-space:pre-wrap;word-break:break-word;
+  font-family:ui-monospace,"SFMono-Regular",Menlo,Consolas,monospace;font-size:12.5px;line-height:1.8;
+  -webkit-user-select:text;user-select:text;
+}
+.pg-less-foot{flex:none;display:flex;align-items:center;gap:8px;padding:10px 12px;background:#111a2e;border-top:1px solid #1e293b;}
+.pg-less-filename{flex:1;min-width:0;font-size:11.5px;color:#94a3b8;font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.pg-less-end{flex:none;font-size:11px;color:#facc15;font-weight:800;}
+.pg-less-btn{flex:none;background:#1e293b;border:1px solid #334155;color:#f8fafc;font-weight:700;font-size:12px;padding:9px 14px;border-radius:10px;cursor:pointer;}
+.pg-less-btn:active{transform:scale(.97);}
