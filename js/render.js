@@ -1067,36 +1067,34 @@ function weatherCardHTML(){
   return `
     <div class="news-card weather-card" id="weather-card">
       <div class="weather-body">
-        <div class="weather-left">
-          <div class="weather-left-top">
-            <div class="weather-datetime">
-              <div class="weather-date" id="weather-clock-date"></div>
-              <div class="weather-time">
-                <span id="weather-clock-time"></span><span class="weather-time-sec" id="weather-clock-sec"></span>
-              </div>
-            </div>
-            <div class="weather-info" id="weather-info">
-              <div class="weather-city-row">
-                <span class="weather-city" id="weather-city">取得中…</span>
-                <button type="button" class="weather-retry-btn" id="weather-retry-loc" title="現在地を再取得" aria-label="現在地を再取得" hidden>⟳</button>
-              </div>
-              <div class="weather-asof" id="weather-asof"></div>
-              <div class="weather-main">
-                <span class="weather-icon" id="weather-icon">🌡️</span>
-                <span class="weather-temp" id="weather-temp"></span>
-              </div>
-            </div>
-            <div class="weather-precip-alert" id="weather-precip-alert">
-              <div class="weather-precip-label">現在</div>
-              <div class="weather-precip-now" id="weather-precip-now"><span class="weather-precip-now-value" id="weather-precip-now-value"></span>mm/h</div>
-              <div class="weather-precip-comment" id="weather-precip-comment">
-                <span class="weather-precip-comment-track" id="weather-precip-comment-track"></span>
-              </div>
+        <div class="weather-top">
+          <div class="weather-col weather-datetime">
+            <div class="weather-date" id="weather-clock-date"></div>
+            <div class="weather-time">
+              <span id="weather-clock-time"></span><span class="weather-time-sec" id="weather-clock-sec"></span>
             </div>
           </div>
-          <div class="weather-pop-chart" id="weather-pop-chart"></div>
+          <div class="weather-col weather-info" id="weather-info">
+            <div class="weather-city-row">
+              <span class="weather-city" id="weather-city">取得中…</span>
+              <button type="button" class="weather-retry-btn" id="weather-retry-loc" title="現在地を再取得" aria-label="現在地を再取得" hidden>⟳</button>
+            </div>
+            <div class="weather-asof" id="weather-asof"></div>
+            <div class="weather-main">
+              <span class="weather-icon" id="weather-icon">🌡️</span>
+              <span class="weather-temp" id="weather-temp"></span>
+            </div>
+          </div>
+          <div class="weather-col weather-precip-alert" id="weather-precip-alert">
+            <div class="weather-precip-label">現在</div>
+            <div class="weather-precip-now" id="weather-precip-now"><span class="weather-precip-now-value" id="weather-precip-now-value"></span>mm/h</div>
+            <div class="weather-precip-comment" id="weather-precip-comment">
+              <span class="weather-precip-comment-track" id="weather-precip-comment-track"></span>
+            </div>
+          </div>
+          <div class="weather-col weather-pet">${petMiniWidgetHTML()}</div>
         </div>
-        <div class="weather-pet">${petMiniWidgetHTML()}</div>
+        <div class="weather-pop-chart" id="weather-pop-chart"></div>
       </div>
     </div>`;
 }
@@ -1182,24 +1180,15 @@ function precipMmLabel(mm){
   return Number.isInteger(v) ? String(v) : v.toFixed(1);
 }
 
-// コメント欄のテキストが表示枠に収まりきらない場合のみ、右→左へ流れる
-// マーキー表示にする。収まる場合は静止表示のままにして、無用なアニメーションを避ける
+// コメント欄は最大2行までの折り返し表示（CSSのline-clampで制御）にしたため、
+// 横スクロールのマーキー表示は不要。既存の呼び出し元はそのまま残し、
+// 万一残っている旧クラス・インラインスタイルだけ確実に取り除く
 function updatePrecipAlertMarquee(){
-  const container = document.getElementById("weather-precip-comment");
   const track = document.getElementById("weather-precip-comment-track");
-  if(!container || !track) return;
+  if(!track) return;
   track.classList.remove("weather-precip-marquee");
   track.style.removeProperty("--weather-precip-marquee-distance");
   track.style.animationDuration = "";
-  const containerW = container.clientWidth;
-  const trackW = track.scrollWidth;
-  if(trackW > containerW){
-    const distance = containerW + trackW;
-    const duration = Math.max(6, distance / 45); // 45px/秒の速さでスクロールする
-    track.style.setProperty("--weather-precip-marquee-distance", `${distance}px`);
-    track.style.animationDuration = `${duration}s`;
-    track.classList.add("weather-precip-marquee");
-  }
 }
 
 // 目盛りのインデックス位置（0=一番上、tickCount-1=一番下）をSVGのY座標に変換する。
