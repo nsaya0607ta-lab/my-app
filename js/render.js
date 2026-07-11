@@ -70,7 +70,7 @@ export function renderStatusBar(){
              || (!state.guestMode && !state.currentUser)
              || (!state.guestMode && state.currentUser && (!state.profileChecked || !getProfileName()));
   const screen = resolveScreen();
-  const otherScreens = ["ranking","profile","settings","skins","analytics","portfolio","news-japan","news-world","news-detail","calendar","gemini","gemini-edit-event","mind-palette","mind-palette-folders"];
+  const otherScreens = ["ranking","profile","settings","skins","analytics","portfolio","holdings","news-japan","news-world","news-detail","calendar","gemini","gemini-edit-event","mind-palette","mind-palette-folders"];
   if(gated || otherScreens.includes(screen)){ el.classList.remove("show"); el.innerHTML=""; return; }
   const ov = overallStat();          // 総合Lvと次Lvまでの進捗(%)
   const coins = (S.coins||0);
@@ -210,6 +210,7 @@ export function render(){
   if(S.screen==="certs") return renderCertList();
   if(S.screen==="lpic-certs") return renderLpicList();
   if(S.screen==="portfolio") return renderPortfolio();
+  if(S.screen==="holdings") return renderHoldings();
   if(S.screen==="news-japan") return renderNewsJapan();
   if(S.screen==="news-world") return renderNewsWorld();
   if(S.screen==="news-detail") return renderNewsDetail();
@@ -1359,29 +1360,10 @@ async function loadWeatherCard(){
   startWeatherRefresh();      // 以後20分間隔でバックグラウンド自動更新
 }
 
-// ポートフォリオ画面（保有株の閲覧）が銘柄名・価格を引くための静的な
-// 銘柄マスタ（日本経済＝JP_STOCKS＝日本の主要企業のNYSE上場ADR、
-// 世界経済＝STOCKS＝米国株6銘柄）
-const STOCKS = [
-  { ticker:"MSFT", name:"Microsoft", price:435.12 },
-  { ticker:"AMZN", name:"Amazon", price:189.50 },
-  { ticker:"GOOGL", name:"Alphabet", price:199.80 },
-  { ticker:"AAPL", name:"Apple", price:213.40 },
-  { ticker:"META", name:"Meta", price:512.30 },
-  { ticker:"NVDA", name:"NVIDIA", price:135.60 },
-];
-
-const JP_STOCKS = [
-  { ticker:"TM", name:"トヨタ自動車(ADR)", price:195.40 },
-  { ticker:"SONY", name:"ソニーG(ADR)", price:24.60 },
-  { ticker:"HMC", name:"本田技研(ADR)", price:32.10 },
-  { ticker:"MUFG", name:"三菱UFJ(ADR)", price:11.20 },
-  { ticker:"MFG", name:"みずほFG(ADR)", price:4.55 },
-  { ticker:"NMR", name:"野村HD(ADR)", price:6.35 },
-];
-
-// ポートフォリオ画面の「株式を検索して追加」ウォッチリスト機能が検索対象と
-// する米国株の銘柄マスタ（priceは基準値＝前日終値扱いのモックデータ）
+// ポートフォリオ画面の「株式を検索して追加」ウォッチリストや売買モーダルの
+// クイック候補として最初から出しておく主要銘柄（priceは基準値＝前日終値扱いの
+// モックデータ）。これ以外の銘柄は /api/stocks/search 経由でティッカー・企業名
+// を幅広く検索して見つけられる（stockSearchResultsHTML/openTradeModal参照）
 const WATCH_STOCKS = [
   { ticker:"AAPL", name:"Apple", price:213.40, sector:"テクノロジー" },
   { ticker:"TSLA", name:"Tesla", price:248.50, sector:"自動車" },
@@ -1418,6 +1400,33 @@ function sectorBadgeHTML(sector){
   return `<span class="pf-sector-badge" data-sector="${meta.key}">${meta.emoji} ${esc(sector)}</span>`;
 }
 
+// 銘柄検索（/api/stocks/search）で見つけた、WATCH_STOCKSに無い銘柄の企業名を
+// 端末に覚えておくための簡易キャッシュ。財務情報ではなく単なる表示名なので
+// ユーザーごとに分けず端末共通の1キーで保存する
+const STOCK_NAME_CACHE_KEY = "stock_name_cache_v1";
+function loadStockNameCache(){
+  try{
+    const c = JSON.parse(localStorage.getItem(STOCK_NAME_CACHE_KEY) || "{}");
+    return (c && typeof c === "object" && !Array.isArray(c)) ? c : {};
+  }catch(e){ return {}; }
+}
+function cacheStockName(ticker, name){
+  if(!ticker || !name) return;
+  try{
+    const cache = loadStockNameCache();
+    if(cache[ticker] === name) return;
+    cache[ticker] = name;
+    localStorage.setItem(STOCK_NAME_CACHE_KEY, JSON.stringify(cache));
+  }catch(e){}
+}
+// 表示名の解決順：WATCH_STOCKSの銘柄マスタ → 検索で得た名前キャッシュ →
+// 最後の手段としてティッカーそのもの
+function stockDisplayName(ticker){
+  const meta = WATCH_STOCKS.find(s => s.ticker === ticker);
+  if(meta) return meta.name;
+  return loadStockNameCache()[ticker] || ticker;
+}
+
 /* ---- 保有株（デモ取引のポートフォリオ）。端末ローカルに保存する ----
    保存キーは「現在ログインしているユーザー」ごとに独立させる。ベースキーに
    ログイン中のFirebase UID（未ログイン＝ゲスト利用中は"guest"固定）を連結
@@ -1448,6 +1457,19 @@ export function applyCloudPortfolio(pf){
   if(!pf || typeof pf !== "object" || Array.isArray(pf)) return;
   savePortfolio(pf);
   if(S.screen === "portfolio") renderPortfolio();
+  else if(S.screen === "holdings") renderHoldings();
+}
+
+// クラウド（Firestoreの users/{uid}.pendingOrders/.stockTrades）から届いた
+// 時間外の予約注文・取引履歴を端末へ反映する。保有株と同じくonSnapshot経由
+export function applyCloudPendingOrders(list){
+  if(!Array.isArray(list)) return;
+  savePendingOrders(list);
+  if(S.screen === "portfolio") renderPortfolio();
+}
+export function applyCloudTradeLog(list){
+  if(!Array.isArray(list)) return;
+  saveTradeLog(list);
 }
 
 /* ---- ウォッチリスト（検索して追加した銘柄の一覧）。保有株とは別物で、
@@ -1468,10 +1490,11 @@ function loadWatchlist(){
 function saveWatchlist(list){
   try{ localStorage.setItem(watchlistStorageKey(), JSON.stringify(list)); }catch(e){}
 }
-function addToWatchlist(ticker){
+function addToWatchlist(ticker, name){
   const list = loadWatchlist();
   if(!list.includes(ticker)) list.push(ticker);
   saveWatchlist(list);
+  if(name) cacheStockName(ticker, name);
 }
 function removeFromWatchlist(ticker){
   saveWatchlist(loadWatchlist().filter(t => t !== ticker));
@@ -1651,10 +1674,10 @@ function isUSMarketHoursJST(){
 // 表示しておく（loaded:falseの間は「取得中」の見た目にする）
 const WATCH_REFRESH_INTERVAL_MS = 60000;
 
-function ensureWatchLive(ticker){
+function ensureWatchLive(ticker, fallbackBase){
   if(watchLive[ticker]) return watchLive[ticker];
   const meta = WATCH_STOCKS.find(s => s.ticker === ticker);
-  const base = meta ? meta.price : 100;
+  const base = meta ? meta.price : ((fallbackBase > 0) ? fallbackBase : 100);
   const st = { prevClose: base, price: base, loaded: false, lastFetchTs: 0 };
   watchLive[ticker] = st;
   return st;
@@ -1690,7 +1713,7 @@ function applyWatchQuotes(quotes){
 
 function watchRowHTML(ticker){
   const meta = WATCH_STOCKS.find(s => s.ticker === ticker);
-  if(!meta) return "";
+  const name = meta ? meta.name : stockDisplayName(ticker);
   const live = ensureWatchLive(ticker);
   const chg = ((live.price - live.prevClose)/live.prevClose) * 100;
   const up = chg >= 0;
@@ -1701,8 +1724,8 @@ function watchRowHTML(ticker){
   return `<div class="pf-watch-row" data-ticker="${esc(ticker)}">
     <div class="pf-watch-left">
       <span class="pf-ticker">${esc(ticker)}</span>
-      <span class="pf-name">${esc(meta.name)}</span>
-      ${sectorBadgeHTML(meta.sector)}
+      <span class="pf-name">${esc(name)}</span>
+      ${meta ? sectorBadgeHTML(meta.sector) : ""}
     </div>
     <div class="pf-watch-right">
       ${priceHTML}
@@ -1732,12 +1755,12 @@ function bindWatchListRowEvents(){
   });
   app.querySelectorAll("[data-mp-ticker]").forEach(btn => btn.onclick = () => {
     const ticker = btn.dataset.mpTicker;
-    const meta = WATCH_STOCKS.find(s => s.ticker === ticker);
+    const name = stockDisplayName(ticker);
     const live = ensureWatchLive(ticker);
     const priceLabel = live.loaded ? `$${live.price.toFixed(2)}` : "";
     sendToMindPalette({
-      title: `📈 ${ticker}${meta ? " " + meta.name : ""}`,
-      text: `ウォッチ中の銘柄：${ticker}${meta ? "（"+meta.name+"）" : ""}${priceLabel ? " 現在値 "+priceLabel : ""}`,
+      title: `📈 ${ticker} ${name}`,
+      text: `ウォッチ中の銘柄：${ticker}（${name}）${priceLabel ? " 現在値 "+priceLabel : ""}`,
       source: { kind:"stock", label: ticker },
     });
   });
@@ -1755,59 +1778,352 @@ function staleWatchTickers(list){
   });
 }
 
-async function refreshWatchQuotes(){
-  const list = loadWatchlist();
-  if(!list.length) return;
-  const targets = staleWatchTickers(list);
+/* ===== 売買（購入・売却）のルールとロジック =====
+   実際の株式市場を破綻させない最低限のルールをここに集約する：
+     ・整数株のみ（単元未満の端株は扱わない。MIN_LOT）
+     ・売買手数料：約定金額の0.1%・最低1AC（TRADE_FEE_RATE/TRADE_FEE_MIN）
+     ・購入：現金（AC）残高を超える注文は不可（残高不足エラー）
+     ・売却：保有株数を超える注文は不可（空売り不可）
+     ・米国市場の取引時間外（isUSMarketHoursJST()がfalseの時間帯）は
+       即時約定させず「予約注文」としてキューに積み、次に市場が開いた
+       タイミングでその時点の最新株価により自動約定させる（成行の
+       寄り付き注文と同じ考え方。processPendingOrders参照） */
+const TRADE_FEE_RATE = 0.001;  // 約定金額の0.1%
+const TRADE_FEE_MIN = 1;       // 最低手数料（AC）
+const MIN_LOT = 1;             // 最低売買単位（整数株のみ）
+
+function feeAmount(amount){ return Math.max(TRADE_FEE_MIN, Math.round(amount * TRADE_FEE_RATE)); }
+function tradeId(){ return "t" + Date.now().toString(36) + Math.random().toString(36).slice(2, 8); }
+
+// ---- 時間外の予約注文キュー・約定履歴。保有株・ウォッチリストと同じく
+// ログイン中のユーザーごとに端末保存する ----
+const PENDING_ORDERS_KEY = "stock_pending_orders_v1";
+const TRADE_LOG_KEY = "stock_trade_log_v1";
+const TRADE_LOG_MAX = 200; // 際限なく増え続けないよう直近200件のみ保持する
+
+function pendingOrdersStorageKey(){
+  const uid = (state && state.currentUserId) ? state.currentUserId : "guest";
+  return `${PENDING_ORDERS_KEY}::${uid}`;
+}
+function tradeLogStorageKey(){
+  const uid = (state && state.currentUserId) ? state.currentUserId : "guest";
+  return `${TRADE_LOG_KEY}::${uid}`;
+}
+export function loadPendingOrders(){
+  try{
+    const arr = JSON.parse(localStorage.getItem(pendingOrdersStorageKey()) || "[]");
+    return Array.isArray(arr) ? arr : [];
+  }catch(e){ return []; }
+}
+function savePendingOrders(list){ try{ localStorage.setItem(pendingOrdersStorageKey(), JSON.stringify(list)); }catch(e){} }
+
+export function loadTradeLog(){
+  try{
+    const arr = JSON.parse(localStorage.getItem(tradeLogStorageKey()) || "[]");
+    return Array.isArray(arr) ? arr : [];
+  }catch(e){ return []; }
+}
+function saveTradeLog(list){ try{ localStorage.setItem(tradeLogStorageKey(), JSON.stringify(list.slice(-TRADE_LOG_MAX))); }catch(e){} }
+function appendTradeLog(entry){ const list = loadTradeLog(); list.push(entry); saveTradeLog(list); }
+
+// クラウド（Firestoreの users/{uid}）へ保有株・現金・予約注文・取引履歴を
+// まとめて同期する。既存のsaveToCloud/purchaseSkinと同じ「まず端末で確定させ、
+// 直後にfire-and-forgetでクラウドへmergeする」方式に合わせている
+async function syncTradeStateToCloud(){
+  if(!state.db || !state.currentUserId || !window.FirebaseSync) return;
+  try{
+    await window.FirebaseSync.setDoc(window.FirebaseSync.doc(state.db, "users", state.currentUserId), {
+      portfolio: loadPortfolio(),
+      coins: (S.coins || 0),
+      pendingOrders: loadPendingOrders(),
+      stockTrades: loadTradeLog(),
+      updatedAt: new Date().toISOString()
+    }, { merge: true });
+  }catch(e){ console.error("stock trade cloud sync failed:", e); }
+}
+
+// 現在のpriceで即時約定させる実処理（市場時間中の注文・予約注文の約定の
+// どちらからも呼ばれる）。バリデーション済みの前提だが、予約注文が約定する
+// 時点では発注後に状況が変わっている可能性があるため、ここでも念のため
+// 残高・保有数を再検証する
+function executeBuyNow(ticker, name, qty, price){
+  const amount = tradeAmount(price, qty);
+  const fee = feeAmount(amount);
+  const total = amount + fee;
+  if(total > (S.coins || 0)) return { ok:false, msg:"現金（AC）残高が不足しています。" };
+  S.coins -= total;
+  const pf = loadPortfolio();
+  const holding = pf[ticker] || { shares:0, cost:0, name };
+  holding.shares += qty;
+  holding.cost += total;
+  holding.name = name || holding.name || ticker;
+  pf[ticker] = holding;
+  savePortfolio(pf);
+  saveCoins(S.coins);
+  return { ok:true, amount, fee, total, msg:`${ticker}を${qty}株購入しました（${total.toLocaleString()} AC）。` };
+}
+
+function executeSellNow(ticker, qty, price){
+  const pf = loadPortfolio();
+  const holding = pf[ticker];
+  if(!holding || qty > holding.shares) return { ok:false, msg:"保有数を超える数量のため売却できません。" };
+  const amount = tradeAmount(price, qty);
+  const fee = feeAmount(amount);
+  const proceeds = Math.max(0, amount - fee);
+  const costPerShare = holding.shares > 0 ? holding.cost / holding.shares : 0;
+  holding.shares -= qty;
+  holding.cost = Math.max(0, holding.cost - costPerShare * qty);
+  if(holding.shares <= 0) delete pf[ticker]; else pf[ticker] = holding;
+  savePortfolio(pf);
+  S.coins += proceeds;
+  saveCoins(S.coins);
+  return { ok:true, amount, fee, proceeds, msg:`${ticker}を${qty}株売却しました（受取 ${proceeds.toLocaleString()} AC）。` };
+}
+
+function queuePendingOrder(order){
+  const list = loadPendingOrders();
+  list.push(Object.assign({ id: tradeId(), createdAt: Date.now() }, order));
+  savePendingOrders(list);
+  const amount = tradeAmount(order.price, order.qty);
+  appendTradeLog({
+    id: tradeId(), side: order.side, ticker: order.ticker, name: order.name,
+    qty: order.qty, price: order.price, amount, fee: feeAmount(amount),
+    ts: Date.now(), status: "pending"
+  });
+  syncTradeStateToCloud();
+}
+
+// 購入：数量バリデーション→残高チェック→市場時間中かどうかの順で判定する。
+// 時間外なら即時約定させず予約注文としてキューへ積む
+export function buyStock(ticker, name, qty, price){
+  qty = Math.floor(Number(qty));
+  if(!ticker || !(price > 0)) return { ok:false, msg:"銘柄の株価情報を取得できませんでした。" };
+  if(!Number.isFinite(qty) || qty < MIN_LOT) return { ok:false, msg:`購入数量は${MIN_LOT}株以上の整数で入力してください。` };
+  const amount = tradeAmount(price, qty);
+  const fee = feeAmount(amount);
+  if((amount + fee) > (S.coins || 0)) return { ok:false, msg:"現金（AC）残高が不足しています。" };
+  if(!isUSMarketHoursJST()){
+    queuePendingOrder({ side:"buy", ticker, name, qty, price });
+    return { ok:true, queued:true, msg:"米国市場の取引時間外のため、予約注文として受け付けました。次の取引開始時に、その時点の株価で自動約定します。" };
+  }
+  const r = executeBuyNow(ticker, name, qty, price);
+  if(r.ok){
+    cacheStockName(ticker, name);
+    appendTradeLog({ id:tradeId(), side:"buy", ticker, name, qty, price, amount:r.amount, fee:r.fee, ts:Date.now(), status:"executed" });
+    syncTradeStateToCloud();
+  }
+  return Object.assign({ queued:false }, r);
+}
+
+// 売却：保有しているか→数量バリデーション→保有数を超えていないか→
+// 市場時間中かどうかの順で判定する（空売り不可）
+export function sellStock(ticker, qty, price){
+  qty = Math.floor(Number(qty));
+  const pf = loadPortfolio();
+  const holding = pf[ticker];
+  if(!holding || holding.shares <= 0) return { ok:false, msg:"保有していない銘柄は売却できません。" };
+  if(!(price > 0)) return { ok:false, msg:"銘柄の株価情報を取得できませんでした。" };
+  if(!Number.isFinite(qty) || qty < MIN_LOT) return { ok:false, msg:`売却数量は${MIN_LOT}株以上の整数で入力してください。` };
+  if(qty > holding.shares) return { ok:false, msg:`保有数（${holding.shares}株）を超える数量は売却できません。` };
+  if(!isUSMarketHoursJST()){
+    queuePendingOrder({ side:"sell", ticker, name: holding.name, qty, price });
+    return { ok:true, queued:true, msg:"米国市場の取引時間外のため、予約注文として受け付けました。次の取引開始時に、その時点の株価で自動約定します。" };
+  }
+  const r = executeSellNow(ticker, qty, price);
+  if(r.ok){
+    appendTradeLog({ id:tradeId(), side:"sell", ticker, name: holding.name, qty, price, amount:r.amount, fee:r.fee, ts:Date.now(), status:"executed" });
+    syncTradeStateToCloud();
+  }
+  return Object.assign({ queued:false }, r);
+}
+
+// 米国市場が開いたタイミングで、保留中の時間外注文をまとめて自動約定させる。
+// 発注時点の参考株価ではなく、約定処理を実行する「今」の最新株価で成行約定
+// させる（現実の寄り付き注文と同じ考え方）。発注後に残高・保有数が変わって
+// 条件を満たせなくなった注文は約定させずキャンセル扱いにする
+export async function processPendingOrders(){
+  if(!isUSMarketHoursJST()) return { processed:0 };
+  const pending = loadPendingOrders();
+  if(!pending.length) return { processed:0 };
+  const tickers = [...new Set(pending.map(o => o.ticker))];
+  const { quotes } = await fetchStockQuotes(tickers);
+  pending.forEach(order => {
+    const q = quotes[order.ticker];
+    const execPrice = q ? q.price : order.price;
+    const r = order.side === "buy"
+      ? executeBuyNow(order.ticker, order.name, order.qty, execPrice)
+      : executeSellNow(order.ticker, order.qty, execPrice);
+    appendTradeLog({
+      id: tradeId(), side: order.side, ticker: order.ticker, name: order.name,
+      qty: order.qty, price: execPrice, amount: r.amount || 0, fee: r.fee || 0,
+      ts: Date.now(), status: r.ok ? "executed" : "cancelled", note: r.ok ? "" : r.msg
+    });
+  });
+  savePendingOrders([]); // 全件処理済み（約定 or キャンセル）になったのでキューを空にする
+  syncTradeStateToCloud();
+  return { processed: pending.length };
+}
+
+// 保有株一覧を「リアルタイム株価 × 保有株数」で評価する。まだ現在値を
+// 取得できていない銘柄は、平均取得単価を仮の評価額として表示する
+// （取得中である旨はloaded:falseで呼び出し側が判断する）
+function computeHoldingsSummary(){
+  const pf = loadPortfolio();
+  const tickers = Object.keys(pf);
+  let totalValue = 0;
+  const rows = tickers.map(t => {
+    const h = pf[t];
+    const avgCost = h.shares > 0 ? h.cost / h.shares : 0;
+    const live = ensureWatchLive(t, avgCost);
+    const price = live.loaded ? live.price : avgCost;
+    const value = tradeAmount(price, h.shares);
+    totalValue += value;
+    const chg = (live.loaded && live.prevClose) ? ((live.price - live.prevClose) / live.prevClose) * 100 : null;
+    return { ticker:t, name: h.name || stockDisplayName(t), shares:h.shares, price, value, loaded:live.loaded, chg, avgCost };
+  });
+  return { pf, tickers, rows, totalValue };
+}
+
+async function refreshLiveQuotes(){
+  const watchlist = loadWatchlist();
+  const heldTickers = Object.keys(loadPortfolio());
+  const allTickers = [...new Set([...watchlist, ...heldTickers])];
+  if(!allTickers.length) return;
+  const targets = staleWatchTickers(allTickers);
   if(!targets.length) return; // 全銘柄まだ1分未満なら何もしない（表示も据え置き）
   const { quotes, errors } = await fetchStockQuotes(targets);
   applyWatchQuotes(quotes);
-  const wrap = document.getElementById("pf-watch-list-wrap");
-  if(!wrap) return; // 取得中に画面を離れていたら何もしない
-  wrap.innerHTML = watchListInnerHTML();
-  bindWatchListRowEvents();
+  patchLiveStockUI(targets, errors);
+}
+
+// 画面を離脱・再構築せずに、開いている画面に応じて必要な部分だけを
+// 差し替える（scrollTo(0,0)を伴うフル再描画をバックグラウンド更新のたびに
+// 走らせるとスクロール位置が飛んでしまうため）
+function patchLiveStockUI(targets, errors){
+  const watchWrap = document.getElementById("pf-watch-list-wrap");
+  if(watchWrap){
+    watchWrap.innerHTML = watchListInnerHTML();
+    bindWatchListRowEvents();
+  }
   const badge = document.getElementById("pf-watch-badge-wrap");
-  if(badge) badge.innerHTML = watchLiveBadgeHTML(errors.length === targets.length);
+  if(badge){
+    const watchlist = loadWatchlist();
+    const watchTargets = (targets||[]).filter(t => watchlist.includes(t));
+    const watchFailed = watchTargets.length > 0 && watchTargets.every(t => (errors||[]).includes(t));
+    badge.innerHTML = watchListInnerHTML() ? watchLiveBadgeHTML(watchFailed) : "";
+  }
+  const heroTotal = document.getElementById("pf-hero-total");
+  if(heroTotal){
+    const { totalValue } = computeHoldingsSummary();
+    const cash = S.coins || 0;
+    heroTotal.innerHTML = `${(cash + totalValue).toLocaleString()} <small>AC</small>`;
+    const sub = document.getElementById("pf-hero-sub-text");
+    if(sub) sub.textContent = `💰 現金 ${cash.toLocaleString()} AC ・ 📈 株式 ${totalValue.toLocaleString()} AC`;
+  }
+  const holdWrap = document.getElementById("pf-holdings-list-wrap");
+  if(holdWrap) holdWrap.innerHTML = holdingsListInnerHTML();
+}
+
+function holdingsRowHTML(row){
+  const chgHTML = (row.loaded && row.chg !== null)
+    ? `<span class="pf-watch-chg ${row.chg>=0?"up":"down"}">${row.chg>=0?"+":""}${row.chg.toFixed(2)}%</span>`
+    : `<span class="pf-watch-loading">取得中…</span>`;
+  return `<div class="pf-row" data-holding-ticker="${esc(row.ticker)}">
+    <div class="pf-row-left">
+      <span class="pf-ticker">${esc(row.ticker)}</span>
+      <span class="pf-name">${esc(row.name)}</span>
+    </div>
+    <div class="pf-row-right">
+      <span class="pf-shares">${row.shares}株 ・ 平均取得 $${row.avgCost.toFixed(2)}</span>
+      <span class="pf-val">${row.value.toLocaleString()} AC</span>
+      ${chgHTML}
+    </div>
+    <button type="button" class="pf-row-sellbtn" data-sell-ticker="${esc(row.ticker)}">売却</button>
+  </div>`;
+}
+
+function holdingsListInnerHTML(){
+  const { rows } = computeHoldingsSummary();
+  if(!rows.length) return "";
+  return `<div class="pf-list">${rows.map(holdingsRowHTML).join("")}</div>`;
+}
+
+function bindHoldingsRowEvents(){
+  app.querySelectorAll("[data-sell-ticker]").forEach(btn => btn.onclick = () => openTradeModal("sell", btn.dataset.sellTicker));
+}
+
+// 保有株・ウォッチリストのいずれかの画面（株価/保有株）が現在表示中かどうか。
+// バックグラウンドの1分ごとの再取得タイマーが「まだ見ている画面か」を
+// 判定するのに使う（両画面ともDOMから外れたらタイマー自体を止める）
+function stockScreenMounted(){
+  return !!(document.getElementById("pf-hero-total") || document.getElementById("pf-holdings-list-wrap"));
 }
 
 let watchLiveTimer = null;
-// 1分ごとに（米国市場時間中のみ）実際の株価を再取得する。ポートフォリオ
-// 画面を離れて対象の要素がDOMから消えたら自動的に止まる。
-// renderPortfolio()はFirestoreのonSnapshot経由（保有株・コイン更新等）でも
-// 呼ばれることがあり、その都度タイマーを作り直すと1分経つ前に何度も
-// リセットされてしまい、いつまで経っても発火しない不具合になる。そのため
-// 既に動いている場合は何もしない（作り直さない）
+// 1分ごとに（米国市場時間中のみ）実際の株価を再取得し、あわせて時間外に
+// 積まれた予約注文の自動約定も試みる。株価/保有株画面のどちらかを離れて
+// 対象の要素がDOMから消えたら自動的に止まる。
+// renderPortfolio()/renderHoldings()はFirestoreのonSnapshot経由（保有株・
+// コイン更新等）でも呼ばれることがあり、その都度タイマーを作り直すと1分
+// 経つ前に何度もリセットされ、いつまで経っても発火しない不具合になる。
+// そのため既に動いている場合は何もしない（作り直さない）
 function startWatchLiveRefresh(){
   if(watchLiveTimer) return;
   watchLiveTimer = setInterval(() => {
-    const wrap = document.getElementById("pf-watch-list-wrap");
-    if(!wrap){ clearInterval(watchLiveTimer); watchLiveTimer = null; return; }
+    if(!stockScreenMounted()){ clearInterval(watchLiveTimer); watchLiveTimer = null; return; }
     const badge = document.getElementById("pf-watch-badge-wrap");
-    if(badge) badge.innerHTML = watchLiveBadgeHTML();
+    if(badge && watchListInnerHTML()) badge.innerHTML = watchLiveBadgeHTML();
     if(!isUSMarketHoursJST()) return;
-    refreshWatchQuotes();
+    processPendingOrders().then(({ processed }) => {
+      if(processed > 0){
+        if(S.screen === "portfolio") renderPortfolio();
+        else if(S.screen === "holdings") renderHoldings();
+      } else {
+        refreshLiveQuotes();
+      }
+    });
   }, 60000);
 }
 
 // スマホでアプリをバックグラウンドに回す（画面ロック・アプリ切り替え等）と
 // setIntervalが止まる/大きく遅延することがあるため、フォアグラウンドに
-// 戻った瞬間にも取得し直す。前回取得から実際に1分以上経っていた銘柄だけが
-// refreshWatchQuotes()内の判定で更新されるので、二重更新にはならない
+// 戻った瞬間にも取得し直し、市場が開いていれば予約注文の約定も試みる。
+// 前回取得から実際に1分以上経っていた銘柄だけがrefreshLiveQuotes()内の
+// 判定で更新されるので、二重更新にはならない
 document.addEventListener("visibilitychange", () => {
   if(document.visibilityState !== "visible") return;
-  if(!document.getElementById("pf-watch-list-wrap")) return;
-  refreshWatchQuotes();
+  if(!stockScreenMounted()) return;
+  refreshLiveQuotes();
+  if(isUSMarketHoursJST()){
+    processPendingOrders().then(({ processed }) => {
+      if(processed > 0){
+        if(S.screen === "portfolio") renderPortfolio();
+        else if(S.screen === "holdings") renderHoldings();
+      }
+    });
+  }
 });
 
+// サーバー経由でFinnhubの銘柄検索（/api/stocks/search）を叩き、ティッカー・
+// 企業名の両方から幅広く候補を引く。ネットワーク不調時は例外を投げず
+// 空配列を返して静かに諦める
+async function searchStockSymbols(q){
+  if(!q) return [];
+  try{
+    const res = await fetch(`/api/stocks/search?q=${encodeURIComponent(q)}`);
+    if(!res.ok) throw new Error("HTTP " + res.status);
+    const data = await res.json();
+    const results = Array.isArray(data.results) ? data.results : [];
+    return results.map(r => ({ ticker: r.symbol, name: r.name }));
+  }catch(e){ return []; }
+}
+
 // 検索結果1件ぶんの行。quotesにその銘柄の実際の現在値があればそれを、
-// 無ければ銘柄マスタの参考値を「取得中」の目安として表示する。追加済みの
-// 銘柄はボタンを無効化して「追加済み」と表示する
-function stockSearchResultsHTML(query, watchlist, quotes){
-  const q = query.trim().toLowerCase();
-  const list = q
-    ? WATCH_STOCKS.filter(s => s.ticker.toLowerCase().includes(q) || s.name.toLowerCase().includes(q))
-    : WATCH_STOCKS;
-  if(!list.length) return `<div class="pf-search-empty">該当する銘柄が見つかりません。</div>`;
+// 無ければ「取得中」の目安として表示する。追加済みの銘柄はボタンを
+// 無効化して「追加済み」と表示する
+function stockSearchResultsHTML(list, watchlist, quotes, busy, query){
+  if(busy) return `<div class="pf-search-empty">検索中…</div>`;
+  if(!list.length) return `<div class="pf-search-empty">${(query||"").trim() ? "該当する銘柄が見つかりません。" : "銘柄を検索してください。"}</div>`;
   return list.map(s => {
     const added = watchlist.includes(s.ticker);
     const live = quotes && quotes[s.ticker];
@@ -1820,43 +2136,71 @@ function stockSearchResultsHTML(query, watchlist, quotes){
         <span class="pf-name">${esc(s.name)}</span>
       </div>
       <span class="pf-search-price">${priceHTML}</span>
-      <button type="button" class="pf-search-addbtn${added?" added":""}" data-add-ticker="${esc(s.ticker)}"${added?" disabled":""}>${added?"追加済み":"＋ 追加"}</button>
+      <button type="button" class="pf-search-addbtn${added?" added":""}" data-add-ticker="${esc(s.ticker)}" data-add-name="${esc(s.name)}"${added?" disabled":""}>${added?"追加済み":"＋ 追加"}</button>
     </div>`;
   }).join("");
 }
 
-// 「🔍 株式を検索して追加」ボタンから開く、米国株の検索・追加ポップアップ。
-// 開いた瞬間に検索候補全銘柄の実際の株価を1回だけまとめて取得する
-// （入力のたびにAPIを叩くとレート制限をすぐ消費するため、以降はフロント側の
-// 絞り込みのみで完結させる）。入力のたびに結果一覧だけを再描画し、入力欄
-// 自体は作り直さないことでフォーカスやカーソル位置を保つ
-// （gcal-selday-inputの候補表示と同じ考え方）
+// 「🔍 株式を検索して追加」ボタンから開く、幅広い米国株ティッカー・企業名の
+// 検索・追加ポップアップ。入力が空の間はWATCH_STOCKSの主要銘柄を候補として
+// 出し、文字を打つと/api/stocks/search（Finnhub）で実際に検索する。
+// 入力のたびにAPIを叩くとレート制限をすぐ消費するため300msデバウンスし、
+// 結果一覧だけを再描画して入力欄自体は作り直さない（フォーカス・カーソル
+// 位置を保つため。gcal-selday-inputの候補表示と同じ考え方）
 function openStockSearchModal(){
   const ov = document.createElement("div");
   ov.className = "modal-ov";
   const close = () => { try{ ov.remove(); }catch(e){} renderPortfolio(); };
   let query = "";
-  let searchQuotes = {};
+  let results = WATCH_STOCKS.map(s => ({ ticker:s.ticker, name:s.name }));
+  let quotes = {};
+  let busy = false;
+  let searchDebounce = null;
 
   const renderResults = () => {
     const box = ov.querySelector("#pf-search-list");
     if(!box) return;
-    box.innerHTML = stockSearchResultsHTML(query, loadWatchlist(), searchQuotes);
+    box.innerHTML = stockSearchResultsHTML(results, loadWatchlist(), quotes, busy, query);
     box.querySelectorAll("[data-add-ticker]").forEach(btn => btn.onclick = () => {
-      addToWatchlist(btn.dataset.addTicker);
+      addToWatchlist(btn.dataset.addTicker, btn.dataset.addName);
       renderResults();
+    });
+  };
+
+  const loadQuotesFor = (list) => {
+    if(!list.length) return;
+    fetchStockQuotes(list.map(r => r.ticker)).then(({ quotes: qs }) => {
+      quotes = qs;
+      if(document.body.contains(ov)) renderResults();
     });
   };
 
   ov.innerHTML = `
     <div class="modal pf-search-modal">
       <div class="modal-title" style="color:var(--text)">🔍 株式を検索して追加</div>
-      <input type="text" class="gcal-ev-input" id="pf-search-input" placeholder="ティッカー or 銘柄名で検索（例: AAPL, テスラ）" autocomplete="off">
+      <input type="text" class="gcal-ev-input" id="pf-search-input" placeholder="ティッカー or 銘柄名で検索（例: AAPL, IONQ, テスラ）" autocomplete="off">
       <div class="pf-search-list" id="pf-search-list"></div>
       <button class="ghost" id="pf-search-close" style="margin-top:12px">閉じる</button>
     </div>`;
   const input = ov.querySelector("#pf-search-input");
-  input.oninput = () => { query = input.value; renderResults(); };
+  input.oninput = () => {
+    query = input.value;
+    clearTimeout(searchDebounce);
+    searchDebounce = setTimeout(async () => {
+      const q = query.trim();
+      if(!q){
+        results = WATCH_STOCKS.map(s => ({ ticker:s.ticker, name:s.name }));
+        quotes = {};
+        renderResults();
+        loadQuotesFor(results);
+        return;
+      }
+      busy = true; renderResults();
+      results = await searchStockSymbols(q);
+      busy = false; renderResults();
+      loadQuotesFor(results);
+    }, 300);
+  };
   ov.querySelector("#pf-search-close").onclick = close;
   renderResults();
 
@@ -1864,57 +2208,264 @@ function openStockSearchModal(){
   ov.addEventListener("click", (e) => { if(e.target === ov) close(); });
   input.focus();
 
-  fetchStockQuotes(WATCH_STOCKS.map(s => s.ticker)).then(({ quotes }) => {
-    searchQuotes = quotes;
-    if(document.body.contains(ov)) renderResults();
+  loadQuotesFor(results);
+}
+
+// 「購入」「売却」共通の売買モーダル。数量入力のためだけに画面遷移させる
+// のは操作コストが高く、逆に確認なく即実行すると誤タップで事故りやすいため、
+// 「その場でシミュレーション結果（約定金額・手数料・残高への影響）を
+// 見ながら確定する」ポップアップ形式にしている。
+// prefillTickerは保有株一覧の「売却」ボタンから開いた場合に指定され、
+// 銘柄選択ステップを飛ばして数量入力から始める
+function openTradeModal(side, prefillTicker){
+  const ov = document.createElement("div");
+  ov.className = "modal-ov";
+  const close = () => {
+    try{ ov.remove(); }catch(e){}
+    if(S.screen === "portfolio") renderPortfolio();
+    else if(S.screen === "holdings") renderHoldings();
+  };
+
+  let ticker = prefillTicker || null;
+  let name = ticker ? ((loadPortfolio()[ticker] || {}).name || ticker) : "";
+  let price = null;
+  let qty = 1;
+  let query = "";
+  let searchResults = [];
+  let searchBusy = false;
+  let searchDebounce = null;
+  let errorMsg = "";
+  let successMsg = "";
+
+  const holding = () => loadPortfolio()[ticker];
+
+  function tickerPickListHTML(){
+    if(side === "sell"){
+      const pf = loadPortfolio();
+      const tickers = Object.keys(pf);
+      if(!tickers.length) return `<div class="pf-search-empty">保有している株がありません。</div>`;
+      return `<div class="pf-search-list">${tickers.map(t => `
+        <div class="pf-search-row">
+          <div class="pf-search-left">
+            <span class="pf-ticker">${esc(t)}</span>
+            <span class="pf-name">${esc(pf[t].name || t)}</span>
+          </div>
+          <span class="pf-search-price">${pf[t].shares}株</span>
+          <button type="button" class="pf-search-addbtn" data-pick-ticker="${esc(t)}" data-pick-name="${esc(pf[t].name || t)}">選択</button>
+        </div>`).join("")}</div>`;
+    }
+    return `
+      <input type="text" class="gcal-ev-input" id="trade-search-input" placeholder="ティッカー or 銘柄名で検索（例: AAPL, IONQ, テスラ）" autocomplete="off">
+      <div class="pf-search-list" id="trade-search-list">${tradeSearchResultsHTML()}</div>`;
+  }
+
+  function tradeSearchResultsHTML(){
+    const list = query.trim() ? searchResults : WATCH_STOCKS.map(s => ({ ticker:s.ticker, name:s.name }));
+    if(searchBusy) return `<div class="pf-search-empty">検索中…</div>`;
+    if(!list.length) return `<div class="pf-search-empty">該当する銘柄が見つかりません。</div>`;
+    return list.map(s => `
+      <div class="pf-search-row">
+        <div class="pf-search-left">
+          <span class="pf-ticker">${esc(s.ticker)}</span>
+          <span class="pf-name">${esc(s.name)}</span>
+        </div>
+        <button type="button" class="pf-search-addbtn" data-pick-ticker="${esc(s.ticker)}" data-pick-name="${esc(s.name)}">選択</button>
+      </div>`).join("");
+  }
+
+  function qtyStepHTML(){
+    const marketOpen = isUSMarketHoursJST();
+    const h = holding();
+    const maxQty = side === "sell" ? (h ? h.shares : 0) : null;
+    const curPrice = price;
+    const amount = curPrice ? tradeAmount(curPrice, qty) : 0;
+    const fee = curPrice ? feeAmount(amount) : 0;
+    const totalOrProceeds = side === "buy" ? (amount + fee) : Math.max(0, amount - fee);
+    const cash = S.coins || 0;
+    return `
+      <div class="pf-trade-ticker-row">
+        <div>
+          <span class="pf-ticker">${esc(ticker)}</span>
+          <span class="pf-name">${esc(name || ticker)}</span>
+        </div>
+        ${!prefillTicker ? `<button type="button" class="ghost" id="trade-change-ticker" style="padding:4px 10px;font-size:11px;">変更</button>` : ""}
+      </div>
+      <div class="pf-trade-price">${curPrice ? "現在値 $" + curPrice.toFixed(2) : "株価を取得中…"}</div>
+      ${!marketOpen ? `<div class="pf-trade-note-off">⚪ 米国市場 取引時間外：確定すると予約注文となり、次の取引開始時の株価で自動約定します。</div>` : ""}
+      <label class="pf-trade-qty-lab">数量（株）${side==="sell" ? `<span class="pf-trade-max">保有 ${maxQty}株</span>` : ""}</label>
+      <input type="number" inputmode="numeric" min="1" step="1" ${maxQty!==null ? `max="${maxQty}"` : ""} class="gcal-ev-input" id="trade-qty-input" value="${qty}">
+      <div class="pf-trade-summary">
+        <div class="pf-trade-summary-row"><span>約定金額</span><span id="trade-amount-val">${curPrice ? amount.toLocaleString()+" AC" : "—"}</span></div>
+        <div class="pf-trade-summary-row"><span>手数料（0.1%・最低1AC）</span><span id="trade-fee-val">${curPrice ? fee.toLocaleString()+" AC" : "—"}</span></div>
+        <div class="pf-trade-summary-row total"><span>${side==="buy" ? "支払い合計" : "受取金額"}</span><span id="trade-total-val">${curPrice ? totalOrProceeds.toLocaleString()+" AC" : "—"}</span></div>
+        <div class="pf-trade-summary-row muted"><span>${side==="buy" ? "購入後の現金残高（概算）" : "売却後の保有株数"}</span><span id="trade-after-val">${
+          side==="buy"
+            ? (curPrice ? Math.max(0, cash - totalOrProceeds).toLocaleString()+" AC" : "—")
+            : (maxQty!==null ? Math.max(0, maxQty - qty)+"株" : "—")
+        }</span></div>
+      </div>
+      ${errorMsg ? `<div class="pf-trade-error">⚠️ ${esc(errorMsg)}</div>` : ""}
+      ${successMsg ? `<div class="pf-trade-success">✅ ${esc(successMsg)}</div>` : ""}
+      <button type="button" class="pf-trade-confirm ${side}" id="trade-confirm-btn">${side==="buy" ? "この内容で購入する" : "この内容で売却する"}</button>
+    `;
+  }
+
+  function bodyHTML(){ return ticker ? qtyStepHTML() : tickerPickListHTML(); }
+
+  function repaintSearchList(){
+    const list = ov.querySelector("#trade-search-list");
+    if(!list) return;
+    list.innerHTML = tradeSearchResultsHTML();
+    bindPickButtons(list);
+  }
+
+  function bindPickButtons(scope){
+    (scope || ov).querySelectorAll("[data-pick-ticker]").forEach(el => el.onclick = () => {
+      selectTicker(el.dataset.pickTicker, el.dataset.pickName || el.dataset.pickTicker);
+    });
+  }
+
+  async function selectTicker(sym, nm){
+    ticker = sym;
+    name = nm || sym;
+    price = null;
+    errorMsg = ""; successMsg = "";
+    paint();
+    const { quotes } = await fetchStockQuotes([sym]);
+    const q = quotes[sym];
+    if(q){ price = q.price; applyWatchQuotes(quotes); }
+    paint();
+  }
+
+  function updateQtySummary(){
+    const curPrice = price;
+    const amount = curPrice ? tradeAmount(curPrice, qty) : 0;
+    const fee = curPrice ? feeAmount(amount) : 0;
+    const totalOrProceeds = side === "buy" ? (amount + fee) : Math.max(0, amount - fee);
+    const cash = S.coins || 0;
+    const h = holding();
+    const maxQty = side === "sell" ? (h ? h.shares : 0) : null;
+    const set = (id, val) => { const el = ov.querySelector("#" + id); if(el) el.textContent = val; };
+    set("trade-amount-val", curPrice ? amount.toLocaleString() + " AC" : "—");
+    set("trade-fee-val", curPrice ? fee.toLocaleString() + " AC" : "—");
+    set("trade-total-val", curPrice ? totalOrProceeds.toLocaleString() + " AC" : "—");
+    set("trade-after-val", side === "buy"
+      ? (curPrice ? Math.max(0, cash - totalOrProceeds).toLocaleString() + " AC" : "—")
+      : (maxQty !== null ? Math.max(0, maxQty - qty) + "株" : "—"));
+  }
+
+  function wireBody(){
+    const box = ov.querySelector(".pf-trade-body");
+    if(!box) return;
+    if(!ticker){
+      if(side === "buy"){
+        const input = box.querySelector("#trade-search-input");
+        if(input) input.oninput = () => {
+          query = input.value;
+          clearTimeout(searchDebounce);
+          searchDebounce = setTimeout(async () => {
+            const q = query.trim();
+            if(!q){ searchResults = []; repaintSearchList(); return; }
+            searchBusy = true; repaintSearchList();
+            searchResults = await searchStockSymbols(q);
+            searchBusy = false; repaintSearchList();
+          }, 300);
+        };
+      }
+      bindPickButtons(box);
+      return;
+    }
+    const changeBtn = box.querySelector("#trade-change-ticker");
+    if(changeBtn) changeBtn.onclick = () => { ticker = null; price = null; errorMsg = ""; successMsg = ""; paint(); };
+    const qtyInput = box.querySelector("#trade-qty-input");
+    if(qtyInput) qtyInput.oninput = () => {
+      const v = parseInt(qtyInput.value, 10);
+      qty = (Number.isFinite(v) && v > 0) ? v : 0;
+      updateQtySummary();
+    };
+    const confirmBtn = box.querySelector("#trade-confirm-btn");
+    if(confirmBtn) confirmBtn.onclick = () => {
+      confirmBtn.disabled = true;
+      errorMsg = ""; successMsg = "";
+      if(!price){
+        errorMsg = "株価を取得できていません。少し待ってから再度お試しください。";
+        confirmBtn.disabled = false; paint(); return;
+      }
+      const q = Math.floor(qty);
+      const result = side === "buy" ? buyStock(ticker, name, q, price) : sellStock(ticker, q, price);
+      if(!result.ok){ errorMsg = result.msg; confirmBtn.disabled = false; paint(); return; }
+      successMsg = result.msg;
+      paint();
+      setTimeout(close, 1400); // 結果を一瞬見せてから閉じる
+    };
+  }
+
+  function paint(){
+    const box = ov.querySelector(".pf-trade-body");
+    if(!box) return;
+    box.innerHTML = bodyHTML();
+    wireBody();
+  }
+
+  ov.innerHTML = `
+    <div class="modal pf-trade-modal">
+      <div class="modal-title" style="color:var(--text)">${side === "buy" ? "🛒 株を購入" : "💴 株を売却"}</div>
+      <div class="pf-trade-body"></div>
+      <button class="ghost" id="pf-trade-close" style="margin-top:12px">閉じる</button>
+    </div>`;
+  document.body.appendChild(ov);
+  ov.addEventListener("click", (e) => { if(e.target === ov) close(); });
+  ov.querySelector("#pf-trade-close").onclick = close;
+  paint();
+
+  if(ticker) selectTicker(ticker, name);
+}
+
+// 市場が開いていれば予約注文の自動約定を試み、約定があれば表示中の画面を
+// 再描画する。renderPortfolio()/renderHoldings()の末尾から共通で呼ばれる
+function checkPendingOrdersOnMount(){
+  if(!isUSMarketHoursJST()) return;
+  processPendingOrders().then(({ processed }) => {
+    if(processed <= 0) return;
+    if(S.screen === "portfolio") renderPortfolio();
+    else if(S.screen === "holdings") renderHoldings();
   });
 }
 
-/* ポートフォリオ（資産保有額）詳細画面：STOCKS・JP_STOCKS両方から銘柄情報を
-   検索して表示する。現金AC＋保有株の評価額（現在株価ベース）のサマリーと
-   保有明細を表示する（新規購入は行えない、保有分の閲覧専用画面）。加えて、
-   検索して自由に登録できるウォッチリスト（値動き確認専用・売買なし）を
-   ヒーローカードの下に表示する */
+/* ポートフォリオ（株価）画面：現金AC＋保有株の評価額（リアルタイム株価×
+   保有株数）を合算した総資産をヒーローカードで見せることに専念させる。
+   保有明細はヒーローカード右上の「保有株」ボタンから別画面（renderHoldings）
+   へ遷移して確認する。加えて、検索して自由に登録できるウォッチリスト
+   （値動き確認専用・売買なし）をヒーローカードの下に表示し、画面最下部には
+   売買を始めるための固定の購入／売却ボタンを常設する */
 export function renderPortfolio(){
-  const pf = loadPortfolio();
-  const tickers = Object.keys(pf);
-  const allStocks = [...STOCKS, ...JP_STOCKS];
-  let stockValue = 0;
-  const rows = tickers.map(t => {
-    const s = allStocks.find(x => x.ticker === t);
-    const h = pf[t];
-    const val = s ? tradeAmount(s.price, h.shares) : h.cost;
-    stockValue += val;
-    return `<div class="pf-row">
-      <div class="pf-row-left">
-        <span class="pf-ticker">${esc(t)}</span>
-        <span class="pf-name">${esc(s ? s.name : "")}</span>
-      </div>
-      <div class="pf-row-right">
-        <span class="pf-shares">${h.shares}株</span>
-        <span class="pf-val">${val.toLocaleString()} AC</span>
-      </div>
-      <button type="button" class="mp-send-mini" data-mp-holding="${esc(t)}" aria-label="マインド・パレットに送る" title="マインド・パレットに送る">💡</button>
-    </div>`;
-  }).join("");
+  const { rows, totalValue } = computeHoldingsSummary();
   const cash = S.coins || 0;
   const watchHTML = watchListInnerHTML();
-  const showEmptyMsg = !rows && !watchHTML;
+  const pendingCount = loadPendingOrders().length;
   app.innerHTML = `
     <div class="q-head"><button class="quit" data-go="select">← ホーム</button><span class="q-count">株価</span></div>
     <div class="pf-hero">
+      <button type="button" class="pf-hero-holdings-btn" data-go="holdings" aria-label="保有株を見る" title="保有株を見る">
+        📃 保有株<span class="pf-hero-holdings-count">${rows.length}</span>
+      </button>
       <div class="pf-hero-lab">総資産（評価額）</div>
-      <div class="pf-hero-total">${(cash + stockValue).toLocaleString()} <small>AC</small></div>
-      <div class="pf-hero-sub">💰 現金 ${cash.toLocaleString()} AC ・ 📈 株式 ${stockValue.toLocaleString()} AC</div>
+      <div class="pf-hero-total" id="pf-hero-total">${(cash + totalValue).toLocaleString()} <small>AC</small></div>
+      <div class="pf-hero-sub" id="pf-hero-sub-text">💰 現金 ${cash.toLocaleString()} AC ・ 📈 株式 ${totalValue.toLocaleString()} AC</div>
       <button type="button" class="mp-send-btn mp-send-btn-hero" id="pf-send-mp">💡 マインド・パレットに送る</button>
     </div>
-    ${rows ? `<div class="section-lab">保有株</div><div class="pf-list">${rows}</div>` : ""}
-    <div class="section-lab" style="margin-top:${rows?"22px":"0"}">ウォッチリスト</div>
+    ${pendingCount ? `<div class="pf-pending-badge">⏳ 予約注文 ${pendingCount}件（取引時間開始時にその時点の株価で自動約定します）</div>` : ""}
+    <div class="section-lab">ウォッチリスト</div>
     <button type="button" class="pf-watch-addbtn" id="pf-watch-add-btn">🔍 株式を検索して追加</button>
     <div id="pf-watch-badge-wrap">${watchHTML ? watchLiveBadgeHTML() : ""}</div>
     <div id="pf-watch-list-wrap">${watchHTML}</div>
-    ${showEmptyMsg ? `<div class="sel-sub" style="margin-top:24px;text-align:center;">保有している株はまだありません。</div>` : ""}
-    <div class="trade-note" style="text-align:center;margin-top:18px;">※ゲーム内通貨ACを使ったデモ取引のポートフォリオです。ウォッチリストは値動き確認のみで売買は行われません。</div>
+    ${(!watchHTML && !rows.length) ? `<div class="sel-sub" style="margin-top:24px;text-align:center;">保有している株はまだありません。下の「購入」から取引を始めましょう。</div>` : ""}
+    <div class="trade-note" style="text-align:center;margin-top:18px;">※ゲーム内通貨ACを使ったデモ取引です。売買手数料（約定金額の0.1%・最低1AC）がかかります。ウォッチリストは値動き確認のみで売買は行われません。</div>
+    <div class="pf-tradebar-spacer"></div>
+    <div class="pf-tradebar">
+      <button type="button" class="pf-tradebar-btn buy" id="pf-buy-btn">🛒 購入</button>
+      <button type="button" class="pf-tradebar-btn sell" id="pf-sell-btn">💴 売却</button>
+    </div>
   `;
   app.querySelectorAll("[data-go]").forEach(b => b.onclick = () => go(b.dataset.go));
   const addBtn = document.getElementById("pf-watch-add-btn");
@@ -1922,23 +2473,46 @@ export function renderPortfolio(){
   const heroSendBtn = document.getElementById("pf-send-mp");
   if(heroSendBtn) heroSendBtn.onclick = () => sendToMindPalette({
     title: "📈 ポートフォリオ状況",
-    text: `総資産 ${(cash + stockValue).toLocaleString()} AC（現金 ${cash.toLocaleString()} AC・株式 ${stockValue.toLocaleString()} AC）。保有 ${tickers.length} 銘柄。`,
+    text: `総資産 ${(cash + totalValue).toLocaleString()} AC（現金 ${cash.toLocaleString()} AC・株式 ${totalValue.toLocaleString()} AC）。保有 ${rows.length} 銘柄。`,
     source: { kind:"stock", label:"ポートフォリオ" },
   });
-  app.querySelectorAll("[data-mp-holding]").forEach(btn => btn.onclick = () => {
-    const t = btn.dataset.mpHolding;
-    const s = allStocks.find(x => x.ticker === t);
-    const h = pf[t];
-    const val = s ? tradeAmount(s.price, h.shares) : h.cost;
-    sendToMindPalette({
-      title: `📈 ${t}${s ? " " + s.name : ""}`,
-      text: `保有株：${t}${s ? "（"+s.name+"）" : ""} ${h.shares}株・評価額 ${val.toLocaleString()} AC`,
-      source: { kind:"stock", label: t },
-    });
-  });
+  document.getElementById("pf-buy-btn").onclick = () => openTradeModal("buy");
+  document.getElementById("pf-sell-btn").onclick = () => openTradeModal("sell");
   bindWatchListRowEvents();
-  refreshWatchQuotes(); // 未取得の銘柄と、前回取得から1分以上経った銘柄だけを更新する（画面を開き直しただけでは動かない）
+  refreshLiveQuotes(); // 未取得の銘柄と、前回取得から1分以上経った銘柄だけを更新する（画面を開き直しただけでは動かない）
   startWatchLiveRefresh(); // 以後は市場時間中のみ1分ごとにバックグラウンド更新
+  checkPendingOrdersOnMount();
+  window.scrollTo(0,0);
+}
+
+/* 保有株一覧画面：株価画面のヒーローカード右上「保有株」ボタンから遷移する
+   専用画面。各銘柄をリアルタイム株価×保有株数で評価し、行ごとに「売却」
+   ショートカットを置く。売買ボタンは株価画面と同じものをここにも常設する */
+export function renderHoldings(){
+  const { rows, totalValue } = computeHoldingsSummary();
+  const cash = S.coins || 0;
+  app.innerHTML = `
+    <div class="q-head"><button class="quit" data-go="portfolio">← 株価</button><span class="q-count">保有株</span></div>
+    <div class="pf-hero pf-hero-compact">
+      <div class="pf-hero-lab">株式評価額</div>
+      <div class="pf-hero-total">${totalValue.toLocaleString()} <small>AC</small></div>
+      <div class="pf-hero-sub">💰 現金 ${cash.toLocaleString()} AC ・ 保有 ${rows.length}銘柄</div>
+    </div>
+    <div id="pf-holdings-list-wrap">${holdingsListInnerHTML()}</div>
+    ${!rows.length ? `<div class="sel-sub" style="margin-top:24px;text-align:center;">保有している株はまだありません。</div>` : ""}
+    <div class="pf-tradebar-spacer"></div>
+    <div class="pf-tradebar">
+      <button type="button" class="pf-tradebar-btn buy" id="pf-buy-btn">🛒 購入</button>
+      <button type="button" class="pf-tradebar-btn sell" id="pf-sell-btn">💴 売却</button>
+    </div>
+  `;
+  app.querySelectorAll("[data-go]").forEach(b => b.onclick = () => go(b.dataset.go));
+  document.getElementById("pf-buy-btn").onclick = () => openTradeModal("buy");
+  document.getElementById("pf-sell-btn").onclick = () => openTradeModal("sell");
+  bindHoldingsRowEvents();
+  refreshLiveQuotes();
+  startWatchLiveRefresh();
+  checkPendingOrdersOnMount();
   window.scrollTo(0,0);
 }
 
@@ -3590,35 +4164,22 @@ setGeminiHomeContextProvider(getTodayHomeContext);
 
 // Geminiチャットが「今日の株価は？」のような質問に画面と同じ実データで
 // 答えられるよう、保有株（ポートフォリオ）とウォッチリストの現在値をまとめて
-// 返す。保有株の評価額は株価タブ（renderPortfolio）と同じ基準値
-// （STOCKS/JP_STOCKS）を使いつつ、Finnhubから実際の現在値が取れた銘柄は
-// そちらを優先する。ウォッチリストは現在値が取れた銘柄のみを渡す
+// 返す。保有株の評価額はcomputeHoldingsSummary()（保有株画面・株価画面の
+// 総資産と同じロジック＝リアルタイム株価×保有株数）をそのまま流用する
 async function buildStockContextForGemini(){
-  const pf = loadPortfolio();
-  const heldTickers = Object.keys(pf);
   const watchTickers = loadWatchlist();
-  const tickers = [...new Set([...heldTickers, ...watchTickers])].slice(0, 20);
+  const { rows } = computeHoldingsSummary();
   const marketOpen = isUSMarketHoursJST();
-  if(!tickers.length) return { holdings: [], watchlist: [], cash: S.coins || 0, marketOpen };
 
-  const allStocks = [...STOCKS, ...JP_STOCKS];
-  const { quotes } = await fetchStockQuotes(tickers);
+  const holdings = rows.map(r => ({ ticker:r.ticker, name:r.name, shares:r.shares, price:r.price, value:r.value }));
 
-  const holdings = heldTickers.map(t => {
-    const meta = allStocks.find(s => s.ticker === t);
-    const live = quotes[t];
-    const price = live ? live.price : (meta ? meta.price : null);
-    const shares = pf[t].shares;
-    const value = price !== null ? tradeAmount(price, shares) : pf[t].cost;
-    return { ticker: t, name: meta ? meta.name : t, shares, price, value };
-  });
-
+  if(!watchTickers.length) return { holdings, watchlist: [], cash: S.coins || 0, marketOpen };
+  const { quotes } = await fetchStockQuotes(watchTickers);
   const watchlist = watchTickers.map(t => {
     const live = quotes[t];
     if(!live) return null;
-    const meta = WATCH_STOCKS.find(s => s.ticker === t);
     const changePercent = live.prevClose ? ((live.price - live.prevClose) / live.prevClose) * 100 : null;
-    return { ticker: t, name: meta ? meta.name : t, price: live.price, changePercent };
+    return { ticker: t, name: stockDisplayName(t), price: live.price, changePercent };
   }).filter(Boolean);
 
   return { holdings, watchlist, cash: S.coins || 0, marketOpen };
