@@ -1076,6 +1076,23 @@ function getTemperatureColor(temp){
   return found ? found.color : temperatureColors[temperatureColors.length - 1].color;
 }
 
+// 1時間降水量(mm)の気象庁階級区分に沿った配色。降水量が増えるほど
+// 薄い水色→青→濃い青→紫と変化させ、強さが直感的にわかるようにする
+const precipitationColors = [
+  { min: 25,   color: "#7E57C2" }, // 非常に激しい雨
+  { min: 15,   color: "#3949AB" }, // 激しい雨
+  { min: 10,   color: "#1565C0" }, // 強い雨
+  { min: 6,    color: "#1E88E5" }, // やや強い雨
+  { min: 3,    color: "#42A5F5" }, // 雨
+  { min: 0.1,  color: "#90CAF9" }, // 弱い雨
+  { min: -Infinity, color: "#B0BEC5" } // 降水なし
+];
+
+function getPrecipitationColor(mm){
+  const found = precipitationColors.find(p => mm >= p.min);
+  return found ? found.color : precipitationColors[precipitationColors.length - 1].color;
+}
+
 // カードは左（比率2.4）＝「日付＋デジタル時計｜天気（地名・アイコン・気温）」
 // ＋その下の降水確率の推移を示す滑らかな曲線グラフ、
 // 右（比率1）＝デジタル盆栽の簡易表示（タップで詳細モーダル）の2エリア構成。
@@ -1331,7 +1348,7 @@ async function refreshWeatherCard(force){
     if(asofEl) asofEl.textContent = "";
     if(iconEl) iconEl.textContent = "🌡️";
     if(tempEl){ tempEl.textContent = ""; tempEl.style.color = ""; }
-    if(precipNowValueEl) precipNowValueEl.textContent = "-";
+    if(precipNowValueEl){ precipNowValueEl.textContent = "-"; precipNowValueEl.style.color = ""; }
     if(precipCommentTrackEl) precipCommentTrackEl.textContent = "";
     if(retryBtnEl) retryBtnEl.hidden = true;
     updatePrecipAlertMarquee();
@@ -1355,7 +1372,10 @@ async function refreshWeatherCard(force){
     tempEl.style.color = getTemperatureColor(w.temp);
   }
   const precipMm = typeof w.precip === "number" ? w.precip : 0;
-  if(precipNowValueEl) precipNowValueEl.textContent = precipMmLabel(precipMm);
+  if(precipNowValueEl){
+    precipNowValueEl.textContent = precipMmLabel(precipMm);
+    precipNowValueEl.style.color = getPrecipitationColor(precipMm);
+  }
   if(precipCommentTrackEl) precipCommentTrackEl.textContent = precipCommentText(precipMm);
   updatePrecipAlertMarquee();
   renderWeatherPopChart(w);
