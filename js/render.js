@@ -19,6 +19,25 @@ import { applyCustomButtonColors, isLongPressSuppressed, wireButtonColorLongPres
 
 export const app = document.getElementById("app");
 
+// ホーム画面まわりで絵文字の代わりに使う線画アイコン集。下部ナビゲーション
+// （bnav-ico）と同じstroke=currentColorのSVGスタイルに統一することで、
+// 天気カード・予定/タスクカード・アカウントバーの装飾アイコンの見た目を
+// アプリ全体のテイストに揃える（絵文字のまま残す方が自然な天気本体の
+// アイコン＝weather.js側のWEATHER_CODESは対象外）
+const ICONS = {
+  pin: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 21s7-7.6 7-12.2A7 7 0 1 0 5 8.8C5 13.4 12 21 12 21Z"></path><circle cx="12" cy="8.6" r="2.4"></circle></svg>`,
+  calendar: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3.5" y="5" width="17" height="16" rx="2.4"></rect><path d="M8 3v4M16 3v4M3.5 10h17"></path></svg>`,
+  clock: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="8.4"></circle><path d="M12 7.6V12l3 2"></path></svg>`,
+  drop: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3.2s6.4 7 6.4 11.5a6.4 6.4 0 1 1-12.8 0C5.6 10.2 12 3.2 12 3.2Z"></path></svg>`,
+  check: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3.5" y="3.5" width="17" height="17" rx="4.5"></rect><path d="m7.8 12.3 2.7 2.7 5.7-6"></path></svg>`,
+  refresh: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 12a8 8 0 1 1-2.3-5.6"></path><path d="M20 4.2V9h-4.8"></path></svg>`,
+  user: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8.2" r="3.6"></circle><path d="M4.7 20c1.1-3.6 4-5.6 7.3-5.6s6.2 2 7.3 5.6"></path></svg>`,
+  logout: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5.5A1.5 1.5 0 0 1 4 19.5v-15A1.5 1.5 0 0 1 5.5 3H9"></path><path d="M15.5 16.5 20 12l-4.5-4.5"></path><path d="M20 12H9"></path></svg>`,
+  clip: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="4" width="14" height="17" rx="2.2"></rect><rect x="9" y="2.4" width="6" height="3.2" rx="1"></rect><path d="M8.4 11h7.2M8.4 14.4h7.2M8.4 17.6h4.4"></path></svg>`,
+  plus: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M12 5v14M5 12h14"></path></svg>`,
+};
+function icon(name, cls){ return `<span class="ico ${cls||""}" aria-hidden="true">${ICONS[name]}</span>`; }
+
 // 「総合ランク」バーのタップツールチップ：バーをタップすると次のレベルまでの
 // 残りBPを吹き出しで表示する。render()のたびに要素が作り直されるため、
 // 開閉状態はこのモジュール変数側で管理し、再タップ／他要素タップ／2.6秒経過の
@@ -1070,14 +1089,14 @@ function weatherCardHTML(){
   return `
     <div class="news-card weather-card" id="weather-card">
       <div class="weather-card-heading">
-        <span class="weather-heading-icon" aria-hidden="true">📍</span>
+        ${icon("pin", "weather-heading-icon")}
         <span id="weather-heading-city">天気</span>
       </div>
 
       <div class="weather-metrics">
         <div class="weather-metric weather-datetime">
           <div class="weather-metric-label weather-date-row">
-            <span aria-hidden="true">📅</span>
+            ${icon("calendar", "weather-label-icon")}
             <span class="weather-date" id="weather-clock-date"></span>
           </div>
           <div class="weather-value-row">
@@ -1087,7 +1106,7 @@ function weatherCardHTML(){
 
         <div class="weather-metric weather-info" id="weather-info">
           <div class="weather-metric-label weather-city-row">
-            <span aria-hidden="true">🕐</span>
+            ${icon("clock", "weather-label-icon")}
             <span class="weather-city" id="weather-city">取得中…</span>
             <button type="button" class="weather-retry-btn" id="weather-retry-loc" title="現在地を再取得" aria-label="現在地を再取得" hidden>⟳</button>
           </div>
@@ -1100,7 +1119,7 @@ function weatherCardHTML(){
 
         <div class="weather-metric weather-precip-alert">
           <div class="weather-metric-label">
-            <span aria-hidden="true">💧</span>
+            ${icon("drop", "weather-label-icon")}
             <span>現在の降水量</span>
           </div>
           <div class="weather-value-row weather-precip-now">
@@ -4503,7 +4522,7 @@ function gcalGroupEventsByUser(events, fallback){
 // カードの順に描画する。fallbackは作成者を判別できない予定に使うラベル
 // （通常はこのカレンダーの登録者名、または取得元カレンダー名）
 function gcalDayEventsListHTML(events, fallback){
-  if(!events.length) return `<div class="gcal-day-empty">この日の予定はまだありません。</div>`;
+  if(!events.length) return `<div class="gcal-day-empty">${icon("clip", "gcal-day-empty-ico")}<span>この日の予定は<br>まだありません。</span></div>`;
   const groups = gcalGroupEventsByUser(events, fallback);
   return groups.map(g => {
     const editable = g.editKind === "own" || g.editKind === "other";
@@ -4717,23 +4736,24 @@ function renderGcalDailyWidget(){
     <div class="gcal-box gcal-day-box">
       <div class="gcal-day-head">
         <button type="button" class="gcal-nav-btn" id="gcal-day-prev" aria-label="前の日">‹</button>
-        <div class="gcal-day-title">${esc(dateLabel)}</div>
+        <div class="gcal-day-title">${icon("calendar", "gcal-day-title-ico")}<span>${esc(dateLabel)}</span></div>
         <div class="gcal-day-head-right">
-          <button type="button" class="gcal-reload-btn${gcalDayReloading?" spinning":""}" id="gcal-day-reload" aria-label="変更を反映（最新の予定を再取得）" title="変更を反映"${gcalDayReloading?" disabled":""}>🔄</button>
+          <button type="button" class="gcal-nav-btn gcal-reload-btn${gcalDayReloading?" spinning":""}" id="gcal-day-reload" aria-label="変更を反映(最新の予定を再取得)" title="変更を反映"${gcalDayReloading?" disabled":""}>${icon("refresh")}</button>
           <button type="button" class="gcal-nav-btn" id="gcal-day-next" aria-label="次の日">›</button>
         </div>
       </div>
       <div class="gcal-day-body">
         <div class="gcal-day-timeline">
+          <div class="gcal-day-col-title">${icon("calendar", "gcal-col-ico")}<span>今日の予定</span></div>
           <div class="gcal-day-events">${eventsHTML}</div>
           <button type="button" class="gcal-day-add-btn" id="gcal-day-add">＋ 予定を追加</button>
         </div>
         <div class="gcal-day-todo">
-          <div class="gcal-day-todo-title">本日のタスク</div>
+          <div class="gcal-day-col-title gcal-day-todo-title">${icon("check", "gcal-col-ico")}<span>本日のタスク</span></div>
           <div class="gcal-day-todo-list">${gcalTodoListHTML(todos)}</div>
           <div class="gcal-day-todo-form">
-            <input type="text" id="gcal-todo-input" class="gcal-todo-input" placeholder="タスク" maxlength="60">
-            <button type="button" id="gcal-todo-add" class="gcal-todo-add-btn" aria-label="タスクを追加">＋</button>
+            <input type="text" id="gcal-todo-input" class="gcal-todo-input" placeholder="タスクを入力" maxlength="60">
+            <button type="button" id="gcal-todo-add" class="gcal-todo-add-btn" aria-label="タスクを追加">${icon("plus")}</button>
           </div>
         </div>
       </div>
@@ -5641,8 +5661,8 @@ export function renderSelect(){
     ${gcalDayWidgetHTML()}
     ${state.currentUser
       ? `<div class="dash-acct-bar">
-           <span class="dash-acct-info"><span class="dash-acct-avatar">👤</span><span class="dash-acct-email">${esc(state.currentUser.email||"ログイン中")}</span></span>
-           <button type="button" class="dash-acct-action" data-logout><span class="dash-acct-action-ico">⎋</span>ログアウト</button>
+           <span class="dash-acct-info"><span class="dash-acct-avatar">${icon("user")}</span><span class="dash-acct-email">${esc(state.currentUser.email||"ログイン中")}</span></span>
+           <button type="button" class="dash-acct-action" data-logout>${icon("logout", "dash-acct-action-ico")}ログアウト</button>
          </div>`
       : (state.guestMode ? `<div class="dash-acct-bar">
            <span class="dash-acct-info dash-acct-info--guest">ゲストモード（この端末のみ・同期なし）</span>
