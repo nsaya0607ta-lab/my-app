@@ -12,6 +12,7 @@
   --bad:#dc2626;       /* 不正解・警告の赤 (red-600) */
   --text:#0f172a;      /* メインテキスト (slate-900) */
   --muted:#64748b;     /* サブテキスト (slate-500) */
+  --bnav-h:64px;        /* 画面下部固定ナビゲーションの高さ（safe-area除く） */
 }
 /* touch-action:manipulationで、ダブルタップによるブラウザ標準の
    拡大ズームとタップ時の300ms遅延を全要素で無効化する（ピンチズーム
@@ -58,7 +59,34 @@ body{
   0%{opacity:0; transform:scale(1.04); filter:blur(4px);}
   100%{opacity:1; transform:scale(1); filter:blur(0);}
 }
-.shell{max-width:480px;margin:0 auto;padding:max(22px,env(safe-area-inset-top)) 18px calc(30px + env(safe-area-inset-bottom));display:flex;flex-direction:column;min-height:100vh;}
+.shell{max-width:480px;margin:0 auto;padding:max(22px,env(safe-area-inset-top)) 18px calc(30px + var(--bnav-h) + env(safe-area-inset-bottom));display:flex;flex-direction:column;min-height:100vh;}
+
+/* ===== 画面下部の固定ナビゲーション（全画面共通） =====
+   ログイン前後のゲート画面では非表示（.showが付いた時のみ表示）。
+   .shellと同じmax-widthで中央寄せし、既存の右下Gemini FAB・左下パレットFAB・
+   ポートフォリオの売買バーより下のレイヤーに敷く（重ならないよう、それらの
+   bottom位置は本ナビの高さぶん底上げしてある） */
+.bottom-nav{
+  display:none; position:fixed; left:0; right:0; bottom:0; z-index:300;
+  max-width:480px; margin:0 auto; box-sizing:border-box;
+  padding:8px 6px calc(8px + env(safe-area-inset-bottom));
+  background:rgba(255,255,255,.85); -webkit-backdrop-filter:blur(14px); backdrop-filter:blur(14px);
+  border-top:1px solid var(--line); box-shadow:0 -6px 20px rgba(15,23,42,.06);
+}
+.bottom-nav.show{display:flex;}
+.bnav-btn{
+  flex:1; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:3px;
+  background:none; border:none; padding:6px 2px; color:var(--muted); cursor:pointer;
+  transition:color .15s ease, transform .12s ease;
+}
+.bnav-btn:active{transform:scale(.92);}
+.bnav-ico{display:flex;}
+.bnav-ico svg{display:block;}
+.bnav-lab{font-size:10px;font-weight:700;letter-spacing:.01em;white-space:nowrap;}
+.bnav-btn.active{color:var(--accent);}
+@media (max-width:360px){
+  .bnav-lab{font-size:9px;}
+}
 .top{margin-bottom:18px;}
 /* 資格コードの大見出しを省いた画面（各資格のホーム等）は上の余白を詰める */
 .top--notitle{margin-bottom:10px;}
@@ -603,7 +631,7 @@ h1.title.title--badge{margin:2px 0 0;}
 
 /* ホーム画面右下に常設するフローティングボタン。Gemini相談画面への入口
    （元は天気カード内にあったweather-gemini-btnをここへ移設） */
-.gemini-fab{position:fixed;right:calc(16px + env(safe-area-inset-right));bottom:calc(16px + env(safe-area-inset-bottom));
+.gemini-fab{position:fixed;right:calc(16px + env(safe-area-inset-right));bottom:calc(16px + var(--bnav-h) + env(safe-area-inset-bottom));
   width:56px;height:56px;border:none;border-radius:50%;color:#fff;
   background:linear-gradient(135deg,var(--accent),#0ea5e9 55%,#6366f1);
   display:flex;align-items:center;justify-content:center;
@@ -616,7 +644,7 @@ h1.title.title--badge{margin:2px 0 0;}
    右下のGeminiボタンと形状・サイズ・シャドウの効果を完全に統一し、左右の
    バランスが取れたレイアウトにする（色味だけ「ネオンブルー×ゴールド」で
    パレットらしさを出す。既存の.launcher-icon-paletteと同系統の配色） */
-.palette-fab{position:fixed;left:calc(16px + env(safe-area-inset-left));bottom:calc(16px + env(safe-area-inset-bottom));
+.palette-fab{position:fixed;left:calc(16px + env(safe-area-inset-left));bottom:calc(16px + var(--bnav-h) + env(safe-area-inset-bottom));
   width:56px;height:56px;border:none;border-radius:50%;color:#fbbf24;
   background:linear-gradient(135deg,#1e293b,#0f172a 55%,#0f172a);
   display:flex;align-items:center;justify-content:center;
@@ -919,8 +947,8 @@ h1.title.title--badge{margin:2px 0 0;}
 /* 画面最下部に常設する「購入」「売却」の固定バー（ポートフォリオ・保有株
    両画面で共通）。左下のパレットFAB・右下のGemini FABより手前（z-index上）に
    重ならないよう、両ボタンの間の中央帯だけを占有する横幅に絞ってある */
-.pf-tradebar-spacer{height:calc(74px + env(safe-area-inset-bottom));}
-.pf-tradebar{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(10px + env(safe-area-inset-bottom));
+.pf-tradebar-spacer{height:calc(74px + var(--bnav-h) + env(safe-area-inset-bottom));}
+.pf-tradebar{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(10px + var(--bnav-h) + env(safe-area-inset-bottom));
   width:min(calc(100% - 96px), 340px);display:flex;gap:10px;z-index:480;}
 .pf-tradebar-btn{flex:1;border:none;border-radius:14px;padding:13px 10px;font-size:14.5px;font-weight:800;
   cursor:pointer;box-shadow:0 8px 20px rgba(15,23,42,.16);color:#fff;transition:transform .1s;}
@@ -1853,3 +1881,104 @@ body[data-theme="dark"] .menu-btn:active{box-shadow:0 4px 10px rgba(0,0,0,.3), i
 .iq-feedback{font-size:12.5px;color:var(--bad);text-align:center;margin-bottom:8px;}
 .iq-feedback--good{font-size:18px;font-weight:800;color:var(--good);}
 .iq-feedback--bad{font-size:18px;font-weight:800;color:var(--bad);}
+
+/* =========================================================================
+   🐧 Linux プレイグラウンド－専用フルスクリーン画面
+   カード・角丸・シャドウ・配色は既存の.iq-card/.stat-tile系と統一し、
+   ターミナル部分だけ黒背景のモノスペース表示にする
+   ========================================================================= */
+.pg-head{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:14px;}
+.pg-head-title{flex:1;min-width:0;font-size:19px;font-weight:800;color:var(--text);margin:0;letter-spacing:-.01em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.pg-head-actions{display:flex;align-items:center;gap:8px;flex:none;}
+.pg-reset-btn{display:inline-flex;align-items:center;gap:5px;background:var(--surface);border:1px solid var(--line);color:var(--text);font-size:12.5px;font-weight:700;cursor:pointer;padding:9px 13px;border-radius:99px;box-shadow:0 2px 5px rgba(0,0,0,.04);}
+.pg-reset-btn:active{background:var(--bg2);}
+.pg-help-btn{width:34px;height:34px;flex:none;border-radius:50%;background:var(--surface);border:1.5px solid var(--accent);color:var(--accent);font-size:15px;font-weight:800;cursor:pointer;display:flex;align-items:center;justify-content:center;}
+.pg-help-btn:active{background:var(--bg2);}
+
+.pg-intro-card{
+  display:flex;align-items:center;gap:12px;margin-bottom:14px;padding:14px 16px;
+  border-radius:16px;border:1px solid var(--line);
+  background:linear-gradient(160deg,var(--surface) 0%,var(--bg2) 100%);
+  box-shadow:0 6px 18px rgba(15,23,42,.05);
+}
+.pg-intro-ico{
+  flex:none;width:44px;height:44px;border-radius:13px;display:flex;align-items:center;justify-content:center;
+  font-family:ui-monospace,"SFMono-Regular",Menlo,Consolas,monospace;font-weight:800;font-size:15px;color:#fff;
+  background:linear-gradient(150deg,#334155,#0f172a 78%);box-shadow:0 6px 14px rgba(15,23,42,.32);
+}
+.pg-intro-title{font-size:14.5px;font-weight:800;color:var(--text);}
+.pg-intro-sub{font-size:11.5px;color:var(--muted);margin-top:2px;}
+
+.pg-terminal-card{
+  border-radius:16px;overflow:hidden;margin-bottom:12px;
+  background:#0b1220;border:1px solid #1e293b;box-shadow:0 10px 26px rgba(15,23,42,.22);
+}
+.pg-terminal-head{display:flex;align-items:center;gap:8px;padding:10px 12px;background:#111a2e;border-bottom:1px solid #1e293b;}
+.pg-terminal-dots{display:flex;gap:5px;flex:none;}
+.pg-terminal-dots span{width:9px;height:9px;border-radius:50%;background:#334155;display:block;}
+.pg-terminal-title{flex:1;font-size:11.5px;font-weight:700;color:#94a3b8;font-family:ui-monospace,"SFMono-Regular",Menlo,Consolas,monospace;}
+.pg-terminal-clear{flex:none;background:none;border:1px solid #334155;color:#94a3b8;font-size:11px;font-weight:700;border-radius:99px;padding:5px 10px;cursor:pointer;}
+.pg-terminal-clear:active{background:#1e293b;}
+.pg-terminal-body{
+  height:min(46vh,340px);overflow-y:auto;padding:12px 14px;
+  font-family:ui-monospace,"SFMono-Regular",Menlo,Consolas,monospace;font-size:12.5px;line-height:1.85;
+  -webkit-user-select:text;user-select:text;
+}
+.pg-term-line{white-space:pre-wrap;word-break:break-word;color:#e2e8f0;}
+.pg-term-prompt{color:#4ade80;font-weight:700;}
+.pg-term-cmd{color:#f8fafc;}
+.pg-tok-dir{color:#7dd3fc;font-weight:700;}
+.pg-tok-file{color:#e2e8f0;}
+.pg-err{color:#f87171;}
+.pg-muted{color:#64748b;}
+.pg-mission-toast{color:#facc15;font-weight:700;}
+.pg-term-live{display:flex;align-items:center;gap:0;}
+.pg-term-cursor{display:inline-block;width:7px;height:14px;margin-left:2px;background:#4ade80;animation:pg-blink 1s step-end infinite;vertical-align:middle;}
+@keyframes pg-blink{0%,49%{opacity:1;}50%,100%{opacity:0;}}
+
+.pg-input-row{display:flex;align-items:center;gap:8px;margin-bottom:10px;}
+.pg-input-prompt{flex:none;font-family:ui-monospace,"SFMono-Regular",Menlo,Consolas,monospace;font-weight:800;color:var(--accent);font-size:14px;}
+.pg-input{
+  flex:1;min-width:0;padding:13px 14px;border-radius:13px;border:1.5px solid var(--line);
+  background:var(--surface);color:var(--text);font-size:14.5px;
+  font-family:ui-monospace,"SFMono-Regular",Menlo,Consolas,monospace;
+}
+.pg-input:focus{outline:none;border-color:var(--accent);}
+.pg-send-btn{
+  flex:none;width:44px;height:44px;border-radius:13px;border:none;cursor:pointer;
+  background:linear-gradient(90deg,var(--accent),#0ea5e9);color:#fff;font-size:16px;
+  box-shadow:0 4px 12px rgba(2,132,199,.25);
+}
+.pg-send-btn:active{transform:scale(.94);}
+
+.pg-chip-row{display:flex;gap:8px;overflow-x:auto;padding-bottom:4px;margin-bottom:16px;-webkit-overflow-scrolling:touch;}
+.pg-chip{
+  flex:none;background:var(--surface);border:1.5px solid var(--line);color:var(--text);
+  font-family:ui-monospace,"SFMono-Regular",Menlo,Consolas,monospace;font-weight:700;font-size:12.5px;
+  padding:8px 14px;border-radius:99px;cursor:pointer;
+}
+.pg-chip:active{background:var(--bg2);border-color:var(--accent);}
+
+.pg-cards{display:grid;grid-template-columns:1fr 1fr;gap:10px;}
+@media (max-width:380px){ .pg-cards{grid-template-columns:1fr;} }
+.pg-card{
+  border-radius:16px;border:1px solid var(--line);padding:14px;
+  background:linear-gradient(160deg,var(--surface) 0%,var(--bg2) 100%);
+  box-shadow:0 6px 16px rgba(15,23,42,.05);
+}
+.pg-card-head{display:flex;align-items:center;gap:6px;margin-bottom:8px;}
+.pg-card-ico{font-size:14px;flex:none;}
+.pg-card-title{flex:1;font-size:12.5px;font-weight:800;color:var(--text);}
+.pg-card-badge{flex:none;background:rgba(2,132,199,.1);color:var(--accent);font-size:11px;font-weight:800;border-radius:99px;padding:2px 9px;}
+.pg-card-badge--done{background:rgba(22,163,74,.12);color:var(--good);}
+.pg-card-body{font-size:12.5px;color:var(--text);line-height:1.6;min-height:34px;}
+.pg-muted-text{color:var(--muted);}
+.pg-answer{margin-top:8px;font-size:12px;color:var(--good);}
+.pg-answer code{background:var(--bg2);border-radius:6px;padding:2px 6px;}
+.pg-card-btn.cta{width:100%;margin-top:10px;padding:11px;font-size:12.5px;border-radius:11px;}
+.pg-card-btn.ghost{width:100%;margin-top:10px;padding:11px;font-size:12.5px;border-radius:11px;}
+
+.pg-help-modal{max-width:420px;}
+.pg-help-modal-title{color:var(--accent);}
+.pg-help-body{max-height:60vh;overflow-y:auto;padding-right:2px;margin-bottom:14px;}
+.pg-help-body code{background:var(--bg2);border-radius:6px;padding:1px 6px;font-size:11.5px;}

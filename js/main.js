@@ -19,6 +19,9 @@ document.addEventListener("click", (e)=>{
 // ヘッダー右上のランキング／プロフィールへの丸型ショートカット（#app外の静的要素なので一度だけ紐付ける）
 document.querySelectorAll(".top-nav [data-go]").forEach(b => b.addEventListener("click", () => go(b.dataset.go)));
 
+// 画面下部の固定ナビゲーション（#app外の静的要素なので一度だけ紐付ける）
+document.querySelectorAll(".bnav-btn").forEach(b => b.addEventListener("click", () => go(b.dataset.nav)));
+
 migrateOldData();
 S.coins = loadCoins();
 S.uiTheme = loadUiTheme();

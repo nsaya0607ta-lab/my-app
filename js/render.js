@@ -14,6 +14,7 @@ import { markPetActivity, petHandleIdentityChange, petIsNeglected, petNextStage,
 import { mpActiveBoardId, mpAddLink, mpAddNote, mpApplyCloud, mpBoardChain, mpBoardMeta, mpClearAll, mpCreateBoard, mpDeleteBoard, mpDeleteNote, mpGetState, mpGroupNotes, mpHandleIdentityChange, mpListBoards, mpRandomColor, mpRemoveLink, mpRenameBoard, mpSuggestKeywords, mpSwitchBoard, mpTotalBoardCount, mpUpdateNote } from './mindpalette.js';
 import { renderIntroQuizScreen } from './introQuiz.js';
 import { checkNewsQuizPopup } from './newsQuiz.js';
+import { renderPlaygroundScreen } from './playground/screen.js';
 import { applyCustomButtonColors, isLongPressSuppressed, wireButtonColorLongPress } from './buttonColors.js';
 
 export const app = document.getElementById("app");
@@ -70,7 +71,7 @@ export function renderStatusBar(){
              || (!state.guestMode && !state.currentUser)
              || (!state.guestMode && state.currentUser && (!state.profileChecked || !getProfileName()));
   const screen = resolveScreen();
-  const otherScreens = ["ranking","profile","settings","skins","analytics","portfolio","holdings","news-japan","news-world","news-detail","calendar","gemini","gemini-edit-event","mind-palette","mind-palette-folders"];
+  const otherScreens = ["ranking","profile","settings","skins","analytics","portfolio","holdings","news-japan","news-world","news-detail","calendar","gemini","gemini-edit-event","mind-palette","mind-palette-folders","playground"];
   if(gated || otherScreens.includes(screen)){ el.classList.remove("show"); el.innerHTML=""; return; }
   const ov = overallStat();          // 総合Lvと次Lvまでの進捗(%)
   const coins = (S.coins||0);
@@ -136,7 +137,7 @@ export function renderStatusBar(){
 // render()末尾の分岐と同じ優先順位で判定する）ため、ヘッダー周りの表示制御は
 // この「実際に描画される画面名」を使って判断する。
 function resolveScreen(){
-  const noCertScreens = ["ranking","profile","settings","skins","analytics","certs","lpic-certs","portfolio","news-japan","news-world","news-detail","calendar","gemini","gemini-edit-event","mind-palette","mind-palette-folders","introquiz"];
+  const noCertScreens = ["ranking","profile","settings","skins","analytics","certs","lpic-certs","portfolio","news-japan","news-world","news-detail","calendar","gemini","gemini-edit-event","mind-palette","mind-palette-folders","introquiz","playground"];
   if(noCertScreens.includes(S.screen)) return S.screen;
   if(S.screen==="select" || !S.cert) return "select";
   return S.screen; // home/quiz/result/review/dict/transfer/history
@@ -173,6 +174,29 @@ function updateHeaderTitle(){
   topEl.classList.toggle("top--notitle", !!c);
 }
 
+// 画面下部の固定ナビゲーション：ログイン前後のゲート画面（読み込み中／認証／
+// ユーザー名未設定）では非表示にし、それ以外では現在の画面に対応するタブへ
+// .active を付け替える。個々の資格の各画面（home/quiz/result等）はまとめて
+// 「クイズ」タブ扱いにし、それ以外の画面（ランキング／プロフィール等）は
+// 「その他」タブへフォールバックさせる。
+const BNAV_TAB_BY_SCREEN = {
+  select:"select",
+  certs:"certs", "lpic-certs":"certs",
+  home:"home", "lpic-commands":"home", quiz:"home", result:"home", review:"home", dict:"home", transfer:"home", history:"home",
+  playground:"playground",
+};
+function updateBottomNav(){
+  const nav = document.getElementById("bottom-nav");
+  if(!nav) return;
+  const gated = (!state.guestMode && !state.authReady)
+             || (!state.guestMode && !state.currentUser)
+             || (!state.guestMode && state.currentUser && (!state.profileChecked || !getProfileName()));
+  nav.classList.toggle("show", !gated);
+  if(gated) return;
+  const active = BNAV_TAB_BY_SCREEN[resolveScreen()] || "profile";
+  nav.querySelectorAll(".bnav-btn").forEach(b => b.classList.toggle("active", b.dataset.nav === active));
+}
+
 // ⚙️ 設定モーダルの「スキン設定」で選んだUIテーマ（配色）を <body data-theme="..."> へ
 // 反映する。購入制のスキン（sb-theme-*クラス）とは独立した仕組みで、render()の
 // たびに呼ぶほか、モーダル内でテーマを選んだ直後にも即時反映のため呼び出す
@@ -188,6 +212,7 @@ export function render(){
   renderStatusBar();   // 画面が変わっても常に最新の Lv/BP/AC を反映
   updateHeaderNav(false); // デフォルトは非表示。表示すべき画面側で個別に true にする
   updateHeaderTitle();
+  updateBottomNav();
   // 🎨 アプリ全体の背景スキンを body に適用（default のときは元の背景のまま）
   const sk = S.currentSkin || "default";
   document.body.className = (sk && sk!=="default") ? ("sb-theme-"+sk) : "";
@@ -220,6 +245,7 @@ export function render(){
   if(S.screen==="gemini") return renderGeminiChat();
   if(S.screen==="gemini-edit-event") return renderGeminiEditEvent();
   if(S.screen==="introquiz") return renderIntroQuizScreen();
+  if(S.screen==="playground") return renderPlaygroundScreen();
   // 大元：資格選択画面
   if(S.screen==="select" || !S.cert) return renderSelect();
   if(S.screen==="home") return renderHome();
