@@ -1,35 +1,24 @@
-// ユーザーが3択の回答を送信したときに呼ばれるAPI。
-// ここで初めて「正誤判定」「本日の挑戦回数のインクリメント」「回数に応じた
-// BP/ACの加算」を行う。videoId・正解の選択肢・回数カウントはすべて
-// サーバー側（Firestore）だけで管理し、フロントから送られてくるのは
-// sessionId と choiceKey（選んだ選択肢のkey）だけ。
+// ユーザーがテキスト入力欄に曲名を入力して送信したときに呼ばれるAPI。
 //
-// 二重加算・連打対策として、1セッション（1回のstart呼び出し）につき
-// 回答は1回しか受け付けない（Firestoreトランザクションでsession.usedを
-// 確認・更新する）。日次の挑戦回数もトランザクション内でアトミックに
-// インクリメントする。
+// 3択ボタンをやめ、自由記述の回答文字列（answerText）をレーベンシュタイン距離
+// ベースの類似度で判定する（api/_lib/textMatch.js）。判定結果は3パターン：
+//   1) 完全一致（表記ゆれ正規化後）        → 即正解として確定
+//   2) 8割以上一致（だが完全一致ではない）  → 「もしかして」サジェストを返し、
+//                                            確定はしない（/confirm 待ち）
+//   3) それ未満                            → 不正解。試行回数の上限内なら
+//                                            再入力を促し、上限に達したら
+//                                            強制的に答えを開示して確定する
+//
+// 「1セッション＝1プレイ」に対して報酬・日次カウンターの加算は必ず1回だけ
+// （セッション確定＝session.used=trueになる瞬間）に行う。共通処理は
+// api/_lib/introQuizDaily.js の finalizeSession() に集約している。
 const { verifyFirebaseIdToken, getAdmin } = require("../_lib/firebaseAdmin");
-const { FieldValue } = require("firebase-admin/firestore");
+const { matchAnswer } = require("../_lib/textMatch");
+const { finalizeSession, SESSION_TTL_MS, MAX_ATTEMPTS_PER_SESSION } = require("../_lib/introQuizDaily");
 
-// セッションの有効期限。開始から長時間放置された回答（＝別タブで使い回す
-// 等）を無効化するための保険で、通常のプレイでは問題にならない長さにする
-const SESSION_TTL_MS = 10 * 60 * 1000;
-
-// 日本時間基準の日付キー（YYYY-MM-DD）。UTC基準のままだと日本時間の
-// 深夜0時〜9時台に「日付が前日のまま」ズレてしまうため、明示的にJSTへ変換する
-function jstDateKey(date) {
-  return new Intl.DateTimeFormat("en-CA", {
-    timeZone: "Asia/Tokyo", year: "numeric", month: "2-digit", day: "2-digit",
-  }).format(date);
-}
-
-// その日の何回目の挑戦かに応じた報酬（正解時のみ加算される）
-//   1回目: 50BP + 10AC / 2〜3回目: 50BPのみ / 4回目以降: 0BP・0AC
-function rewardForAttempt(attemptNumber) {
-  if (attemptNumber === 1) return { bp: 50, ac: 10 };
-  if (attemptNumber === 2 || attemptNumber === 3) return { bp: 50, ac: 0 };
-  return { bp: 0, ac: 0 };
-}
+// この類似度以上なら「もしかして」サジェストの対象にする（8割程度一致）
+const SUGGEST_THRESHOLD = 0.8;
+const MATCH_FIELDS = ["title", "titleKana", "titleRomaji", "titleEn"];
 
 module.exports = async (req, res) => {
   if (req.method !== "POST") {
@@ -47,8 +36,8 @@ module.exports = async (req, res) => {
 
   const body = req.body || {};
   const sessionId = typeof body.sessionId === "string" ? body.sessionId.slice(0, 64) : "";
-  const choiceKey = typeof body.choiceKey === "string" ? body.choiceKey.slice(0, 8) : "";
-  if (!sessionId || !choiceKey) {
+  const answerText = typeof body.answerText === "string" ? body.answerText.slice(0, 200) : "";
+  if (!sessionId || !answerText.trim()) {
     res.status(400).json({ error: "bad-request" });
     return;
   }
@@ -62,11 +51,7 @@ module.exports = async (req, res) => {
     return;
   }
   const db = admin.firestore();
-
   const sessionRef = db.collection("introQuizSessions").doc(sessionId);
-  const dateKey = jstDateKey(new Date());
-  const dailyRef = db.collection("introQuizDaily").doc(`${uid}_${dateKey}`);
-  const userRef = db.collection("users").doc(uid);
 
   try {
     const result = await db.runTransaction(async (tx) => {
@@ -86,44 +71,42 @@ module.exports = async (req, res) => {
         const e = new Error("session-expired"); e.statusCode = 410; throw e;
       }
 
-      const dailySnap = await tx.get(dailyRef);
-      const attemptNumber = (dailySnap.exists ? (dailySnap.data().count || 0) : 0) + 1;
-      const correct = choiceKey === session.correctKey;
-      const reward = correct ? rewardForAttempt(attemptNumber) : { bp: 0, ac: 0 };
+      const attempts = (session.attempts || 0) + 1;
+      const candidates = MATCH_FIELDS
+        .map((f) => ({ field: f, value: session.match && session.match[f] }))
+        .filter((c) => c.value);
+      const match = matchAnswer(answerText, candidates);
 
-      tx.set(sessionRef, { used: true, answeredAt: Date.now() }, { merge: true });
-      tx.set(dailyRef, { uid, dateKey, count: attemptNumber, updatedAt: Date.now() }, { merge: true });
-      if (reward.bp > 0 || reward.ac > 0) {
-        tx.set(userRef, {
-          coins: FieldValue.increment(reward.ac),
-          introQuizBp: FieldValue.increment(reward.bp),
-        }, { merge: true });
+      if (match.exact) {
+        const fin = await finalizeSession(tx, db, { uid, sessionRef, correct: true });
+        return {
+          done: true, correct: true, bp: fin.reward.bp, ac: fin.reward.ac, capReached: fin.capReached,
+          videoId: session.videoId, title: session.title, artist: session.artist,
+        };
       }
 
-      return {
-        correct,
-        attemptNumber,
-        reward,
-        videoId: session.videoId,
-        title: session.title,
-        artist: session.artist || "",
-        correctKey: session.correctKey,
-      };
+      if (match.score >= SUGGEST_THRESHOLD) {
+        tx.set(sessionRef, { attempts, pendingSuggestion: { title: session.title, score: match.score } }, { merge: true });
+        return {
+          done: false, status: "suggest",
+          suggestedTitle: session.title, suggestedArtist: session.artist, score: match.score,
+        };
+      }
+
+      if (attempts >= MAX_ATTEMPTS_PER_SESSION) {
+        // 試行回数の上限に達した→強制的に答えを開示して確定する（不正解扱い、報酬なし）
+        const fin = await finalizeSession(tx, db, { uid, sessionRef, correct: false });
+        return {
+          done: true, correct: false, bp: 0, ac: 0, capReached: fin.capReached,
+          videoId: session.videoId, title: session.title, artist: session.artist,
+        };
+      }
+
+      tx.set(sessionRef, { attempts }, { merge: true });
+      return { done: false, status: "incorrect", attemptsLeft: MAX_ATTEMPTS_PER_SESSION - attempts };
     });
 
-    res.status(200).json({
-      ok: true,
-      correct: result.correct,
-      attemptNumber: result.attemptNumber,
-      bp: result.reward.bp,
-      ac: result.reward.ac,
-      capReached: result.attemptNumber >= 4,
-      // 正誤に関わらず、答え合わせとしてここで初めて動画情報を開示する
-      videoId: result.videoId,
-      title: result.title,
-      artist: result.artist,
-      correctKey: result.correctKey,
-    });
+    res.status(200).json(Object.assign({ ok: true }, result));
   } catch (e) {
     const statusCode = e.statusCode || 500;
     if (statusCode >= 500) console.error("intro-quiz answer error:", e);
