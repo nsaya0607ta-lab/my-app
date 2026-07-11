@@ -632,8 +632,8 @@ h1.title.title--badge{margin:2px 0 0;}
 .pop-axis-yunit{width:13px;font-size:7px;font-weight:700;color:var(--muted);line-height:1;}
 .pop-axis-yunit-right{width:13px;font-size:7px;font-weight:700;color:var(--muted);line-height:1;text-align:right;}
 .weather-pop-chart-row{display:flex;align-items:stretch;gap:3px;}
-.pop-axis-ycol{flex:none;width:13px;height: 40px;}
-.pop-axis-yticks,.pop-axis-yticks-right{position:relative;height: 40px;}
+.pop-axis-ycol{flex:none;width:13px;}
+.pop-axis-yticks,.pop-axis-yticks-right{position:relative;}
 .pop-axis-yticks span{position:absolute;right:0;transform:translateY(-50%);
   font-size:7px;font-weight:600;color:var(--muted);line-height:1;font-variant-numeric:tabular-nums;white-space:nowrap;}
 .pop-axis-yticks-right span{position:absolute;left:0;transform:translateY(-50%);
