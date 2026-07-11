@@ -194,7 +194,7 @@ body{
   letter-spacing:-.02em;
   transform:translateY(2px);
 }
-.weather-card .weather-precip-label::before{content:"💧 ";}
+.weather-card .weather-precip-label::before{content:"";}
 .weather-card .weather-precip-now{
   margin-top:4px;
   overflow:hidden;
