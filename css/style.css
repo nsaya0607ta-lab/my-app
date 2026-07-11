@@ -630,24 +630,24 @@ h1.title.title--badge{margin:2px 0 0;}
    共有し等間隔に配置する）の2軸、横軸（3時間ごとの時刻ラベル）を添える。
    単位（%・mm・時）はそれぞれ縦軸の一番上（左右）／横軸の一番右端に
    1回だけ表示する。カードの直接の子要素なのでカード全幅まで広がる */
-.weather-pop-chart{margin-top:16px;}
+.weather-pop-chart{width:100%;margin-top:18px;}
 .weather-pop-chart-units{display:flex;justify-content:space-between;margin-bottom:6px;}
-.pop-axis-yunit{width:13px;font-size:7px;font-weight:700;color:var(--muted);line-height:1;}
-.pop-axis-yunit-right{width:13px;font-size:7px;font-weight:700;color:var(--muted);line-height:1;text-align:right;}
+.pop-axis-yunit{width:20px;font-size:10px;font-weight:700;color:var(--muted);line-height:1;}
+.pop-axis-yunit-right{width:20px;font-size:10px;font-weight:700;color:var(--muted);line-height:1;text-align:right;}
 .weather-pop-chart-row{display:flex;align-items:stretch;gap:3px;}
-.pop-axis-ycol{flex:none;width:13px;}
+.pop-axis-ycol{flex:none;width:20px;}
 .pop-axis-yticks,.pop-axis-yticks-right{position:relative;}
 .pop-axis-yticks span{position:absolute;right:0;transform:translateY(-50%);
-  font-size:7px;font-weight:600;color:var(--muted);line-height:1;font-variant-numeric:tabular-nums;white-space:nowrap;}
+  font-size:10px;font-weight:600;color:var(--muted);line-height:1;font-variant-numeric:tabular-nums;white-space:nowrap;}
 .pop-axis-yticks-right span{position:absolute;left:0;transform:translateY(-50%);
-  font-size:7px;font-weight:600;color:var(--muted);line-height:1;font-variant-numeric:tabular-nums;white-space:nowrap;}
+  font-size:10px;font-weight:600;color:var(--muted);line-height:1;font-variant-numeric:tabular-nums;white-space:nowrap;}
 .weather-pop-chart-plot{flex:1;min-width:0;}
-.weather-pop-chart-svg{display:block;width:100%;height:40px;}
+.weather-pop-chart-svg{display:block;width:100%;height:105px;}
 .weather-pop-chart-xrow{display:flex;gap:3px;margin-top:2px;}
-.weather-pop-chart-labels{flex:1;min-width:0;position:relative;height:10px;}
+.weather-pop-chart-labels{flex:1;min-width:0;position:relative;height:18px;}
 .weather-pop-chart-labels span{position:absolute;top:0;transform:translateX(-50%);
-  font-size:8px;font-weight:600;color:var(--muted);white-space:nowrap;}
-.pop-axis-xunit{font-size:7.5px;font-weight:700;color:var(--muted);white-space:nowrap;}
+  font-size:10px;font-weight:600;color:var(--muted);white-space:nowrap;}
+.pop-axis-xunit{font-size:10px;font-weight:700;color:var(--muted);white-space:nowrap;padding-left:4px;}
 
 /* 右：天気カードに常設する「デジタル盆栽」の簡易表示。タップすると
    openPetModal()で進化段階・進捗の詳細モーダルを開く。
