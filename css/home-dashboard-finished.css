@@ -186,6 +186,7 @@ body{
 .weather-card .weather-temp{
   overflow:hidden;
   color:#0b2140;
+  font-family:"Courier New", monospace;
   font-size:18px;
   font-weight:600;
   line-height:1;
@@ -204,6 +205,7 @@ body{
 }
 .weather-card .weather-precip-now-value{
   margin-right:2px;
+  font-family:"Courier New", monospace;
   font-size:18px;
   font-weight:750;
   letter-spacing:-.02em;
