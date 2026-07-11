@@ -2906,14 +2906,54 @@ const RULES_LIST_ICON_SVG = `
    メニュー。タップ後は既存の go()／openSettingsModal()／openRulesModal()
    をそのまま呼び出すだけで、遷移先の画面・モーダル自体はこれまでと同じ。
    ========================================================================= */
+// ボトムシート表示中は、iOS Safari／PWAでも背後のホーム画面が一切スクロール
+// しないよう、bodyをposition:fixedで開いた瞬間のスクロール位置に固定する。
+// `overflow:hidden`だけだとiOSではラバーバンドスクロールで背景が動いてしまう
+// ため、position:fixed＋座標保持で完全に固定し、閉じたら元の位置へ戻す。
+let sheetScrollY = 0;
+
+function lockBodyScrollForSheet(){
+  sheetScrollY = window.scrollY || window.pageYOffset || 0;
+  document.body.style.position = "fixed";
+  document.body.style.top = `-${sheetScrollY}px`;
+  document.body.style.left = "0";
+  document.body.style.right = "0";
+  document.body.style.width = "100%";
+}
+
+function unlockBodyScrollForSheet(){
+  document.body.style.position = "";
+  document.body.style.top = "";
+  document.body.style.left = "";
+  document.body.style.right = "";
+  document.body.style.width = "";
+  window.scrollTo(0, sheetScrollY);
+}
+
+// シート外（暗い背景・ハンドル・タイトル）でのtouchmoveはpassive:falseで
+// 確実にpreventDefaultし、背後の画面へスクロールが伝わらないようにする。
+// .bottom-sheet-list内は、収まりきらない項目がある場合のみ内部スクロールを
+// 許可し（overflow-behaviorはCSS側のoverscroll-behaviorで境界での伝播も抑止）、
+// 全項目が収まっている場合はここでもpreventDefaultして背景を固定する。
+function onSheetTouchMove(e){
+  const list = e.currentTarget.querySelector(".bottom-sheet-list");
+  if(!list || !list.contains(e.target) || list.scrollHeight <= list.clientHeight){
+    e.preventDefault();
+  }
+}
+
 function closeSheet(ov){
   ov.classList.remove("sheet-ov-show");
   const sheet = ov.querySelector(".bottom-sheet");
   if(sheet) sheet.classList.remove("bottom-sheet-show");
-  setTimeout(() => { try{ ov.remove(); }catch(e){} }, 220);
+  setTimeout(() => {
+    try{ ov.remove(); }catch(e){}
+    unlockBodyScrollForSheet();
+  }, 220);
 }
 
 function openSheet(title, itemsHTML){
+  lockBodyScrollForSheet();
   const ov = document.createElement("div");
   ov.className = "sheet-ov";
   ov.innerHTML = `
@@ -2924,6 +2964,7 @@ function openSheet(title, itemsHTML){
     </div>`;
   document.body.appendChild(ov);
   ov.addEventListener("click", (e) => { if(e.target === ov) closeSheet(ov); });
+  ov.addEventListener("touchmove", onSheetTouchMove, { passive: false });
   requestAnimationFrame(() => {
     ov.classList.add("sheet-ov-show");
     ov.querySelector(".bottom-sheet").classList.add("bottom-sheet-show");
