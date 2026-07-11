@@ -888,12 +888,21 @@ h1.title.title--badge{margin:2px 0 0;}
 .trade-note{font-size:10.5px;color:var(--muted);line-height:1.6;margin-top:10px;}
 
 /* ポートフォリオ（資産保有額）詳細画面 */
-.pf-hero{background:linear-gradient(160deg,rgba(2,132,199,.07) 0%,var(--surface) 65%);border:1px solid var(--line);
+.pf-hero{position:relative;background:linear-gradient(160deg,rgba(2,132,199,.07) 0%,var(--surface) 65%);border:1px solid var(--line);
   border-radius:18px;padding:18px;margin-bottom:20px;box-shadow:0 4px 14px rgba(15,23,42,.04);}
 .pf-hero-lab{font-size:11px;font-weight:700;color:var(--muted);letter-spacing:.06em;}
 .pf-hero-total{font-size:32px;font-weight:800;color:var(--text);font-variant-numeric:tabular-nums;margin:4px 0 6px;}
 .pf-hero-total small{font-size:15px;color:var(--muted);font-weight:700;}
 .pf-hero-sub{font-size:11.5px;color:var(--muted);font-weight:600;}
+.pf-hero-compact{margin-bottom:16px;}
+/* ヒーローカード右上の「保有株」ボタン。専用の保有株一覧画面（renderHoldings）への入口 */
+.pf-hero-holdings-btn{position:absolute;top:14px;right:14px;display:flex;align-items:center;gap:5px;
+  border:1px solid var(--line);border-radius:999px;padding:6px 11px 6px 12px;font-size:11.5px;font-weight:700;
+  color:var(--accent);background:var(--surface);cursor:pointer;box-shadow:0 2px 6px rgba(15,23,42,.05);}
+.pf-hero-holdings-count{display:inline-flex;align-items:center;justify-content:center;min-width:17px;height:17px;
+  padding:0 4px;border-radius:999px;background:var(--accent);color:#fff;font-size:10px;font-weight:800;}
+.pf-pending-badge{font-size:11.5px;font-weight:700;color:#b45309;background:rgba(217,119,6,.10);
+  border:1px solid rgba(217,119,6,.22);border-radius:12px;padding:9px 13px;margin-bottom:16px;}
 .pf-list{display:flex;flex-direction:column;gap:9px;}
 .pf-row{display:flex;align-items:center;justify-content:space-between;gap:10px;background:var(--surface);
   border:1px solid var(--line);border-radius:14px;padding:13px 15px;box-shadow:0 2px 6px rgba(15,23,42,.03);}
@@ -903,6 +912,45 @@ h1.title.title--badge{margin:2px 0 0;}
 .pf-row-right{display:flex;flex-direction:column;align-items:flex-end;gap:1px;flex:none;}
 .pf-shares{font-size:11px;font-weight:700;color:var(--muted);}
 .pf-val{font-size:14.5px;font-weight:800;color:var(--text);font-variant-numeric:tabular-nums;}
+/* 保有株一覧画面の行に置く「売却」ショートカットボタン */
+.pf-row-sellbtn{flex:none;border:none;border-radius:10px;padding:8px 12px;font-size:12px;font-weight:700;
+  color:#fff;background:linear-gradient(90deg,#dc2626,#ef4444);cursor:pointer;}
+
+/* 画面最下部に常設する「購入」「売却」の固定バー（ポートフォリオ・保有株
+   両画面で共通）。左下のパレットFAB・右下のGemini FABより手前（z-index上）に
+   重ならないよう、両ボタンの間の中央帯だけを占有する横幅に絞ってある */
+.pf-tradebar-spacer{height:calc(74px + env(safe-area-inset-bottom));}
+.pf-tradebar{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(10px + env(safe-area-inset-bottom));
+  width:min(calc(100% - 96px), 340px);display:flex;gap:10px;z-index:480;}
+.pf-tradebar-btn{flex:1;border:none;border-radius:14px;padding:13px 10px;font-size:14.5px;font-weight:800;
+  cursor:pointer;box-shadow:0 8px 20px rgba(15,23,42,.16);color:#fff;transition:transform .1s;}
+.pf-tradebar-btn:active{transform:scale(.96);}
+.pf-tradebar-btn.buy{background:linear-gradient(135deg,var(--accent),#0ea5e9);}
+.pf-tradebar-btn.sell{background:linear-gradient(135deg,#dc2626,#ef4444);}
+
+/* 「購入」「売却」共通の売買モーダル（既存の.modal-ov/.modalを土台に使う） */
+.pf-trade-modal{max-width:400px;}
+.pf-trade-ticker-row{display:flex;align-items:center;justify-content:space-between;gap:8px;}
+.pf-trade-ticker-row .pf-ticker{margin-right:6px;}
+.pf-trade-price{font-size:13px;font-weight:700;color:var(--text);margin:6px 0 2px;}
+.pf-trade-note-off{font-size:11px;font-weight:600;color:var(--muted);background:var(--bg2);
+  border-radius:10px;padding:8px 10px;margin:8px 0;line-height:1.6;}
+.pf-trade-qty-lab{display:flex;justify-content:space-between;font-size:11.5px;font-weight:700;
+  color:var(--muted);margin:12px 0 6px;}
+.pf-trade-max{font-weight:600;color:var(--muted);}
+.pf-trade-summary{margin-top:14px;border:1px solid var(--line);border-radius:12px;padding:10px 13px;
+  background:var(--bg2);display:flex;flex-direction:column;gap:6px;}
+.pf-trade-summary-row{display:flex;justify-content:space-between;font-size:12.5px;color:var(--text);font-variant-numeric:tabular-nums;}
+.pf-trade-summary-row.total{font-weight:800;font-size:13.5px;border-top:1px solid var(--line);padding-top:6px;margin-top:2px;}
+.pf-trade-summary-row.muted{color:var(--muted);font-size:11.5px;}
+.pf-trade-error{margin-top:10px;font-size:12px;font-weight:700;color:var(--bad);background:rgba(220,38,38,.08);
+  border-radius:10px;padding:9px 11px;}
+.pf-trade-success{margin-top:10px;font-size:12px;font-weight:700;color:var(--good);background:rgba(22,163,74,.08);
+  border-radius:10px;padding:9px 11px;}
+.pf-trade-confirm{width:100%;margin-top:14px;border:none;border-radius:13px;padding:13px;font-size:14px;
+  font-weight:800;color:#fff;cursor:pointer;}
+.pf-trade-confirm.buy{background:linear-gradient(90deg,var(--accent),#0ea5e9);}
+.pf-trade-confirm.sell{background:linear-gradient(90deg,#dc2626,#ef4444);}
 
 /* ポートフォリオ＞ウォッチリスト（検索して追加した銘柄・セクターバッジ表示） */
 .pf-watch-addbtn{width:100%;padding:13px;border:1px dashed var(--accent);border-radius:13px;
