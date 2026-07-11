@@ -177,13 +177,15 @@ function updateHeaderTitle(){
 // 画面下部の固定ナビゲーション：ログイン前後のゲート画面（読み込み中／認証／
 // ユーザー名未設定）では非表示にし、それ以外では現在の画面に対応するタブへ
 // .active を付け替える。個々の資格の各画面（home/quiz/result等）はまとめて
-// 「クイズ」タブ扱いにし、それ以外の画面（ランキング／プロフィール等）は
-// 「その他」タブへフォールバックさせる。
+// 「ホーム」タブ扱いにし、それ以外の画面（ランキング／プロフィール等）は
+// 「その他」タブへフォールバックさせる。カレンダー画面は各種機能シートと
+// カレンダータブのどちらから開いても同じ「カレンダー」タブをアクティブにする。
 const BNAV_TAB_BY_SCREEN = {
   select:"select",
-  home:"home", "lpic-commands":"home", quiz:"home", result:"home", review:"home", dict:"home", transfer:"home", history:"home",
+  home:"select", "lpic-commands":"select", quiz:"select", result:"select", review:"select", dict:"select", transfer:"select", history:"select",
   certs:"study-menu", "lpic-certs":"study-menu", playground:"study-menu",
-  "news-japan":"quick-menu", "news-world":"quick-menu", "news-detail":"quick-menu", portfolio:"quick-menu", holdings:"quick-menu", calendar:"quick-menu", introquiz:"quick-menu",
+  "news-japan":"quick-menu", "news-world":"quick-menu", "news-detail":"quick-menu", portfolio:"quick-menu", holdings:"quick-menu", introquiz:"quick-menu",
+  calendar:"calendar",
 };
 function updateBottomNav(){
   const nav = document.getElementById("bottom-nav");
