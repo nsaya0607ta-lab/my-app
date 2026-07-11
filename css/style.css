@@ -12,7 +12,7 @@
   --bad:#dc2626;       /* 不正解・警告の赤 (red-600) */
   --text:#0f172a;      /* メインテキスト (slate-900) */
   --muted:#64748b;     /* サブテキスト (slate-500) */
-  --bnav-h:78px;        /* 画面下部固定ナビゲーション（浮き上がったカード＋下マージン込み）の高さ（safe-area除く） */
+  --bnav-h:64px;        /* 画面下部固定ナビゲーションの高さ（safe-area除く） */
 }
 /* touch-action:manipulationで、ダブルタップによるブラウザ標準の
    拡大ズームとタップ時の300ms遅延を全要素で無効化する（ピンチズーム
@@ -34,9 +34,7 @@ input, textarea, [contenteditable]{
    全体ルールで確実に上書きし、モーダルを開いた際の意図しないズームを防ぐ */
 input, select, textarea{font-size:16px !important;}
 body{
-  /* 数字・英字はInterで統一する（Interに無い日本語グリフは1文字単位で
-     自動的に-apple-system等の既存フォントへフォールバックする） */
-  font-family:"Inter",-apple-system,BlinkMacSystemFont,"Segoe UI","Hiragino Sans","Yu Gothic UI",sans-serif;
+  font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","Hiragino Sans","Yu Gothic UI",sans-serif;
   /* 上部から明るい青空のようなグラデーションが広がる清潔感のある背景 */
   background:radial-gradient(120% 90% at 50% -10%, #e0f2fe 0%, var(--bg) 65%) fixed;
   color:var(--text); min-height:100vh; -webkit-font-smoothing:antialiased;
@@ -65,26 +63,20 @@ body{
 
 /* ===== 画面下部の固定ナビゲーション（全画面共通） =====
    ログイン前後のゲート画面では非表示（.showが付いた時のみ表示）。
-   完成イメージに合わせ、画面の左右・下に余白を持たせた白い角丸カードとして
-   浮かせる（以前の「画面幅いっぱい・下端ぴったり」のバーから変更）。
-   .shellと同じ左右パディング(18px)ぶん内側に収め、既存の右下Gemini FAB・
-   左下パレットFABより下のレイヤーに敷く（重ならないよう、それらの
-   bottom位置は var(--bnav-h) ぶん底上げしてある） */
+   .shellと同じmax-widthで中央寄せし、既存の右下Gemini FAB・左下パレットFAB・
+   ポートフォリオの売買バーより下のレイヤーに敷く（重ならないよう、それらの
+   bottom位置は本ナビの高さぶん底上げしてある） */
 .bottom-nav{
-  display:none; position:fixed; z-index:300; box-sizing:border-box;
-  left:calc(18px + env(safe-area-inset-left)); right:calc(18px + env(safe-area-inset-right));
-  bottom:calc(12px + env(safe-area-inset-bottom));
-  max-width:444px; margin:0 auto;
-  padding:9px 6px;
-  background:rgba(255,255,255,.92); -webkit-backdrop-filter:blur(14px); backdrop-filter:blur(14px);
-  border:1px solid var(--line); border-radius:24px;
-  box-shadow:0 12px 30px rgba(15,23,42,.10), 0 2px 8px rgba(15,23,42,.05);
+  display:none; position:fixed; left:0; right:0; bottom:0; z-index:300;
+  max-width:480px; margin:0 auto; box-sizing:border-box;
+  padding:8px 6px calc(8px + env(safe-area-inset-bottom));
+  background:rgba(255,255,255,.85); -webkit-backdrop-filter:blur(14px); backdrop-filter:blur(14px);
+  border-top:1px solid var(--line); box-shadow:0 -6px 20px rgba(15,23,42,.06);
 }
 .bottom-nav.show{display:flex;}
 .bnav-btn{
-  position:relative;
-  flex:1; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:4px;
-  background:none; border:none; padding:5px 2px 8px; color:var(--muted); cursor:pointer;
+  flex:1; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:3px;
+  background:none; border:none; padding:6px 2px; color:var(--muted); cursor:pointer;
   transition:color .15s ease, transform .12s ease;
 }
 .bnav-btn:active{transform:scale(.92);}
@@ -92,11 +84,6 @@ body{
 .bnav-ico svg{display:block;}
 .bnav-lab{font-size:10px;font-weight:700;letter-spacing:.01em;white-space:nowrap;}
 .bnav-btn.active{color:var(--accent);}
-/* 選択中メニューの下に表示する短い青いライン */
-.bnav-btn.active::after{
-  content:""; position:absolute; bottom:0; left:50%; transform:translateX(-50%);
-  width:18px; height:3px; border-radius:99px; background:var(--accent);
-}
 @media (max-width:360px){
   .bnav-lab{font-size:9px;}
 }
@@ -121,29 +108,22 @@ h1.title.title--badge{margin:2px 0 0;}
 }
 .page{flex:1;animation:fade .35s ease;}
 
-/* 天気カード・予定/タスクカード・アカウントバーで絵文字の代わりに使う
-   線画アイコン（render.js側のicon()ヘルパーが差し込むspan.ico）。
-   サイズと色は使う場所ごとのモディファイアクラスで指定する */
-.ico{display:inline-flex;align-items:center;justify-content:center;flex:none;width:14px;height:14px;}
-.ico svg{width:100%;height:100%;display:block;}
-
 /* ステータスバー（ライトモード用の半透明白ガラス） */
 .statusbar{display:none;align-self:stretch;width:100%;box-sizing:border-box;align-items:center;gap:12px;
-  position:sticky;top:6px;z-index:50;margin:0 0 16px;padding:12px 18px;min-height:54px;
-  background:rgba(255,255,255,.92);-webkit-backdrop-filter:blur(10px);backdrop-filter:blur(10px);
-  border:1px solid #cfe4f6;border-radius:22px;
-  box-shadow:0 8px 24px rgba(37,99,155,.12), inset 0 1px 0 rgba(255,255,255,.9);}
+  position:sticky;top:6px;z-index:50;margin:0 0 16px;padding:9px 14px;
+  background:rgba(255,255,255,.75);-webkit-backdrop-filter:blur(10px);backdrop-filter:blur(10px);
+  border:1px solid var(--line);border-radius:14px;box-shadow:0 8px 22px rgba(15,23,42,.08);}
 .statusbar.show{display:flex;}
 .sb-levels{flex:1;min-width:0;display:flex;flex-direction:column;gap:6px;}
-.sb-line{display:flex;align-items:center;gap:14px;}
-.sb-lab{flex:none;width:125px;font-size:14px;color:#10264a;white-space:nowrap;letter-spacing:.01em;line-height:1;overflow:hidden;text-overflow:ellipsis;}
-.sb-lab b{color:var(--text);font-size:17px;font-weight:800;margin-left:2px;}
+.sb-line{display:flex;align-items:center;gap:10px;}
+.sb-lab{flex:none;width:104px;font-size:11px;color:var(--muted);white-space:nowrap;letter-spacing:.01em;line-height:1;overflow:hidden;text-overflow:ellipsis;}
+.sb-lab b{color:var(--text);font-size:13px;font-weight:800;margin-left:2px;}
 .sb-lab-cert b{color:var(--accent);}
-.sb-prog{flex:1;min-width:40px;height:10px;border-radius:99px;background:#e6edf6;overflow:visible;
+.sb-prog{flex:1;min-width:40px;height:6px;border-radius:99px;background:var(--bg2);overflow:visible;
   box-shadow:inset 0 1px 2px rgba(0,0,0,.08);}
 .sb-prog-f{display:block;height:100%;border-radius:99px;width:0;transition:width .7s cubic-bezier(.22,1,.36,1);}
-.sb-prog-f.overall{background:linear-gradient(90deg,#078be8 0%,#28afea 55%,#69d2e9 100%);
-  box-shadow:0 2px 8px rgba(7,139,232,.25);animation:none;}
+.sb-prog-f.overall{background:linear-gradient(90deg,#d97706,#f59e0b 55%,#fef08a);background-size:200% 100%;animation:sbflow 2.6s linear infinite;
+  box-shadow:0 0 6px 1px rgba(217,119,6,.3), inset -4px 0 5px -3px rgba(255,255,255,.5);}
 .sb-prog-f.cert{background:linear-gradient(90deg,#0284c7,#38bdf8 55%,#e0f2fe);background-size:200% 100%;animation:sbflow 3.2s linear infinite;
   box-shadow:0 0 6px 1px rgba(2,132,199,.3), inset -4px 0 5px -3px rgba(255,255,255,.5);}
 @keyframes sbflow{0%{background-position:0 0}100%{background-position:200% 0}}
@@ -167,8 +147,8 @@ h1.title.title--badge{margin:2px 0 0;}
 .sb-tooltip-main{display:block;margin-top:2px;font-size:13px;font-weight:800;color:#f1f5f9;}
 .sb-tooltip-main b{font-size:15px;color:#fbbf24;}
 .sb-div{align-self:stretch;width:1px;background:var(--line);flex:none;}
-.sb-coin{flex:none;font-size:14px;color:var(--muted);white-space:nowrap;display:flex;align-items:center;gap:4px;}
-.sb-coin b{color:var(--gold);font-size:25px;font-weight:800;}
+.sb-coin{flex:none;font-size:11px;color:var(--muted);white-space:nowrap;display:flex;align-items:center;gap:4px;}
+.sb-coin b{color:var(--gold);font-size:16px;font-weight:800;}
 @media (max-width:360px){
   .sb-lab{width:92px;font-size:10px;}
   .sb-lab b{font-size:12px;}
@@ -589,106 +569,100 @@ h1.title.title--badge{margin:2px 0 0;}
 .news-arrow{width:24px;height:24px;flex:none;border-radius:50%;border:1px solid var(--line);background:rgba(255,255,255,.7);color:var(--muted);font-size:15px;line-height:1;cursor:pointer;display:flex;align-items:center;justify-content:center;padding:0;}
 .news-arrow:active{transform:scale(.9);}
 /* ヘッダーバッジ無しのミニマル構成。上下のパディングをやや広げ、
-   左右2エリアをカード全体の上下中央に据えた余白バランスにする。
-   margin-bottomは.news-cardの既定値(16px)をそのまま使い、他のホーム
-   カード同士の縦間隔（後述の.gcal-card・.dash-acct-bar）と揃える */
-.weather-card{padding:20px 18px 18px;border-radius:28px;}
+   左右2エリアをカード全体の上下中央に据えた余白バランスにする */
+.weather-card{margin-bottom:14px;padding-top:16px;padding-bottom:8px;}
 
-/* カード見出し：ピンアイコン＋「◯◯の天気」 */
-.weather-card-heading{display:flex;align-items:center;gap:8px;margin-bottom:20px;font-size:16px;font-weight:800;color:var(--text);}
-.weather-heading-icon{width:16px;height:16px;color:var(--accent);}
-.weather-label-icon{width:12px;height:12px;color:var(--accent);opacity:.85;}
+/* カードを左（時計／天気＋降水確率の曲線グラフ）：右（Gemini相談ボタン）＝
+   2.4：1の比率で左右分割する */
+.weather-body{display:flex;align-items:stretch;gap:8px;}
+.weather-left{flex:2.4;min-width:0;display:flex;flex-direction:column;gap:8px;}
+.weather-left-top{display:flex;align-items:center;gap:6px;}
 
-/* 上段：3つの指標（日付＋デジタル時計／天気／デジタル盆栽）を
-   CSS Gridの3カラムで表示する。各列を4行のグリッド（ラベル／補足テキスト／
-   大きな数値／下段）にそろえ、時刻・気温の数値本体（.weather-value-row）
-   を常に3行目へ固定することで、列ごとにDOM構成（補足テキストの有無など）が
-   違っても「大きな数字」の高さと位置が完全に揃う */
-.weather-metrics{display:grid;grid-template-columns:minmax(min-content,1.2fr) minmax(min-content,1.1fr) minmax(min-content,1.1fr);align-items:start;}
-.weather-metric{min-width:0;padding:0 10px;display:grid;grid-template-rows:24px 18px 38px 24px;align-items:center;}
-.weather-metric:first-child{padding-left:0;}
-.weather-metric:last-child{padding-right:0;}
-.weather-metric + .weather-metric{border-left:1px solid var(--line);}
+/* 左上段・左：日付＋秒まで動くデジタル時計。日付は一回り大きく・太く強調する */
+.weather-datetime{flex:none;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;}
+.weather-date{font-size:12.5px;font-weight:800;color:var(--text);letter-spacing:.01em;white-space:nowrap;}
+.weather-time{display:flex;align-items:baseline;font-size:17px;font-weight:800;color:var(--text);
+  font-variant-numeric:tabular-nums;white-space:nowrap;line-height:1;}
+.weather-time-sec{font-size:11px;font-weight:700;color:var(--muted);opacity:.8;font-variant-numeric:tabular-nums;}
 
-.weather-metric-label{grid-row:1;display:flex;align-items:center;gap:5px;min-width:0;font-size:11px;font-weight:700;color:var(--muted);white-space:nowrap;}
-.weather-metric-label>span:last-child{min-width:0;}
-.weather-value-row{grid-row:3;min-height:38px;display:flex;align-items:baseline;justify-content:flex-start;gap:3px;min-width:0;white-space:nowrap;line-height:1;}
-
-/* 日付＋秒まで動くデジタル時計 */
-.weather-date{grid-row:2;font-size:14px;font-weight:700;color:var(--text);letter-spacing:.01em;white-space:nowrap;}
-.weather-time{font-size:24px;font-weight:800;letter-spacing:-.04em;color:var(--text);font-variant-numeric:tabular-nums;white-space:nowrap;line-height:1;}
-.weather-time-sec{margin-left:2px;font-size:15px;font-weight:700;color:var(--accent);opacity:.8;font-variant-numeric:tabular-nums;}
-
-/* 地名・基準時間・天気アイコン・気温 */
-.weather-city{font-size:11px;font-weight:700;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0;}
+/* 左上段・中：地名・基準時間・天気アイコン・気温。時計との間、および
+   天気情報グループの右側にも縦の区切り線を入れ、「日付・時刻」と「天気」の
+   情報グループを視覚的に分ける */
+.weather-info{flex:none;min-width:0;max-width:88px;border-left:1px solid var(--line);border-right:1px solid var(--line);padding-left:7px;padding-right:7px;
+  display:flex;flex-direction:column;gap:3px;}
+.weather-city-row{display:flex;align-items:center;gap:2px;min-width:0;}
+.weather-city{font-size:10.5px;font-weight:700;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0;}
 .weather-retry-btn{flex:none;width:13px;height:13px;padding:0;border:none;background:none;
   color:var(--accent);font-size:11px;line-height:1;cursor:pointer;}
 .weather-retry-btn:disabled{cursor:default;opacity:.6;}
 .weather-retry-btn.weather-retry-spin{animation:weather-retry-spin .8s linear infinite;}
 @keyframes weather-retry-spin{from{transform:rotate(0deg);}to{transform:rotate(360deg);}}
-.weather-asof{grid-row:2;font-size:14px;font-weight:600;color:var(--muted);opacity:.85;letter-spacing:.02em;white-space:nowrap;}
-.weather-icon{align-self:center;margin-right:4px;font-size:19px;line-height:1;}
-.weather-temp{font-size:24px;font-weight:800;letter-spacing:-.04em;color:var(--text);font-variant-numeric:tabular-nums;}
-.weather-value-unit{margin-left:5px;font-size:15px;font-weight:700;color:var(--text);}
+.weather-asof{font-size:8.5px;font-weight:600;color:var(--muted);opacity:.85;letter-spacing:.02em;white-space:nowrap;}
+.weather-main{display:flex;align-items:center;gap:4px;}
+.weather-icon{font-size:20px;line-height:1;}
+.weather-temp{font-size:16px;font-weight:800;color:var(--text);font-variant-numeric:tabular-nums;}
 
-/* 降水確率の推移を示す滑らかな曲線グラフ＋降水量(mm)のヒストグラムの
+/* 左上段・右：「現在」ラベル＋直近1時間の降水量(mm/h)＋その量に応じた
+   注意喚起コメントの3行構成。weather-info・weather-datetimeがともに
+   flex:noneで幅が伸びないため、weather-left-top内の残り幅をここが埋める。
+   上2行（ラベル・◯mm/h）は常に静止表示、数値だけ視認性のため少し大きく・
+   青字にする。下段のコメントだけ文言が幅に収まらない場合に横スクロール
+   （右→左に流れるマーキー）で全文を見せる */
+.weather-precip-alert{flex:1;min-width:0;display:flex;flex-direction:column;justify-content:center;gap:1px;}
+.weather-precip-label{font-size:9px;font-weight:700;color:var(--muted);line-height:1.1;}
+.weather-precip-now{font-size:10.5px;font-weight:700;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;line-height:1.2;}
+.weather-precip-now-value{font-size:13px;font-weight:800;color:var(--accent);}
+.weather-precip-comment{overflow:hidden;}
+.weather-precip-comment-track{display:inline-block;white-space:nowrap;font-size:10.5px;font-weight:700;color:var(--text);}
+.weather-precip-comment-track.weather-precip-marquee{position:relative;left:100%;
+  animation-name:weather-precip-marquee;animation-timing-function:linear;animation-iteration-count:infinite;}
+@keyframes weather-precip-marquee{
+  from{ transform:translateX(0); }
+  to{ transform:translateX(calc(-1 * var(--weather-precip-marquee-distance, 100%))); }
+}
+
+/* 左下段：降水確率の推移を示す滑らかな曲線グラフ＋降水量(mm)のヒストグラムの
    重ね合わせ。1時間ごとの点をドットとして打ち、縦軸は左（0〜100%の目盛り）・
    右（0,3,6,10,15,25mmの目盛り。値の間隔は不均等だが目盛り線自体は左軸と
    共有し等間隔に配置する）の2軸、横軸（3時間ごとの時刻ラベル）を添える。
    単位（%・mm・時）はそれぞれ縦軸の一番上（左右）／横軸の一番右端に
-   1回だけ表示する。カードの直接の子要素なのでカード全幅まで広がる */
-.weather-pop-chart{width:100%;margin-top:18px;}
+   1回だけ表示する */
+.weather-pop-chart{flex:1;min-width:0;display:flex;flex-direction:column;justify-content:flex-end;}
 .weather-pop-chart-units{display:flex;justify-content:space-between;margin-bottom:6px;}
-.pop-axis-yunit{width:20px;font-size:11px;font-weight:700;color:var(--muted);line-height:1;}
-.pop-axis-yunit-right{width:20px;font-size:11px;font-weight:700;color:var(--muted);line-height:1;text-align:right;}
+.pop-axis-yunit{width:13px;font-size:7px;font-weight:700;color:var(--muted);line-height:1;}
+.pop-axis-yunit-right{width:13px;font-size:7px;font-weight:700;color:var(--muted);line-height:1;text-align:right;}
 .weather-pop-chart-row{display:flex;align-items:stretch;gap:3px;}
-.pop-axis-ycol{flex:none;width:20px;}
+.pop-axis-ycol{flex:none;width:13px;}
 .pop-axis-yticks,.pop-axis-yticks-right{position:relative;}
 .pop-axis-yticks span{position:absolute;right:0;transform:translateY(-50%);
-  font-size:11px;font-weight:600;color:var(--muted);line-height:1;font-variant-numeric:tabular-nums;white-space:nowrap;}
+  font-size:7px;font-weight:600;color:var(--muted);line-height:1;font-variant-numeric:tabular-nums;white-space:nowrap;}
 .pop-axis-yticks-right span{position:absolute;left:0;transform:translateY(-50%);
-  font-size:11px;font-weight:600;color:var(--muted);line-height:1;font-variant-numeric:tabular-nums;white-space:nowrap;}
+  font-size:7px;font-weight:600;color:var(--muted);line-height:1;font-variant-numeric:tabular-nums;white-space:nowrap;}
 .weather-pop-chart-plot{flex:1;min-width:0;}
-.weather-pop-chart-svg{display:block;width:100%;height:105px;}
+.weather-pop-chart-svg{display:block;width:100%;height:40px;}
 .weather-pop-chart-xrow{display:flex;gap:3px;margin-top:2px;}
-.weather-pop-chart-labels{flex:1;min-width:0;position:relative;height:18px;}
+.weather-pop-chart-labels{flex:1;min-width:0;position:relative;height:10px;}
 .weather-pop-chart-labels span{position:absolute;top:0;transform:translateX(-50%);
-  font-size:11px;font-weight:600;color:var(--muted);white-space:nowrap;}
-.pop-axis-xunit{font-size:11px;font-weight:700;color:var(--muted);white-space:nowrap;padding-left:4px;}
+  font-size:8px;font-weight:600;color:var(--muted);white-space:nowrap;}
+.pop-axis-xunit{font-size:7.5px;font-weight:700;color:var(--muted);white-space:nowrap;}
 
 /* 右：天気カードに常設する「デジタル盆栽」の簡易表示。タップすると
    openPetModal()で進化段階・進捗の詳細モーダルを開く。
-   他の3列と違って「大きな数値」を持たないため、grid-row:1/-1で
-   4行すべてにまたがせ、ボタン自体を大きな角丸パネルとしてカード右側
-   エリアの上下左右中央に配置する */
-.weather-pet{grid-row:1/-1;grid-column:3;min-width:0;
-  display:flex;flex-direction:column;justify-content:center;align-items:center;}
+   ボタン単体をカード右側エリアの上下左右中央に配置する */
+.weather-pet{flex:1;min-width:0;border-left:1px solid var(--line);padding-left:10px;display:flex;flex-direction:column;justify-content:center;align-items:center;}
 .weather-pet-btn{display:flex;align-items:center;justify-content:center;
-  width:100%;aspect-ratio:1;padding:10px;border:none;border-radius:24px;
-  background:linear-gradient(180deg,rgba(2,132,199,.14),rgba(2,132,199,.28));
+  width:100%;height:64px;border:none;border-radius:16px;background:transparent;
   cursor:pointer;transition:transform .1s;}
 .weather-pet-btn:active{transform:scale(.94);}
-.weather-pet-svgwrap{display:block;width:72px;height:88px;}
+.weather-pet-svgwrap{display:block;width:42px;height:53px;}
 .weather-pet-svgwrap svg{width:100%;height:100%;overflow:visible;}
 .weather-pet-btn.pet-dim .weather-pet-svgwrap{filter:grayscale(.55) brightness(.62) saturate(.55);opacity:.75;}
-/* 375〜430px幅（対象とするiPhoneサイズ全域）では時刻・気温・降水量の数字を
-   24px（秒・単位は15px）で統一する。以前はここで26px→22pxへさらに縮小して
-   いたが、完成イメージの実測に合わせて幅にかかわらず同じ大きさにする */
-@media (max-width:400px){
-  .weather-card{padding:16px 12px 14px;}
-  .weather-metric{padding:0 8px;grid-template-rows:22px 16px 30px 22px;}
-  .weather-value-row{min-height:30px;}
-  .weather-icon{font-size:16px;margin-right:3px;}
-  .weather-pet-btn{padding:8px;}
-  .weather-pet-svgwrap{width:60px;height:74px;}
-}
 
 /* ホーム画面右下に常設するフローティングボタン。Gemini相談画面への入口
-   （元は天気カード内にあったweather-gemini-btnをここへ移設）。
-   完成イメージに合わせ、藤色寄りだった配色を水色×青のグラデーションにする */
+   （元は天気カード内にあったweather-gemini-btnをここへ移設） */
 .gemini-fab{position:fixed;right:calc(16px + env(safe-area-inset-right));bottom:calc(16px + var(--bnav-h) + env(safe-area-inset-bottom));
   width:56px;height:56px;border:none;border-radius:50%;color:#fff;
-  background:linear-gradient(135deg,#22d3ee,var(--accent) 75%);
+  background:linear-gradient(135deg,var(--accent),#0ea5e9 55%,#6366f1);
   display:flex;align-items:center;justify-content:center;
   box-shadow:0 6px 18px rgba(2,132,199,.4),inset 0 1px 0 rgba(255,255,255,.25);
   cursor:pointer;z-index:500;transition:transform .1s,background .28s ease,box-shadow .28s ease,color .28s ease;}
@@ -696,13 +670,14 @@ h1.title.title--badge{margin:2px 0 0;}
 .gemini-fab-icon{width:26px;height:26px;}
 
 /* ホーム画面左下に常設するフローティングボタン。マインド・パレットへの入口。
-   右下のGeminiボタンと形状・サイズ・シャドウの効果を統一しつつ、完成イメージ
-   に合わせて紫系のグラデーションにする */
+   右下のGeminiボタンと形状・サイズ・シャドウの効果を完全に統一し、左右の
+   バランスが取れたレイアウトにする（色味だけ「ネオンブルー×ゴールド」で
+   パレットらしさを出す。既存の.launcher-icon-paletteと同系統の配色） */
 .palette-fab{position:fixed;left:calc(16px + env(safe-area-inset-left));bottom:calc(16px + var(--bnav-h) + env(safe-area-inset-bottom));
-  width:56px;height:56px;border:none;border-radius:50%;color:#fff;
-  background:linear-gradient(135deg,#c084fc,#7c3aed 70%);
+  width:56px;height:56px;border:none;border-radius:50%;color:#fbbf24;
+  background:linear-gradient(135deg,#1e293b,#0f172a 55%,#0f172a);
   display:flex;align-items:center;justify-content:center;
-  box-shadow:0 6px 18px rgba(124,58,237,.38),inset 0 1px 0 rgba(255,255,255,.2);
+  box-shadow:0 6px 18px rgba(56,189,248,.34),inset 0 1px 0 rgba(255,255,255,.14),0 0 0 1px rgba(251,191,36,.22);
   cursor:pointer;z-index:500;transition:transform .1s,background .28s ease,box-shadow .28s ease,color .28s ease;}
 .palette-fab:active{transform:scale(.94);}
 .palette-fab-icon{width:26px;height:26px;}
@@ -752,8 +727,8 @@ h1.title.title--badge{margin:2px 0 0;}
    カレンダーカード。タイトル文言は持たず、上段のカレンダー切り替え
    スイッチャー（＋共有ユーザー設定ボタン）と下段の月表示グリッドのみで
    構成する。日付セルをタップすると予定の確認・追加・削除ポップアップを開く */
-.gcal-card{margin-top:16px;min-width:0;}
-.gcal-box{min-width:0;width:100%;background:var(--surface);border:1px solid var(--line);border-radius:18px;padding:14px;
+.gcal-card{margin-top:14px;min-width:0;}
+.gcal-box{min-width:0;width:100%;background:var(--surface);border:1px solid var(--line);border-radius:16px;padding:14px;
   box-shadow:0 4px 14px rgba(15,23,42,.04);}
 
 /* Google連携バー：未連携時は連携ボタン、連携中はバッジ＋連携解除ボタン */
@@ -805,12 +780,6 @@ h1.title.title--badge{margin:2px 0 0;}
 .gcal-reload-btn:active{background:var(--surface2);}
 .gcal-reload-btn:disabled{opacity:.55;cursor:default;}
 .gcal-reload-btn.spinning{animation:gcal-reload-spin .8s linear infinite;}
-/* ホームの日ウィジェットの丸ボタン（前日／翌日／変更を反映）だけは
-   淡い水色×青アイコンにして、完成イメージの見た目に揃える
-   （カレンダー画面の月表示側の丸ボタンは既存のグレー配色のまま） */
-.gcal-day-box .gcal-nav-btn{width:28px;height:28px;background:#e6f4fd;color:var(--accent);}
-.gcal-day-box .gcal-nav-btn:active{background:#d3ebfb;}
-.gcal-day-box .gcal-nav-btn .ico{width:14px;height:14px;}
 @keyframes gcal-reload-spin{ from{transform:rotate(0deg);} to{transform:rotate(360deg);} }
 
 /* 日付・曜日を格子状（枠線）で区切ったグリッド形式のカレンダー。
@@ -851,24 +820,17 @@ h1.title.title--badge{margin:2px 0 0;}
 /* ホーム画面の1日表示ウィジェット：連携バー・スイッチャーは持たず、
    左に時間つきの予定タイムライン、右にその日のToDoリストを並べる
    2カラムのコンパクトレイアウト */
-.gcal-day-box{padding:18px 16px 16px;border-radius:24px;}
-.gcal-day-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;}
+.gcal-day-box{padding:12px 14px;}
+.gcal-day-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;}
 .gcal-day-head-right{flex:none;display:flex;align-items:center;gap:6px;}
-.gcal-day-title{flex:1;min-width:0;display:flex;align-items:center;justify-content:center;gap:6px;
-  font-size:14.5px;font-weight:800;color:var(--text);padding:0 6px;}
-.gcal-day-title-ico{width:15px;height:15px;color:var(--accent);}
-.gcal-day-body{display:flex;gap:14px;align-items:stretch;}
+.gcal-day-title{font-size:13px;font-weight:800;color:var(--text);}
+.gcal-day-body{display:flex;gap:10px;align-items:flex-start;}
 
-/* 完成イメージに合わせ、左（今日の予定）と右（本日のタスク）の幅は
-   ほぼ均等にする（以前の3:2比率をやめ、どちらもflex:1に統一） */
-.gcal-day-timeline{flex:1;min-width:0;display:flex;flex-direction:column;}
-.gcal-day-col-title{display:flex;align-items:center;gap:6px;font-size:12.5px;font-weight:800;
-  color:var(--text);margin-bottom:10px;}
-.gcal-col-ico{width:14px;height:14px;color:var(--accent);}
+.gcal-day-timeline{flex:3;min-width:0;display:flex;flex-direction:column;}
 /* 予定が5件未満なら高さは内容に合わせて自然に収まる。5件以上のときは
    render.js側のgcalSetupDayEventsScroll()がheightをインラインで固定し、
    5件目以降を手動の縦スワイプ（overflow-y:auto）で見せる */
-.gcal-day-events{display:flex;flex-direction:column;gap:6px;overflow-y:auto;margin-bottom:8px;flex:1;}
+.gcal-day-events{display:flex;flex-direction:column;gap:6px;overflow-y:auto;margin-bottom:8px;}
 
 /* 「ユーザーごとの予定表示（分別）」：予定を作成者ラベルごとにまとめた
    エリア。見出し（作成者名＋カレンダー色のドット）の下に、そのユーザーの
@@ -912,58 +874,27 @@ h1.title.title--badge{margin:2px 0 0;}
 .gcal-day-event-del{flex:none;width:20px;height:20px;border-radius:50%;border:none;background:none;
   color:var(--bad);font-size:14px;font-weight:800;line-height:1;cursor:pointer;}
 .gcal-day-event-del:active{background:var(--surface2);}
-.gcal-day-empty{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;
-  font-size:11.5px;color:var(--muted);text-align:center;line-height:1.5;padding:14px 4px;}
-.gcal-day-empty-ico{width:34px;height:34px;color:var(--line);}
-.gcal-day-add-btn{width:100%;padding:9px 0;border-radius:12px;border:1.5px dashed #bfe1f7;
-  background:none;color:var(--accent);font-weight:700;font-size:12.5px;cursor:pointer;}
-.gcal-day-add-btn:active{background:#eef8fe;}
+.gcal-day-empty{font-size:11.5px;color:var(--muted);text-align:center;padding:14px 0;}
+.gcal-day-add-btn{width:100%;padding:8px 0;border-radius:10px;border:1px dashed var(--line);
+  background:none;color:var(--accent);font-weight:700;font-size:12px;cursor:pointer;}
+.gcal-day-add-btn:active{background:var(--bg2);}
 
-.gcal-day-todo{flex:1;min-width:0;border-left:1px solid var(--line);padding-left:12px;display:flex;flex-direction:column;}
-.gcal-day-todo-list{flex:1;display:flex;flex-direction:column;gap:5px;max-height:180px;overflow-y:auto;margin-bottom:8px;}
+.gcal-day-todo{flex:2;min-width:0;border-left:1px solid var(--line);padding-left:10px;display:flex;flex-direction:column;}
+.gcal-day-todo-title{font-size:10.5px;font-weight:800;color:var(--muted);letter-spacing:.03em;margin-bottom:6px;}
+.gcal-day-todo-list{display:flex;flex-direction:column;gap:5px;max-height:180px;overflow-y:auto;margin-bottom:8px;}
 .gcal-todo-item{display:flex;align-items:center;gap:5px;}
 .gcal-todo-check{flex:none;width:14px;height:14px;accent-color:var(--accent);cursor:pointer;}
 .gcal-todo-text{flex:1;min-width:0;font-size:11.5px;color:var(--text);word-break:break-word;}
 .gcal-todo-item.done .gcal-todo-text{color:var(--muted);text-decoration:line-through;}
 .gcal-todo-del{flex:none;width:16px;height:16px;border:none;background:none;color:var(--bad);
   font-size:12px;font-weight:800;line-height:1;cursor:pointer;padding:0;}
-.gcal-todo-empty{flex:1;display:flex;align-items:center;justify-content:center;font-size:11.5px;color:var(--muted);text-align:center;}
-.gcal-day-todo-form{display:flex;gap:6px;align-items:stretch;}
-.gcal-todo-input{flex:1;min-width:0;padding:8px 10px;border:1px solid var(--line);border-radius:10px;
-  background:var(--surface);color:var(--text);}
-.gcal-todo-add-btn{flex:none;width:36px;border-radius:10px;border:none;
-  background:var(--accent);color:#ffffff;display:flex;align-items:center;justify-content:center;cursor:pointer;}
-.gcal-todo-add-btn .ico{width:16px;height:16px;}
+.gcal-todo-empty{font-size:11px;color:var(--muted);}
+.gcal-day-todo-form{display:flex;gap:4px;}
+.gcal-todo-input{flex:1;min-width:0;padding:6px 8px;border:1px solid var(--line);border-radius:8px;
+  background:var(--surface);color:var(--text);font-size:11.5px;}
+.gcal-todo-add-btn{flex:none;width:26px;border-radius:8px;border:1px solid var(--accent);
+  background:var(--accent);color:#ffffff;font-weight:700;font-size:13px;cursor:pointer;}
 .gcal-todo-add-btn:active{filter:brightness(.95);}
-@media (max-width:390px){
-  .gcal-day-box{padding:16px 12px 14px;}
-  .gcal-day-body{gap:10px;}
-  .gcal-day-todo{padding-left:9px;}
-  .gcal-todo-input{padding:8px 7px;}
-  .gcal-todo-add-btn{width:32px;}
-}
-
-/* ホーム画面（renderSelect）専用のアカウント表示バー：他のカードと同じ
-   横幅・角丸・影の「カード」だが、中身は1行だけのごく細いエリアにして
-   お天気／予定・タスクカードとの高さの違いでヒエラルキーを出す。
-   margin-bottomは右下Gemini FAB・左下パレットFAB（ともに56px＋下端16px
-   オフセット）の上端の少し上まで確実にクリアする値にし、スクロール
-   最下部でもFABがこのカードに重ならないようにする */
-.dash-acct-bar{
-  display:flex;align-items:center;justify-content:space-between;gap:10px;
-  margin:14px 0 84px;padding:11px 16px;
-  background:var(--surface);border:1px solid var(--line);border-radius:18px;
-  box-shadow:0 4px 14px rgba(15,23,42,.04);
-}
-.dash-acct-info{flex:1;min-width:0;display:flex;align-items:center;gap:10px;font-size:13px;font-weight:600;color:var(--text);}
-.dash-acct-info--guest{color:var(--muted);font-size:11.5px;line-height:1.5;font-weight:600;}
-.dash-acct-avatar{flex:none;width:30px;height:30px;border-radius:50%;background:#e6f4fd;color:var(--accent);
-  display:flex;align-items:center;justify-content:center;}
-.dash-acct-avatar .ico{width:16px;height:16px;}
-.dash-acct-email{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0;}
-.dash-acct-action{flex:none;display:flex;align-items:center;gap:5px;background:none;border:none;
-  color:var(--accent);font-size:12.5px;font-weight:700;cursor:pointer;padding:6px 4px;white-space:nowrap;}
-.dash-acct-action-ico{width:14px;height:14px;}
 
 /* 日付タップで開く予定ポップアップ・共有ユーザー設定ポップアップ・
    カレンダー追加ポップアップ（いずれも.modal-ov/.modalを土台に使う） */
