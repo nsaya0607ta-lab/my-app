@@ -1083,7 +1083,6 @@ function weatherCardHTML(){
           <div class="weather-value-row">
             <span class="weather-time" id="weather-clock-time"></span><span class="weather-time-sec" id="weather-clock-sec"></span>
           </div>
-          <div class="weather-metric-placeholder"></div>
         </div>
 
         <div class="weather-metric weather-info" id="weather-info">
