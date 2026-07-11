@@ -181,9 +181,9 @@ function updateHeaderTitle(){
 // 「その他」タブへフォールバックさせる。
 const BNAV_TAB_BY_SCREEN = {
   select:"select",
-  certs:"certs", "lpic-certs":"certs",
   home:"home", "lpic-commands":"home", quiz:"home", result:"home", review:"home", dict:"home", transfer:"home", history:"home",
-  playground:"playground",
+  certs:"study-menu", "lpic-certs":"study-menu", playground:"study-menu",
+  "news-japan":"quick-menu", "news-world":"quick-menu", "news-detail":"quick-menu", portfolio:"quick-menu", holdings:"quick-menu", calendar:"quick-menu", introquiz:"quick-menu",
 };
 function updateBottomNav(){
   const nav = document.getElementById("bottom-nav");
@@ -2806,36 +2806,7 @@ export function renderGeminiEditEvent(){
   window.scrollTo(0,0);
 }
 
-// アイコン＋その下のテキストの1組。テキストは最大9文字までは静止表示、
-// それを超える場合は電光掲示板風に右から左へ無限ループでスライドする。
-// アイコン・テキストのどちらをタップしても指定画面へ遷移する。
-// Microsoft/LPICの資格起動カード・ホーム画面の統合起動カードの両方で共有する
-// 最小単位のパーツ（vendorCertLauncherRowHTML／homeLauncherCardHTMLの両方から使う）
-const LAUNCHER_LABEL_MAX_CHARS = 9;
-
-function launcherItemHTML({ iconHTML, label, dataGo, ariaLabel, variant }){
-  const chars = [...label]; // サロゲートペアも1文字として正しく数える
-  const needsMarquee = chars.length > LAUNCHER_LABEL_MAX_CHARS;
-  const labelHTML = needsMarquee
-    ? `<span class="ms-cert-marquee-track">
-         <span class="ms-cert-marquee-item">${esc(label)}</span>
-         <span class="ms-cert-marquee-item" aria-hidden="true">${esc(label)}</span>
-       </span>`
-    : `<span class="ms-cert-static">${esc(label)}</span>`;
-  const variantClass = variant ? ` launcher-icon-${variant}` : "";
-  const colorKeyAttr = variant ? ` data-color-key="${esc(variant)}"` : "";
-  return `
-    <div class="launcher-item"${colorKeyAttr}>
-      <button type="button" class="ms-logo-btn${variantClass}" data-go="${dataGo}" aria-label="${esc(ariaLabel)}" title="${esc(ariaLabel)}">
-        ${iconHTML}
-      </button>
-      <button type="button" class="ms-cert-link" data-go="${dataGo}" title="${esc(label)}">
-        <span class="ms-cert-textwrap">${labelHTML}</span>
-      </button>
-    </div>`;
-}
-
-// Microsoftロゴ（4色の田の字）をイメージした角丸スクエアボタン。タップで資格選択画面へ
+// Microsoftロゴ（4色の田の字）をイメージした角丸スクエアアイコン。学習シートのMicrosoft項目で使う
 const MS_LOGO_ICON_HTML = `<span class="ms-logo-grid">
       <span class="ms-logo-sq r"></span>
       <span class="ms-logo-sq g"></span>
@@ -2846,25 +2817,14 @@ const MS_LOGO_ICON_HTML = `<span class="ms-logo-grid">
 // LPIC（Linux技術者認定）をイメージしたペンギン（Linuxの象徴）アイコン。プレースホルダー的な絵文字表現。
 const LPIC_LOGO_ICON_HTML = `<span class="launcher-emoji" aria-hidden="true">🐧</span>`;
 
-// 「MS」「LPIC」の2つの起動ボタンを1枚のカードに横並びで表示する。
-// 見た目はMicrosoft単体カードだった頃と同じ .ms-cert-card を流用し、中身だけ
-// launcherItemHTMLを2個並べたものに差し替えている（画像の「Microsoft認定資格」
-// の右隣に「LPIC」を配置したいという要望に対応）
-function vendorCertLauncherRowHTML(){
-  return `
-    <div class="news-card ms-cert-card vendor-cert-card" id="vendor-cert-card">
-      <div class="vendor-launcher-row">
-        ${launcherItemHTML({ iconHTML: MS_LOGO_ICON_HTML, label: "MS", dataGo: "certs", ariaLabel: "Microsoft認定資格を選ぶ", variant: "ms" })}
-        ${launcherItemHTML({ iconHTML: LPIC_LOGO_ICON_HTML, label: "LPIC", dataGo: "lpic-certs", ariaLabel: "LPIC資格を選ぶ", variant: "lpic" })}
-      </div>
-    </div>`;
-}
+// Linuxプレイグラウンド（既存のターミナル風サンドボックス画面）用アイコン。
+// 旧「プレイグラウンド」タブのSVGをそのまま踏襲する
+const PLAYGROUND_LAUNCHER_ICON_SVG = `
+  <svg viewBox="0 0 24 24" width="21" height="21" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+    <rect x="3" y="4.5" width="18" height="15" rx="2.4"></rect><path d="m7 9.5 3 2.7-3 2.7"></path><path d="M12.5 15h4.5"></path>
+  </svg>`;
 
-// 「J-NEWS」「F-NEWS」「株価」「カレンダー」の4項目を1つの横長カードに
-// まとめたもの。外枠はMSカードと同じ.ms-cert-card（背景・角丸・シャドウ・
-// margin-top）を流用し、中身だけをlauncherItemHTML4個の横スクロール行に
-// 差し替えている。5個目以降のアイコンが増えても.home-launcher-row側の
-// overflow-x:autoにより、はみ出た分は手動スワイプで表示できる
+// J-NEWS/F-NEWS/株価/カレンダー/イントロドン/設定/ルールで使うアイコン群
 const STOCK_LAUNCHER_ICON_SVG = `
   <svg viewBox="0 0 24 24" width="21" height="21" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round">
     <polyline points="3 17 9.5 10.5 13.5 14.5 21 6"></polyline>
@@ -2883,28 +2843,14 @@ const CALENDAR_APP_LAUNCHER_ICON_SVG = `
     <text x="12" y="18" text-anchor="middle" font-size="9" font-weight="700" fill="#3c4043" font-family="Arial, sans-serif">${new Date().getDate()}</text>
   </svg>`;
 
-// 設定ボタン（ギア）専用のアイコン。他の起動ボタンと違って画面遷移(data-go)
-// ではなく設定モーダルを開くため、launcherItemHTML()は使わず専用HTMLを組む
+// 設定（ギア）専用アイコン
 const SETTINGS_GEAR_ICON_SVG = `
   <svg viewBox="0 0 24 24" width="21" height="21" fill="none" stroke="var(--accent)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
     <circle cx="12" cy="12" r="3.2"></circle>
     <path d="M19.4 13.5a1.7 1.7 0 0 0 .34 1.87l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.7 1.7 0 0 0-1.87-.34 1.7 1.7 0 0 0-1.04 1.56V19.5a2 2 0 1 1-4 0v-.09A1.7 1.7 0 0 0 8.96 17.85a1.7 1.7 0 0 0-1.87.34l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.7 1.7 0 0 0 4.6 13.5 1.7 1.7 0 0 0 3.04 12.46H2.95a2 2 0 1 1 0-4h.09A1.7 1.7 0 0 0 4.6 7.42 1.7 1.7 0 0 0 4.26 5.55l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.7 1.7 0 0 0 8.96 3.06 1.7 1.7 0 0 0 10 1.5V1.41a2 2 0 1 1 4 0v.09A1.7 1.7 0 0 0 15.04 3.06a1.7 1.7 0 0 0 1.87-.34l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.7 1.7 0 0 0 19.4 7.42 1.7 1.7 0 0 0 20.96 8.46h.09a2 2 0 1 1 0 4h-.09a1.7 1.7 0 0 0-1.56 1.04Z"></path>
   </svg>`;
 
-function settingsLauncherItemHTML(){
-  return `
-    <div class="launcher-item">
-      <button type="button" class="ms-logo-btn launcher-icon-settings settings-gear-btn" data-open-settings aria-label="設定" title="設定">
-        ${SETTINGS_GEAR_ICON_SVG}
-      </button>
-      <button type="button" class="ms-cert-link" data-open-settings title="設定">
-        <span class="ms-cert-textwrap"><span class="ms-cert-static">設定</span></span>
-      </button>
-    </div>`;
-}
-
-// ルールボタン専用のアイコン（規約・一覧を表す書類アイコン）。設定ボタンと
-// 同じく画面遷移(data-go)ではなくルールモーダルを開くため専用HTMLを組む
+// ルール専用アイコン（規約・一覧を表す書類アイコン）
 const RULES_LIST_ICON_SVG = `
   <svg viewBox="0 0 24 24" width="21" height="21" fill="none" stroke="var(--accent)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
     <path d="M6 2.8h9.2L19 6.6V21a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1V3.8a1 1 0 0 1 1-1Z"></path>
@@ -2914,34 +2860,80 @@ const RULES_LIST_ICON_SVG = `
     <line x1="7.6" y1="17.8" x2="13" y2="17.8"></line>
   </svg>`;
 
-function rulesLauncherItemHTML(){
-  return `
-    <div class="launcher-item">
-      <button type="button" class="ms-logo-btn launcher-icon-rules rules-list-btn" data-open-rules aria-label="ルール" title="ルール">
-        ${RULES_LIST_ICON_SVG}
-      </button>
-      <button type="button" class="ms-cert-link" data-open-rules title="ルール">
-        <span class="ms-cert-textwrap"><span class="ms-cert-static">ルール</span></span>
-      </button>
-    </div>`;
+/* =========================================================================
+   📱 「各種機能」「学習」タブ用ボトムシート
+   BottomNavigationの2タブから開く、画面下からスライドインするiOS風の
+   メニュー。タップ後は既存の go()／openSettingsModal()／openRulesModal()
+   をそのまま呼び出すだけで、遷移先の画面・モーダル自体はこれまでと同じ。
+   ========================================================================= */
+function closeSheet(ov){
+  ov.classList.remove("sheet-ov-show");
+  const sheet = ov.querySelector(".bottom-sheet");
+  if(sheet) sheet.classList.remove("bottom-sheet-show");
+  setTimeout(() => { try{ ov.remove(); }catch(e){} }, 220);
 }
 
-function homeLauncherCardHTML(){
-  const items = [
-    { iconHTML: `<span class="launcher-emoji" aria-hidden="true">🇯🇵</span>`, label: "J-NEWS", dataGo: "news-japan", ariaLabel: "日本NEWS", variant: "news-jp" },
-    { iconHTML: `<span class="launcher-emoji" aria-hidden="true">🌐</span>`, label: "F-NEWS", dataGo: "news-world", ariaLabel: "海外ニュース", variant: "news-world" },
-    { iconHTML: STOCK_LAUNCHER_ICON_SVG, label: "株価", dataGo: "portfolio", ariaLabel: "株価", variant: "stock" },
-    { iconHTML: CALENDAR_APP_LAUNCHER_ICON_SVG, label: "カレンダー", dataGo: "calendar", ariaLabel: "カレンダー", variant: "calendar" },
-    { iconHTML: `<span class="launcher-emoji" aria-hidden="true">🎵</span>`, label: "イントロドン", dataGo: "introquiz", ariaLabel: "イントロドンに挑戦", variant: "introquiz" },
-  ];
-  return `
-    <div class="news-card ms-cert-card home-launcher-card" id="home-launcher-card">
-      <div class="home-launcher-row">
-        ${items.map(it => launcherItemHTML(it)).join("")}
-        ${settingsLauncherItemHTML()}
-        ${rulesLauncherItemHTML()}
-      </div>
+function openSheet(title, itemsHTML){
+  const ov = document.createElement("div");
+  ov.className = "sheet-ov";
+  ov.innerHTML = `
+    <div class="bottom-sheet">
+      <div class="bottom-sheet-handle"></div>
+      <div class="bottom-sheet-title">${esc(title)}</div>
+      <div class="bottom-sheet-list">${itemsHTML}</div>
     </div>`;
+  document.body.appendChild(ov);
+  ov.addEventListener("click", (e) => { if(e.target === ov) closeSheet(ov); });
+  requestAnimationFrame(() => {
+    ov.classList.add("sheet-ov-show");
+    ov.querySelector(".bottom-sheet").classList.add("bottom-sheet-show");
+  });
+  return ov;
+}
+
+function sheetItemHTML({ icon, label, key, variant }){
+  return `
+    <button type="button" class="sheet-item" data-sheet-item="${esc(key)}">
+      <span class="sheet-icon launcher-icon-${variant}">${icon}</span>
+      <span class="sheet-item-label">${esc(label)}</span>
+      <span class="sheet-item-chevron">›</span>
+    </button>`;
+}
+
+const QUICK_MENU_ITEMS = [
+  { key: "news-japan", icon: `<span class="launcher-emoji" aria-hidden="true">🇯🇵</span>`, label: "J-NEWS", variant: "news-jp" },
+  { key: "news-world", icon: `<span class="launcher-emoji" aria-hidden="true">🌐</span>`, label: "F-NEWS", variant: "news-world" },
+  { key: "portfolio", icon: STOCK_LAUNCHER_ICON_SVG, label: "株価", variant: "stock" },
+  { key: "calendar", icon: CALENDAR_APP_LAUNCHER_ICON_SVG, label: "カレンダー", variant: "calendar" },
+  { key: "introquiz", icon: `<span class="launcher-emoji" aria-hidden="true">🎵</span>`, label: "イントロドン", variant: "introquiz" },
+  { key: "settings", icon: SETTINGS_GEAR_ICON_SVG, label: "設定", variant: "settings" },
+  { key: "rules", icon: RULES_LIST_ICON_SVG, label: "ルール", variant: "rules" },
+];
+
+export function openQuickMenuSheet(){
+  const ov = openSheet("各種機能", QUICK_MENU_ITEMS.map(sheetItemHTML).join(""));
+  ov.querySelectorAll("[data-sheet-item]").forEach(b => b.onclick = () => {
+    const key = b.dataset.sheetItem;
+    closeSheet(ov);
+    if(key === "settings") openSettingsModal();
+    else if(key === "rules") openRulesModal();
+    else go(key);
+  });
+}
+
+const STUDY_MENU_ITEMS = [
+  { key: "certs", icon: MS_LOGO_ICON_HTML, label: "Microsoft", variant: "ms" },
+  { key: "lpic-certs", icon: LPIC_LOGO_ICON_HTML, label: "Linux(LPIC)", variant: "lpic" },
+  { key: "playground", icon: PLAYGROUND_LAUNCHER_ICON_SVG, label: "Linuxプレイグラウンド", variant: "playground" },
+];
+
+export function openStudyMenuSheet(){
+  const ov = openSheet("学習", STUDY_MENU_ITEMS.map(sheetItemHTML).join(""));
+  ov.querySelectorAll("[data-sheet-item]").forEach(b => b.onclick = () => {
+    const key = b.dataset.sheetItem;
+    closeSheet(ov);
+    go(key);
+  });
 }
 
 /* お天気カードと統合起動カードの間に置く、1ヶ月表示のカレンダーカード。
@@ -5626,8 +5618,6 @@ export function renderSelect(){
   app.innerHTML = `
     ${weatherCardHTML()}
     ${gcalDayWidgetHTML()}
-    ${homeLauncherCardHTML()}
-    ${vendorCertLauncherRowHTML()}
     ${state.currentUser
       ? `<div class="acct-bar">👤 ${esc(state.currentUser.email||"ログイン中")}<button class="link2" data-logout>ログアウト</button></div>`
       : (state.guestMode ? `<div class="acct-bar">ゲストモード（この端末のみ・同期なし）<button class="link2" data-login>ログイン / 新規登録</button></div>` : "")}

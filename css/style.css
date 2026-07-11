@@ -395,6 +395,35 @@ h1.title.title--badge{margin:2px 0 0;}
 .danger-solid{background:var(--bad)!important;color:#fff!important;box-shadow:0 4px 12px rgba(220,38,38,.25);}
 .bp-unlock{margin-top:10px;font-size:13px;color:var(--gold);font-weight:700;line-height:1.6;}
 
+/* =========================================================================
+   📱 「各種機能」「学習」タブ用ボトムシート（BottomNavigation.jsからopenQuick
+   MenuSheet()/openStudyMenuSheet()で開く）。.modal-ovと同じ半透明の背景ぼかし
+   を踏襲しつつ、本体だけを画面下から.transformでスライドインさせるiOS風メニュー
+   ========================================================================= */
+.sheet-ov{position:fixed;inset:0;background:rgba(15,23,42,0);backdrop-filter:blur(0px);-webkit-backdrop-filter:blur(0px);
+  display:flex;align-items:flex-end;justify-content:center;z-index:1000;
+  transition:background .24s ease, backdrop-filter .24s ease;}
+.sheet-ov.sheet-ov-show{background:rgba(15,23,42,.45);backdrop-filter:blur(4px);-webkit-backdrop-filter:blur(4px);}
+.bottom-sheet{width:100%;max-width:480px;box-sizing:border-box;background:var(--surface);border:1px solid var(--line);
+  border-radius:22px 22px 0 0;box-shadow:0 -16px 36px rgba(15,23,42,.18);
+  padding:10px 12px calc(16px + env(safe-area-inset-bottom));
+  transform:translateY(100%);transition:transform .3s cubic-bezier(.22,1,.36,1);}
+.bottom-sheet.bottom-sheet-show{transform:translateY(0);}
+.bottom-sheet-handle{width:36px;height:4px;border-radius:99px;background:var(--line);margin:2px auto 12px;}
+.bottom-sheet-title{font-size:15px;font-weight:800;color:var(--text);margin:0 6px 8px;}
+.bottom-sheet-list{display:flex;flex-direction:column;}
+.sheet-item{display:flex;align-items:center;gap:13px;width:100%;text-align:left;background:none;border:none;
+  padding:10px 6px;cursor:pointer;font-family:inherit;color:var(--text);border-bottom:1px solid var(--line);
+  border-radius:10px;transition:background .1s;}
+.sheet-item:last-child{border-bottom:none;}
+.sheet-item:active{background:var(--surface2);}
+.sheet-icon{flex:none;width:40px;height:40px;border-radius:13px;display:flex;align-items:center;justify-content:center;
+  border:1px solid rgba(15,23,42,.06);background:linear-gradient(150deg,#f8fafc,#e2e8f0);
+  box-shadow:0 3px 8px rgba(15,23,42,.08),inset 0 1px 0 rgba(255,255,255,.6);}
+.sheet-item-label{flex:1;font-size:15px;font-weight:700;}
+.sheet-item-chevron{flex:none;color:var(--muted);font-size:17px;line-height:1;}
+.launcher-icon-playground{background:linear-gradient(150deg,#ecfeff,#a5f3fc);box-shadow:0 5px 14px rgba(8,145,178,.20),inset 0 1px 0 rgba(255,255,255,.6);}
+
 /* ===== 📰 今日のニュース検定（.modal-ov/.modalを土台に使う） ===== */
 .nq-modal{text-align:center;}
 .nq-badge{display:inline-block;font-size:12px;font-weight:800;color:var(--accent);background:rgba(2,132,199,.08);border-radius:20px;padding:4px 12px;margin-bottom:10px;}
