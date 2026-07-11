@@ -189,6 +189,10 @@ function closeColorPicker(){
   const ov = activeOv; activeOv = null;
   ov.classList.remove("show");
   document.removeEventListener("keydown", ov._onKey);
+  // 「決定」を押さずに閉じた場合（Escape／枠外タップ／ネイティブピッカーの
+  // スワイプ閉じなど）は、ドラッグ中だけ見せていた未確定のプレビューを
+  // 保存済みの状態に戻す。決定済みの場合はすでに同じ状態なので実害なし
+  applyCustomButtonColors();
   setTimeout(() => { try{ ov.remove(); }catch(e){} }, 190);
 }
 
@@ -239,6 +243,7 @@ function openColorPicker(key, anchorEl){
         <span class="cpick-custom-txt">カスタム</span>
         <button type="button" class="cpick-reset" data-reset>デフォルトに戻す</button>
       </div>
+      <button type="button" class="cpick-confirm" data-confirm>決定</button>
     </div>`;
   document.body.appendChild(ov);
   activeOv = ov;
@@ -260,9 +265,19 @@ function openColorPicker(key, anchorEl){
       closeColorPicker();
     };
   });
+  // カスタム色（ネイティブのカラーピッカー）はスペクトラム上を指でなぞる操作＝
+  // OS側のスワイプ操作でシート自体が閉じてしまうことがあるため、ドラッグ中は
+  // ボタンの見た目だけをプレビューし、実際の保存（setColor）は行わない。
+  // 保存は下の「決定」ボタンを押したときだけ確定させる
   const input = ov.querySelector("[data-custom-input]");
-  input.oninput = () => { setColor(key, input.value); applyCustomButtonColors(); };
-  input.onchange = () => { try{ playTapSound(); }catch(e){} closeColorPicker(); };
+  input.oninput = () => { paintElement(anchorEl, input.value); };
+
+  ov.querySelector("[data-confirm]").onclick = () => {
+    setColor(key, input.value);
+    applyCustomButtonColors();
+    try{ playTapSound(); }catch(e){}
+    closeColorPicker();
+  };
 
   ov.querySelector("[data-reset]").onclick = () => {
     resetColor(key);

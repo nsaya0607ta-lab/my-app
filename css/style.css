@@ -656,6 +656,10 @@ h1.title.title--badge{margin:2px 0 0;}
 .cpick-reset{flex:none;background:var(--surface2);border:1px solid var(--line);color:var(--text);
   font-size:10.5px;font-weight:600;border-radius:99px;padding:6px 10px;cursor:pointer;white-space:nowrap;}
 .cpick-reset:active{filter:brightness(.95);}
+.cpick-confirm{width:100%;margin-top:10px;background:linear-gradient(90deg,var(--accent),#38bdf8);
+  border:none;color:#ffffff;font-size:12.5px;font-weight:700;border-radius:12px;padding:9px 0;
+  cursor:pointer;box-shadow:0 4px 12px rgba(2,132,199,.25);transition:transform .1s,filter .1s;}
+.cpick-confirm:active{transform:scale(.97);filter:brightness(.95);}
 
 /* デジタル盆栽の詳細モーダル：pet-card自体が濃色カードなので、モーダル側は
    透明な入れ物にしてカードをそのまま浮かせる */
