@@ -1059,45 +1059,64 @@ let clockTimer = null;
 let weatherRefreshTimer = null;
 const WEATHER_REFRESH_MS = 20 * 60 * 1000; // 20分ごとに天気を自動で再フェッチする
 
-// カードは左（比率2.4）＝「日付＋デジタル時計｜天気（地名・アイコン・気温）」
-// ＋その下の降水確率の推移を示す滑らかな曲線グラフ、
-// 右（比率1）＝デジタル盆栽の簡易表示（タップで詳細モーダル）の2エリア構成。
+// カード上段＝4つの指標（日付＋デジタル時計／天気（地名・アイコン・気温）／
+// 現在の降水量／デジタル盆栽の簡易表示）を横並びの4カラムで表示し、
+// 下段＝降水確率の推移を示す滑らかな曲線グラフをカード全幅で表示する。
+// （以前は左側だけに時計・天気・降水量・グラフを縦積みし、右側にペットを
+// 置く2カラム構成だったため、グラフがカード全体ではなく左側の幅にしか
+// 収まらなかった。グラフをカードの直接の子要素に上げることでカード全幅に広げる）
 // Gemini相談への導線はホーム画面右下の常設フローティングボタン（geminiFabHTML）に集約した。
 function weatherCardHTML(){
   return `
     <div class="news-card weather-card" id="weather-card">
-      <div class="weather-body">
-        <div class="weather-left">
-          <div class="weather-left-top">
-            <div class="weather-datetime">
-              <div class="weather-date" id="weather-clock-date"></div>
-              <div class="weather-time">
-                <span id="weather-clock-time"></span><span class="weather-time-sec" id="weather-clock-sec"></span>
-              </div>
-            </div>
-            <div class="weather-info" id="weather-info">
-              <div class="weather-city-row">
-                <span class="weather-city" id="weather-city">取得中…</span>
-                <button type="button" class="weather-retry-btn" id="weather-retry-loc" title="現在地を再取得" aria-label="現在地を再取得" hidden>⟳</button>
-              </div>
-              <div class="weather-asof" id="weather-asof"></div>
-              <div class="weather-main">
-                <span class="weather-icon" id="weather-icon">🌡️</span>
-                <span class="weather-temp" id="weather-temp"></span>
-              </div>
-            </div>
-            <div class="weather-precip-alert" id="weather-precip-alert">
-              <div class="weather-precip-label">現在</div>
-              <div class="weather-precip-now" id="weather-precip-now"><span class="weather-precip-now-value" id="weather-precip-now-value"></span>mm/h</div>
-              <div class="weather-precip-comment" id="weather-precip-comment">
-                <span class="weather-precip-comment-track" id="weather-precip-comment-track"></span>
-              </div>
-            </div>
-          </div>
-          <div class="weather-pop-chart" id="weather-pop-chart"></div>
-        </div>
-        <div class="weather-pet">${petMiniWidgetHTML()}</div>
+      <div class="weather-card-heading">
+        <span class="weather-heading-icon" aria-hidden="true">📍</span>
+        <span id="weather-heading-city">天気</span>
       </div>
+
+      <div class="weather-metrics">
+        <div class="weather-metric weather-datetime">
+          <div class="weather-metric-label weather-date-row">
+            <span aria-hidden="true">📅</span>
+            <span class="weather-date" id="weather-clock-date"></span>
+          </div>
+          <div class="weather-value-row">
+            <span class="weather-time" id="weather-clock-time"></span><span class="weather-time-sec" id="weather-clock-sec"></span>
+          </div>
+          <div class="weather-metric-placeholder"></div>
+        </div>
+
+        <div class="weather-metric weather-info" id="weather-info">
+          <div class="weather-metric-label weather-city-row">
+            <span aria-hidden="true">🕐</span>
+            <span class="weather-city" id="weather-city">取得中…</span>
+            <button type="button" class="weather-retry-btn" id="weather-retry-loc" title="現在地を再取得" aria-label="現在地を再取得" hidden>⟳</button>
+          </div>
+          <div class="weather-asof" id="weather-asof"></div>
+          <div class="weather-value-row">
+            <span class="weather-icon" id="weather-icon">🌡️</span>
+            <span class="weather-temp" id="weather-temp"></span>
+          </div>
+        </div>
+
+        <div class="weather-metric weather-precip-alert">
+          <div class="weather-metric-label">
+            <span aria-hidden="true">💧</span>
+            <span>現在の降水量</span>
+          </div>
+          <div class="weather-value-row weather-precip-now">
+            <span class="weather-precip-now-value" id="weather-precip-now-value"></span>
+            <span class="weather-value-unit">mm/h</span>
+          </div>
+          <div class="weather-condition-pill" id="weather-precip-comment">
+            <span class="weather-precip-comment-track" id="weather-precip-comment-track"></span>
+          </div>
+        </div>
+
+        <div class="weather-metric weather-pet">${petMiniWidgetHTML()}</div>
+      </div>
+
+      <div class="weather-pop-chart" id="weather-pop-chart"></div>
     </div>`;
 }
 
@@ -1311,6 +1330,7 @@ async function refreshWeatherCard(force){
     if(weatherRefreshTimer){ clearInterval(weatherRefreshTimer); weatherRefreshTimer = null; }
     return;
   }
+  const headingCityEl = document.getElementById("weather-heading-city");
   const cityEl = document.getElementById("weather-city");
   const asofEl = document.getElementById("weather-asof");
   const iconEl = document.getElementById("weather-icon");
@@ -1321,6 +1341,7 @@ async function refreshWeatherCard(force){
   const w = await getWeather(force);
   if(!document.getElementById("weather-card")) return; // フェッチ中に画面遷移した場合は描画しない
   if(!w){
+    if(headingCityEl) headingCityEl.textContent = "天気";
     if(cityEl) cityEl.textContent = "天気を取得できませんでした";
     if(asofEl) asofEl.textContent = "";
     if(iconEl) iconEl.textContent = "🌡️";
@@ -1332,6 +1353,7 @@ async function refreshWeatherCard(force){
     renderWeatherPopChart(null);
     return;
   }
+  if(headingCityEl) headingCityEl.textContent = `${w.city}の天気`;
   if(cityEl) cityEl.textContent = w.isDefaultLocation ? `${w.city}（現在地未取得）` : w.city;
   if(retryBtnEl) retryBtnEl.hidden = !w.isDefaultLocation;
   // この天気がいつ時点の観測かをアイコンのすぐ上に明記する
