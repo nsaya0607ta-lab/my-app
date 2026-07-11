@@ -112,7 +112,7 @@ body{
   overflow:hidden;
 }
 #app>.weather-card::before{
-  content:"📍 現在地の天気";
+  content:"ホーム";
   display:block;
   margin:0 0 6px 2px;
   color:var(--home-text);
@@ -126,7 +126,7 @@ body{
 }
 .weather-card .weather-top{
   display:grid;
-  grid-template-columns:minmax(52px,auto) minmax(0,1fr) minmax(0,1fr) 70px;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   align-items:stretch;
   min-width:0;
 }
@@ -146,13 +146,13 @@ body{
   white-space:nowrap;
   text-overflow:ellipsis;
 }
-.weather-card .weather-date::before{content:"▣ ";color:var(--home-blue);}
+.weather-card .weather-date::before{content:"";color:var(--home-blue);}
 .weather-card .weather-time{
   margin-top:4px;
   overflow:hidden;
   color:#0b2140;
   font-size:18px;
-  font-weight:750;
+  font-weight:600;
   line-height:1;
   letter-spacing:-.02em;
   white-space:nowrap;
@@ -173,7 +173,7 @@ body{
   overflow:hidden;
   color:#0b2140;
   font-size:18px;
-  font-weight:750;
+  font-weight:600;
   line-height:1;
   white-space:nowrap;
   letter-spacing:-.02em;
