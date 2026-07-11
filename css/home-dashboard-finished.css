@@ -155,14 +155,23 @@ body{
 .weather-card .weather-time{
   margin-top:4px;
   overflow:hidden;
-  color:#0b2140;
-  font-size:18px;
-  font-weight:600;
+  color:#087fd1;
+  font-family:"Courier New", monospace;
+  font-size:21px;
+  font-weight:700;
   line-height:1;
-  letter-spacing:-.02em;
+  letter-spacing:.08em;
+  font-variant-numeric:tabular-nums;
+  text-shadow:0 0 8px rgba(8,127,209,.25);
   white-space:nowrap;
 }
-.weather-card .weather-time-sec{color:var(--home-blue);font-size:10.5px;letter-spacing:0;}
+
+.weather-card .weather-time-sec{
+  color:#38a9e8;
+  font-family:"Courier New", monospace;
+  font-size:11px;
+  letter-spacing:.04em;
+}
 .weather-card .weather-city-row{display:flex;align-items:center;gap:4px;min-width:0;}
 .weather-card .weather-city{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0;}
 .weather-card .weather-asof{margin-top:3px;font-weight:600;}
