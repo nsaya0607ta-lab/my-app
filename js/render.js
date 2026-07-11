@@ -2933,13 +2933,89 @@ function unlockBodyScrollForSheet(){
 // シート外（暗い背景・ハンドル・タイトル）でのtouchmoveはpassive:falseで
 // 確実にpreventDefaultし、背後の画面へスクロールが伝わらないようにする。
 // .bottom-sheet-list内は、収まりきらない項目がある場合のみ内部スクロールを
-// 許可し（overflow-behaviorはCSS側のoverscroll-behaviorで境界での伝播も抑止）、
-// 全項目が収まっている場合はここでもpreventDefaultして背景を固定する。
-function onSheetTouchMove(e){
-  const list = e.currentTarget.querySelector(".bottom-sheet-list");
-  if(!list || !list.contains(e.target) || list.scrollHeight <= list.clientHeight){
+// 許可する。さらにスクロールが上端／下端に到達した状態で同方向へさらに
+// スワイプされた分（ラバーバンド分）もpreventDefaultし、そこから先の
+// スクロールが背後のホーム画面へ伝播しないようにする。
+function createSheetTouchGuard(ov){
+  let lastY = 0;
+  return {
+    onTouchStart(e){
+      if(e.touches.length === 1) lastY = e.touches[0].clientY;
+    },
+    onTouchMove(e){
+      const list = ov.querySelector(".bottom-sheet-list");
+      if(!list || !list.contains(e.target) || list.scrollHeight <= list.clientHeight){
+        e.preventDefault();
+        return;
+      }
+      const y = e.touches[0].clientY;
+      const movingDown = y > lastY;
+      const atTop = list.scrollTop <= 0;
+      const atBottom = list.scrollTop + list.clientHeight >= list.scrollHeight - 1;
+      if((movingDown && atTop) || (!movingDown && atBottom)){
+        e.preventDefault();
+      }
+      lastY = y;
+    },
+  };
+}
+
+// 上部の.bottom-sheet-drag-handle（グレーのハンドル＋タイトル）を下方向へ
+// スワイプすると、シート全体をtranslateYで指の動きに追従させる。指を離した
+// 時点で「移動距離がシート高さの約20%以上」または「一定速度以上の素早い
+// スワイプ」だった場合はそのまま閉じ、それ以外は.bottom-sheet-showのCSS
+// トランジションで元の位置へ滑らかに戻す。
+const SHEET_CLOSE_DISTANCE_RATIO = 0.2;
+const SHEET_CLOSE_VELOCITY = 0.5; // px/ms（フリック判定用のしきい値）
+
+function attachSheetDragHandlers(ov, sheet){
+  const dragHandle = sheet.querySelector(".bottom-sheet-drag-handle");
+  if(!dragHandle) return;
+
+  let dragging = false;
+  let startY = 0;
+  let lastY = 0;
+  let lastT = 0;
+  let velocity = 0;
+  let sheetHeight = 0;
+
+  function onTouchStart(e){
+    if(e.touches.length !== 1) return;
+    dragging = true;
+    startY = lastY = e.touches[0].clientY;
+    lastT = e.timeStamp;
+    velocity = 0;
+    sheetHeight = sheet.getBoundingClientRect().height;
+    sheet.style.transition = "none";
+  }
+
+  function onTouchMove(e){
+    if(!dragging) return;
+    const y = e.touches[0].clientY;
+    const dt = e.timeStamp - lastT || 1;
+    velocity = (y - lastY) / dt;
+    lastY = y;
+    lastT = e.timeStamp;
+    const dy = Math.max(0, y - startY);
+    sheet.style.transform = `translateY(${dy}px)`;
     e.preventDefault();
   }
+
+  function onTouchEnd(){
+    if(!dragging) return;
+    dragging = false;
+    const dy = Math.max(0, lastY - startY);
+    sheet.style.transition = "";
+    sheet.style.transform = "";
+    if(dy > sheetHeight * SHEET_CLOSE_DISTANCE_RATIO || velocity > SHEET_CLOSE_VELOCITY){
+      closeSheet(ov);
+    }
+  }
+
+  dragHandle.addEventListener("touchstart", onTouchStart, { passive: true });
+  dragHandle.addEventListener("touchmove", onTouchMove, { passive: false });
+  dragHandle.addEventListener("touchend", onTouchEnd, { passive: true });
+  dragHandle.addEventListener("touchcancel", onTouchEnd, { passive: true });
 }
 
 function closeSheet(ov){
@@ -2958,16 +3034,22 @@ function openSheet(title, itemsHTML){
   ov.className = "sheet-ov";
   ov.innerHTML = `
     <div class="bottom-sheet">
-      <div class="bottom-sheet-handle"></div>
-      <div class="bottom-sheet-title">${esc(title)}</div>
+      <div class="bottom-sheet-drag-handle">
+        <div class="bottom-sheet-handle"></div>
+        <div class="bottom-sheet-title">${esc(title)}</div>
+      </div>
       <div class="bottom-sheet-list">${itemsHTML}</div>
     </div>`;
   document.body.appendChild(ov);
   ov.addEventListener("click", (e) => { if(e.target === ov) closeSheet(ov); });
-  ov.addEventListener("touchmove", onSheetTouchMove, { passive: false });
+  const touchGuard = createSheetTouchGuard(ov);
+  ov.addEventListener("touchstart", touchGuard.onTouchStart, { passive: true });
+  ov.addEventListener("touchmove", touchGuard.onTouchMove, { passive: false });
+  const sheet = ov.querySelector(".bottom-sheet");
+  attachSheetDragHandlers(ov, sheet);
   requestAnimationFrame(() => {
     ov.classList.add("sheet-ov-show");
-    ov.querySelector(".bottom-sheet").classList.add("bottom-sheet-show");
+    sheet.classList.add("bottom-sheet-show");
   });
   return ov;
 }
