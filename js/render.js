@@ -1114,6 +1114,7 @@ function weatherCardHTML(){
           <div class="weather-value-row">
             <span class="weather-icon" id="weather-icon">🌡️</span>
             <span class="weather-temp" id="weather-temp"></span>
+            <span class="weather-value-unit" id="weather-temp-unit"></span>
           </div>
         </div>
 
@@ -1353,6 +1354,7 @@ async function refreshWeatherCard(force){
   const asofEl = document.getElementById("weather-asof");
   const iconEl = document.getElementById("weather-icon");
   const tempEl = document.getElementById("weather-temp");
+  const tempUnitEl = document.getElementById("weather-temp-unit");
   const precipNowValueEl = document.getElementById("weather-precip-now-value");
   const precipCommentTrackEl = document.getElementById("weather-precip-comment-track");
   const retryBtnEl = document.getElementById("weather-retry-loc");
@@ -1364,6 +1366,7 @@ async function refreshWeatherCard(force){
     if(asofEl) asofEl.textContent = "";
     if(iconEl) iconEl.textContent = "🌡️";
     if(tempEl) tempEl.textContent = "";
+    if(tempUnitEl) tempUnitEl.textContent = "";
     if(precipNowValueEl) precipNowValueEl.textContent = "-";
     if(precipCommentTrackEl) precipCommentTrackEl.textContent = "";
     if(retryBtnEl) retryBtnEl.hidden = true;
@@ -1384,7 +1387,8 @@ async function refreshWeatherCard(force){
     }
   }
   if(iconEl) iconEl.textContent = w.icon;
-  if(tempEl) tempEl.textContent = `${w.temp}℃`;
+  if(tempEl) tempEl.textContent = w.temp;
+  if(tempUnitEl) tempUnitEl.textContent = "℃";
   const precipMm = typeof w.precip === "number" ? w.precip : 0;
   if(precipNowValueEl) precipNowValueEl.textContent = precipMmLabel(precipMm);
   if(precipCommentTrackEl) precipCommentTrackEl.textContent = precipCommentText(precipMm);
