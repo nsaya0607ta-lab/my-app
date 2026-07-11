@@ -3,6 +3,7 @@ import { DC_PHASES, IMP_POINTS, L, OVERALL_STEP } from './data/constants.js';
 import { SKIN_DATA } from './data/skins.js';
 import { gcalLoadAuthorName, go, loadGcalStore, loadGcalTodoStore, loadPortfolio, render } from './render.js';
 import { S, state } from './state.js';
+import { markPetActivity } from './pet.js';
 import { mpExportRaw } from './mindpalette.js';
 
 export let PASS = 700;   // 選択中の資格の合格ライン（loadCertで設定）
@@ -284,6 +285,7 @@ export function finish(){
   const coinGain = coinReward(runMode, correct, score);
   S.coins = (S.coins||0) + coinGain;
   saveCoins(S.coins);
+  markPetActivity();   // 🔮 「今日タスクを1つこなした」記録（デジタル盆栽が輝きを取り戻す）
   const unlocked = TIERS.filter(t=>t.bp>prevBp && t.bp<=newBp).map(t=>t.icon+" "+t.name);
   const modeLabel = (runMode==="review" ? "復習" : runMode==="practice" ? (S.commandCmd ? `${S.commandCmd}コマンド演習` : "演習") : "試験") + S.deck.length + "問";
   const entry = {id:Date.now(), date:new Date().toISOString(), modeLabel,
