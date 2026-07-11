@@ -259,6 +259,24 @@ body{
   font-weight:600;
 }
 
+/* 開発用：降水量・気温シミュレーションパネル */
+.weather-card .weather-debug-toggle{
+  position:absolute;
+  top:6px;
+  right:8px;
+  z-index:2;
+  width:18px;
+  height:18px;
+  padding:0;
+  border:none;
+  background:none;
+  font-size:12px;
+  line-height:1;
+  opacity:.55;
+  cursor:pointer;
+}
+.weather-card .weather-debug-toggle:hover{opacity:1;}
+
 /* ===== 今日の予定・タスク ===== */
 #app>.gcal-card{
   margin:0 0 7px;

@@ -1059,6 +1059,12 @@ let clockTimer = null;
 let weatherRefreshTimer = null;
 const WEATHER_REFRESH_MS = 20 * 60 * 1000; // 20分ごとに天気を自動で再フェッチする
 
+// 開発用の降水量・気温シミュレーション。null のフィールドは実測値のまま
+// 表示し、数値が入っているフィールドだけ実測値を上書きして見た目を確認できる
+// ようにする（UIの色分け・注意文言のテストが主目的）
+let weatherDebugOverride = null; // { temp: number|null, precip: number|null }
+let lastWeatherFetch = null; // 直近のAPI取得結果（シミュレーション値の再適用に使う）
+
 const temperatureColors = [
   { min: 35, color: "#D32F2F" },
   { min: 30, color: "#F4511E" },
@@ -1100,6 +1106,7 @@ function getPrecipitationColor(mm){
 function weatherCardHTML(){
   return `
     <div class="news-card weather-card" id="weather-card">
+      <button type="button" class="weather-debug-toggle" id="weather-debug-toggle" title="降水量・気温をシミュレーション" aria-label="降水量・気温をシミュレーション">🧪</button>
       <div class="weather-body">
         <div class="weather-top">
           <div class="weather-col weather-datetime">
@@ -1335,14 +1342,23 @@ function renderWeatherPopChart(w){
     </div>`;
 }
 
-// 天気情報を取得してカードを再描画する。ホーム画面から離れて weather-card が
-// DOM上から消えている場合は、取得結果を無駄に描画せず自動更新タイマーも止める
-// （画面遷移時のクリーンアップ）。
-async function refreshWeatherCard(force){
-  if(!document.getElementById("weather-card")){
-    if(weatherRefreshTimer){ clearInterval(weatherRefreshTimer); weatherRefreshTimer = null; }
-    return;
-  }
+// 実測値(w)にシミュレーション用の上書き値(weatherDebugOverride)を重ねた表示用
+// オブジェクトを組み立てる。実測値が無い（未取得・取得失敗）状態でも上書き値
+// だけで表示を試せるよう、ダミーの土台を用意する
+function buildDisplayWeather(w){
+  if(!w && !weatherDebugOverride) return w;
+  const base = w || { temp:null, icon:"🧪", label:"", pop:null, precip:null, hourly:[], tomorrow:null, currentTime:null, city:"シミュレーション", isDefaultLocation:false };
+  if(!weatherDebugOverride) return base;
+  const dw = { ...base };
+  if(typeof weatherDebugOverride.temp === "number") dw.temp = weatherDebugOverride.temp;
+  if(typeof weatherDebugOverride.precip === "number") dw.precip = weatherDebugOverride.precip;
+  return dw;
+}
+
+// 天気カードのDOMを w（buildDisplayWeatherを通した表示用データ）で描画する。
+// 実際のAPI取得直後、またはシミュレーション値の反映/解除時に呼ばれる
+function renderWeatherDisplay(rawW){
+  if(!document.getElementById("weather-card")) return;
   const cityEl = document.getElementById("weather-city");
   const asofEl = document.getElementById("weather-asof");
   const iconEl = document.getElementById("weather-icon");
@@ -1350,8 +1366,7 @@ async function refreshWeatherCard(force){
   const precipNowValueEl = document.getElementById("weather-precip-now-value");
   const precipCommentTrackEl = document.getElementById("weather-precip-comment-track");
   const retryBtnEl = document.getElementById("weather-retry-loc");
-  const w = await getWeather(force);
-  if(!document.getElementById("weather-card")) return; // フェッチ中に画面遷移した場合は描画しない
+  const w = buildDisplayWeather(rawW);
   if(!w){
     if(cityEl) cityEl.textContent = "天気を取得できませんでした";
     if(asofEl) asofEl.textContent = "";
@@ -1371,14 +1386,21 @@ async function refreshWeatherCard(force){
     if(w.currentTime){
       const d = new Date(w.currentTime);
       asofEl.textContent = `${String(d.getHours()).padStart(2,"0")}:${String(d.getMinutes()).padStart(2,"0")}時点`;
+    } else if(weatherDebugOverride){
+      asofEl.textContent = "シミュレーション中";
     } else {
       asofEl.textContent = "現在";
     }
   }
   if(iconEl) iconEl.textContent = w.icon;
   if(tempEl){
-    tempEl.textContent = `${w.temp}℃`;
-    tempEl.style.color = getTemperatureColor(w.temp);
+    if(typeof w.temp === "number"){
+      tempEl.textContent = `${w.temp}℃`;
+      tempEl.style.color = getTemperatureColor(w.temp);
+    } else {
+      tempEl.textContent = "";
+      tempEl.style.color = "";
+    }
   }
   const precipMm = typeof w.precip === "number" ? w.precip : 0;
   if(precipNowValueEl){
@@ -1388,6 +1410,66 @@ async function refreshWeatherCard(force){
   if(precipCommentTrackEl) precipCommentTrackEl.textContent = precipCommentText(precipMm);
   updatePrecipAlertMarquee();
   renderWeatherPopChart(w);
+}
+
+// 天気情報を取得してカードを再描画する。ホーム画面から離れて weather-card が
+// DOM上から消えている場合は、取得結果を無駄に描画せず自動更新タイマーも止める
+// （画面遷移時のクリーンアップ）。
+async function refreshWeatherCard(force){
+  if(!document.getElementById("weather-card")){
+    if(weatherRefreshTimer){ clearInterval(weatherRefreshTimer); weatherRefreshTimer = null; }
+    return;
+  }
+  const w = await getWeather(force);
+  lastWeatherFetch = w;
+  if(!document.getElementById("weather-card")) return; // フェッチ中に画面遷移した場合は描画しない
+  renderWeatherDisplay(w);
+}
+
+// デバッグ用の「🧪」ボタンから、降水量・気温シミュレーション用のモーダルを開く。
+// 他のポップアップ（openRulesModal等）と同じく#appの外・document.bodyに直接
+// オーバーレイを追加する方式にすることで、天気カード自身のoverflow:hiddenに
+// 内容が切れてしまわないようにする
+function openWeatherDebugModal(){
+  const ov = document.createElement("div");
+  ov.className = "modal-ov";
+  const curTemp = weatherDebugOverride && typeof weatherDebugOverride.temp === "number" ? weatherDebugOverride.temp : "";
+  const curPrecip = weatherDebugOverride && typeof weatherDebugOverride.precip === "number" ? weatherDebugOverride.precip : "";
+  ov.innerHTML = `
+    <div class="modal weather-debug-modal">
+      <div class="modal-title" style="color:var(--text)">🧪 降水量・気温シミュレーション</div>
+      <div class="gcal-modal-sub">値を入力すると、天気カードの表示を実測値の代わりにその値で確認できます（空欄の項目は実測値のまま）。</div>
+      <label class="weather-debug-field">気温(℃)<input type="number" class="gcal-ev-input" id="weather-debug-temp" step="1" placeholder="実測値" value="${curTemp}"></label>
+      <label class="weather-debug-field">降水量(mm/h)<input type="number" class="gcal-ev-input" id="weather-debug-precip" step="0.1" min="0" placeholder="実測値" value="${curPrecip}"></label>
+      <button class="cta" id="weather-debug-apply">反映</button>
+      <button class="ghost" id="weather-debug-reset" style="margin-top:8px">実測値に戻す</button>
+      <button class="ghost" id="weather-debug-close" style="margin-top:8px">閉じる</button>
+    </div>`;
+  document.body.appendChild(ov);
+  const close = () => { try{ ov.remove(); }catch(e){} };
+  ov.addEventListener("click", (e) => { if(e.target === ov) close(); });
+  ov.querySelector("#weather-debug-close").onclick = close;
+  ov.querySelector("#weather-debug-apply").onclick = () => {
+    const t = parseFloat(ov.querySelector("#weather-debug-temp").value);
+    const p = parseFloat(ov.querySelector("#weather-debug-precip").value);
+    weatherDebugOverride = {
+      temp: Number.isFinite(t) ? t : null,
+      precip: Number.isFinite(p) ? p : null,
+    };
+    renderWeatherDisplay(lastWeatherFetch);
+    close();
+  };
+  ov.querySelector("#weather-debug-reset").onclick = () => {
+    weatherDebugOverride = null;
+    renderWeatherDisplay(lastWeatherFetch);
+    close();
+  };
+}
+
+function bindWeatherDebugPanel(){
+  const toggleBtn = document.getElementById("weather-debug-toggle");
+  if(!toggleBtn) return;
+  toggleBtn.onclick = () => openWeatherDebugModal();
 }
 
 function startWeatherRefresh(){
@@ -1420,6 +1502,7 @@ async function loadWeatherCard(){
   if(!card) return;
   startClock();
   bindWeatherRetryButton();
+  bindWeatherDebugPanel();
   await refreshWeatherCard(); // 画面を開いた瞬間の即時フェッチ
   startWeatherRefresh();      // 以後20分間隔でバックグラウンド自動更新
 }

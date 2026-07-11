@@ -913,6 +913,11 @@ h1.title.title--badge{margin:2px 0 0;}
   background:var(--surface);color:var(--text);font-size:13px;}
 .gcal-newcal-input{width:100%;margin-bottom:12px;}
 
+/* 天気カードの降水量・気温シミュレーション用モーダル（.modal-ov/.modalを土台に使う） */
+.weather-debug-modal{max-width:340px;}
+.weather-debug-field{display:flex;flex-direction:column;gap:4px;margin-bottom:12px;font-size:12.5px;font-weight:700;color:var(--muted);}
+.weather-debug-field .gcal-ev-input{width:100%;}
+
 /* 過去の予定「引用」サジェスト：タイトル入力欄の下に、部分一致した過去の
    予定タイトル・時間帯を候補として並べる。何も入力していない間は非表示 */
 .gcal-suggest{display:none;flex-direction:column;gap:4px;margin-top:6px;}
