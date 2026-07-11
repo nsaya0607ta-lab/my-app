@@ -13,11 +13,16 @@
 <link rel="icon" type="image/png" sizes="192x192" href="assets/icon/app-icon-192.png">
 <link rel="apple-touch-icon" href="assets/icon/app-icon-180.png">
 <link rel="preload" as="image" href="assets/icon/splash-logo.jpg">
+<!-- 数字・英字表示をInterフォントにするための読み込み（日本語部分は
+     Interに無い文字のため自動的に既存の日本語UIフォントにフォールバックする） -->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800&display=swap">
 <!-- css/style.css・js/main.js の ?v= はキャッシュ対策用のバージョン文字列です。
      特にホーム画面に追加したSafari（standalone PWA）は古いCSS/JSを強くキャッシュ
      しやすいため、この2ファイル（または読み込まれる他のJS/CSS）を更新した際は、
      必ず下記2箇所の ?v= の値を同時に更新してください（例: 日付や連番でOK）。 -->
-<link rel="stylesheet" href="css/style.css?v=20260711f">
+<link rel="stylesheet" href="css/style.css?v=20260711g">
 </head>
 <body>
 <div id="splash-screen" class="splash-screen" aria-hidden="true">
@@ -89,6 +94,6 @@ setTimeout(function(){
   </button>
 </nav>
 
-<script type="module" src="js/main.js?v=20260711f"></script>
+<script type="module" src="js/main.js?v=20260711g"></script>
 </body>
 </html>

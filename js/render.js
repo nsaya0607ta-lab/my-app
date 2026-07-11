@@ -1118,20 +1118,6 @@ function weatherCardHTML(){
           </div>
         </div>
 
-        <div class="weather-metric weather-precip-alert">
-          <div class="weather-metric-label">
-            ${icon("drop", "weather-label-icon")}
-            <span>現在の降水量</span>
-          </div>
-          <div class="weather-value-row weather-precip-now">
-            <span class="weather-precip-now-value" id="weather-precip-now-value"></span>
-            <span class="weather-value-unit">mm/h</span>
-          </div>
-          <div class="weather-condition-pill" id="weather-precip-comment">
-            <span class="weather-precip-comment-track" id="weather-precip-comment-track"></span>
-          </div>
-        </div>
-
         <div class="weather-metric weather-pet">${petMiniWidgetHTML()}</div>
       </div>
 
@@ -1196,49 +1182,6 @@ const POP_CHART_Y_TICKS = [100, 80, 60, 40, 20, 0]; // 縦軸目盛り・％（�
 const PRECIP_Y_TICKS = [15, 10, 5, 3, 1, 0];
 const PRECIP_DANGER_MM = 20; // これを超えたら棒を警告色にする
 const POP_CHART_LABEL_EVERY = 3; // 横軸の数字は3時間ごとにのみ表示する
-
-// 直近1時間の降水量(mm)に応じた注意喚起の文言（気象庁の階級区分・
-// 体感の目安を参考にした簡易的な区分）
-function precipCautionText(mm){
-  if(mm < 1) return "傘がなくてもなんとか歩けるレベル";
-  if(mm < 2) return "シトシト降る雨。少し歩くなら傘が欲しくなります";
-  if(mm < 3) return "ほとんどの人が「傘が必要」と感じる強さです";
-  if(mm < 10) return "本降りの雨。傘は絶対に必要です";
-  if(mm < 20) return "気象庁の「やや強い雨」。地面一面に水たまりができます";
-  if(mm < 30) return "気象庁の「強い雨」。傘をさしていても濡れます";
-  return "気象庁の「激しい雨」。道路が川のようになるおそれがあります";
-}
-
-// 直近1時間の降水量が0mmの場合は雨が降っていない旨を表示する
-function precipCommentText(mm){
-  if(!(mm > 0)) return "雨は降っていません";
-  return precipCautionText(mm);
-}
-
-function precipMmLabel(mm){
-  const v = Math.max(0, mm);
-  return Number.isInteger(v) ? String(v) : v.toFixed(1);
-}
-
-// コメント欄のテキストが表示枠に収まりきらない場合のみ、右→左へ流れる
-// マーキー表示にする。収まる場合は静止表示のままにして、無用なアニメーションを避ける
-function updatePrecipAlertMarquee(){
-  const container = document.getElementById("weather-precip-comment");
-  const track = document.getElementById("weather-precip-comment-track");
-  if(!container || !track) return;
-  track.classList.remove("weather-precip-marquee");
-  track.style.removeProperty("--weather-precip-marquee-distance");
-  track.style.animationDuration = "";
-  const containerW = container.clientWidth;
-  const trackW = track.scrollWidth;
-  if(trackW > containerW){
-    const distance = containerW + trackW;
-    const duration = Math.max(6, distance / 45); // 45px/秒の速さでスクロールする
-    track.style.setProperty("--weather-precip-marquee-distance", `${distance}px`);
-    track.style.animationDuration = `${duration}s`;
-    track.classList.add("weather-precip-marquee");
-  }
-}
 
 // 目盛りのインデックス位置（0=一番上、tickCount-1=一番下）をSVGのY座標に変換する。
 // 端（インデックス0・最後）ではストローク幅の半分がSVG表示範囲の外に出て
@@ -1355,8 +1298,6 @@ async function refreshWeatherCard(force){
   const iconEl = document.getElementById("weather-icon");
   const tempEl = document.getElementById("weather-temp");
   const tempUnitEl = document.getElementById("weather-temp-unit");
-  const precipNowValueEl = document.getElementById("weather-precip-now-value");
-  const precipCommentTrackEl = document.getElementById("weather-precip-comment-track");
   const retryBtnEl = document.getElementById("weather-retry-loc");
   const w = await getWeather(force);
   if(!document.getElementById("weather-card")) return; // フェッチ中に画面遷移した場合は描画しない
@@ -1367,10 +1308,7 @@ async function refreshWeatherCard(force){
     if(iconEl) iconEl.textContent = "🌡️";
     if(tempEl) tempEl.textContent = "";
     if(tempUnitEl) tempUnitEl.textContent = "";
-    if(precipNowValueEl) precipNowValueEl.textContent = "-";
-    if(precipCommentTrackEl) precipCommentTrackEl.textContent = "";
     if(retryBtnEl) retryBtnEl.hidden = true;
-    updatePrecipAlertMarquee();
     renderWeatherPopChart(null);
     return;
   }
@@ -1389,10 +1327,6 @@ async function refreshWeatherCard(force){
   if(iconEl) iconEl.textContent = w.icon;
   if(tempEl) tempEl.textContent = w.temp;
   if(tempUnitEl) tempUnitEl.textContent = "℃";
-  const precipMm = typeof w.precip === "number" ? w.precip : 0;
-  if(precipNowValueEl) precipNowValueEl.textContent = precipMmLabel(precipMm);
-  if(precipCommentTrackEl) precipCommentTrackEl.textContent = precipCommentText(precipMm);
-  updatePrecipAlertMarquee();
   renderWeatherPopChart(w);
 }
 
