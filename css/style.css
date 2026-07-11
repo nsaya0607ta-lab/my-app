@@ -639,7 +639,7 @@ h1.title.title--badge{margin:2px 0 0;}
 .pop-axis-yticks-right span{position:absolute;left:0;transform:translateY(-50%);
   font-size:7px;font-weight:600;color:var(--muted);line-height:1;font-variant-numeric:tabular-nums;white-space:nowrap;}
 .weather-pop-chart-plot{flex:1;min-width:0;}
-.weather-pop-chart-svg{display:block;width:100%;height:60px;}
+.weather-pop-chart-svg{display:block;width:100%;height:120px;}
 .weather-pop-chart-xrow{display:flex;gap:3px;margin-top:2px;}
 .weather-pop-chart-labels{flex:1;min-width:0;position:relative;height:10px;}
 .weather-pop-chart-labels span{position:absolute;top:0;transform:translateX(-50%);
