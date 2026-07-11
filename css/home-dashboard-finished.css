@@ -1,0 +1,512 @@
+/* ================================================================
+   Home dashboard finished UI
+   既存の機能・DOM構造は変えず、ホーム画面を白×淡い水色の
+   モバイルダッシュボードへ整える上書きスタイル。
+   ================================================================ */
+
+:root{
+  --home-bg:#f4f9ff;
+  --home-card:rgba(255,255,255,.96);
+  --home-line:rgba(109,163,220,.28);
+  --home-blue:#078ced;
+  --home-blue-2:#52cce6;
+  --home-text:#102746;
+  --home-muted:#5f7898;
+  --home-shadow:0 14px 34px rgba(52,105,158,.11),0 3px 10px rgba(52,105,158,.07);
+  --home-radius:26px;
+}
+
+html{background:#f4f9ff;}
+body{
+  color:var(--home-text);
+  background:
+    radial-gradient(circle at 10% -5%,rgba(255,255,255,.98) 0,rgba(255,255,255,0) 34%),
+    radial-gradient(circle at 100% 22%,rgba(210,239,255,.62) 0,rgba(210,239,255,0) 30%),
+    linear-gradient(180deg,#f9fcff 0%,#eef7ff 100%);
+}
+
+.shell{
+  width:min(100%,460px);
+  margin:0 auto;
+  padding:max(18px,env(safe-area-inset-top)) 16px calc(132px + env(safe-area-inset-bottom));
+}
+.page{padding:0;}
+
+/* ===== 総合ランク ===== */
+.statusbar.show{
+  display:grid;
+  grid-template-columns:minmax(0,1fr) auto auto;
+  align-items:center;
+  gap:15px;
+  width:100%;
+  margin:0 0 16px;
+  padding:17px 20px;
+  color:var(--home-text);
+  background:var(--home-card);
+  border:1px solid var(--home-line);
+  border-radius:24px;
+  box-shadow:var(--home-shadow);
+  backdrop-filter:blur(18px);
+  -webkit-backdrop-filter:blur(18px);
+}
+.statusbar .sb-levels{min-width:0;}
+.statusbar .sb-line{
+  display:grid;
+  grid-template-columns:auto minmax(76px,1fr);
+  align-items:center;
+  gap:13px;
+}
+.statusbar .sb-lab{
+  width:auto;
+  overflow:visible;
+  text-overflow:clip;
+  color:var(--home-text);
+  font-size:15px;
+  font-weight:600;
+  white-space:nowrap;
+}
+.statusbar .sb-lab b{font-size:18px;}
+.statusbar .sb-prog{
+  display:block;
+  height:10px;
+  min-width:76px;
+  overflow:hidden;
+  border-radius:999px;
+  background:#dce8f5;
+}
+.statusbar .sb-prog-f{display:block;height:100%;border-radius:inherit;}
+.statusbar .sb-prog-f.overall{
+  background:linear-gradient(90deg,var(--home-blue),var(--home-blue-2));
+}
+.statusbar .sb-div{width:1px;height:40px;background:#d9e6f3;}
+.statusbar .sb-coin{
+  display:flex;
+  align-items:baseline;
+  gap:5px;
+  color:#d88900;
+  white-space:nowrap;
+  font-size:14px;
+  font-weight:700;
+}
+.statusbar .sb-coin b{font-size:25px;line-height:1;}
+
+/* ===== 共通カード ===== */
+#app>.weather-card,
+#app>.gcal-card,
+#app>.acct-bar{
+  background:var(--home-card);
+  border:1px solid var(--home-line);
+  border-radius:var(--home-radius);
+  box-shadow:var(--home-shadow);
+  backdrop-filter:blur(18px);
+  -webkit-backdrop-filter:blur(18px);
+}
+
+/* ===== 天気カード ===== */
+#app>.weather-card{
+  position:relative;
+  margin:0 0 16px;
+  padding:22px 18px 17px;
+  overflow:hidden;
+}
+#app>.weather-card::before{
+  content:"📍 現在地の天気";
+  display:block;
+  margin:0 0 18px 2px;
+  color:var(--home-text);
+  font-size:17px;
+  font-weight:800;
+}
+.weather-card .weather-body{
+  display:grid;
+  grid-template-columns:minmax(0,1fr) 92px;
+  grid-template-rows:auto auto;
+  gap:16px 12px;
+  align-items:stretch;
+}
+.weather-card .weather-left{display:contents;}
+.weather-card .weather-left-top{
+  grid-column:1;
+  grid-row:1;
+  display:grid;
+  grid-template-columns:minmax(0,1.08fr) minmax(0,1.1fr) minmax(0,.95fr);
+  align-items:stretch;
+  min-width:0;
+}
+.weather-card .weather-datetime,
+.weather-card .weather-info,
+.weather-card .weather-precip-alert{
+  min-width:0;
+  padding:4px 12px;
+}
+.weather-card .weather-datetime{padding-left:0;border-right:1px solid #dce8f4;}
+.weather-card .weather-info{border-right:1px solid #dce8f4;}
+.weather-card .weather-precip-alert{padding-right:0;}
+.weather-card .weather-date,
+.weather-card .weather-city,
+.weather-card .weather-asof,
+.weather-card .weather-precip-label{
+  color:#326aa5;
+  font-size:12px;
+  font-weight:700;
+}
+.weather-card .weather-date::before{content:"▣ ";color:var(--home-blue);}
+.weather-card .weather-time{
+  margin-top:17px;
+  color:#0b2140;
+  font-size:29px;
+  font-weight:760;
+  line-height:1;
+  letter-spacing:-.04em;
+  white-space:nowrap;
+}
+.weather-card .weather-time-sec{color:var(--home-blue);font-size:15px;letter-spacing:0;}
+.weather-card .weather-city-row{display:flex;align-items:center;gap:5px;min-width:0;}
+.weather-card .weather-city{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.weather-card .weather-asof{margin-top:7px;font-weight:600;}
+.weather-card .weather-main{
+  display:flex;
+  align-items:flex-end;
+  gap:5px;
+  margin-top:14px;
+}
+.weather-card .weather-icon{font-size:28px;line-height:1;}
+.weather-card .weather-temp{
+  color:#0b2140;
+  font-size:31px;
+  font-weight:760;
+  line-height:1;
+  white-space:nowrap;
+  letter-spacing:-.04em;
+}
+.weather-card .weather-precip-label::before{content:"💧 ";}
+.weather-card .weather-precip-now{
+  margin-top:17px;
+  overflow:visible;
+  color:#0b2140;
+  font-size:15px;
+  font-weight:650;
+  line-height:1;
+  white-space:normal;
+  text-overflow:clip;
+}
+.weather-card .weather-precip-now-value{
+  margin-right:4px;
+  font-size:33px;
+  font-weight:760;
+  letter-spacing:-.04em;
+}
+.weather-card .weather-precip-comment{
+  width:max-content;
+  max-width:100%;
+  margin-top:10px;
+  padding:5px 9px;
+  overflow:hidden;
+  border-radius:9px;
+  color:#376a9f;
+  background:#eef6ff;
+  font-size:11px;
+  white-space:nowrap;
+}
+.weather-card .weather-pet{
+  grid-column:2;
+  grid-row:1;
+  display:flex;
+  align-items:stretch;
+  min-width:0;
+}
+.weather-card .weather-pet>*{
+  width:100%;
+  min-height:104px;
+  border-radius:20px;
+  overflow:hidden;
+  background:linear-gradient(180deg,#eaf7ff,#ccecff);
+}
+.weather-card .weather-pop-chart{
+  grid-column:1/-1;
+  grid-row:2;
+  width:100%;
+  min-width:0;
+  margin:0;
+}
+.weather-card .weather-pop-chart-svg{width:100%;height:126px;overflow:visible;}
+.weather-card .weather-pop-chart-plot{min-width:0;}
+.weather-card .weather-pop-chart-labels,
+.weather-card .pop-axis-yticks,
+.weather-card .pop-axis-yticks-right,
+.weather-card .pop-axis-yunit,
+.weather-card .pop-axis-yunit-right,
+.weather-card .pop-axis-xunit{
+  color:#2767aa;
+  font-size:11px;
+  font-weight:600;
+}
+
+/* ===== 今日の予定・タスク ===== */
+#app>.gcal-card{
+  margin:0 0 16px;
+  padding:18px 16px 16px;
+  overflow:hidden;
+}
+.gcal-card .gcal-box{
+  margin:0;
+  padding:0;
+  border:0;
+  box-shadow:none;
+  background:transparent;
+}
+.gcal-card .gcal-day-head{
+  display:grid;
+  grid-template-columns:44px minmax(0,1fr) auto;
+  align-items:center;
+  gap:9px;
+  margin-bottom:18px;
+}
+.gcal-card .gcal-day-title{
+  color:var(--home-text);
+  font-size:18px;
+  font-weight:800;
+  text-align:center;
+  white-space:nowrap;
+}
+.gcal-card .gcal-day-title::before{content:"📅 ";}
+.gcal-card .gcal-day-head-right{display:flex;align-items:center;gap:7px;}
+.gcal-card .gcal-nav-btn,
+.gcal-card .gcal-reload-btn{
+  display:grid;
+  width:42px;
+  height:42px;
+  place-items:center;
+  padding:0;
+  border:0;
+  border-radius:50%;
+  color:var(--home-blue);
+  background:#edf7ff;
+  font-size:25px;
+  box-shadow:none;
+}
+.gcal-card .gcal-reload-btn{font-size:17px;}
+.gcal-card .gcal-day-body{
+  display:grid;
+  grid-template-columns:repeat(2,minmax(0,1fr));
+  gap:0;
+  align-items:stretch;
+}
+.gcal-card .gcal-day-timeline,
+.gcal-card .gcal-day-todo{
+  min-width:0;
+  padding:2px 14px 0;
+}
+.gcal-card .gcal-day-timeline{padding-left:0;border-right:1px solid #dce8f4;}
+.gcal-card .gcal-day-todo{padding-right:0;}
+.gcal-card .gcal-day-timeline::before,
+.gcal-card .gcal-day-todo-title{
+  display:block;
+  margin:0 0 14px;
+  color:#326aa5;
+  font-size:13px;
+  font-weight:750;
+}
+.gcal-card .gcal-day-timeline::before{content:"📅 今日の予定";}
+.gcal-card .gcal-day-todo-title::before{content:"☑ ";}
+.gcal-card .gcal-day-events,
+.gcal-card .gcal-day-todo-list{min-height:78px;}
+.gcal-card .gcal-day-empty,
+.gcal-card .gcal-todo-empty{
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  min-height:74px;
+  padding:10px;
+  color:#344f70;
+  font-size:13px;
+  line-height:1.65;
+  text-align:center;
+}
+.gcal-card .gcal-day-empty::before{
+  content:"📋";
+  margin-right:8px;
+  font-size:29px;
+  filter:saturate(.65);
+}
+.gcal-card .gcal-day-add-btn{
+  width:100%;
+  margin-top:10px;
+  padding:12px 10px;
+  border:1.5px dashed #9ac6f3;
+  border-radius:15px;
+  color:var(--home-blue);
+  background:rgba(255,255,255,.7);
+  font-size:14px;
+  font-weight:750;
+}
+.gcal-card .gcal-day-todo-form{
+  display:grid;
+  grid-template-columns:minmax(0,1fr) 50px;
+  gap:8px;
+  margin-top:10px;
+}
+.gcal-card .gcal-todo-input{
+  min-width:0;
+  height:47px;
+  padding:0 13px;
+  border:1px solid #cddfed;
+  border-radius:14px;
+  color:var(--home-text);
+  background:#fff;
+  font-size:14px;
+  outline:none;
+}
+.gcal-card .gcal-todo-input:focus{
+  border-color:#79baf2;
+  box-shadow:0 0 0 3px rgba(7,140,237,.1);
+}
+.gcal-card .gcal-todo-add-btn{
+  width:50px;
+  height:47px;
+  padding:0;
+  border:0;
+  border-radius:15px;
+  color:#fff;
+  background:linear-gradient(145deg,#19a4f6,#0577df);
+  font-size:28px;
+  box-shadow:0 8px 18px rgba(0,130,232,.24);
+}
+.gcal-card .gcal-day-event,
+.gcal-card .gcal-todo-item{border-radius:11px;background:#f5f9fd;}
+
+/* ===== アカウントバー ===== */
+#app>.acct-bar{
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  gap:10px;
+  min-height:62px;
+  margin:0;
+  padding:12px 18px;
+  color:#3c5878;
+  font-size:13px;
+  overflow:hidden;
+}
+#app>.acct-bar::before{
+  content:"👤";
+  display:grid;
+  width:38px;
+  height:38px;
+  flex:0 0 auto;
+  place-items:center;
+  border-radius:50%;
+  background:linear-gradient(145deg,#edf6ff,#cde6ff);
+  font-size:20px;
+}
+#app>.acct-bar>.link2{
+  margin-left:auto;
+  color:var(--home-blue);
+  font-weight:750;
+  white-space:nowrap;
+}
+
+/* ===== フローティングボタン ===== */
+#app>[data-go="mind-palette"],
+#app>[data-go="gemini"]{
+  position:fixed;
+  z-index:45;
+  bottom:calc(94px + env(safe-area-inset-bottom));
+  display:grid;
+  width:62px;
+  height:62px;
+  place-items:center;
+  padding:0;
+  border:0;
+  border-radius:50%;
+  color:#fff;
+  font-size:25px;
+  box-shadow:0 13px 24px rgba(37,88,145,.22);
+}
+#app>[data-go="mind-palette"]{
+  left:max(18px,calc(50% - 212px));
+  background:linear-gradient(145deg,#a14cff,#6337ea);
+}
+#app>[data-go="gemini"]{
+  right:max(18px,calc(50% - 212px));
+  background:linear-gradient(145deg,#24d1df,#00a8c8);
+}
+
+/* ===== 下部ナビ ===== */
+.bottom-nav.show{
+  position:fixed;
+  z-index:40;
+  left:50%;
+  bottom:max(10px,env(safe-area-inset-bottom));
+  display:grid;
+  grid-template-columns:repeat(5,minmax(0,1fr));
+  width:min(calc(100% - 24px),436px);
+  padding:11px 8px 9px;
+  transform:translateX(-50%);
+  border:1px solid rgba(109,163,220,.24);
+  border-radius:24px;
+  background:rgba(255,255,255,.96);
+  box-shadow:0 14px 34px rgba(52,105,158,.15);
+  backdrop-filter:blur(20px);
+  -webkit-backdrop-filter:blur(20px);
+}
+.bottom-nav .bnav-btn{
+  position:relative;
+  display:flex;
+  min-width:0;
+  flex-direction:column;
+  align-items:center;
+  gap:5px;
+  padding:3px 2px 8px;
+  border:0;
+  color:#506888;
+  background:transparent;
+}
+.bottom-nav .bnav-ico{display:grid;place-items:center;width:28px;height:28px;}
+.bottom-nav .bnav-lab{font-size:10px;font-weight:650;white-space:nowrap;}
+.bottom-nav .bnav-btn.active{color:var(--home-blue);}
+.bottom-nav .bnav-btn.active::after{
+  content:"";
+  position:absolute;
+  left:27%;
+  right:27%;
+  bottom:0;
+  height:3px;
+  border-radius:999px;
+  background:var(--home-blue);
+}
+
+@media (max-width:390px){
+  .shell{padding-left:11px;padding-right:11px;}
+  .statusbar.show{gap:10px;padding:15px 14px;}
+  .statusbar .sb-line{gap:9px;}
+  .statusbar .sb-lab{font-size:13px;}
+  .statusbar .sb-coin b{font-size:21px;}
+  #app>.weather-card{padding-left:14px;padding-right:14px;}
+  .weather-card .weather-body{grid-template-columns:minmax(0,1fr) 76px;gap:13px 8px;}
+  .weather-card .weather-datetime,
+  .weather-card .weather-info,
+  .weather-card .weather-precip-alert{padding-left:7px;padding-right:7px;}
+  .weather-card .weather-datetime{padding-left:0;}
+  .weather-card .weather-precip-alert{padding-right:0;}
+  .weather-card .weather-time{font-size:24px;}
+  .weather-card .weather-temp{font-size:26px;}
+  .weather-card .weather-precip-now-value{font-size:28px;}
+  .weather-card .weather-icon{font-size:23px;}
+  .weather-card .weather-pop-chart-svg{height:112px;}
+  .gcal-card .gcal-day-title{font-size:16px;}
+  .gcal-card .gcal-day-timeline,
+  .gcal-card .gcal-day-todo{padding-left:9px;padding-right:9px;}
+  .bottom-nav .bnav-lab{font-size:9px;}
+}
+
+@media (max-width:340px){
+  .statusbar .sb-line{grid-template-columns:auto minmax(56px,1fr);gap:7px;}
+  .statusbar .sb-lab{font-size:11.5px;}
+  .statusbar .sb-lab b{font-size:14px;}
+  .statusbar .sb-coin{font-size:12px;}
+  .statusbar .sb-coin b{font-size:18px;}
+  .weather-card .weather-body{grid-template-columns:minmax(0,1fr) 64px;}
+  .weather-card .weather-precip-now-value{font-size:22px;}
+  .weather-card .weather-precip-now{font-size:12px;}
+}

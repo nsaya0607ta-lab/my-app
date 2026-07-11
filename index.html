@@ -4,29 +4,23 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Azure 問題集</title>
-<meta name="theme-color" content="#0a1626">
+<meta name="theme-color" content="#f4f9ff">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
-<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
 <meta name="apple-mobile-web-app-title" content="AZ-900">
 <link rel="icon" type="image/png" sizes="32x32" href="assets/icon/app-icon-32.png">
 <link rel="icon" type="image/png" sizes="192x192" href="assets/icon/app-icon-192.png">
 <link rel="apple-touch-icon" href="assets/icon/app-icon-180.png">
 <link rel="preload" as="image" href="assets/icon/splash-logo.jpg">
-<!-- css/style.css・js/main.js の ?v= はキャッシュ対策用のバージョン文字列です。
-     特にホーム画面に追加したSafari（standalone PWA）は古いCSS/JSを強くキャッシュ
-     しやすいため、この2ファイル（または読み込まれる他のJS/CSS）を更新した際は、
-     必ず下記2箇所の ?v= の値を同時に更新してください（例: 日付や連番でOK）。 -->
 <link rel="stylesheet" href="css/style.css?v=20260711d">
+<link rel="stylesheet" href="css/home-dashboard-finished.css?v=20260711a">
 </head>
 <body>
 <div id="splash-screen" class="splash-screen" aria-hidden="true">
   <img class="splash-photo" src="assets/icon/splash-logo.jpg" alt="">
 </div>
 <script>
-/* 起動スプラッシュの3秒維持→フェードアウトは、Firebase等の読み込み失敗で
-   js/main.js（type=moduleのimportチェーン）が止まっても必ず動くよう、
-   モジュールに依存しないインラインscriptとして独立させている */
 setTimeout(function(){
   var splash = document.getElementById("splash-screen");
   if(!splash) return;
