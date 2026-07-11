@@ -126,14 +126,14 @@ body{
 }
 .weather-card .weather-top{
   display:grid;
-  grid-template-columns:minmax(52px,auto) minmax(0,1fr) minmax(0,1fr) 52px;
+  grid-template-columns:minmax(52px,auto) minmax(0,1fr) minmax(0,1fr) 70px;
   align-items:stretch;
   min-width:0;
 }
 .weather-card .weather-col{min-width:0;padding:0 8px;}
 .weather-card .weather-datetime{padding-left:0;border-right:1px solid #dce8f4;}
-.weather-card .weather-info{border-right:1px solid #dce8f4;}
-.weather-card .weather-precip-alert{border-right:1px solid #dce8f4;}
+.weather-card .weather-info{border-right:1px solid #dce8f4;padding-right:6px;}
+.weather-card .weather-precip-alert{border-right:1px solid #dce8f4;padding-left:6px;}
 .weather-card .weather-pet{padding-right:0;padding-left:8px;display:flex;align-items:stretch;}
 .weather-card .weather-date,
 .weather-card .weather-city,
@@ -476,8 +476,10 @@ body{
 @media (max-width:390px){
   .shell{padding-left:11px;padding-right:11px;}
   #app>.weather-card{padding-left:11px;padding-right:11px;}
-  .weather-card .weather-top{grid-template-columns:minmax(44px,auto) minmax(0,1fr) minmax(0,1fr) 44px;}
+  .weather-card .weather-top{grid-template-columns:minmax(44px,auto) minmax(0,1fr) minmax(0,1fr) 62px;}
   .weather-card .weather-col{padding-left:6px;padding-right:6px;}
+  .weather-card .weather-info{padding-right:4px;}
+  .weather-card .weather-precip-alert{padding-left:4px;}
   .weather-card .weather-datetime{padding-left:0;}
   .weather-card .weather-pet{padding-right:0;padding-left:6px;}
   .weather-card .weather-time{font-size:16px;}
@@ -494,7 +496,7 @@ body{
   .statusbar .sb-lab b{font-size:14px;}
   .statusbar .sb-coin{font-size:12px;}
   .statusbar .sb-coin b{font-size:18px;}
-  .weather-card .weather-top{grid-template-columns:minmax(38px,auto) minmax(0,1fr) minmax(0,1fr) 38px;}
+  .weather-card .weather-top{grid-template-columns:minmax(38px,auto) minmax(0,1fr) minmax(0,1fr) 56px;}
   .weather-card .weather-precip-now-value{font-size:14px;}
   .weather-card .weather-precip-now{font-size:9.5px;}
 }

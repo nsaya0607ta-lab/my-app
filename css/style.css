@@ -654,7 +654,7 @@ h1.title.title--badge{margin:2px 0 0;}
   width:100%;height:64px;border:none;border-radius:16px;background:transparent;
   cursor:pointer;transition:transform .1s;}
 .weather-pet-btn:active{transform:scale(.94);}
-.weather-pet-svgwrap{display:block;width:42px;height:53px;}
+.weather-pet-svgwrap{display:block;width:38px;height:48px;}
 .weather-pet-svgwrap svg{width:100%;height:100%;overflow:visible;}
 .weather-pet-btn.pet-dim .weather-pet-svgwrap{filter:grayscale(.55) brightness(.62) saturate(.55);opacity:.75;}
 
