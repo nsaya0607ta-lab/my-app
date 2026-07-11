@@ -1,6 +1,6 @@
 import './db.js';
 import { loadCoins, loadTapSound, loadUiTheme, migrateOldData } from './core.js';
-import { go, render, renderSettings } from './render.js';
+import { go, openQuickMenuSheet, openStudyMenuSheet, render, renderSettings } from './render.js';
 import { playTapSound } from './audio.js';
 import { S, state } from './state.js';
 import { checkNewsQuizPopup } from './newsQuiz.js';
@@ -19,8 +19,14 @@ document.addEventListener("click", (e)=>{
 // ヘッダー右上のランキング／プロフィールへの丸型ショートカット（#app外の静的要素なので一度だけ紐付ける）
 document.querySelectorAll(".top-nav [data-go]").forEach(b => b.addEventListener("click", () => go(b.dataset.go)));
 
-// 画面下部の固定ナビゲーション（#app外の静的要素なので一度だけ紐付ける）
-document.querySelectorAll(".bnav-btn").forEach(b => b.addEventListener("click", () => go(b.dataset.nav)));
+// 画面下部の固定ナビゲーション（#app外の静的要素なので一度だけ紐付ける）。
+// 「各種機能」「学習」の2タブは画面遷移ではなくボトムシートを開く
+document.querySelectorAll(".bnav-btn").forEach(b => b.addEventListener("click", () => {
+  const nav = b.dataset.nav;
+  if(nav === "quick-menu") return openQuickMenuSheet();
+  if(nav === "study-menu") return openStudyMenuSheet();
+  go(nav);
+}));
 
 migrateOldData();
 S.coins = loadCoins();
