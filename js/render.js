@@ -1059,6 +1059,23 @@ let clockTimer = null;
 let weatherRefreshTimer = null;
 const WEATHER_REFRESH_MS = 20 * 60 * 1000; // 20分ごとに天気を自動で再フェッチする
 
+const temperatureColors = [
+  { min: 35, color: "#D32F2F" },
+  { min: 30, color: "#F4511E" },
+  { min: 25, color: "#FB8C00" },
+  { min: 20, color: "#FDD835" },
+  { min: 15, color: "#66BB6A" },
+  { min: 10, color: "#26A69A" },
+  { min: 5,  color: "#42A5F5" },
+  { min: 0,  color: "#5C6BC0" },
+  { min: -Infinity, color: "#3949AB" }
+];
+
+function getTemperatureColor(temp){
+  const found = temperatureColors.find(t => temp >= t.min);
+  return found ? found.color : temperatureColors[temperatureColors.length - 1].color;
+}
+
 // カードは左（比率2.4）＝「日付＋デジタル時計｜天気（地名・アイコン・気温）」
 // ＋その下の降水確率の推移を示す滑らかな曲線グラフ、
 // 右（比率1）＝デジタル盆栽の簡易表示（タップで詳細モーダル）の2エリア構成。
@@ -1313,7 +1330,7 @@ async function refreshWeatherCard(force){
     if(cityEl) cityEl.textContent = "天気を取得できませんでした";
     if(asofEl) asofEl.textContent = "";
     if(iconEl) iconEl.textContent = "🌡️";
-    if(tempEl) tempEl.textContent = "";
+    if(tempEl){ tempEl.textContent = ""; tempEl.style.color = ""; }
     if(precipNowValueEl) precipNowValueEl.textContent = "-";
     if(precipCommentTrackEl) precipCommentTrackEl.textContent = "";
     if(retryBtnEl) retryBtnEl.hidden = true;
@@ -1333,7 +1350,10 @@ async function refreshWeatherCard(force){
     }
   }
   if(iconEl) iconEl.textContent = w.icon;
-  if(tempEl) tempEl.textContent = `${w.temp}℃`;
+  if(tempEl){
+    tempEl.textContent = `${w.temp}℃`;
+    tempEl.style.color = getTemperatureColor(w.temp);
+  }
   const precipMm = typeof w.precip === "number" ? w.precip : 0;
   if(precipNowValueEl) precipNowValueEl.textContent = precipMmLabel(precipMm);
   if(precipCommentTrackEl) precipCommentTrackEl.textContent = precipCommentText(precipMm);
