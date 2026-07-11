@@ -15,9 +15,18 @@
 }
 /* touch-action:manipulationで、ダブルタップによるブラウザ標準の
    拡大ズームとタップ時の300ms遅延を全要素で無効化する（ピンチズーム
-   自体は残るため、アクセシビリティ上の拡大手段は奪わない） */
-*{box-sizing:border-box;-webkit-tap-highlight-color:transparent;touch-action:manipulation;}
+   自体は残るため、アクセシビリティ上の拡大手段は奪わない）。
+   -webkit-touch-callout/user-selectをnoneにするのは、パレットFAB等の
+   アイコンボタンを長押しした際にiOS Safari標準のテキスト選択吹き出し
+   （コピー／調べる／翻訳…）が独自の長押しメニュー（js/buttonColors.js）と
+   二重に出てしまうのを防ぐため。入力欄やテキスト本文は下の
+   input/textarea/[contenteditable]のルールで選択可能に戻す */
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent;touch-action:manipulation;
+  -webkit-touch-callout:none;-webkit-user-select:none;user-select:none;}
 html,body{margin:0;padding:0;}
+input, textarea, [contenteditable]{
+  -webkit-touch-callout:default;-webkit-user-select:text;user-select:text;
+}
 /* iOS Safariはフォーカスした input/select/textarea の文字サイズが
    16px未満だと自動でズームインしてしまう。予定追加フォームなど、
    font-sizeを16px未満に指定している箇所が各所にあるため、!important付きの
