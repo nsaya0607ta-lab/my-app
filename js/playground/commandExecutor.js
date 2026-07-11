@@ -1,79 +1,80 @@
 /* =========================================================================
-   CommandExecutor — CommandParserが解釈した { cmd, args, redirect } を
-   VirtualFileSystemへ適用し、ターミナルに描画する行データを返す。
-   戻り値は { lines, isError } か、clear専用の { clear:true } のいずれか。
-   lines は「1行 = トークン配列」の形（[{text, cls}]の配列）で、
-   ls のディレクトリ／ファイルの色分けなどに使う。
+   CommandExecutor — CommandParserが解釈したパイプライン（ステージの配列）を
+   コマンドレジストリ（commands/index.js）経由で順に実行し、パイプ
+   （前段の標準出力を次段の標準入力へ）とリダイレクト（> / >>）を再現する。
+   alias展開もここで行う（実行直前に、各ステージの先頭語をaliasマップで
+   置き換える。無限ループ防止のため同一名は1回のみ展開する）。
+
+   戻り値: { lines, err, overlay, clear, isError }
+     lines … 最終ステージの標準出力（ターミナル描画用トークン行の配列）
+     err   … 全ステージ分の標準エラー出力
+     overlay … nano/lessなど、通常のターミナル行ではなく専用画面を開く場合
+     clear   … clearコマンド実行時のみ true
    ========================================================================= */
+import { COMMAND_REGISTRY } from './commands/index.js';
+import { errLine, fsError } from './commands/_util.js';
 
-const LINE = (text, cls) => [{ text, cls }];
-
-const HELP_LINES = [
-  LINE("対応コマンド一覧："),
-  LINE("  pwd            現在のディレクトリを表示"),
-  LINE("  ls             現在のディレクトリの中身を表示"),
-  LINE("  cd <dir>       ディレクトリを移動"),
-  LINE("  mkdir <name>   ディレクトリを作成"),
-  LINE("  touch <name>   空のファイルを作成"),
-  LINE("  cat <file>     ファイルの中身を表示"),
-  LINE("  echo <text>    文字列を表示（> file で書き込み）"),
-  LINE("  clear          画面をクリア"),
-  LINE("  help           このヘルプを表示"),
-];
-
-function execLs(vfs, args){
-  const res = vfs.list(args[0]);
-  if(res.error) return { lines:[LINE(res.error, "pg-err")], isError:true };
-  if(!res.entries.length) return { lines:[], isError:false };
-  const tokens = res.entries.map(e => ({ text: e.name, cls: e.type === "dir" ? "pg-dir" : "pg-file" }));
-  return { lines:[tokens], isError:false };
+function expandAliases(pipeline, aliases){
+  return pipeline.map(stage => {
+    let cmd = stage.cmd;
+    let extra = [];
+    const seen = new Set();
+    while(aliases.has(cmd) && !seen.has(cmd)){
+      seen.add(cmd);
+      const parts = aliases.get(cmd).trim().split(/\s+/).filter(Boolean);
+      if(!parts.length) break;
+      cmd = parts[0];
+      extra = parts.slice(1).concat(extra);
+    }
+    return { ...stage, cmd, args: extra.concat(stage.args) };
+  });
 }
 
-function execCd(vfs, args){
-  const res = vfs.changeDir(args[0]);
-  if(res.error) return { lines:[LINE(res.error, "pg-err")], isError:true };
-  return { lines:[], isError:false };
+// 実際のコマンド出力と同様、各行は改行で終端される（末尾行も含む）ものとして
+// パイプ・リダイレクトへ渡す（例: `... | wc -l` が正しい行数を数えられるように）。
+function linesToText(lines){
+  if(!lines.length) return "";
+  return lines.map(tokens => tokens.map(t => t.text).join("")).join("\n") + "\n";
 }
 
-function execMkdir(vfs, args){
-  const res = vfs.makeDir(args[0]);
-  if(res.error) return { lines:[LINE(res.error, "pg-err")], isError:true };
-  return { lines:[], isError:false };
-}
+export function executeCommand(env, pipeline){
+  const { vfs, state } = env;
+  const expanded = expandAliases(pipeline, state.aliases);
 
-function execTouch(vfs, args){
-  const res = vfs.touch(args[0]);
-  if(res.error) return { lines:[LINE(res.error, "pg-err")], isError:true };
-  return { lines:[], isError:false };
-}
+  let stdin = null;
+  let lastLines = [];
+  let overlay = null;
+  let cleared = false;
+  const err = [];
 
-function execCat(vfs, args){
-  const res = vfs.readFile(args[0]);
-  if(res.error) return { lines:[LINE(res.error, "pg-err")], isError:true };
-  if(!res.content) return { lines:[], isError:false };
-  const body = res.content.endsWith("\n") ? res.content.slice(0,-1) : res.content;
-  return { lines: body.split("\n").map(l => LINE(l)), isError:false };
-}
-
-function execEcho(vfs, args, redirect){
-  const text = args.join(" ");
-  if(!redirect) return { lines:[LINE(text)], isError:false };
-  const res = vfs.writeFile(redirect, text + "\n");
-  if(res.error) return { lines:[LINE(res.error, "pg-err")], isError:true };
-  return { lines:[], isError:false };
-}
-
-export function executeCommand(vfs, parsed){
-  switch(parsed.cmd){
-    case "pwd": return { lines:[LINE(vfs.pwd())], isError:false };
-    case "ls": return execLs(vfs, parsed.args);
-    case "cd": return execCd(vfs, parsed.args);
-    case "mkdir": return execMkdir(vfs, parsed.args);
-    case "touch": return execTouch(vfs, parsed.args);
-    case "cat": return execCat(vfs, parsed.args);
-    case "echo": return execEcho(vfs, parsed.args, parsed.redirect);
-    case "clear": return { clear:true };
-    case "help": return { lines: HELP_LINES, isError:false };
-    default: return { lines:[LINE(`${parsed.cmd}: command not found`, "pg-err")], isError:true };
+  for(let i = 0; i < expanded.length; i++){
+    const stage = expanded[i];
+    const isLast = i === expanded.length - 1;
+    const handler = COMMAND_REGISTRY[stage.cmd];
+    if(!handler){
+      err.push(errLine(`${stage.cmd}: command not found`));
+      lastLines = [];
+      stdin = "";
+      continue;
+    }
+    const ctx = { vfs, state, history: env.history, args: stage.args, stdin };
+    const result = handler(ctx) || { lines:[], err:[] };
+    if(result.clear){ cleared = true; break; }
+    (result.err || []).forEach(l => err.push(l));
+    lastLines = result.lines || [];
+    if(result.overlay && isLast) overlay = result.overlay;
+    stdin = linesToText(lastLines);
   }
+
+  if(cleared) return { clear:true };
+
+  let displayLines = lastLines;
+  const lastStage = expanded[expanded.length - 1];
+  if(!overlay && lastStage && lastStage.redirect){
+    const res = vfs.writeFile(lastStage.redirect, linesToText(lastLines), { append: lastStage.append });
+    if(res.error) err.push(fsError("bash", null, res.error));
+    displayLines = [];
+  }
+
+  return { lines: displayLines, err, overlay, isError: err.length > 0, pipeline: expanded };
 }
