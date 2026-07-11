@@ -174,7 +174,7 @@ export function renderIntroQuizScreen() {
 function renderModeSelect(myGen) {
   renderCard(`
     <div class="iq-headline">🎧 遊び方を選んでね</div>
-    <div class="iq-msg">イントロを聴いて、曲名を当てよう。日本語・英語表記・ローマ字、どれで答えてもOK！</div>
+    <div class="iq-msg">イントロを聴いて、曲名を当てよう。日本語表記はもちろん、英語表記やローマ字読みでも正解になるよ！</div>
     <div class="iq-mode-grid">
       <button type="button" class="iq-mode-btn" id="iq-mode-random">
         <span class="iq-mode-emoji" aria-hidden="true">🎲</span>
@@ -288,7 +288,7 @@ function renderQuizState(myGen, sessionId, videoId, startParams) {
     <div class="iq-headline">🎧 イントロを聴いて曲名を当てよう</div>
     <div class="iq-player-hidden"><div id="iq-yt-hidden"></div></div>
     <button type="button" class="cta iq-playbtn" id="iq-playbtn" disabled>読み込み中…</button>
-    <div class="iq-hint">何度でも一時停止して聞き直せます。曲名（読み方・英語表記でもOK）を入力してください。</div>
+    <div class="iq-hint">何度でも一時停止して聞き直せます。曲名を入力してください（ひらがな・英語表記・ローマ字読みでもOK）。</div>
     <div id="iq-answer-area"></div>
     <button type="button" class="ghost iq-giveup-btn" id="iq-giveup">諦めて答えを見る</button>`);
 
@@ -448,7 +448,7 @@ function renderQuizState(myGen, sessionId, videoId, startParams) {
       return;
     }
     if (data.status === "suggest") { renderSuggestConfirm(data.suggestedTitle, data.suggestedArtist); return; }
-    if (data.status === "incorrect") { renderAnswerForm(`不正解…もう一度入力してください（残り${data.attemptsLeft}回）`); return; }
+    if (data.status === "incorrect") { renderAnswerForm(`不正解…もう一度チャレンジしてみよう（残り${data.attemptsLeft}回）`); return; }
   }
 
   if (giveupBtn) giveupBtn.onclick = async () => {
