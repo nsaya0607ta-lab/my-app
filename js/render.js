@@ -19,25 +19,6 @@ import { applyCustomButtonColors, isLongPressSuppressed, wireButtonColorLongPres
 
 export const app = document.getElementById("app");
 
-// ホーム画面まわりで絵文字の代わりに使う線画アイコン集。下部ナビゲーション
-// （bnav-ico）と同じstroke=currentColorのSVGスタイルに統一することで、
-// 天気カード・予定/タスクカード・アカウントバーの装飾アイコンの見た目を
-// アプリ全体のテイストに揃える（絵文字のまま残す方が自然な天気本体の
-// アイコン＝weather.js側のWEATHER_CODESは対象外）
-const ICONS = {
-  pin: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 21s7-7.6 7-12.2A7 7 0 1 0 5 8.8C5 13.4 12 21 12 21Z"></path><circle cx="12" cy="8.6" r="2.4"></circle></svg>`,
-  calendar: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3.5" y="5" width="17" height="16" rx="2.4"></rect><path d="M8 3v4M16 3v4M3.5 10h17"></path></svg>`,
-  clock: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="8.4"></circle><path d="M12 7.6V12l3 2"></path></svg>`,
-  drop: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3.2s6.4 7 6.4 11.5a6.4 6.4 0 1 1-12.8 0C5.6 10.2 12 3.2 12 3.2Z"></path></svg>`,
-  check: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3.5" y="3.5" width="17" height="17" rx="4.5"></rect><path d="m7.8 12.3 2.7 2.7 5.7-6"></path></svg>`,
-  refresh: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 12a8 8 0 1 1-2.3-5.6"></path><path d="M20 4.2V9h-4.8"></path></svg>`,
-  user: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8.2" r="3.6"></circle><path d="M4.7 20c1.1-3.6 4-5.6 7.3-5.6s6.2 2 7.3 5.6"></path></svg>`,
-  logout: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5.5A1.5 1.5 0 0 1 4 19.5v-15A1.5 1.5 0 0 1 5.5 3H9"></path><path d="M15.5 16.5 20 12l-4.5-4.5"></path><path d="M20 12H9"></path></svg>`,
-  clip: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="4" width="14" height="17" rx="2.2"></rect><rect x="9" y="2.4" width="6" height="3.2" rx="1"></rect><path d="M8.4 11h7.2M8.4 14.4h7.2M8.4 17.6h4.4"></path></svg>`,
-  plus: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M12 5v14M5 12h14"></path></svg>`,
-};
-function icon(name, cls){ return `<span class="ico ${cls||""}" aria-hidden="true">${ICONS[name]}</span>`; }
-
 // 「総合ランク」バーのタップツールチップ：バーをタップすると次のレベルまでの
 // 残りBPを吹き出しで表示する。render()のたびに要素が作り直されるため、
 // 開閉状態はこのモジュール変数側で管理し、再タップ／他要素タップ／2.6秒経過の
@@ -1078,50 +1059,45 @@ let clockTimer = null;
 let weatherRefreshTimer = null;
 const WEATHER_REFRESH_MS = 20 * 60 * 1000; // 20分ごとに天気を自動で再フェッチする
 
-// カード上段＝4つの指標（日付＋デジタル時計／天気（地名・アイコン・気温）／
-// 現在の降水量／デジタル盆栽の簡易表示）を横並びの4カラムで表示し、
-// 下段＝降水確率の推移を示す滑らかな曲線グラフをカード全幅で表示する。
-// （以前は左側だけに時計・天気・降水量・グラフを縦積みし、右側にペットを
-// 置く2カラム構成だったため、グラフがカード全体ではなく左側の幅にしか
-// 収まらなかった。グラフをカードの直接の子要素に上げることでカード全幅に広げる）
+// カードは左（比率2.4）＝「日付＋デジタル時計｜天気（地名・アイコン・気温）」
+// ＋その下の降水確率の推移を示す滑らかな曲線グラフ、
+// 右（比率1）＝デジタル盆栽の簡易表示（タップで詳細モーダル）の2エリア構成。
 // Gemini相談への導線はホーム画面右下の常設フローティングボタン（geminiFabHTML）に集約した。
 function weatherCardHTML(){
   return `
     <div class="news-card weather-card" id="weather-card">
-      <div class="weather-card-heading">
-        ${icon("pin", "weather-heading-icon")}
-        <span id="weather-heading-city">天気</span>
-      </div>
-
-      <div class="weather-metrics">
-        <div class="weather-metric weather-datetime">
-          <div class="weather-metric-label weather-date-row">
-            ${icon("calendar", "weather-label-icon")}
-            <span class="weather-date" id="weather-clock-date"></span>
+      <div class="weather-body">
+        <div class="weather-left">
+          <div class="weather-left-top">
+            <div class="weather-datetime">
+              <div class="weather-date" id="weather-clock-date"></div>
+              <div class="weather-time">
+                <span id="weather-clock-time"></span><span class="weather-time-sec" id="weather-clock-sec"></span>
+              </div>
+            </div>
+            <div class="weather-info" id="weather-info">
+              <div class="weather-city-row">
+                <span class="weather-city" id="weather-city">取得中…</span>
+                <button type="button" class="weather-retry-btn" id="weather-retry-loc" title="現在地を再取得" aria-label="現在地を再取得" hidden>⟳</button>
+              </div>
+              <div class="weather-asof" id="weather-asof"></div>
+              <div class="weather-main">
+                <span class="weather-icon" id="weather-icon">🌡️</span>
+                <span class="weather-temp" id="weather-temp"></span>
+              </div>
+            </div>
+            <div class="weather-precip-alert" id="weather-precip-alert">
+              <div class="weather-precip-label">現在</div>
+              <div class="weather-precip-now" id="weather-precip-now"><span class="weather-precip-now-value" id="weather-precip-now-value"></span>mm/h</div>
+              <div class="weather-precip-comment" id="weather-precip-comment">
+                <span class="weather-precip-comment-track" id="weather-precip-comment-track"></span>
+              </div>
+            </div>
           </div>
-          <div class="weather-value-row">
-            <span class="weather-time" id="weather-clock-time"></span><span class="weather-time-sec" id="weather-clock-sec"></span>
-          </div>
+          <div class="weather-pop-chart" id="weather-pop-chart"></div>
         </div>
-
-        <div class="weather-metric weather-info" id="weather-info">
-          <div class="weather-metric-label weather-city-row">
-            ${icon("clock", "weather-label-icon")}
-            <span class="weather-city" id="weather-city">取得中…</span>
-            <button type="button" class="weather-retry-btn" id="weather-retry-loc" title="現在地を再取得" aria-label="現在地を再取得" hidden>⟳</button>
-          </div>
-          <div class="weather-asof" id="weather-asof"></div>
-          <div class="weather-value-row">
-            <span class="weather-icon" id="weather-icon">🌡️</span>
-            <span class="weather-temp" id="weather-temp"></span>
-            <span class="weather-value-unit" id="weather-temp-unit"></span>
-          </div>
-        </div>
-
-        <div class="weather-metric weather-pet">${petMiniWidgetHTML()}</div>
+        <div class="weather-pet">${petMiniWidgetHTML()}</div>
       </div>
-
-      <div class="weather-pop-chart" id="weather-pop-chart"></div>
     </div>`;
 }
 
@@ -1174,7 +1150,7 @@ function catmullRomSmoothPath(points){
   return d;
 }
 
-const POP_CHART_W = 620, POP_CHART_H = 96, POP_CHART_PAD = 6;
+const POP_CHART_W = 220, POP_CHART_H = 40, POP_CHART_PAD = 4;
 const POP_CHART_Y_TICKS = [100, 80, 60, 40, 20, 0]; // 縦軸目盛り・％（左軸、上→下）
 // 縦軸目盛り・降水量mm（右軸、上→下）。天気アプリでよく使われる区切り
 // （弱い雨〜激しい雨の目安）に合わせているため値の間隔は不均等だが、
@@ -1182,6 +1158,49 @@ const POP_CHART_Y_TICKS = [100, 80, 60, 40, 20, 0]; // 縦軸目盛り・％（�
 const PRECIP_Y_TICKS = [15, 10, 5, 3, 1, 0];
 const PRECIP_DANGER_MM = 20; // これを超えたら棒を警告色にする
 const POP_CHART_LABEL_EVERY = 3; // 横軸の数字は3時間ごとにのみ表示する
+
+// 直近1時間の降水量(mm)に応じた注意喚起の文言（気象庁の階級区分・
+// 体感の目安を参考にした簡易的な区分）
+function precipCautionText(mm){
+  if(mm < 1) return "傘がなくてもなんとか歩けるレベル";
+  if(mm < 2) return "シトシト降る雨。少し歩くなら傘が欲しくなります";
+  if(mm < 3) return "ほとんどの人が「傘が必要」と感じる強さです";
+  if(mm < 10) return "本降りの雨。傘は絶対に必要です";
+  if(mm < 20) return "気象庁の「やや強い雨」。地面一面に水たまりができます";
+  if(mm < 30) return "気象庁の「強い雨」。傘をさしていても濡れます";
+  return "気象庁の「激しい雨」。道路が川のようになるおそれがあります";
+}
+
+// 直近1時間の降水量が0mmの場合は雨が降っていない旨を表示する
+function precipCommentText(mm){
+  if(!(mm > 0)) return "雨は降っていません";
+  return precipCautionText(mm);
+}
+
+function precipMmLabel(mm){
+  const v = Math.max(0, mm);
+  return Number.isInteger(v) ? String(v) : v.toFixed(1);
+}
+
+// コメント欄のテキストが表示枠に収まりきらない場合のみ、右→左へ流れる
+// マーキー表示にする。収まる場合は静止表示のままにして、無用なアニメーションを避ける
+function updatePrecipAlertMarquee(){
+  const container = document.getElementById("weather-precip-comment");
+  const track = document.getElementById("weather-precip-comment-track");
+  if(!container || !track) return;
+  track.classList.remove("weather-precip-marquee");
+  track.style.removeProperty("--weather-precip-marquee-distance");
+  track.style.animationDuration = "";
+  const containerW = container.clientWidth;
+  const trackW = track.scrollWidth;
+  if(trackW > containerW){
+    const distance = containerW + trackW;
+    const duration = Math.max(6, distance / 45); // 45px/秒の速さでスクロールする
+    track.style.setProperty("--weather-precip-marquee-distance", `${distance}px`);
+    track.style.animationDuration = `${duration}s`;
+    track.classList.add("weather-precip-marquee");
+  }
+}
 
 // 目盛りのインデックス位置（0=一番上、tickCount-1=一番下）をSVGのY座標に変換する。
 // 端（インデックス0・最後）ではストローク幅の半分がSVG表示範囲の外に出て
@@ -1247,7 +1266,7 @@ function renderWeatherPopChart(w){
   // 共有し、ラベルの数字だけ左右で意味（％ / mm）を変える
   const gridlines = POP_CHART_Y_TICKS.map((_, i) => {
     const y = axisTickY(i, POP_CHART_Y_TICKS.length);
-    return `<line x1="0" y1="${y.toFixed(1)}" x2="${POP_CHART_W}" y2="${y.toFixed(1)}" stroke="var(--line)" stroke-width="1" stroke-dasharray="4 4" opacity=".75"></line>`;
+    return `<line x1="0" y1="${y.toFixed(1)}" x2="${POP_CHART_W}" y2="${y.toFixed(1)}" stroke="var(--line)" stroke-width="1" opacity=".5"></line>`;
   }).join("");
   const yTicks = POP_CHART_Y_TICKS.map((v, i) => `<span style="top:${(axisTickY(i, POP_CHART_Y_TICKS.length)/POP_CHART_H*100).toFixed(2)}%">${v}</span>`).join("");
   const mmTicks = PRECIP_Y_TICKS.map((v, i) => `<span style="top:${(axisTickY(i, PRECIP_Y_TICKS.length)/POP_CHART_H*100).toFixed(2)}%">${v}</span>`).join("");
@@ -1292,27 +1311,27 @@ async function refreshWeatherCard(force){
     if(weatherRefreshTimer){ clearInterval(weatherRefreshTimer); weatherRefreshTimer = null; }
     return;
   }
-  const headingCityEl = document.getElementById("weather-heading-city");
   const cityEl = document.getElementById("weather-city");
   const asofEl = document.getElementById("weather-asof");
   const iconEl = document.getElementById("weather-icon");
   const tempEl = document.getElementById("weather-temp");
-  const tempUnitEl = document.getElementById("weather-temp-unit");
+  const precipNowValueEl = document.getElementById("weather-precip-now-value");
+  const precipCommentTrackEl = document.getElementById("weather-precip-comment-track");
   const retryBtnEl = document.getElementById("weather-retry-loc");
   const w = await getWeather(force);
   if(!document.getElementById("weather-card")) return; // フェッチ中に画面遷移した場合は描画しない
   if(!w){
-    if(headingCityEl) headingCityEl.textContent = "天気";
     if(cityEl) cityEl.textContent = "天気を取得できませんでした";
     if(asofEl) asofEl.textContent = "";
     if(iconEl) iconEl.textContent = "🌡️";
     if(tempEl) tempEl.textContent = "";
-    if(tempUnitEl) tempUnitEl.textContent = "";
+    if(precipNowValueEl) precipNowValueEl.textContent = "-";
+    if(precipCommentTrackEl) precipCommentTrackEl.textContent = "";
     if(retryBtnEl) retryBtnEl.hidden = true;
+    updatePrecipAlertMarquee();
     renderWeatherPopChart(null);
     return;
   }
-  if(headingCityEl) headingCityEl.textContent = `${w.city}の天気`;
   if(cityEl) cityEl.textContent = w.isDefaultLocation ? `${w.city}（現在地未取得）` : w.city;
   if(retryBtnEl) retryBtnEl.hidden = !w.isDefaultLocation;
   // この天気がいつ時点の観測かをアイコンのすぐ上に明記する
@@ -1325,8 +1344,11 @@ async function refreshWeatherCard(force){
     }
   }
   if(iconEl) iconEl.textContent = w.icon;
-  if(tempEl) tempEl.textContent = w.temp;
-  if(tempUnitEl) tempUnitEl.textContent = "℃";
+  if(tempEl) tempEl.textContent = `${w.temp}℃`;
+  const precipMm = typeof w.precip === "number" ? w.precip : 0;
+  if(precipNowValueEl) precipNowValueEl.textContent = precipMmLabel(precipMm);
+  if(precipCommentTrackEl) precipCommentTrackEl.textContent = precipCommentText(precipMm);
+  updatePrecipAlertMarquee();
   renderWeatherPopChart(w);
 }
 
@@ -4460,7 +4482,7 @@ function gcalGroupEventsByUser(events, fallback){
 // カードの順に描画する。fallbackは作成者を判別できない予定に使うラベル
 // （通常はこのカレンダーの登録者名、または取得元カレンダー名）
 function gcalDayEventsListHTML(events, fallback){
-  if(!events.length) return `<div class="gcal-day-empty">${icon("clip", "gcal-day-empty-ico")}<span>この日の予定は<br>まだありません。</span></div>`;
+  if(!events.length) return `<div class="gcal-day-empty">この日の予定はまだありません。</div>`;
   const groups = gcalGroupEventsByUser(events, fallback);
   return groups.map(g => {
     const editable = g.editKind === "own" || g.editKind === "other";
@@ -4674,24 +4696,23 @@ function renderGcalDailyWidget(){
     <div class="gcal-box gcal-day-box">
       <div class="gcal-day-head">
         <button type="button" class="gcal-nav-btn" id="gcal-day-prev" aria-label="前の日">‹</button>
-        <div class="gcal-day-title">${icon("calendar", "gcal-day-title-ico")}<span>${esc(dateLabel)}</span></div>
+        <div class="gcal-day-title">${esc(dateLabel)}</div>
         <div class="gcal-day-head-right">
-          <button type="button" class="gcal-nav-btn gcal-reload-btn${gcalDayReloading?" spinning":""}" id="gcal-day-reload" aria-label="変更を反映(最新の予定を再取得)" title="変更を反映"${gcalDayReloading?" disabled":""}>${icon("refresh")}</button>
+          <button type="button" class="gcal-reload-btn${gcalDayReloading?" spinning":""}" id="gcal-day-reload" aria-label="変更を反映（最新の予定を再取得）" title="変更を反映"${gcalDayReloading?" disabled":""}>🔄</button>
           <button type="button" class="gcal-nav-btn" id="gcal-day-next" aria-label="次の日">›</button>
         </div>
       </div>
       <div class="gcal-day-body">
         <div class="gcal-day-timeline">
-          <div class="gcal-day-col-title">${icon("calendar", "gcal-col-ico")}<span>今日の予定</span></div>
           <div class="gcal-day-events">${eventsHTML}</div>
           <button type="button" class="gcal-day-add-btn" id="gcal-day-add">＋ 予定を追加</button>
         </div>
         <div class="gcal-day-todo">
-          <div class="gcal-day-col-title gcal-day-todo-title">${icon("check", "gcal-col-ico")}<span>本日のタスク</span></div>
+          <div class="gcal-day-todo-title">本日のタスク</div>
           <div class="gcal-day-todo-list">${gcalTodoListHTML(todos)}</div>
           <div class="gcal-day-todo-form">
-            <input type="text" id="gcal-todo-input" class="gcal-todo-input" placeholder="タスクを入力" maxlength="60">
-            <button type="button" id="gcal-todo-add" class="gcal-todo-add-btn" aria-label="タスクを追加">${icon("plus")}</button>
+            <input type="text" id="gcal-todo-input" class="gcal-todo-input" placeholder="タスク" maxlength="60">
+            <button type="button" id="gcal-todo-add" class="gcal-todo-add-btn" aria-label="タスクを追加">＋</button>
           </div>
         </div>
       </div>
@@ -5598,14 +5619,8 @@ export function renderSelect(){
     ${weatherCardHTML()}
     ${gcalDayWidgetHTML()}
     ${state.currentUser
-      ? `<div class="dash-acct-bar">
-           <span class="dash-acct-info"><span class="dash-acct-avatar">${icon("user")}</span><span class="dash-acct-email">${esc(state.currentUser.email||"ログイン中")}</span></span>
-           <button type="button" class="dash-acct-action" data-logout>${icon("logout", "dash-acct-action-ico")}ログアウト</button>
-         </div>`
-      : (state.guestMode ? `<div class="dash-acct-bar">
-           <span class="dash-acct-info dash-acct-info--guest">ゲストモード（この端末のみ・同期なし）</span>
-           <button type="button" class="dash-acct-action" data-login>ログイン / 新規登録</button>
-         </div>` : "")}
+      ? `<div class="acct-bar">👤 ${esc(state.currentUser.email||"ログイン中")}<button class="link2" data-logout>ログアウト</button></div>`
+      : (state.guestMode ? `<div class="acct-bar">ゲストモード（この端末のみ・同期なし）<button class="link2" data-login>ログイン / 新規登録</button></div>` : "")}
     ${paletteFabHTML()}
     ${geminiFabHTML()}
   `;
