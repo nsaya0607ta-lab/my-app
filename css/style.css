@@ -573,50 +573,51 @@ h1.title.title--badge{margin:2px 0 0;}
    左右2エリアをカード全体の上下中央に据えた余白バランスにする。
    margin-bottomは.news-cardの既定値(16px)をそのまま使い、他のホーム
    カード同士の縦間隔（後述の.gcal-card・.dash-acct-bar）と揃える */
-.weather-card{padding-top:18px;padding-bottom:14px;}
+.weather-card{padding-top:16px;padding-bottom:14px;}
 
-/* カードを左（時計／天気＋降水確率の曲線グラフ）：右（Gemini相談ボタン）＝
-   2.4：1の比率で左右分割する */
-.weather-body{display:flex;align-items:stretch;gap:10px;}
-.weather-left{flex:2.4;min-width:0;display:flex;flex-direction:column;gap:12px;}
-.weather-left-top{display:flex;align-items:center;gap:6px;}
+/* カード見出し：ピンアイコン＋「◯◯の天気」 */
+.weather-card-heading{display:flex;align-items:center;gap:6px;margin-bottom:14px;font-size:14px;font-weight:800;color:var(--text);}
+.weather-heading-icon{font-size:13px;color:var(--accent);}
 
-/* 左上段・左：日付＋秒まで動くデジタル時計。日付は一回り大きく・太く強調する */
-.weather-datetime{flex:none;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;}
-.weather-date{font-size:12.5px;font-weight:800;color:var(--text);letter-spacing:.01em;white-space:nowrap;}
-.weather-time{display:flex;align-items:baseline;font-size:17px;font-weight:800;color:var(--text);
-  font-variant-numeric:tabular-nums;white-space:nowrap;line-height:1;}
+/* 上段：4つの指標（日付＋デジタル時計／天気／現在の降水量／デジタル盆栽）を
+   横並びの4カラムで表示する。以前はこの並びと降水確率グラフを同じ左カラムに
+   縦積みし、右にペットを置く2カラム構成だったため、グラフがカード全体では
+   なく左側の幅にしか収まらなかった。グラフをこの行から独立させ、カードの
+   直接の子要素にすることでカード全幅に広げている（下の.weather-pop-chart参照） */
+.weather-metrics{display:flex;align-items:stretch;gap:8px;}
+.weather-metric{flex:1;min-width:0;display:flex;flex-direction:column;justify-content:space-between;gap:4px;}
+.weather-metric-label{display:flex;align-items:flex-start;gap:3px;font-size:10.5px;font-weight:700;color:var(--muted);line-height:1.25;}
+.weather-metric-label>span:last-child{min-width:0;}
+.weather-value-row{display:flex;align-items:baseline;gap:3px;min-width:0;}
+
+/* 日付＋秒まで動くデジタル時計 */
+.weather-datetime{flex:0.85;border-right:1px solid var(--line);padding-right:8px;}
+.weather-date{font-size:11px;font-weight:800;color:var(--text);letter-spacing:.01em;white-space:nowrap;}
+.weather-time{font-size:22px;font-weight:800;color:var(--text);font-variant-numeric:tabular-nums;white-space:nowrap;line-height:1;}
 .weather-time-sec{font-size:11px;font-weight:700;color:var(--muted);opacity:.8;font-variant-numeric:tabular-nums;}
+.weather-metric-placeholder{flex:none;height:0;}
 
-/* 左上段・中：地名・基準時間・天気アイコン・気温。時計との間、および
-   天気情報グループの右側にも縦の区切り線を入れ、「日付・時刻」と「天気」の
-   情報グループを視覚的に分ける */
-.weather-info{flex:none;min-width:0;max-width:88px;border-left:1px solid var(--line);border-right:1px solid var(--line);padding-left:7px;padding-right:7px;
-  display:flex;flex-direction:column;gap:3px;}
-.weather-city-row{display:flex;align-items:center;gap:2px;min-width:0;}
-.weather-city{font-size:10.5px;font-weight:700;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0;}
+/* 地名・基準時間・天気アイコン・気温 */
+.weather-info{min-width:0;border-right:1px solid var(--line);padding-right:8px;}
+.weather-city-row{min-width:0;}
+.weather-city{font-size:11px;font-weight:700;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0;}
 .weather-retry-btn{flex:none;width:13px;height:13px;padding:0;border:none;background:none;
   color:var(--accent);font-size:11px;line-height:1;cursor:pointer;}
 .weather-retry-btn:disabled{cursor:default;opacity:.6;}
 .weather-retry-btn.weather-retry-spin{animation:weather-retry-spin .8s linear infinite;}
 @keyframes weather-retry-spin{from{transform:rotate(0deg);}to{transform:rotate(360deg);}}
-.weather-asof{font-size:8.5px;font-weight:600;color:var(--muted);opacity:.85;letter-spacing:.02em;white-space:nowrap;}
-.weather-main{display:flex;align-items:center;gap:4px;}
-.weather-icon{font-size:20px;line-height:1;}
-.weather-temp{font-size:16px;font-weight:800;color:var(--text);font-variant-numeric:tabular-nums;}
+.weather-asof{font-size:9.5px;font-weight:600;color:var(--muted);opacity:.85;letter-spacing:.02em;white-space:nowrap;}
+.weather-icon{font-size:18px;line-height:1;}
+.weather-temp{font-size:18px;font-weight:800;color:var(--text);font-variant-numeric:tabular-nums;}
 
-/* 左上段・右：「現在」ラベル＋直近1時間の降水量(mm/h)＋その量に応じた
-   注意喚起コメントの3行構成。weather-info・weather-datetimeがともに
-   flex:noneで幅が伸びないため、weather-left-top内の残り幅をここが埋める。
-   上2行（ラベル・◯mm/h）は常に静止表示、数値だけ視認性のため少し大きく・
-   青字にする。下段のコメントだけ文言が幅に収まらない場合に横スクロール
-   （右→左に流れるマーキー）で全文を見せる */
-.weather-precip-alert{flex:1;min-width:0;display:flex;flex-direction:column;justify-content:center;gap:1px;}
-.weather-precip-label{font-size:9px;font-weight:700;color:var(--muted);line-height:1.1;}
-.weather-precip-now{font-size:10.5px;font-weight:700;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;line-height:1.2;}
-.weather-precip-now-value{font-size:13px;font-weight:800;color:var(--accent);}
-.weather-precip-comment{overflow:hidden;}
-.weather-precip-comment-track{display:inline-block;white-space:nowrap;font-size:10.5px;font-weight:700;color:var(--text);}
+/* 現在の降水量(mm/h)＋その量に応じた注意喚起コメントのピル表示。
+   ピルの文言が幅に収まらない場合だけ横スクロール（右→左に流れるマーキー）
+   で全文を見せる */
+.weather-precip-alert{flex:1.2;min-width:0;}
+.weather-precip-now-value{font-size:19px;font-weight:800;color:var(--text);font-variant-numeric:tabular-nums;}
+.weather-value-unit{font-size:10.5px;font-weight:700;color:var(--muted);}
+.weather-condition-pill{align-self:flex-start;max-width:100%;overflow:hidden;padding:3px 10px;border-radius:99px;background:var(--bg2);}
+.weather-precip-comment-track{display:inline-block;white-space:nowrap;font-size:11px;font-weight:700;color:var(--text);}
 .weather-precip-comment-track.weather-precip-marquee{position:relative;left:100%;
   animation-name:weather-precip-marquee;animation-timing-function:linear;animation-iteration-count:infinite;}
 @keyframes weather-precip-marquee{
@@ -624,13 +625,13 @@ h1.title.title--badge{margin:2px 0 0;}
   to{ transform:translateX(calc(-1 * var(--weather-precip-marquee-distance, 100%))); }
 }
 
-/* 左下段：降水確率の推移を示す滑らかな曲線グラフ＋降水量(mm)のヒストグラムの
+/* 降水確率の推移を示す滑らかな曲線グラフ＋降水量(mm)のヒストグラムの
    重ね合わせ。1時間ごとの点をドットとして打ち、縦軸は左（0〜100%の目盛り）・
    右（0,3,6,10,15,25mmの目盛り。値の間隔は不均等だが目盛り線自体は左軸と
    共有し等間隔に配置する）の2軸、横軸（3時間ごとの時刻ラベル）を添える。
    単位（%・mm・時）はそれぞれ縦軸の一番上（左右）／横軸の一番右端に
-   1回だけ表示する */
-.weather-pop-chart{flex:1;min-width:0;display:flex;flex-direction:column;justify-content:flex-end;}
+   1回だけ表示する。カードの直接の子要素なのでカード全幅まで広がる */
+.weather-pop-chart{margin-top:16px;}
 .weather-pop-chart-units{display:flex;justify-content:space-between;margin-bottom:6px;}
 .pop-axis-yunit{width:13px;font-size:7px;font-weight:700;color:var(--muted);line-height:1;}
 .pop-axis-yunit-right{width:13px;font-size:7px;font-weight:700;color:var(--muted);line-height:1;text-align:right;}
@@ -652,7 +653,8 @@ h1.title.title--badge{margin:2px 0 0;}
 /* 右：天気カードに常設する「デジタル盆栽」の簡易表示。タップすると
    openPetModal()で進化段階・進捗の詳細モーダルを開く。
    ボタン単体をカード右側エリアの上下左右中央に配置する */
-.weather-pet{flex:1;min-width:0;border-left:1px solid var(--line);padding-left:10px;display:flex;flex-direction:column;justify-content:center;align-items:center;}
+.weather-pet{flex:none;width:64px;min-width:0;border-radius:16px;background:linear-gradient(160deg,rgba(2,132,199,.1),var(--bg2));
+  display:flex;flex-direction:column;justify-content:center;align-items:center;}
 .weather-pet-btn{display:flex;align-items:center;justify-content:center;
   width:100%;height:64px;border:none;border-radius:16px;background:transparent;
   cursor:pointer;transition:transform .1s;}
@@ -660,6 +662,14 @@ h1.title.title--badge{margin:2px 0 0;}
 .weather-pet-svgwrap{display:block;width:42px;height:53px;}
 .weather-pet-svgwrap svg{width:100%;height:100%;overflow:visible;}
 .weather-pet-btn.pet-dim .weather-pet-svgwrap{filter:grayscale(.55) brightness(.62) saturate(.55);opacity:.75;}
+@media (max-width:360px){
+  .weather-metrics{gap:8px;}
+  .weather-datetime,.weather-info{padding-right:8px;}
+  .weather-time{font-size:21px;}
+  .weather-temp,.weather-precip-now-value{font-size:17px;}
+  .weather-pet{width:52px;}
+  .weather-pet-svgwrap{width:34px;height:43px;}
+}
 
 /* ホーム画面右下に常設するフローティングボタン。Gemini相談画面への入口
    （元は天気カード内にあったweather-gemini-btnをここへ移設） */
