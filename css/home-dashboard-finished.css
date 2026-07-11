@@ -249,7 +249,7 @@ body{
 }
 .gcal-card .gcal-day-head{
   display:grid;
-  grid-template-columns:28px minmax(0,1fr) auto;
+  grid-template-columns:61px minmax(0,1fr) 61px;
   align-items:center;
   gap:6px;
   margin-bottom:7px;
