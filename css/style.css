@@ -569,13 +569,15 @@ h1.title.title--badge{margin:2px 0 0;}
 .news-arrow{width:24px;height:24px;flex:none;border-radius:50%;border:1px solid var(--line);background:rgba(255,255,255,.7);color:var(--muted);font-size:15px;line-height:1;cursor:pointer;display:flex;align-items:center;justify-content:center;padding:0;}
 .news-arrow:active{transform:scale(.9);}
 /* ヘッダーバッジ無しのミニマル構成。上下のパディングをやや広げ、
-   左右2エリアをカード全体の上下中央に据えた余白バランスにする */
-.weather-card{margin-bottom:14px;padding-top:16px;padding-bottom:8px;}
+   左右2エリアをカード全体の上下中央に据えた余白バランスにする。
+   margin-bottomは.news-cardの既定値(16px)をそのまま使い、他のホーム
+   カード同士の縦間隔（後述の.gcal-card・.dash-acct-bar）と揃える */
+.weather-card{padding-top:18px;padding-bottom:14px;}
 
 /* カードを左（時計／天気＋降水確率の曲線グラフ）：右（Gemini相談ボタン）＝
    2.4：1の比率で左右分割する */
-.weather-body{display:flex;align-items:stretch;gap:8px;}
-.weather-left{flex:2.4;min-width:0;display:flex;flex-direction:column;gap:8px;}
+.weather-body{display:flex;align-items:stretch;gap:10px;}
+.weather-left{flex:2.4;min-width:0;display:flex;flex-direction:column;gap:12px;}
 .weather-left-top{display:flex;align-items:center;gap:6px;}
 
 /* 左上段・左：日付＋秒まで動くデジタル時計。日付は一回り大きく・太く強調する */
@@ -727,8 +729,8 @@ h1.title.title--badge{margin:2px 0 0;}
    カレンダーカード。タイトル文言は持たず、上段のカレンダー切り替え
    スイッチャー（＋共有ユーザー設定ボタン）と下段の月表示グリッドのみで
    構成する。日付セルをタップすると予定の確認・追加・削除ポップアップを開く */
-.gcal-card{margin-top:14px;min-width:0;}
-.gcal-box{min-width:0;width:100%;background:var(--surface);border:1px solid var(--line);border-radius:16px;padding:14px;
+.gcal-card{margin-top:16px;min-width:0;}
+.gcal-box{min-width:0;width:100%;background:var(--surface);border:1px solid var(--line);border-radius:18px;padding:14px;
   box-shadow:0 4px 14px rgba(15,23,42,.04);}
 
 /* Google連携バー：未連携時は連携ボタン、連携中はバッジ＋連携解除ボタン */
@@ -820,11 +822,11 @@ h1.title.title--badge{margin:2px 0 0;}
 /* ホーム画面の1日表示ウィジェット：連携バー・スイッチャーは持たず、
    左に時間つきの予定タイムライン、右にその日のToDoリストを並べる
    2カラムのコンパクトレイアウト */
-.gcal-day-box{padding:12px 14px;}
-.gcal-day-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;}
+.gcal-day-box{padding:14px 16px;}
+.gcal-day-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;}
 .gcal-day-head-right{flex:none;display:flex;align-items:center;gap:6px;}
 .gcal-day-title{font-size:13px;font-weight:800;color:var(--text);}
-.gcal-day-body{display:flex;gap:10px;align-items:flex-start;}
+.gcal-day-body{display:flex;gap:14px;align-items:flex-start;}
 
 .gcal-day-timeline{flex:3;min-width:0;display:flex;flex-direction:column;}
 /* 予定が5件未満なら高さは内容に合わせて自然に収まる。5件以上のときは
@@ -895,6 +897,27 @@ h1.title.title--badge{margin:2px 0 0;}
 .gcal-todo-add-btn{flex:none;width:26px;border-radius:8px;border:1px solid var(--accent);
   background:var(--accent);color:#ffffff;font-weight:700;font-size:13px;cursor:pointer;}
 .gcal-todo-add-btn:active{filter:brightness(.95);}
+
+/* ホーム画面（renderSelect）専用のアカウント表示バー：他のカードと同じ
+   横幅・角丸・影の「カード」だが、中身は1行だけのごく細いエリアにして
+   お天気／予定・タスクカードとの高さの違いでヒエラルキーを出す。
+   margin-bottomは右下Gemini FAB・左下パレットFAB（ともに56px＋下端16px
+   オフセット）の上端の少し上まで確実にクリアする値にし、スクロール
+   最下部でもFABがこのカードに重ならないようにする */
+.dash-acct-bar{
+  display:flex;align-items:center;justify-content:space-between;gap:10px;
+  margin:16px 0 76px;padding:12px 16px;
+  background:var(--surface);border:1px solid var(--line);border-radius:16px;
+  box-shadow:0 4px 14px rgba(15,23,42,.04);
+}
+.dash-acct-info{flex:1;min-width:0;display:flex;align-items:center;gap:10px;font-size:12.5px;font-weight:600;color:var(--text);}
+.dash-acct-info--guest{color:var(--muted);font-size:11.5px;line-height:1.5;font-weight:600;}
+.dash-acct-avatar{flex:none;width:30px;height:30px;border-radius:50%;background:var(--bg2);color:var(--muted);
+  display:flex;align-items:center;justify-content:center;font-size:15px;}
+.dash-acct-email{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0;}
+.dash-acct-action{flex:none;display:flex;align-items:center;gap:4px;background:none;border:none;
+  color:var(--accent);font-size:12.5px;font-weight:700;cursor:pointer;padding:6px 4px;white-space:nowrap;}
+.dash-acct-action-ico{font-size:13px;line-height:1;}
 
 /* 日付タップで開く予定ポップアップ・共有ユーザー設定ポップアップ・
    カレンダー追加ポップアップ（いずれも.modal-ov/.modalを土台に使う） */
