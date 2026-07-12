@@ -1943,6 +1943,12 @@ body[data-theme="dark"] .menu-btn:active{box-shadow:0 4px 10px rgba(0,0,0,.3), i
   background:linear-gradient(160deg,var(--surface) 0%,var(--bg2) 100%);
   box-shadow:0 6px 18px rgba(15,23,42,.05);
 }
+/* アプリ内キーボードが開いている間は、黒いターミナル＋キーボードを
+   主役にするため、上部の紹介カードなど付帯要素を畳んで縦の余白を譲る */
+.pg-kb-active .pg-intro-card,.pg-kb-active .pg-sync-note,
+.pg-kb-active .scn-play-head,.pg-kb-active .scn-title-row,.pg-kb-active .scn-progress-bar-row{
+  display:none;
+}
 .pg-intro-ico{
   flex:none;width:44px;height:44px;border-radius:13px;display:flex;align-items:center;justify-content:center;
   font-family:ui-monospace,"SFMono-Regular",Menlo,Consolas,monospace;font-weight:800;font-size:15px;color:#fff;
@@ -1954,8 +1960,22 @@ body[data-theme="dark"] .menu-btn:active{box-shadow:0 4px 10px rgba(0,0,0,.3), i
 .pg-terminal-card{
   border-radius:16px;overflow:hidden;margin-bottom:16px;
   background:#0b1220;border:1px solid #1e293b;box-shadow:0 10px 26px rgba(15,23,42,.22);
+  display:flex;flex-direction:column;
 }
-.pg-terminal-head{display:flex;align-items:center;gap:8px;padding:10px 12px;background:#111a2e;border-bottom:1px solid #1e293b;}
+/* キーボードが開いている間は、ターミナルとキーボードを同じ黒い枠の中に
+   収める「一体型」レイアウトにする。カード自体の高さを画面に収まるよう
+   計算し、内側のターミナル本体とキーボードでその高さを分け合う（flex）。
+   キーボード側は絶対にスクロール・移動しない構造（後述）のままなので、
+   このカードの高さを超えてはみ出すことはない */
+.pg-terminal-card--kbopen{
+  height:calc(100dvh - 74px - var(--bnav-h) - env(safe-area-inset-bottom) - 6px);
+}
+/* シナリオモードはミッション文（.scn-request-bubble）を畳まずに残すため、
+   その分だけ上部の余白見積もりを増やす */
+#scn-root .pg-terminal-card--kbopen{
+  height:calc(100dvh - 140px - var(--bnav-h) - env(safe-area-inset-bottom) - 6px);
+}
+.pg-terminal-head{display:flex;align-items:center;gap:8px;padding:10px 12px;background:#111a2e;border-bottom:1px solid #1e293b;flex:none;}
 .pg-terminal-dots{display:flex;gap:5px;flex:none;}
 .pg-terminal-dots span{width:9px;height:9px;border-radius:50%;background:#334155;display:block;}
 .pg-terminal-title{flex:1;font-size:11.5px;font-weight:700;color:#94a3b8;font-family:ui-monospace,"SFMono-Regular",Menlo,Consolas,monospace;}
@@ -1966,6 +1986,13 @@ body[data-theme="dark"] .menu-btn:active{box-shadow:0 4px 10px rgba(0,0,0,.3), i
   font-family:ui-monospace,"SFMono-Regular",Menlo,Consolas,monospace;font-size:12.5px;line-height:1.85;
   -webkit-user-select:text;user-select:text;
   touch-action:pan-y;overscroll-behavior-y:contain;
+}
+/* キーボードが開いている間、ターミナル本体はカードの残り高さのうち
+   従来より少し大きめの取り分を確保しつつ、キーボード側にはそれより
+   大きい割合を渡して「縦長」でもしっかり押せる高さにする。両方flexで
+   分け合う実寸なので、コンテナからあふれてスクロールが発生することはない */
+.pg-terminal-card--kbopen .pg-terminal-body{
+  height:auto;flex:1 1 0;min-height:100px;
 }
 .pg-term-line{white-space:pre-wrap;word-break:break-word;color:#e2e8f0;}
 .pg-term-prompt{color:#4ade80;font-weight:700;flex:none;white-space:nowrap;}
@@ -2000,44 +2027,30 @@ body[data-theme="dark"] .menu-btn:active{box-shadow:0 4px 10px rgba(0,0,0,.3), i
    黒いターミナルをタップした時だけ表示される、Linuxコマンド入力専用の
    キーボード。システムキーボードには一切接続されない。
 
-   開いている間は画面下部に固定表示（position:fixed）し、常に全体が見える
-   ようにする（下部固定ナビゲーションの上に重ねる）。position:fixedの要素
-   はドキュメントのフローに一切影響しないため、開閉のたびにページの高さが
-   変わってスクロール位置がずれる、という問題も構造的に起きない。
+   黒いターミナルの枠（.pg-terminal-card）の中に、ターミナル出力の
+   すぐ下へ組み込む「一体型」レイアウト。ターミナルと同じ黒背景・
+   同じ角丸の中に収まるため、別パネルが浮いているようには見えない。
+   カード全体の高さは.pg-terminal-card--kbopenで画面に収まるよう計算し、
+   ターミナル本体とキーボードはその高さをflexで分け合う（＝あふれない）。
    キー本体の押下判定（タップ／長押し／スクロールの区別）はJS側
    （appKeyboard.js）で行い、ここでは見た目だけを定義する。 ===== */
 .pg-app-keyboard{
   display:none;
-  background:#0f1830;
-  border-top:1px solid #263756;
-  padding:6px 7px calc(6px + env(safe-area-inset-bottom));
+  background:#0b1220;
   flex-direction:column;
-  /* キーボード上のスワイプ／長押しでは、内部スクロールも含めて一切
-     動かさない。iPhone標準キーボードと同じ「タップした時だけ反応し、
-     指を動かしてもキーボード自体は絶対に動かない」操作感にするため。
-     スクロールしたい時は、この領域の外（ターミナルなど）で行う。 */
+  padding:6px 7px calc(6px + env(safe-area-inset-bottom));
+  /* キーボード上のスワイプ／長押しでは、内部スクロールはもちろん
+     ページのスクロールも含めて一切動かさない。iPhone標準キーボードと
+     同じ「タップした時だけ反応し、指を動かしてもキーボード自体は
+     絶対に動かない」操作感にするため。スクロールしたい時は、この
+     領域の外（ターミナル出力など）で行う。 */
   touch-action:none;overscroll-behavior:none;
 }
 .pg-app-keyboard--open{
   display:flex;
-  position:fixed;left:0;right:0;
-  bottom:calc(var(--bnav-h) + env(safe-area-inset-bottom));
-  z-index:450;
-  max-width:480px;margin:0 auto;box-sizing:border-box;
-  /* 画面の高さに応じて自動調整（レスポンシブ）。ターミナルが常に画面の
-     約60%見えるよう、キーボードは常に画面の約40%以内に収める。
-     iPhone SE〜Pro Maxの実機の高さで、ターミナルと重ならないよう検証
-     済みの値（下の.pg-terminal-body--kbopenと対で調整すること） */
-  height:230px;
+  flex:1.25 1 0;min-height:0;
+  border-top:1px solid #1e293b;
   overflow:hidden; /* 内部スクロールそのものを発生させない＝絶対に動かない */
-  border-radius:20px 20px 0 0;
-  box-shadow:0 -14px 34px rgba(2,6,23,.5),0 -1px 0 rgba(255,255,255,.03) inset;
-}
-@media (max-height:800px){
-  .pg-app-keyboard--open{height:clamp(200px,35dvh,240px);}
-}
-@media (min-height:900px){
-  .pg-app-keyboard--open{height:clamp(230px,34dvh,275px);}
 }
 
 /* よく使うコマンド（キーボード最上部・横スクロール）。タップすると入力欄へ
@@ -2061,10 +2074,10 @@ body[data-theme="dark"] .menu-btn:active{box-shadow:0 4px 10px rgba(0,0,0,.3), i
 /* キー本体の行群。残りの高さいっぱいに均等分配され（flex）、内容が
    コンテナからはみ出すことがない＝スクロールが発生しようがない構造 */
 .pg-kb-body{
-  flex:1 1 auto;min-height:0;display:flex;flex-direction:column;gap:3px;
+  flex:1 1 auto;min-height:0;display:flex;flex-direction:column;gap:5px;
   touch-action:none;box-sizing:border-box;
 }
-.pg-kb-row{display:flex;gap:4px;flex:1 1 0;min-height:0;box-sizing:border-box;}
+.pg-kb-row{display:flex;gap:5px;flex:1 1 0;min-height:0;box-sizing:border-box;}
 .pg-kb-row--inset8{padding:0 4%;}
 .pg-kb-row--inset16{padding:0 8%;}
 
@@ -2072,8 +2085,8 @@ body[data-theme="dark"] .menu-btn:active{box-shadow:0 4px 10px rgba(0,0,0,.3), i
   position:relative;flex:1 1 0;min-width:0;min-height:0;box-sizing:border-box;
   background:linear-gradient(180deg,#1c2c4c,#16233f);
   border:1px solid #2c3f63;color:#eef2f9;
-  font-family:ui-monospace,"SFMono-Regular",Menlo,Consolas,monospace;font-weight:700;font-size:14px;
-  padding:2px;border-radius:10px;cursor:pointer;text-align:center;
+  font-family:ui-monospace,"SFMono-Regular",Menlo,Consolas,monospace;font-weight:700;font-size:15px;
+  padding:3px;border-radius:11px;cursor:pointer;text-align:center;
   -webkit-tap-highlight-color:transparent;-webkit-user-select:none;user-select:none;
   touch-action:none;
   box-shadow:0 2px 0 rgba(0,0,0,.28),0 1px 0 rgba(255,255,255,.05) inset;
@@ -2121,13 +2134,6 @@ body[data-theme="dark"] .menu-btn:active{box-shadow:0 4px 10px rgba(0,0,0,.3), i
   78%{opacity:1;}
   100%{opacity:0;transform:translateX(-50%) translateY(-8px) scale(1);}
 }
-
-/* キーボードが開いている間は、下の出力エリアを少し縮めて画面下部固定
-   キーボードとの取り合いを確保する。キーボード自体を画面の約40%に抑えた
-   ぶん、ターミナルは常に画面の約60%見える広さを保つ */
-.pg-terminal-body--kbopen{height:min(32vh,280px);}
-@media (max-height:800px){ .pg-terminal-body--kbopen{height:min(22vh,150px);} }
-@media (min-height:900px){ .pg-terminal-body--kbopen{height:min(38vh,340px);} }
 
 /* Esc/Tab/Ctrl/Shift/←↑↓→/⌫を1行に収めた影響で、幅の狭い端末では
    文字ラベルが詰まりやすいため、その行だけ少し縮める */

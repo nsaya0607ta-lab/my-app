@@ -289,8 +289,13 @@ export function createAppKeyboard({ idPrefix, getRoot, actions, withScrollPreser
     const root = getRoot();
     const kb = root ? root.querySelector(`#${kbId}`) : null;
     if(kb) kb.classList.toggle("pg-app-keyboard--open", keyboardOpen);
-    const body = root ? root.querySelector(`#${idPrefix}-terminal-body`) : null;
-    if(body) body.classList.toggle("pg-terminal-body--kbopen", keyboardOpen);
+    const card = root ? root.querySelector(`#${idPrefix}-terminal-card`) : null;
+    if(card) card.classList.toggle("pg-terminal-card--kbopen", keyboardOpen);
+    // キーボードは黒いターミナルの枠内に組み込まれているため、開いている間は
+    // ヘッダーの紹介カードなど上部の付帯要素を畳み、ターミナル＋キーボードに
+    // 縦の余白を回す（画面上部にこのクラスを立てるだけで、CSS側で制御する）
+    const pageRoot = root ? root.querySelector(`#${idPrefix}-root`) : null;
+    if(pageRoot) pageRoot.classList.toggle("pg-kb-active", keyboardOpen);
   }
 
   function reset(){
