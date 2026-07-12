@@ -7,6 +7,16 @@
    用意している。1つの `session`（{vfs, shellState, history, records}）を
    引数に取り、コマンド実行後に onExecuted コールバックを呼ぶことで、
    シナリオ側のゴール判定・進捗保存をフックできるようにしている。
+
+   入力方式・スクロール位置の保護は、ミッションモード（screen.js）で
+   実機検証のうえ確立した方式にそろえている：
+     ・実DOMの<input>/<form>は一切使わない。liveBuffer/liveCursorという
+       ただの文字列＋カーソル位置をターミナル上に描画するだけの疑似入力
+       にすることで、システムキーボードの開閉に伴うページの自動スクロール
+       （focus()由来）をそもそも起こさせない。
+     ・コマンド実行やキー入力などタップで発生する操作はすべてonPress()
+       経由（pointerdownでpreventDefault + withScrollPreservedで実行）に
+       統一し、ページのスクロール位置を1px単位で保持する。
    ========================================================================= */
 import { esc } from '../../core.js';
 import { app } from '../../render.js';
@@ -16,6 +26,69 @@ import { getCompletions } from '../completion.js';
 import { COMMAND_NAMES } from '../commands/index.js';
 import { buildTopLines } from '../commands/top.js';
 import { parseCrontabText } from '../cronUtil.js';
+
+// アプリ内キーボード方式の入力状態。シナリオは同時に1つしかプレイしない
+// ため、screen.js（ミッションモード）と同じくモジュール変数で持てば足りる。
+// スマホのシステムキーボードは一切使わず、この文字列バッファとカーソル
+// 位置だけをターミナル上に描画して「本物のターミナルへ直接入力している
+// ように」見せる（実DOM<input>は存在しない）。
+let liveBuffer = "";
+let liveCursor = 0;
+let ctrlArmed = false;
+let keyboardOpen = false;
+
+function resetLiveInput(){
+  liveBuffer = "";
+  liveCursor = 0;
+  ctrlArmed = false;
+  keyboardOpen = false;
+}
+
+// コマンド実行・ターミナルクリアなどの「その場での差し替え」操作が、DOM
+// 更新（要素の追加・置き換えによる高さの変化）につられてページを勝手に
+// スクロールさせないようにするためのガード（screen.jsと同じ方式）。
+// 同期的な復元1回に加え、ブラウザが描画フレーム側で非同期にスクロール
+// 位置を調整し直すケースに備えて次フレーム以降でも重ねて復元する。
+export function withScrollPreserved(fn){
+  const scroller = document.scrollingElement || document.documentElement;
+  const x = scroller.scrollLeft, y = scroller.scrollTop;
+  const restore = () => {
+    scroller.scrollLeft = x;
+    scroller.scrollTop = y;
+  };
+  fn();
+  restore();
+  requestAnimationFrame(restore);
+  requestAnimationFrame(() => requestAnimationFrame(restore));
+}
+
+// このシナリオ画面内のボタン（送信▶ボタン・アプリ内キーボードの全キー）は
+// すべてこのonPress()経由で扱う。clickではなくpointerdownでハンドリング
+// し、preventDefaultすることでボタン自身がフォーカスを持つ前に処理を
+// 終えられる。ハンドラ本体を必ずwithScrollPreserved()で包むことで、
+// 個別のボタンで保護を書き忘れる抜け漏れを共通入口側で構造的に防ぐ。
+function onPress(btn, handler){
+  btn.addEventListener("pointerdown", (e) => {
+    e.preventDefault();
+    withScrollPreserved(handler);
+  });
+}
+
+// このシナリオ画面の中でだけ効く、最後の保険。原因を問わず画面内のどこを
+// タップしてもページのスクロール位置が勝手に動かないようにする。
+export function installScrollGuard(root){
+  if(!root) return;
+  const scroller = () => document.scrollingElement || document.documentElement;
+  let guardY = null;
+  const capture = () => { guardY = scroller().scrollTop; };
+  const restore = () => { if(guardY !== null) scroller().scrollTop = guardY; };
+  root.addEventListener("pointerdown", capture, true);
+  root.addEventListener("click", () => {
+    restore();
+    requestAnimationFrame(restore);
+    requestAnimationFrame(() => requestAnimationFrame(restore));
+  }, true);
+}
 
 function tokensToHTML(tokens){
   return tokens.map(t => `<span${t.cls ? ` class="${t.cls}"` : ""}>${esc(t.text)}</span>`).join("");
@@ -31,21 +104,56 @@ function recordToHTML(record){
 function termBodyEl(){ return app.querySelector("#scn-terminal-body"); }
 function isNearBottom(el){ return el.scrollHeight - el.scrollTop - el.clientHeight < 40; }
 
+// バッファ＋カーソル位置だけをもとに、あたかも本物の<input>があるかの
+// ような見た目（緑の点滅カーソルがテキストの途中にも置ける）を描画する。
+// 実際のフォーカス可能な入力要素は存在しないため、システムキーボードは
+// 絶対に開かない。実行は右側の送信ボタン、またはアプリ内キーボードの
+// Enterで行う。
 function liveLineHTML(session){
-  return `<form class="pg-term-line pg-term-live" id="scn-term-input-form" autocomplete="off">
+  const before = esc(liveBuffer.slice(0, liveCursor));
+  const after = esc(liveBuffer.slice(liveCursor));
+  return `<div class="pg-term-line pg-term-live" id="scn-term-live">
     <span class="pg-term-prompt">student@linux:${esc(session.vfs.promptPath())}$</span>
-    <input type="text" id="scn-term-input" class="pg-term-input" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" inputmode="text">
-    <span class="pg-term-cursor" id="scn-term-cursor"></span>
-    <button type="submit" class="pg-term-send-btn" aria-label="送信">➤</button>
-  </form>`;
+    <span class="pg-term-input-display" id="scn-term-input-display">${before}<span class="pg-term-cursor" id="scn-term-cursor"></span>${after}</span>
+    <button type="button" class="pg-term-send-btn" id="scn-term-send-btn" aria-label="実行">▶</button>
+  </div>`;
+}
+
+// 送信ボタンはonPressで常にフォーカスを持たせない。それに加えて、送信
+// ボタン自身（＝ライブ行のDOMノード）を初回作成後は二度と作り直さない
+// （updateLiveLine()は中身のテキストだけを書き換える）。
+function wireLiveLineButton(session, hooks){
+  const btn = app.querySelector("#scn-term-send-btn");
+  if(btn) onPress(btn, () => submitLiveCommand(session, hooks));
 }
 
 export function renderTerminalBody(session, hooks){
   const el = termBodyEl();
   if(!el) return;
+  resetLiveInput();
   el.innerHTML = session.records.map(recordToHTML).join("") + liveLineHTML(session);
   el.scrollTop = el.scrollHeight;
-  wireCommandInput(session, hooks);
+  wireLiveLineButton(session, hooks);
+}
+
+// 入力バッファが変わるたび（文字入力・矢印移動・履歴呼び出し等）に、
+// ライブ行の表示テキスト（#scn-term-input-display の中身）だけを書き換
+// える。プロンプトや送信ボタンを含む行そのものは作り直さないため、ページ
+// のスクロール位置にもフォーカスにも一切影響しない。
+function updateLiveLine(session, hooks){
+  const el = termBodyEl();
+  if(!el) return;
+  const wasNearBottom = isNearBottom(el);
+  const display = el.querySelector("#scn-term-input-display");
+  if(display){
+    const before = esc(liveBuffer.slice(0, liveCursor));
+    const after = esc(liveBuffer.slice(liveCursor));
+    display.innerHTML = `${before}<span class="pg-term-cursor" id="scn-term-cursor"></span>${after}`;
+  } else {
+    el.insertAdjacentHTML("beforeend", liveLineHTML(session));
+    wireLiveLineButton(session, hooks);
+  }
+  if(wasNearBottom) el.scrollTop = el.scrollHeight;
 }
 
 function appendRecords(session, records){
@@ -68,13 +176,8 @@ export function pushSystemMessage(session, text, cls){
 }
 
 export function clearTerminal(session, hooks){
-  const hadFocus = app.querySelector("#scn-term-input") === document.activeElement;
   session.records = [];
   renderTerminalBody(session, hooks);
-  if(hadFocus){
-    const input = app.querySelector("#scn-term-input");
-    if(input) input.focus();
-  }
 }
 
 function runCommand(session, hooks, raw){
@@ -287,53 +390,72 @@ function openCrontabModal(session, hooks, payload){
 }
 
 // ------------------------------------------------------------------------
-// CommandInput（Enter送信・↑↓履歴・Tab補完・Ctrl+C）
+// CommandInput（バッファ操作。実行は▶ボタンまたはアプリ内キーボードの
+// Enterで行う。↑↓は履歴、Tabは補完、Ctrlは次の文字と組み合わせる修飾キー）
 // ------------------------------------------------------------------------
-function historyStep(session, input, dir){
-  const v = dir < 0 ? session.history.prev(input.value) : session.history.next();
+function insertText(session, hooks, str){
+  liveBuffer = liveBuffer.slice(0, liveCursor) + str + liveBuffer.slice(liveCursor);
+  liveCursor += str.length;
+  updateLiveLine(session, hooks);
+}
+
+function backspaceChar(session, hooks){
+  if(liveCursor <= 0) return;
+  liveBuffer = liveBuffer.slice(0, liveCursor - 1) + liveBuffer.slice(liveCursor);
+  liveCursor -= 1;
+  updateLiveLine(session, hooks);
+}
+
+function moveCursor(session, hooks, delta){
+  liveCursor = Math.max(0, Math.min(liveBuffer.length, liveCursor + delta));
+  updateLiveLine(session, hooks);
+}
+
+function historyStep(session, hooks, dir){
+  const v = dir < 0 ? session.history.prev(liveBuffer) : session.history.next();
   if(v !== null){
-    input.value = v;
-    requestAnimationFrame(() => input.setSelectionRange(input.value.length, input.value.length));
+    liveBuffer = v;
+    liveCursor = liveBuffer.length;
+    updateLiveLine(session, hooks);
   }
 }
 
-function tabComplete(session, input){
-  const pos = input.selectionStart ?? input.value.length;
+function tabComplete(session, hooks){
   const commandNames = [...COMMAND_NAMES, ...session.shellState.aliases.keys()];
-  const result = getCompletions(input.value, pos, { vfs: session.vfs, commandNames });
+  const result = getCompletions(liveBuffer, liveCursor, { vfs: session.vfs, commandNames });
   if(result.completion){
-    const before = input.value.slice(0, result.wordStart);
-    const after = input.value.slice(pos);
-    input.value = before + result.completion + after;
-    const newPos = before.length + result.completion.length;
-    requestAnimationFrame(() => input.setSelectionRange(newPos, newPos));
+    const before = liveBuffer.slice(0, result.wordStart);
+    const after = liveBuffer.slice(liveCursor);
+    liveBuffer = before + result.completion + after;
+    liveCursor = before.length + result.completion.length;
+    updateLiveLine(session, hooks);
   } else if(result.matches.length > 1){
     appendRecords(session, [{ kind: "line", tokens: [{ text: result.matches.map(m => m.label).join("  ") }] }]);
   }
 }
 
-function ctrlC(session, input){
-  appendRecords(session, [{ kind: "cmd", promptPath: session.vfs.promptPath(), text: `${input.value}^C` }]);
-  input.value = "";
+function ctrlC(session, hooks){
+  appendRecords(session, [{ kind: "cmd", promptPath: session.vfs.promptPath(), text: `${liveBuffer}^C` }]);
+  liveBuffer = "";
+  liveCursor = 0;
+  updateLiveLine(session, hooks);
 }
 
-function wireCommandInput(session, hooks){
-  const form = app.querySelector("#scn-term-input-form");
-  const input = app.querySelector("#scn-term-input");
-  if(!form || !input) return;
-  form.onsubmit = (e) => {
-    e.preventDefault();
-    const raw = input.value;
-    if(!raw.trim()) return;
-    input.value = "";
-    runCommand(session, hooks, raw);
-  };
-  input.onkeydown = (e) => {
-    if(e.key === "Tab"){ e.preventDefault(); tabComplete(session, input); }
-    else if(e.key === "ArrowUp"){ e.preventDefault(); historyStep(session, input, -1); }
-    else if(e.key === "ArrowDown"){ e.preventDefault(); historyStep(session, input, 1); }
-    else if(e.key === "c" && e.ctrlKey){ e.preventDefault(); ctrlC(session, input); }
-  };
+function submitLiveCommand(session, hooks){
+  const raw = liveBuffer;
+  if(!raw.trim()) return;
+  liveBuffer = "";
+  liveCursor = 0;
+  updateLiveLine(session, hooks);
+  runCommand(session, hooks, raw);
+}
+
+// 黒いターミナル部分をタップした時だけ、アプリ内キーボードを開く。
+// システムキーボードにつながるフォーカス移動は一切行わない。
+function setKeyboardOpen(open){
+  keyboardOpen = open;
+  const kb = app.querySelector("#scn-app-keyboard");
+  if(kb) kb.classList.toggle("pg-app-keyboard--open", keyboardOpen);
 }
 
 export function wireTerminalTap(){
@@ -341,25 +463,75 @@ export function wireTerminalTap(){
   if(!el) return;
   el.addEventListener("click", (e) => {
     if(e.target.closest(".pg-term-send-btn")) return;
-    const input = app.querySelector("#scn-term-input");
-    if(input && document.activeElement !== input) input.focus();
+    if(!keyboardOpen) setKeyboardOpen(true);
   });
 }
 
-export function wireTermKeys(session){
-  const bind = (id, handler) => {
-    const btn = app.querySelector(id);
-    if(!btn) return;
-    btn.addEventListener("pointerdown", (e) => {
-      e.preventDefault();
-      const input = app.querySelector("#scn-term-input");
-      if(!input) return;
-      input.focus();
-      handler(input);
+// アプリ内キーボード — screen.js（ミッションモード）と同一構成。
+// システムキーボードを一切使わない専用キーボード。
+const KB_ROWS = [
+  ["1","2","3","4","5","6","7","8","9","0"],
+  ["q","w","e","r","t","y","u","i","o","p"],
+  ["a","s","d","f","g","h","j","k","l"],
+  ["z","x","c","v","b","n","m"],
+  ["-","_","/",".","*","|",">","<","&","$","~"],
+];
+
+export function keyboardHTML(){
+  const rows = KB_ROWS.map(row =>
+    `<div class="pg-kb-row">${row.map(k => `<button type="button" class="pg-kb-key" data-kb-char="${esc(k)}">${esc(k)}</button>`).join("")}</div>`
+  ).join("");
+  return `<div class="pg-app-keyboard" id="scn-app-keyboard">
+    <div class="pg-kb-row">
+      <button type="button" class="pg-kb-key pg-kb-key--wide" id="scn-kb-tab">Tab</button>
+      <button type="button" class="pg-kb-key" id="scn-kb-ctrl">Ctrl</button>
+      <button type="button" class="pg-kb-key" id="scn-kb-left">←</button>
+      <button type="button" class="pg-kb-key" id="scn-kb-up">↑</button>
+      <button type="button" class="pg-kb-key" id="scn-kb-down">↓</button>
+      <button type="button" class="pg-kb-key" id="scn-kb-right">→</button>
+      <button type="button" class="pg-kb-key pg-kb-key--wide" id="scn-kb-back">⌫</button>
+    </div>
+    ${rows}
+    <div class="pg-kb-row">
+      <button type="button" class="pg-kb-key pg-kb-key--space" id="scn-kb-space">Space</button>
+      <button type="button" class="pg-kb-key pg-kb-key--enter" id="scn-kb-enter">Enter</button>
+      <button type="button" class="pg-kb-key pg-kb-key--wide" id="scn-kb-close" aria-label="キーボードを閉じる">▼</button>
+    </div>
+  </div>`;
+}
+
+function updateCtrlKeyVisual(){
+  const btn = app.querySelector("#scn-kb-ctrl");
+  if(btn) btn.classList.toggle("pg-kb-key--active", ctrlArmed);
+}
+
+export function wireKeyboard(session, hooks){
+  const kb = app.querySelector("#scn-app-keyboard");
+  if(!kb) return;
+  kb.querySelectorAll("[data-kb-char]").forEach(btn => {
+    onPress(btn, () => {
+      const ch = btn.dataset.kbChar;
+      if(ctrlArmed){
+        ctrlArmed = false;
+        updateCtrlKeyVisual();
+        if(ch === "c"){ ctrlC(session, hooks); return; }
+        if(ch === "l"){ clearTerminal(session, hooks); return; }
+      }
+      insertText(session, hooks, ch);
     });
+  });
+  const bind = (id, handler) => {
+    const btn = kb.querySelector(id);
+    if(btn) onPress(btn, handler);
   };
-  bind("#scn-key-tab", (input) => tabComplete(session, input));
-  bind("#scn-key-up", (input) => historyStep(session, input, -1));
-  bind("#scn-key-down", (input) => historyStep(session, input, 1));
-  bind("#scn-key-ctrlc", (input) => ctrlC(session, input));
+  bind("#scn-kb-tab", () => tabComplete(session, hooks));
+  bind("#scn-kb-ctrl", () => { ctrlArmed = !ctrlArmed; updateCtrlKeyVisual(); });
+  bind("#scn-kb-left", () => moveCursor(session, hooks, -1));
+  bind("#scn-kb-right", () => moveCursor(session, hooks, 1));
+  bind("#scn-kb-up", () => historyStep(session, hooks, -1));
+  bind("#scn-kb-down", () => historyStep(session, hooks, 1));
+  bind("#scn-kb-back", () => backspaceChar(session, hooks));
+  bind("#scn-kb-space", () => insertText(session, hooks, " "));
+  bind("#scn-kb-enter", () => submitLiveCommand(session, hooks));
+  bind("#scn-kb-close", () => setKeyboardOpen(false));
 }
