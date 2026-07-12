@@ -13,6 +13,7 @@ import { S, state } from './state.js';
 import { markPetActivity, petHandleIdentityChange, petIsNeglected, petNextStage, petStageForLevel } from './pet.js';
 import { mpActiveBoardId, mpAddLink, mpAddNote, mpApplyCloud, mpBoardChain, mpBoardMeta, mpClearAll, mpCreateBoard, mpDeleteBoard, mpDeleteNote, mpGetState, mpGroupNotes, mpHandleIdentityChange, mpListBoards, mpRandomColor, mpRemoveLink, mpRenameBoard, mpSuggestKeywords, mpSwitchBoard, mpTotalBoardCount, mpUpdateNote } from './mindpalette.js';
 import { renderIntroQuizScreen } from './introQuiz.js';
+import * as VoiceprintManager from './voiceprint/VoiceprintManager.js';
 import { checkNewsQuizPopup } from './newsQuiz.js';
 import { pgOnCloudRestored, renderPlaygroundScreen } from './playground/screen.js';
 import { pgApplyCloud, pgHandleIdentityChange } from './playground/cloudSync.js';
@@ -6236,6 +6237,15 @@ function openBoardRenameModal(boardId, currentName, onSaved){
 // クラウド（Firestoreの users/{uid}.mindPalette）から届いたデータをこの端末へ
 // 反映する。db.jsのonSnapshotから呼ばれる。今マインド・パレット関連の画面を
 // 見ている場合のみ、その場で再描画して反映する
+// クラウド（Firestoreの users/{uid}.voiceprint）から届いた声紋登録者一覧を
+// この端末へ反映する。db.jsのonSnapshotから呼ばれる。イントロドン画面は
+// renderGeneration（自前の世代番号）で再描画を管理しているため、ここでは
+// キャッシュを更新するだけに留め、ゲーム中・録音中の画面を巻き添えで
+// 再描画しない（登録者一覧を開き直した際に反映されれば十分）
+export function applyCloudVoiceprint(data){
+  VoiceprintManager.applyCloud(data);
+}
+
 export function applyCloudMindPalette(data){
   if(!mpApplyCloud(data)) return;
   if(S.screen === "mind-palette") renderMindPalette();
