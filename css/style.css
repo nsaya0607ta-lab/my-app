@@ -2123,20 +2123,6 @@ body[data-theme="dark"] .menu-btn:active{box-shadow:0 4px 10px rgba(0,0,0,.3), i
 }
 .iq-vp-edit-avatar-wrap{display:flex;justify-content:center;margin-bottom:14px;}
 
-/* 参加者選択（「何人で遊ぶか」ではなく「誰が遊ぶか」） */
-.iq-vp-check-list{display:flex;flex-direction:column;gap:8px;margin-top:10px;max-height:48vh;overflow-y:auto;}
-.iq-vp-check-row{
-  display:flex;align-items:center;gap:12px;padding:10px 14px;border-radius:14px;
-  border:1px solid var(--home-line);background:#ffffff;cursor:pointer;
-}
-.iq-vp-checkbox{width:19px;height:19px;flex:none;accent-color:var(--home-blue);cursor:pointer;}
-.iq-vp-check-name{font-size:13.5px;font-weight:700;color:var(--home-text);}
-
-/* 話者判定：回答権獲得の演出 */
-.iq-vp-matched{display:flex;flex-direction:column;align-items:center;gap:6px;padding:18px 0;}
-.iq-vp-matched-name{font-size:19px;font-weight:800;color:var(--home-blue);}
-.iq-vp-matched-sub{font-size:14px;font-weight:700;color:var(--home-text);}
-
 /* =========================================================================
    🐧 Linux プレイグラウンド－専用フルスクリーン画面
    カード・角丸・シャドウ・配色は既存の.iq-card/.stat-tile系と統一し、
