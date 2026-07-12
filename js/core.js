@@ -403,14 +403,23 @@ export function applyCloud(certId){
   }catch(e){}
 }
 
-/* クラウドのアカウント単位データ（スキン）を反映。db.js の onSnapshot から applyCloudSkins(data) で呼ぶ */
+/* クラウドのアカウント単位データ（スキン）を反映。db.js の onSnapshot から applyCloudSkins(data) で呼ぶ。
+   このonSnapshotは自分自身の書き込み（例:Linuxプレイグラウンドでの保存）の
+   echoでも毎回発火し、currentSkin/ownedSkinsは値が変わっていなくても毎回
+   届く。ここで無条件にrender()（画面全体の再構築）を呼ぶと、他の画面を
+   操作中でもそのたびに画面が丸ごと作り直され、スクロール位置や入力中の
+   状態を巻き添えで失ってしまう。背景スキンの反映はbodyのクラスを直接
+   書き換えるだけで足り、画面全体の再構築が実際に必要な「スキン設定」
+   画面を見ている時だけrender()を呼ぶ */
 export function applyCloudSkins(data){
   if(!data) return;
   if(data.currentSkin) S.currentSkin = data.currentSkin;
   if(Array.isArray(data.ownedSkins) && data.ownedSkins.length) S.ownedSkins = data.ownedSkins;
   if(!S.ownedSkins.includes("default")) S.ownedSkins.unshift("default");
   saveSkins();
-  render();
+  const sk = S.currentSkin || "default";
+  document.body.className = (sk && sk!=="default") ? ("sb-theme-"+sk) : "";
+  if(S.screen === "skins") render();
 }
 
 // 新規アカウント時：この端末にあるローカルの各資格データをクラウドへ初期投入

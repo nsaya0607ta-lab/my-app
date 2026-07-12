@@ -59,123 +59,6 @@ function resetTerminal(){
 }
 resetTerminal();
 
-// ============================================================================
-// 🔍 TEMPORARY DEBUG INSTRUMENTATION — 原因調査用。原因が特定できたら必ず削除する。
-// 実行ボタン押下（pointerdown）を起点に、
-//   A. fn()実行前 → B. fn()実行直後(復元前) → C. 同期restore直後 →
-//   D. 1xrAF到達時(restore前) → E. 1xrAF内restore直後 →
-//   F. 2xrAF到達時(restore前) → G. 2xrAF内restore直後 →
-//   H. +300ms → I. +1000ms
-// の各チェックポイントで scrollY / activeElement / #pg-cat-tabsのscrollLeft を
-// console.logへ出力する。あわせて、この区間中に発生した window の生の
-// 'scroll' イベントをすべて（何がいつ起こしたイベントか特定できるよう）
-// タイムスタンプ付きで記録する。実機のSafari/Chromeの開発者ツールで
-// コンソールを開いた状態で再現手順を実行し、[PG-DEBUG]ログを確認すること。
-// ============================================================================
-// Macが手元になくてもiPhone実機だけでログを読めるよう、画面下部に直接
-// ログを表示するオーバーレイパネル（#app外・document.body直下に1つだけ生成）。
-// テキストは選択・コピー可能にしてあるので、ロングタップ→全選択→コピーで
-// そのまま報告してもらえる。ページ自身のスクロールには一切影響しない
-// （パネル自身が独立したoverflow:autoを持つ別要素のため）。
-function pgDebugPanelBody(){
-  let panel = document.getElementById("pg-debug-panel");
-  if(!panel){
-    panel = document.createElement("div");
-    panel.id = "pg-debug-panel";
-    panel.style.cssText = "position:fixed;left:0;right:0;bottom:0;max-height:28vh;overflow-y:auto;background:rgba(10,14,26,.95);color:#8effc1;font:10px/1.5 ui-monospace,Menlo,Consolas,monospace;padding:6px 10px;padding-bottom:calc(6px + env(safe-area-inset-bottom));z-index:99999;white-space:pre-wrap;-webkit-user-select:text;user-select:text;border-top:2px solid #ffb020;";
-    const head = document.createElement("div");
-    head.style.cssText = "display:flex;justify-content:space-between;align-items:center;gap:6px;margin-bottom:4px;color:#ffb020;font-weight:bold;position:sticky;top:0;background:rgba(10,14,26,.95);";
-    const label = document.createElement("span");
-    label.textContent = "🔍 PG-DEBUG（テキストをロングタップ→全選択でコピー可）";
-    const btnRow = document.createElement("div");
-    btnRow.style.cssText = "display:flex;gap:6px;flex:none;";
-    const body = document.createElement("div");
-    body.id = "pg-debug-panel-body";
-    const copyBtn = document.createElement("button");
-    copyBtn.type = "button";
-    copyBtn.textContent = "コピー";
-    copyBtn.style.cssText = "background:#2563eb;color:#fff;border:none;border-radius:4px;padding:3px 10px;font-size:10px;";
-    copyBtn.onclick = () => {
-      const text = Array.from(body.childNodes).map(n => n.textContent).join("\n");
-      if(navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(text).catch(() => {});
-      copyBtn.textContent = "コピー済み";
-      setTimeout(() => { copyBtn.textContent = "コピー"; }, 1200);
-    };
-    const clearBtn = document.createElement("button");
-    clearBtn.type = "button";
-    clearBtn.textContent = "クリア";
-    clearBtn.style.cssText = "background:#333;color:#fff;border:none;border-radius:4px;padding:3px 10px;font-size:10px;";
-    clearBtn.onclick = () => { body.textContent = ""; };
-    btnRow.appendChild(copyBtn);
-    btnRow.appendChild(clearBtn);
-    head.appendChild(label);
-    head.appendChild(btnRow);
-    panel.appendChild(head);
-    panel.appendChild(body);
-    document.body.appendChild(panel);
-  }
-  return panel;
-}
-
-// ログはdb.js/render.js/cloudSync.js側からもプレイグラウンド画面に入る前に
-// 飛んでくる（ログイン処理・identity変化検知など）。それらの発生時点では
-// パネルを非表示にし（下部ナビ操作をふさがないため）、プレイグラウンド画面
-// を開いている間だけ表示する。ログ自体は画面に関係なくすべて記録する。
-function pgDebugSyncPanelVisibility(panel){
-  panel.style.display = (S.screen === "playground") ? "" : "none";
-}
-
-function pgDebugPrint(line){
-  const panel = pgDebugPanelBody();
-  pgDebugSyncPanelVisibility(panel);
-  const body = panel.querySelector("#pg-debug-panel-body");
-  const row = document.createElement("div");
-  row.textContent = line;
-  body.appendChild(row);
-  body.scrollTop = body.scrollHeight; // パネル自身のスクロール。ページのscrollYには無関係
-  while(body.childNodes.length > 150) body.removeChild(body.firstChild);
-}
-// db.js/render.js/cloudSync.js側からも同じオンスクリーンパネルへログを
-// 出せるよう、循環import を避けるためwindow経由のブリッジを用意する
-// （原因特定後、この計測コード一式ごと削除する）
-window.__pgDebugLog = pgDebugPrint;
-
-function pgDebugSnap(label){
-  const active = document.activeElement;
-  const catTabs = app.querySelector("#pg-cat-tabs");
-  const data = {
-    scrollY: window.scrollY,
-    scrollX: window.scrollX,
-    docScrollTop: (document.scrollingElement || document.documentElement).scrollTop,
-    active: active ? `${active.tagName}${active.id ? "#" + active.id : ""}` : null,
-    catTabsScrollLeft: catTabs ? catTabs.scrollLeft : null,
-    t: performance.now().toFixed(1),
-  };
-  // eslint-disable-next-line no-console
-  console.log(`[PG-DEBUG] ${label}`, data);
-  pgDebugPrint(`${label} | y=${data.scrollY} x=${data.scrollX} docTop=${data.docScrollTop} tabsX=${data.catTabsScrollLeft} active=${data.active} t=${data.t}`);
-}
-let pgDebugScrollWatchOn = false;
-function pgDebugArmScrollWatch(ms){
-  if(pgDebugScrollWatchOn) return;
-  pgDebugScrollWatchOn = true;
-  const start = performance.now();
-  const onScroll = () => {
-    const line = `⚡ scroll event fired | y=${window.scrollY} dt=${(performance.now() - start).toFixed(1)}ms`;
-    // eslint-disable-next-line no-console
-    console.log("[PG-DEBUG] " + line);
-    pgDebugPrint(line);
-  };
-  window.addEventListener("scroll", onScroll, { passive: true });
-  setTimeout(() => {
-    window.removeEventListener("scroll", onScroll);
-    pgDebugScrollWatchOn = false;
-  }, ms);
-}
-// ============================================================================
-// 🔍 TEMPORARY DEBUG INSTRUMENTATION ここまで
-// ============================================================================
-
 // コマンド実行・ミッション切替・ヒント表示などの「その場での差し替え」
 // 操作が、フォーカスされていたボタンの消滅（iOS Safariが要素の消失時に
 // スクロール位置を見失う挙動）や、DOM更新（要素の追加・置き換えによる
@@ -192,27 +75,15 @@ function withScrollPreserved(fn){
   const catTabs = app.querySelector("#pg-cat-tabs");
   const x = scroller.scrollLeft, y = scroller.scrollTop;
   const tabsX = catTabs ? catTabs.scrollLeft : null;
-  pgDebugArmScrollWatch(2000);
-  pgDebugSnap("A. fn()実行前");
-  const restore = (tag) => {
+  const restore = () => {
     scroller.scrollLeft = x;
     scroller.scrollTop = y;
     if(catTabs && tabsX !== null) catTabs.scrollLeft = tabsX;
-    pgDebugSnap(tag);
   };
   fn();
-  pgDebugSnap("B. fn()実行直後（復元前）");
-  restore("C. 同期restore直後");
-  requestAnimationFrame(() => {
-    pgDebugSnap("D. 1xrAF到達時（restore前）");
-    restore("E. 1xrAF内restore直後");
-    requestAnimationFrame(() => {
-      pgDebugSnap("F. 2xrAF到達時（restore前）");
-      restore("G. 2xrAF内restore直後");
-      setTimeout(() => pgDebugSnap("H. +300ms"), 300);
-      setTimeout(() => pgDebugSnap("I. +1000ms"), 1000);
-    });
-  });
+  restore();
+  requestAnimationFrame(restore);
+  requestAnimationFrame(() => requestAnimationFrame(restore));
 }
 
 // このプレイグラウンド画面内のボタンは、タップ操作すべてを共通してこの
@@ -817,8 +688,6 @@ function openResetConfirmModal(){
 // クラウド復元フック（render.js の applyCloudPlayground から呼ばれる）
 // ------------------------------------------------------------------------
 export function pgOnCloudRestored(){
-  // TEMPORARY DEBUG（原因特定後に削除）
-  if(window.__pgDebugLog) window.__pgDebugLog(`🔥🔥[screen.js] pgOnCloudRestored発火 S.screen=${S.screen} → renderPlaygroundScreen()実行=${S.screen === "playground"}`);
   answerRevealed = false;
   resetTerminal();
   terminalRecords.push(welcomeRecord("☁️ 前回の続きを復元しました。"));
@@ -877,7 +746,6 @@ export function renderPlaygroundScreen(){
   wireKeyboard();
   wireChips();
   installScrollGuard(app.querySelector("#pg-root"));
-  pgDebugPrint("=== 画面表示 === 下へスクロール→タブを横スクロール→Enter/▶実行、の順で操作してください");
 
   const resetBtn = app.querySelector("#pg-reset");
   if(resetBtn) resetBtn.onclick = () => openResetConfirmModal();

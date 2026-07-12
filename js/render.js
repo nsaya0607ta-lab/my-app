@@ -210,10 +210,6 @@ function applyUiTheme(){
 }
 
 export function render(){
-  // TEMPORARY DEBUG（原因特定後に削除）: プレイグラウンド画面表示中に
-  // グローバルrender()が呼ばれること自体が、画面全体が丸ごと再構築される
-  // （renderPlaygroundScreen()末尾のwindow.scrollTo(0,0)を含む）直接の引き金
-  if(window.__pgDebugLog && S.screen === "playground") window.__pgDebugLog(`🔥[render.js] グローバルrender()呼び出し S.screen=${S.screen}`);
   gcalHandleIdentityChange(); // ログインユーザーの切替を検知し、前の人のGoogle連携状態を破棄
   skinHandleIdentityChange(); // ログインユーザーの切替を検知し、前の人のスキン状態を読み直す
   petHandleIdentityChange();  // ログインユーザーの切替を検知し、デジタル盆栽の放置判定を読み直す
@@ -6258,13 +6254,7 @@ export function applyCloudScenarioMode(data){
 // 反映する。db.jsのonSnapshotから呼ばれる。ログインごとに最初の1回だけ実際の
 // 復元が行われ（pgApplyCloud内部でガード）、以降のsnapshotは無視される
 export function applyCloudPlayground(data){
-  // TEMPORARY DEBUG（原因特定後に削除）
-  if(window.__pgDebugLog) window.__pgDebugLog("[render.js] applyCloudPlayground呼び出し");
-  if(!pgApplyCloud(data)){
-    if(window.__pgDebugLog) window.__pgDebugLog("[render.js] pgApplyCloud=false（hydratedガードでブロック）");
-    return;
-  }
-  if(window.__pgDebugLog) window.__pgDebugLog("🔥[render.js] pgApplyCloud=true → pgOnCloudRestored()を呼ぶ");
+  if(!pgApplyCloud(data)) return;
   pgOnCloudRestored();
 }
 
