@@ -1964,6 +1964,76 @@ body[data-theme="dark"] .menu-btn:active{box-shadow:0 4px 10px rgba(0,0,0,.3), i
 .iq-feedback--bad{font-size:18px;font-weight:800;color:var(--bad);}
 
 /* =========================================================================
+   🎙️ 声紋登録（設定／登録者管理／参加者選択）－ イントロドン画面内の
+   サブ画面。既存の.iq-card（白・青ベース／Glassmorphism／角丸）と統一する
+   ========================================================================= */
+.iq-settings-btn{
+  flex:none;width:38px;height:38px;border-radius:50%;display:flex;align-items:center;justify-content:center;
+  background:var(--surface);border:1px solid var(--line);font-size:16px;cursor:pointer;
+  box-shadow:0 2px 5px rgba(0,0,0,.04);transition:transform .12s;
+}
+.iq-settings-btn:active{transform:scale(.9);}
+
+/* 設定メニュー（登録者管理／ゲーム設定／音声設定） */
+.iq-vp-menu{display:flex;flex-direction:column;gap:10px;margin-top:6px;}
+.iq-vp-menu-row{
+  display:flex;align-items:center;gap:12px;width:100%;padding:14px 16px;border-radius:16px;
+  border:1px solid var(--line);background:var(--surface);cursor:pointer;text-align:left;transition:transform .12s ease;
+}
+.iq-vp-menu-row:active{transform:scale(.98);}
+.iq-vp-menu-row--soon{opacity:.5;cursor:default;}
+.iq-vp-menu-ico{font-size:22px;flex:none;}
+.iq-vp-menu-body{flex:1;min-width:0;display:flex;flex-direction:column;}
+.iq-vp-menu-label{font-size:14.5px;font-weight:800;color:var(--text);}
+.iq-vp-menu-desc{font-size:11.5px;color:var(--muted);margin-top:2px;}
+.iq-vp-menu-arrow{font-size:20px;color:var(--muted);flex:none;}
+
+/* 丸いプロフィールアイコン（イニシャル表示） */
+.iq-vp-avatar{
+  flex:none;border-radius:50%;display:flex;align-items:center;justify-content:center;
+  color:#fff;font-weight:800;box-shadow:0 3px 8px rgba(15,23,42,.16);
+}
+
+/* 登録者一覧 */
+.iq-vp-add-btn{margin-top:6px;}
+.iq-vp-list{display:flex;flex-direction:column;gap:8px;margin-top:14px;}
+.iq-vp-row{
+  display:flex;align-items:center;gap:12px;padding:12px 14px;border-radius:16px;
+  border:1px solid var(--line);background:linear-gradient(160deg,var(--surface) 0%,var(--bg2) 100%);
+}
+.iq-vp-row-body{flex:1;min-width:0;}
+.iq-vp-row-name{font-size:13.5px;font-weight:800;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.iq-vp-row-status{font-size:11px;color:var(--muted);margin-top:2px;}
+.iq-vp-row-actions{display:flex;flex:none;gap:6px;}
+.iq-vp-mini-btn{
+  padding:7px 12px;font-size:11.5px;font-weight:700;border-radius:99px;border:1px solid var(--line);
+  background:var(--surface);color:var(--text);cursor:pointer;
+}
+.iq-vp-mini-btn--danger{color:var(--bad);border-color:rgba(220,38,38,.35);}
+
+/* 新規登録・録り直しの声紋録音画面 */
+.iq-vp-record-name{font-size:16px;font-weight:800;color:var(--accent);text-align:center;margin-bottom:10px;}
+.iq-vp-script{
+  font-size:13px;color:var(--text);line-height:1.7;text-align:center;background:var(--bg2);
+  border-radius:14px;padding:14px 16px;margin-bottom:16px;
+}
+.iq-vp-edit-avatar-wrap{display:flex;justify-content:center;margin-bottom:14px;}
+
+/* 参加者選択（「何人で遊ぶか」ではなく「誰が遊ぶか」） */
+.iq-vp-check-list{display:flex;flex-direction:column;gap:8px;margin-top:10px;max-height:48vh;overflow-y:auto;}
+.iq-vp-check-row{
+  display:flex;align-items:center;gap:12px;padding:10px 14px;border-radius:14px;
+  border:1px solid var(--line);background:var(--surface);cursor:pointer;
+}
+.iq-vp-checkbox{width:19px;height:19px;flex:none;accent-color:var(--accent);cursor:pointer;}
+.iq-vp-check-name{font-size:13.5px;font-weight:700;color:var(--text);}
+
+/* 話者判定：回答権獲得の演出 */
+.iq-vp-matched{display:flex;flex-direction:column;align-items:center;gap:6px;padding:18px 0;}
+.iq-vp-matched-name{font-size:19px;font-weight:800;color:var(--accent);}
+.iq-vp-matched-sub{font-size:14px;font-weight:700;color:var(--text);}
+
+/* =========================================================================
    🐧 Linux プレイグラウンド－専用フルスクリーン画面
    カード・角丸・シャドウ・配色は既存の.iq-card/.stat-tile系と統一し、
    ターミナル部分だけ黒背景のモノスペース表示にする
