@@ -15,6 +15,8 @@ import { mpActiveBoardId, mpAddLink, mpAddNote, mpApplyCloud, mpBoardChain, mpBo
 import { renderIntroQuizScreen } from './introQuiz.js';
 import { checkNewsQuizPopup } from './newsQuiz.js';
 import { renderPlaygroundScreen } from './playground/screen.js';
+import { renderScenarioScreen } from './playground/scenarios/scenarioScreen.js';
+import { scenarioModeApplyCloud, scenarioModeHandleIdentityChange } from './playground/scenarios/progressStore.js';
 import { applyCustomButtonColors, isLongPressSuppressed, wireButtonColorLongPress } from './buttonColors.js';
 
 export const app = document.getElementById("app");
@@ -71,7 +73,7 @@ export function renderStatusBar(){
              || (!state.guestMode && !state.currentUser)
              || (!state.guestMode && state.currentUser && (!state.profileChecked || !getProfileName()));
   const screen = resolveScreen();
-  const otherScreens = ["ranking","profile","settings","skins","analytics","portfolio","holdings","news-japan","news-world","news-detail","calendar","gemini","gemini-edit-event","mind-palette","mind-palette-folders","playground"];
+  const otherScreens = ["ranking","profile","settings","skins","analytics","portfolio","holdings","news-japan","news-world","news-detail","calendar","gemini","gemini-edit-event","mind-palette","mind-palette-folders","playground","scenario"];
   if(gated || otherScreens.includes(screen)){ el.classList.remove("show"); el.innerHTML=""; return; }
   const ov = overallStat();          // 総合Lvと次Lvまでの進捗(%)
   const coins = (S.coins||0);
@@ -137,7 +139,7 @@ export function renderStatusBar(){
 // render()末尾の分岐と同じ優先順位で判定する）ため、ヘッダー周りの表示制御は
 // この「実際に描画される画面名」を使って判断する。
 function resolveScreen(){
-  const noCertScreens = ["ranking","profile","settings","skins","analytics","certs","lpic-certs","portfolio","news-japan","news-world","news-detail","calendar","gemini","gemini-edit-event","mind-palette","mind-palette-folders","introquiz","playground"];
+  const noCertScreens = ["ranking","profile","settings","skins","analytics","certs","lpic-certs","portfolio","news-japan","news-world","news-detail","calendar","gemini","gemini-edit-event","mind-palette","mind-palette-folders","introquiz","playground","scenario"];
   if(noCertScreens.includes(S.screen)) return S.screen;
   if(S.screen==="select" || !S.cert) return "select";
   return S.screen; // home/quiz/result/review/dict/transfer/history
@@ -183,7 +185,7 @@ function updateHeaderTitle(){
 const BNAV_TAB_BY_SCREEN = {
   select:"select",
   home:"select", "lpic-commands":"select", quiz:"select", result:"select", review:"select", dict:"select", transfer:"select", history:"select",
-  certs:"study-menu", "lpic-certs":"study-menu", playground:"study-menu",
+  certs:"study-menu", "lpic-certs":"study-menu", playground:"study-menu", scenario:"study-menu",
   "news-japan":"quick-menu", "news-world":"quick-menu", "news-detail":"quick-menu", portfolio:"quick-menu", holdings:"quick-menu", introquiz:"quick-menu",
   calendar:"calendar",
 };
@@ -211,6 +213,7 @@ export function render(){
   skinHandleIdentityChange(); // ログインユーザーの切替を検知し、前の人のスキン状態を読み直す
   petHandleIdentityChange();  // ログインユーザーの切替を検知し、デジタル盆栽の放置判定を読み直す
   mpHandleIdentityChange();   // ログインユーザーの切替を検知し、マインド・パレットのキャンバスを読み直す
+  scenarioModeHandleIdentityChange(); // ログインユーザーの切替を検知し、シナリオモードの進捗を読み直す
   renderStatusBar();   // 画面が変わっても常に最新の Lv/BP/AC を反映
   updateHeaderNav(false); // デフォルトは非表示。表示すべき画面側で個別に true にする
   updateHeaderTitle();
@@ -248,6 +251,7 @@ export function render(){
   if(S.screen==="gemini-edit-event") return renderGeminiEditEvent();
   if(S.screen==="introquiz") return renderIntroQuizScreen();
   if(S.screen==="playground") return renderPlaygroundScreen();
+  if(S.screen==="scenario") return renderScenarioScreen();
   // 大元：資格選択画面
   if(S.screen==="select" || !S.cert) return renderSelect();
   if(S.screen==="home") return renderHome();
@@ -2864,6 +2868,9 @@ const PLAYGROUND_LAUNCHER_ICON_SVG = `
     <rect x="3" y="4.5" width="18" height="15" rx="2.4"></rect><path d="m7 9.5 3 2.7-3 2.7"></path><path d="M12.5 15h4.5"></path>
   </svg>`;
 
+// シナリオモード（実務の依頼を読んで自分でコマンドを組み立てる学習モード）用アイコン
+const SCENARIO_LAUNCHER_ICON_HTML = `<span class="launcher-emoji" aria-hidden="true">🧑‍💼</span>`;
+
 // J-NEWS/F-NEWS/株価/カレンダー/イントロドン/設定/ルールで使うアイコン群
 const STOCK_LAUNCHER_ICON_SVG = `
   <svg viewBox="0 0 24 24" width="21" height="21" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round">
@@ -3088,6 +3095,7 @@ const STUDY_MENU_ITEMS = [
   { key: "certs", icon: MS_LOGO_ICON_HTML, label: "Microsoft", variant: "ms" },
   { key: "lpic-certs", icon: LPIC_LOGO_ICON_HTML, label: "Linux(LPIC)", variant: "lpic" },
   { key: "playground", icon: PLAYGROUND_LAUNCHER_ICON_SVG, label: "Linuxプレイグラウンド", variant: "playground" },
+  { key: "scenario", icon: SCENARIO_LAUNCHER_ICON_HTML, label: "シナリオモード", variant: "scenario" },
 ];
 
 export function openStudyMenuSheet(){
@@ -6230,6 +6238,14 @@ export function applyCloudMindPalette(data){
   if(!mpApplyCloud(data)) return;
   if(S.screen === "mind-palette") renderMindPalette();
   else if(S.screen === "mind-palette-folders") renderMindPaletteFolders();
+}
+
+// クラウド（Firestoreの users/{uid}.scenarioMode）から届いたシナリオモードの
+// 進捗をこの端末へ反映する。db.jsのonSnapshotから呼ばれる。プレイ中の画面は
+// メモリ上のセッションを優先したいため、シナリオモード画面を見ている間は
+// 再描画しない（一覧画面のクリア済みバッジ等は次回入室時に反映される）
+export function applyCloudScenarioMode(data){
+  scenarioModeApplyCloud(data);
 }
 
 // 画面固有の一時UI状態（モード・選択中付箋・ズーム/パン量など）を閉じ込めた

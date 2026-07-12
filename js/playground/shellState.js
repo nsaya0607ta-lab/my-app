@@ -47,6 +47,7 @@ export class ShellState {
     this.env = defaultEnv();
     this.aliases = defaultAliases();
     this.processes = defaultProcesses();
+    this.cronJobs = []; // crontabコマンドで登録されたジョブ（{min,hour,dom,mon,dow,command,raw}）
     this.bootedAt = new Date();
     this.nextPid = 1200;
   }

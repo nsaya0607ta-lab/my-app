@@ -86,11 +86,12 @@ export const PATH_COMMANDS = [
   "echo","nano","find","locate","which","whereis","grep","sort","uniq","wc","cut","tr",
   "chmod","chown","ln","df","du","free","ps","top","kill","killall","hostname","whoami",
   "id","uname","date","cal","history","clear","man","help","env","export","alias","unalias",
+  "crontab",
 ];
 
 export const BIN_DIR = {
   cd: null, echo: "/bin", pwd: "/bin", export: null, alias: null, unalias: null,
-  history: null, help: null, clear: "/usr/bin",
+  history: null, help: null, clear: "/usr/bin", crontab: "/usr/bin",
 };
 
 export function binPathFor(cmd){

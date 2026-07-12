@@ -73,4 +73,7 @@ export const MAN_PAGES = {
   export: { synopsis:"export NAME=VALUE", desc:"シェル変数を環境変数として設定する。引数なしで実行すると設定済みの一覧を表示する。" },
   alias:  { synopsis:"alias [NAME=VALUE]", desc:"コマンドの別名（エイリアス）を設定する。引数なしで実行すると設定済みの一覧を表示する。" },
   unalias:{ synopsis:"unalias NAME", desc:"設定済みのエイリアスを削除する。" },
+  crontab:{ synopsis:"crontab [-l | -e | -r | FILE]", desc:"定期実行ジョブ（cron）を登録・確認する。「分 時 日 月 曜日 コマンド」の順で1行につき1ジョブを記述する。", options:[
+    ["-l","登録済みのジョブを一覧表示する"], ["-e","疑似エディタでジョブを編集する"], ["-r","登録済みのジョブをすべて削除する"],
+  ]},
 };
