@@ -6,7 +6,8 @@
     "node": ">=18"
   },
   "scripts": {
-    "import:introquiz-songs": "node scripts/importIntroQuizSongs.js"
+    "import:introquiz-songs": "node scripts/importIntroQuizSongs.js",
+    "fetch:youtube-playlist": "node scripts/fetchYouTubePlaylist.js"
   },
   "dependencies": {
     "firebase-admin": "^14.1.0"
