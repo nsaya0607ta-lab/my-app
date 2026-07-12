@@ -262,30 +262,44 @@ function scenarioCardHTML(sc){
       </button>`;
 }
 
-// 「権限管理編」のような一連の物語（story）を持つシナリオパックは、カテゴリ別
-// グルーピングとは別に、番号どおりの順番（＝物語の進行順）でひとまとめの
-// 章として表示する。パックに属さない既存シナリオはカテゴリごとに「〜編」として表示。
-function packSectionHTML(pack){
-  const cards = pack.scenarios.map(scenarioCardHTML).join("");
+// カテゴリ名→見出しアイコンの対応表（物語パックのicon指定が無い場合の見た目用）
+const CATEGORY_ICON = {
+  "ファイル操作": "📁",
+  "テキスト処理": "📝",
+  "検索": "🔍",
+  "権限": "🔑",
+  "シェル環境": "🖥️",
+  "権限・cron": "⏰",
+  "ログ調査": "📄",
+  "ファイル管理": "🗂️",
+  "バックアップ": "💾",
+  "ディスク管理": "💽",
+  "プロセス管理": "⚙️",
+  "ジョブ管理・プロセス管理": "⚙️",
+};
+
+// 「権限管理編」のような一連の物語（story）を持つシナリオパックも、カテゴリ別に
+// まとめた「〜編」も、見た目を統一して同じカード形式（アイコン＋タイトル＋
+// シナリオカードのグリッド）で表示する。
+function sectionCardHTML({ icon, title, subtitle, scenarios }){
+  const cards = scenarios.map(scenarioCardHTML).join("");
   return `<div class="scn-pack">
-      <div class="scn-pack-head"><span class="scn-pack-icon">${esc(pack.icon || "🔐")}</span><span class="scn-pack-title">${esc(pack.title)}</span></div>
-      <div class="scn-pack-desc">${esc(pack.subtitle || "")}</div>
+      <div class="scn-pack-head"><span class="scn-pack-icon">${esc(icon || "📦")}</span><span class="scn-pack-title">${esc(title)}</span></div>
+      ${subtitle ? `<div class="scn-pack-desc">${esc(subtitle)}</div>` : ""}
       <div class="scn-card-grid">${cards}</div>
     </div>`;
 }
 
 function renderScenarioListScreen(){
   const packs = scenariosByPack();
-  const packsHTML = packs.map(packSectionHTML).join("");
+  const packsHTML = packs.map(pack => sectionCardHTML({
+    icon: pack.icon, title: pack.title, subtitle: pack.subtitle, scenarios: pack.scenarios,
+  })).join("");
 
   const groups = scenariosByCategory();
-  const groupsHTML = groups.map(g => {
-    const cards = g.scenarios.map(scenarioCardHTML).join("");
-    return `<div class="scn-group">
-      <div class="scn-group-title">${esc(g.category)}編</div>
-      <div class="scn-card-grid">${cards}</div>
-    </div>`;
-  }).join("");
+  const groupsHTML = groups.map(g => sectionCardHTML({
+    icon: CATEGORY_ICON[g.category], title: `${g.category}編`, scenarios: g.scenarios,
+  })).join("");
 
   app.innerHTML = `
     <div class="q-head" style="margin-bottom:14px"><button class="quit" data-go="select">← ホーム</button></div>
