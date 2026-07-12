@@ -1,0 +1,122 @@
+/* =========================================================================
+   カテゴリ: システム
+   対象コマンド: ps, top, kill, killall, hostname, whoami, id, uname
+   ========================================================================= */
+import {
+  all, argIncludes, cmdIs, flagUsed, processGone, processNameGone, usesCmd,
+} from '../helpers.js';
+
+export const systemMissions = [
+  {
+    id: "system-01", category: "system", level: "beginner",
+    title: "whoami で現在ログインしているユーザー名を表示してください。",
+    hint: "whoami",
+    answer: "whoami",
+    explanation: "whoami（who am i）は、現在のシェルを実行しているユーザー名だけを表示します。",
+    check: cmdIs("whoami"),
+  },
+  {
+    id: "system-02", category: "system", level: "beginner",
+    title: "id で現在のユーザーのUID・GID・所属グループを表示してください。",
+    hint: "id",
+    answer: "id",
+    explanation: "id は whoami よりも詳しく、UID（ユーザーID）・GID（グループID）・所属グループの一覧を表示します。",
+    check: cmdIs("id"),
+  },
+  {
+    id: "system-03", category: "system", level: "beginner",
+    title: "hostname でこのマシンのホスト名を表示してください。",
+    hint: "hostname",
+    answer: "hostname",
+    explanation: "hostname はネットワーク上でこのマシンを識別する名前を表示します。",
+    check: cmdIs("hostname"),
+  },
+  {
+    id: "system-04", category: "system", level: "beginner",
+    title: "uname でカーネル名（OS種別）を表示してください。",
+    hint: "uname",
+    answer: "uname",
+    explanation: "uname は引数なしだとカーネル名（Linux）だけを表示します。",
+    check: cmdIs("uname"),
+  },
+  {
+    id: "system-05", category: "system", level: "intermediate",
+    title: "uname -a で、カーネル名・ホスト名・バージョンなどすべての情報をまとめて表示してください。",
+    hint: "-a オプション（all）を付けます。",
+    answer: "uname -a",
+    explanation: "-a を付けると、カーネルのバージョンやアーキテクチャなどの詳細情報がすべて1行で表示されます。",
+    check: all(usesCmd("uname"), flagUsed("uname", "a")),
+  },
+  {
+    id: "system-06", category: "system", level: "intermediate",
+    title: "uname -r でカーネルのバージョン番号だけを表示してください。",
+    hint: "-r オプション（release）を付けます。",
+    answer: "uname -r",
+    explanation: "-r を付けるとカーネルのリリースバージョンのみが表示されます。",
+    check: all(usesCmd("uname"), flagUsed("uname", "r")),
+  },
+  {
+    id: "system-07", category: "system", level: "beginner",
+    title: "ps で現在の端末で動いているプロセスを表示してください。",
+    hint: "ps",
+    answer: "ps",
+    explanation: "引数なしの ps は、今の端末（自分のセッション）で動いているプロセスだけを簡潔に表示します。",
+    check: cmdIs("ps"),
+  },
+  {
+    id: "system-08", category: "system", level: "intermediate",
+    title: "ps aux で全ユーザーの全プロセスを詳細表示してください。",
+    hint: "ps aux",
+    answer: "ps aux",
+    explanation: "aux オプションを付けると、CPU・メモリ使用率なども含めた全プロセスの一覧（BSD形式）が表示されます。",
+    check: all(usesCmd("ps"), argIncludes("ps", "aux")),
+  },
+  {
+    id: "system-09", category: "system", level: "intermediate",
+    title: "ps -ef で全プロセスをUNIX形式（親プロセスIDつき）で表示してください。",
+    hint: "ps -ef",
+    answer: "ps -ef",
+    explanation: "-ef は aux とは別形式（System V形式）で、PPID（親プロセスID）が確認しやすいのが特徴です。",
+    check: all(usesCmd("ps"), argIncludes("ps", "-ef")),
+  },
+  {
+    id: "system-10", category: "system", level: "beginner",
+    title: "top で現在のプロセス状況をリアルタイム表示（本環境では1回分のスナップショット）してください。",
+    hint: "top",
+    answer: "top",
+    explanation: "top はCPU使用率順にプロセスを並べて表示する、代表的なプロセス監視コマンドです。",
+    check: cmdIs("top"),
+  },
+  {
+    id: "system-11", category: "system", level: "intermediate",
+    title: "killall で top という名前のプロセスを終了させてください。",
+    hint: "killall プロセス名",
+    answer: "killall top",
+    explanation: "killall はPIDではなくプロセス名を指定して、該当するすべてのプロセスにシグナルを送ります。",
+    check: all(usesCmd("killall"), processNameGone("top")),
+  },
+  {
+    id: "system-12", category: "system", level: "intermediate",
+    title: "kill でPID 955 のプロセスを終了させてください。",
+    hint: "kill PID番号",
+    answer: "kill 955",
+    explanation: "kill はデフォルトでSIGTERM（15番、正常終了の要求）シグナルをそのPIDへ送ります。",
+    check: all(usesCmd("kill"), processGone(955)),
+  },
+  {
+    id: "system-13", category: "system", level: "intermediate",
+    title: "kill -9 でPID 245 のプロセスを強制終了させてください。",
+    hint: "kill -9 PID番号",
+    answer: "kill -9 245",
+    explanation: "-9 はSIGKILLシグナルで、プロセスに後始末をさせる余地を与えずに即座に終了させます。",
+    check: all(usesCmd("kill"), flagUsed("kill", "9"), processGone(245)),
+  },
+  {
+    id: "system-14", category: "system", level: "intermediate",
+    title: "kill でPID 1（init/systemd）を終了させようとして、拒否されることを確認してください。",
+    hint: "kill 1 を試してみてください。特別に保護されたプロセスなので何が起こるか確認しましょう。",
+    answer: "kill 1",
+    explanation: "PID 1（init/systemd）はシステムの根幹を担うため、一般ユーザーからは終了できないよう保護されています。「Operation not permitted」と表示されれば正しい挙動です。",
+    check: all(usesCmd("kill"), argIncludes("kill", "1"), (ctx) => ctx.state.processes.some(p => p.pid === 1)),
+  },
+];

@@ -2,7 +2,7 @@
   import { getFirestore, doc, setDoc, getDoc, deleteDoc, onSnapshot, collection, query, where, orderBy, limit, getDocs, getCountFromServer, writeBatch, increment, runTransaction } from "https://www.gstatic.com/firebasejs/10.0.0/firebase-firestore.js";
   import { getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword, signOut, onAuthStateChanged, deleteUser, reauthenticateWithCredential, EmailAuthProvider } from "https://www.gstatic.com/firebasejs/10.0.0/firebase-auth.js";
 import { applyCloud, applyCloudSkins, commit, getProfileName, publishLeaderboard, saveCoins, seedCloudFromLocal, totalBP } from './core.js';
-import { app, applyCloudGcal, applyCloudMindPalette, applyCloudPendingOrders, applyCloudPortfolio, applyCloudScenarioMode, applyCloudTradeLog, gcalStartNotifyListener, gcalStopNotifyListener, logout, render } from './render.js';
+import { app, applyCloudGcal, applyCloudMindPalette, applyCloudPendingOrders, applyCloudPlayground, applyCloudPortfolio, applyCloudScenarioMode, applyCloudTradeLog, gcalStartNotifyListener, gcalStopNotifyListener, logout, render } from './render.js';
 import { S, state } from './state.js';
 
   const firebaseConfig = {
@@ -254,6 +254,8 @@ import { S, state } from './state.js';
             if (data.mindPalette) applyCloudMindPalette(data.mindPalette);
             // シナリオモードの進捗（クリア済み一覧・途中経過のLinux環境）もこの端末へ反映
             if (data.scenarioMode) applyCloudScenarioMode(data.scenarioMode);
+            // Linuxプレイグラウンド（仮想FS・ミッション進捗など）もこの端末へ反映
+            if (data.playground) applyCloudPlayground(data.playground);
             // 旧形式（資格未対応の {bp,wrong,history}）→ certs.az900 へ一度だけ移行
             if (!data.certs && data.bp !== undefined) {
               setDoc(doc(state.db, "users", state.currentUserId), {

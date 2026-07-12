@@ -6,64 +6,43 @@
    index.js）を解釈・実行する学習用サンドボックス。
 
    このファイルが担う「コンポーネント」：
-     ・Terminal      … renderTerminalBody() / appendTerminalRecords()
-     ・CommandInput   … wireCommandInput()（Enter送信・↑↓履歴・Tab補完・
-                        Ctrl+C・モバイル向け補助キー行）
-     ・MissionCard    … renderMissionCard()
-     ・HintCard       … renderHintCard()
+     ・Terminal        … renderTerminalBody() / appendTerminalRecords()
+     ・CommandInput     … wireCommandInput()（Enter送信・↑↓履歴・Tab補完・
+                          Ctrl+C・モバイル向け補助キー行）
+     ・CategoryTabs     … renderCategoryTabs()（ミッションのカテゴリ切替）
+     ・MissionCard      … renderMissionCard()
+     ・HintCard         … renderHintCard()
      ・nano/lessの疑似エディタ／ページャ（openNanoModal/openLessModal）
-   VirtualFileSystem・ShellState・CommandParser・CommandExecutorは
-   それぞれ専用ファイルに分離し、ここではその実行結果を画面に反映するだけ。
 
-   状態（vfs/shellState/history/ミッション進捗/ターミナルの表示履歴）は
-   モジュール変数として画面をまたいで保持する。「リセット」ボタンを押すか、
-   初回読み込み時のみ初期状態に戻る。
+   状態そのもの（vfs/shellState/history/ミッション進捗）は持たず、すべて
+   playgroundState.js（合成ルート）のシングルトンを参照する。Firestoreへの
+   保存・復元は cloudSync.js が担当し、このファイルは「復元されたら画面を
+   描き直す」「操作のたびに保存をスケジュールする」という接続点だけを持つ。
    ========================================================================= */
 import { esc } from '../core.js';
 import { app } from '../render.js';
-import { VirtualFileSystem } from './vfs.js';
-import { ShellState } from './shellState.js';
+import { S, state } from '../state.js';
 import { parseCommand } from './commandParser.js';
 import { executeCommand } from './commandExecutor.js';
-import { HistoryManager } from './historyManager.js';
 import { getCompletions } from './completion.js';
-import { MISSIONS } from './missions.js';
+import { MISSION_CATEGORIES, MISSIONS_BY_CATEGORY, categoryProgress, currentMissionFor } from './missions/index.js';
+import { history, missionProgress, resetAll, vfs, shellState } from './playgroundState.js';
+import { pgSaveNow, pgScheduleSave } from './cloudSync.js';
 import { COMMAND_NAMES } from './commands/index.js';
 
-const vfs = new VirtualFileSystem();
-const shellState = new ShellState();
-const history = new HistoryManager();
-let missionIndex = 0;
 let answerRevealed = false;
 let terminalRecords = []; // {kind:"cmd", promptPath, text} | {kind:"line", tokens}
-let bootstrapped = false;
 
-const QUICK_COMMANDS = [
-  { cmd:"ls -l", needsArg:false },
-  { cmd:"cd", needsArg:true },
-  { cmd:"pwd", needsArg:false },
-  { cmd:"mkdir", needsArg:true },
-  { cmd:"touch", needsArg:true },
-  { cmd:"cat", needsArg:true },
-  { cmd:"grep", needsArg:true },
-  { cmd:"chmod", needsArg:true },
-  { cmd:"find .", needsArg:false },
-  { cmd:"echo", needsArg:true },
-  { cmd:"man", needsArg:true },
-  { cmd:"clear", needsArg:false },
-  { cmd:"help", needsArg:false },
-];
+function welcomeRecord(text){
+  return { kind:"line", tokens:[{ text, cls:"pg-muted" }] };
+}
 
-function resetPlaygroundState(){
-  vfs.reset();
-  shellState.reset();
-  history.reset();
-  missionIndex = 0;
-  answerRevealed = false;
+function resetTerminal(){
   terminalRecords = [
-    { kind:"line", tokens:[{ text:"student ホームディレクトリへようこそ。help と入力すると使えるコマンド一覧を確認できます（Tabキーで補完、| でパイプ、> でリダイレクトも使えます）。", cls:"pg-muted" }] },
+    welcomeRecord("student ホームディレクトリへようこそ。help と入力すると使えるコマンド一覧を確認できます（Tabキーで補完、| でパイプ、> でリダイレクトも使えます）。"),
   ];
 }
+resetTerminal();
 
 // ------------------------------------------------------------------------
 // Terminal
@@ -127,16 +106,24 @@ function clearTerminal(){
 // ------------------------------------------------------------------------
 // ミッション判定
 // ------------------------------------------------------------------------
-function evaluateMission(parsed){
-  if(missionIndex >= MISSIONS.length) return;
-  const mission = MISSIONS[missionIndex];
-  if(!mission.check(parsed, vfs)) return;
-  missionIndex++;
+// pipeline: CommandExecutorが返す展開済みパイプライン（alias展開後）
+// raw: 実際に入力された文字列そのもの（alias展開前）
+// isError: 標準エラー出力が1行でもあったか
+function evaluateMission(pipeline, raw, isError){
+  const mission = currentMissionFor(missionProgress.activeCategory, missionProgress.clearedIds);
+  if(!mission) return;
+  const ctx = { vfs, state: shellState, pipeline, raw, isError };
+  let passed = false;
+  try{ passed = !!mission.check(ctx); }catch(e){ passed = false; }
+  if(!passed) return;
+  missionProgress.markCleared(mission.id);
   answerRevealed = false;
-  const complete = missionIndex >= MISSIONS.length;
+  const { done, total } = categoryProgress(missionProgress.activeCategory, missionProgress.clearedIds);
+  const categoryDone = done >= total;
   appendTerminalRecords([
-    { kind:"line", tokens:[{ text: complete ? "🎉 Mission Complete! 全ミッションを達成しました！" : "✅ Mission Complete!", cls:"pg-mission-toast" }] },
+    { kind:"line", tokens:[{ text: categoryDone ? "🎉 このカテゴリのミッションをすべて達成しました！" : "✅ Mission Complete!", cls:"pg-mission-toast" }] },
   ]);
+  renderCategoryTabs();
   renderMissionCard();
   renderHintCard();
 }
@@ -150,6 +137,8 @@ function runCommand(raw){
   const pipeline = parseCommand(raw); // raw is guaranteed non-blank by the caller
   if(!pipeline) return;
   const result = executeCommand({ vfs, state: shellState, history: history.items }, pipeline);
+  evaluateMission(result.pipeline || pipeline, raw, !!result.isError);
+  pgScheduleSave();
   if(result.clear){
     clearTerminal();
     return;
@@ -159,7 +148,6 @@ function runCommand(raw){
   (result.err || []).forEach(tokens => records.push({ kind:"line", tokens }));
   appendTerminalRecords(records);
   if(result.overlay) openCommandOverlay(result.overlay);
-  if(!result.isError && pipeline.length === 1) evaluateMission(pipeline[0]);
 }
 
 // ------------------------------------------------------------------------
@@ -189,6 +177,12 @@ function openNanoModal(payload){
   const save = () => {
     const res = vfs.writeFile(payload.path, ta.value, { append:false });
     status.textContent = res.error ? `[ 保存に失敗しました: ${payload.path} ]` : `[ ${payload.path} に書き込みました ]`;
+    if(!res.error){
+      // nanoでの保存は通常のコマンド実行と違う経路なので、ここでも
+      // ミッション判定とクラウド保存のスケジュールを明示的に行う
+      evaluateMission([{ cmd:"nano", args:[payload.path], redirect:null, append:false, inputRedirect:null }], `nano ${payload.path}`, false);
+      pgScheduleSave();
+    }
   };
   const exit = () => {
     ov.remove();
@@ -308,6 +302,22 @@ function wireTermKeys(){
   bind("#pg-key-ctrlc", (input) => ctrlC(input));
 }
 
+const QUICK_COMMANDS = [
+  { cmd:"ls -l", needsArg:false },
+  { cmd:"cd", needsArg:true },
+  { cmd:"pwd", needsArg:false },
+  { cmd:"mkdir", needsArg:true },
+  { cmd:"touch", needsArg:true },
+  { cmd:"cat", needsArg:true },
+  { cmd:"grep", needsArg:true },
+  { cmd:"chmod", needsArg:true },
+  { cmd:"find .", needsArg:false },
+  { cmd:"echo", needsArg:true },
+  { cmd:"man", needsArg:true },
+  { cmd:"clear", needsArg:false },
+  { cmd:"help", needsArg:false },
+];
+
 function wireChips(){
   app.querySelectorAll("[data-pg-chip]").forEach(btn => {
     btn.onclick = () => {
@@ -323,21 +333,56 @@ function wireChips(){
 }
 
 // ------------------------------------------------------------------------
-// MissionCard / HintCard
+// CategoryTabs / MissionCard / HintCard
 // ------------------------------------------------------------------------
+function renderCategoryTabs(){
+  const el = app.querySelector("#pg-cat-tabs");
+  if(!el) return;
+  el.innerHTML = MISSION_CATEGORIES.map(c => {
+    const { done, total } = categoryProgress(c.key, missionProgress.clearedIds);
+    const active = c.key === missionProgress.activeCategory ? " pg-cat-tab--active" : "";
+    const complete = done >= total ? " pg-cat-tab--done" : "";
+    return `<button type="button" class="pg-cat-tab${active}${complete}" data-pg-cat="${c.key}">
+      <span class="pg-cat-tab-ico">${c.icon}</span>
+      <span class="pg-cat-tab-label">${esc(c.label)}</span>
+      <span class="pg-cat-tab-count">${done}/${total}</span>
+    </button>`;
+  }).join("");
+  el.querySelectorAll("[data-pg-cat]").forEach(btn => {
+    btn.onclick = () => {
+      missionProgress.activeCategory = btn.dataset.pgCat;
+      answerRevealed = false;
+      pgScheduleSave();
+      renderCategoryTabs();
+      renderMissionCard();
+      renderHintCard();
+    };
+  });
+}
+
+function totalMissionProgress(){
+  return MISSION_CATEGORIES.reduce((acc, c) => {
+    const p = categoryProgress(c.key, missionProgress.clearedIds);
+    return { done: acc.done + p.done, total: acc.total + p.total };
+  }, { done:0, total:0 });
+}
+
 function renderMissionCard(){
   const el = app.querySelector("#pg-mission-card");
   if(!el) return;
-  const total = MISSIONS.length;
-  if(missionIndex >= total){
+  const catMeta = MISSION_CATEGORIES.find(c => c.key === missionProgress.activeCategory) || MISSION_CATEGORIES[0];
+  const total = (MISSIONS_BY_CATEGORY[catMeta.key] || []).length;
+  const mission = currentMissionFor(catMeta.key, missionProgress.clearedIds);
+  const { done: totalDone, total: totalAll } = totalMissionProgress();
+  if(!mission){
     el.innerHTML = `
-      <div class="pg-card-head"><span class="pg-card-ico">🎯</span><span class="pg-card-title">ミッションモード</span><span class="pg-card-badge pg-card-badge--done">Complete</span></div>
-      <div class="pg-card-body">🎉 Mission Complete！全 ${total} 問のミッションを達成しました。</div>`;
+      <div class="pg-card-head"><span class="pg-card-ico">🎯</span><span class="pg-card-title">${esc(catMeta.label)}</span><span class="pg-card-badge pg-card-badge--done">Complete</span></div>
+      <div class="pg-card-body">🎉 ${esc(catMeta.label)}の全 ${total} 問を達成しました！（全体: ${totalDone}/${totalAll}）他のカテゴリにも挑戦してみましょう。</div>`;
     return;
   }
-  const mission = MISSIONS[missionIndex];
+  const idx = (MISSIONS_BY_CATEGORY[catMeta.key] || []).findIndex(m => m.id === mission.id);
   el.innerHTML = `
-    <div class="pg-card-head"><span class="pg-card-ico">🎯</span><span class="pg-card-title">ミッションモード</span><span class="pg-card-badge">${missionIndex+1}/${total}</span></div>
+    <div class="pg-card-head"><span class="pg-card-ico">🎯</span><span class="pg-card-title">${esc(catMeta.label)}</span><span class="pg-card-badge">${idx+1}/${total}</span></div>
     <div class="pg-card-body">${esc(mission.title)}</div>
     <button type="button" class="cta pg-card-btn" id="pg-mission-hint-btn">${answerRevealed ? "答えを隠す" : "ヒントを見る"}</button>`;
   const btn = el.querySelector("#pg-mission-hint-btn");
@@ -347,20 +392,35 @@ function renderMissionCard(){
 function renderHintCard(){
   const el = app.querySelector("#pg-hint-card");
   if(!el) return;
-  if(missionIndex >= MISSIONS.length){
+  const mission = currentMissionFor(missionProgress.activeCategory, missionProgress.clearedIds);
+  if(!mission){
     el.innerHTML = `
       <div class="pg-card-head"><span class="pg-card-ico">💡</span><span class="pg-card-title">ヒント</span></div>
-      <div class="pg-card-body pg-muted-text">お疲れさまでした。「リセット」から何度でも練習できます。</div>`;
+      <div class="pg-card-body pg-muted-text">お疲れさまでした。上のタブから他のカテゴリにも挑戦できます。「リセット」から何度でも練習できます。</div>`;
     return;
   }
-  const mission = MISSIONS[missionIndex];
   el.innerHTML = `
     <div class="pg-card-head"><span class="pg-card-ico">💡</span><span class="pg-card-title">ヒント</span></div>
     <div class="pg-card-body">${esc(mission.hint)}</div>
-    ${answerRevealed ? `<div class="pg-answer">正解: <code>${esc(mission.answer)}</code></div>` : ""}
+    ${answerRevealed ? `<div class="pg-answer">正解: <code>${esc(mission.answer)}</code><div class="pg-answer-explain">${esc(mission.explanation || "")}</div></div>` : ""}
     <button type="button" class="ghost pg-card-btn" id="pg-hint-answer-btn">${answerRevealed ? "答えを隠す" : "答えを見る"}</button>`;
   const btn = el.querySelector("#pg-hint-answer-btn");
   if(btn) btn.onclick = () => { answerRevealed = !answerRevealed; renderMissionCard(); renderHintCard(); };
+}
+
+// ------------------------------------------------------------------------
+// 同期ステータス（ログイン中は自動保存、ゲストモードでは保存されない旨を表示）
+// ------------------------------------------------------------------------
+function renderSyncNote(){
+  const el = app.querySelector("#pg-sync-note");
+  if(!el) return;
+  if(state.guestMode || !state.currentUser){
+    el.textContent = "👤 ゲストモード：進捗はこの端末に留まり、閉じると失われます（ログインすると自動保存されます）";
+    el.classList.add("pg-sync-note--guest");
+  } else {
+    el.textContent = "☁️ ログイン中：操作内容は自動的にクラウドへ保存され、次回ログイン時に復元されます";
+    el.classList.remove("pg-sync-note--guest");
+  }
 }
 
 // ------------------------------------------------------------------------
@@ -381,7 +441,7 @@ function openHelpModal(){
         </div>
         <div class="rules-section">
           <div class="rules-section-title">⌨️ 対応コマンド</div>
-          <div class="rules-text">ファイル操作・テキスト処理・パーミッション・プロセス／リソース確認・シェル操作など40種類以上に対応しています。ターミナルに <code>help</code> と入力すると一覧を、<code>man コマンド名</code> と入力すると詳しい使い方を確認できます。</div>
+          <div class="rules-text">ファイル操作・テキスト処理・パーミッション・プロセス／リソース確認・シェル操作など50種類近くに対応しています。ターミナルに <code>help</code> と入力すると一覧を、<code>man コマンド名</code> と入力すると詳しい使い方を確認できます。</div>
         </div>
         <div class="rules-section">
           <div class="rules-section-title">🔧 便利な機能</div>
@@ -390,11 +450,16 @@ function openHelpModal(){
             <li><b>↑ / ↓</b> … 入力履歴を呼び出せます（画面下のボタンでも可）</li>
             <li><code>|</code> パイプ … <code>cat file | grep 語句</code> のように前のコマンドの出力を次のコマンドへ渡せます</li>
             <li><code>&gt;</code> / <code>&gt;&gt;</code> リダイレクト … コマンドの出力をファイルへ書き込み／追記できます</li>
+            <li><code>&lt;</code> 入力リダイレクト・<code>tee</code> … ファイルを標準入力として渡したり、出力を画面とファイルの両方へ書き出せます</li>
           </ul>
         </div>
         <div class="rules-section">
           <div class="rules-section-title">🎯 ミッション</div>
-          <div class="rules-text">画面下部のミッションカードにしたがって全5問に挑戦してみましょう。行き詰まったらヒントカードの「答えを見る」で正解コマンドを確認できます。</div>
+          <div class="rules-text">画面上部のタブでカテゴリ（ファイル操作・検索・権限など）を切り替えながら、初級〜中級の100問以上のミッションに挑戦できます。行き詰まったらヒントカードの「答えを見る」で正解コマンドと解説を確認できます。</div>
+        </div>
+        <div class="rules-section">
+          <div class="rules-section-title">☁️ 進捗の保存</div>
+          <div class="rules-text">ログインしている場合、ファイルシステムの状態・環境変数・コマンド履歴・ミッションの進捗はすべて自動的にクラウドへ保存されます。ブラウザを閉じても、次回ログインしたときに前回の続きから再開できます。ゲストモードでは保存されません。</div>
         </div>
       </div>
       <button type="button" class="settings-modal-close" id="pg-help-close">閉じる</button>
@@ -406,11 +471,48 @@ function openHelpModal(){
 }
 
 // ------------------------------------------------------------------------
+// リセット確認モーダル（進捗を消す破壊的操作のため、ワンタップでは実行しない）
+// ------------------------------------------------------------------------
+function openResetConfirmModal(){
+  const ov = document.createElement("div");
+  ov.className = "modal-ov";
+  ov.innerHTML = `
+    <div class="modal pg-reset-confirm-modal">
+      <div class="modal-title">🔄 リセットしますか？</div>
+      <div class="rules-text">ファイルシステム・環境変数・コマンド履歴・ミッションの進捗（クラウドに保存済みの内容も含む）がすべて初期状態に戻ります。この操作は取り消せません。</div>
+      <div class="pg-reset-confirm-actions">
+        <button type="button" class="ghost pg-card-btn" id="pg-reset-cancel">キャンセル</button>
+        <button type="button" class="cta pg-card-btn pg-reset-confirm-btn" id="pg-reset-ok">リセットする</button>
+      </div>
+    </div>`;
+  document.body.appendChild(ov);
+  const close = () => ov.remove();
+  ov.querySelector("#pg-reset-cancel").onclick = close;
+  ov.querySelector("#pg-reset-ok").onclick = () => {
+    close();
+    resetAll();
+    resetTerminal();
+    answerRevealed = false;
+    pgSaveNow();
+    renderPlaygroundScreen();
+  };
+  ov.addEventListener("click", (e) => { if(e.target === ov) close(); });
+}
+
+// ------------------------------------------------------------------------
+// クラウド復元フック（render.js の applyCloudPlayground から呼ばれる）
+// ------------------------------------------------------------------------
+export function pgOnCloudRestored(){
+  answerRevealed = false;
+  resetTerminal();
+  terminalRecords.push(welcomeRecord("☁️ 前回の続きを復元しました。"));
+  if(S.screen === "playground") renderPlaygroundScreen();
+}
+
+// ------------------------------------------------------------------------
 // 画面エントリポイント（render.jsのrender()ディスパッチから呼ばれる）
 // ------------------------------------------------------------------------
 export function renderPlaygroundScreen(){
-  if(!bootstrapped){ resetPlaygroundState(); bootstrapped = true; }
-
   const chipsHTML = QUICK_COMMANDS.map(c =>
     `<button type="button" class="pg-chip" data-pg-chip="${esc(c.cmd)}" data-pg-arg="${c.needsArg ? "1" : "0"}">${esc(c.cmd)}</button>`
   ).join("");
@@ -430,6 +532,7 @@ export function renderPlaygroundScreen(){
         <div class="pg-intro-sub">ブラウザ上で安全にLinuxコマンドを試してみよう！</div>
       </div>
     </div>
+    <div class="pg-sync-note" id="pg-sync-note"></div>
     <div class="pg-terminal-card">
       <div class="pg-terminal-head">
         <span class="pg-terminal-dots"><span></span><span></span><span></span></span>
@@ -445,6 +548,7 @@ export function renderPlaygroundScreen(){
       </div>
     </div>
     <div class="pg-chip-row">${chipsHTML}</div>
+    <div class="pg-cat-tabs" id="pg-cat-tabs"></div>
     <div class="pg-cards">
       <div class="pg-card pg-mission-card" id="pg-mission-card"></div>
       <div class="pg-card pg-hint-card" id="pg-hint-card"></div>
@@ -452,6 +556,8 @@ export function renderPlaygroundScreen(){
   `;
 
   renderTerminalBody();
+  renderSyncNote();
+  renderCategoryTabs();
   renderMissionCard();
   renderHintCard();
   wireTerminalTap();
@@ -459,7 +565,7 @@ export function renderPlaygroundScreen(){
   wireChips();
 
   const resetBtn = app.querySelector("#pg-reset");
-  if(resetBtn) resetBtn.onclick = () => { resetPlaygroundState(); renderPlaygroundScreen(); };
+  if(resetBtn) resetBtn.onclick = () => openResetConfirmModal();
   const helpBtn = app.querySelector("#pg-help");
   if(helpBtn) helpBtn.onclick = () => openHelpModal();
   const clearBtn = app.querySelector("#pg-terminal-clear");

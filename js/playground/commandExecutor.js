@@ -47,6 +47,12 @@ export function executeCommand(env, pipeline){
   let cleared = false;
   const err = [];
 
+  if(expanded[0] && expanded[0].inputRedirect){
+    const res = vfs.readFile(expanded[0].inputRedirect);
+    if(res.error) return { lines:[], err:[ fsError("bash", null, res.error) ], isError:true, pipeline: expanded };
+    stdin = res.content;
+  }
+
   for(let i = 0; i < expanded.length; i++){
     const stage = expanded[i];
     const isLast = i === expanded.length - 1;

@@ -14,7 +14,8 @@ import { markPetActivity, petHandleIdentityChange, petIsNeglected, petNextStage,
 import { mpActiveBoardId, mpAddLink, mpAddNote, mpApplyCloud, mpBoardChain, mpBoardMeta, mpClearAll, mpCreateBoard, mpDeleteBoard, mpDeleteNote, mpGetState, mpGroupNotes, mpHandleIdentityChange, mpListBoards, mpRandomColor, mpRemoveLink, mpRenameBoard, mpSuggestKeywords, mpSwitchBoard, mpTotalBoardCount, mpUpdateNote } from './mindpalette.js';
 import { renderIntroQuizScreen } from './introQuiz.js';
 import { checkNewsQuizPopup } from './newsQuiz.js';
-import { renderPlaygroundScreen } from './playground/screen.js';
+import { pgOnCloudRestored, renderPlaygroundScreen } from './playground/screen.js';
+import { pgApplyCloud, pgHandleIdentityChange } from './playground/cloudSync.js';
 import { renderScenarioScreen } from './playground/scenarios/scenarioScreen.js';
 import { scenarioModeApplyCloud, scenarioModeHandleIdentityChange } from './playground/scenarios/progressStore.js';
 import { applyCustomButtonColors, isLongPressSuppressed, wireButtonColorLongPress } from './buttonColors.js';
@@ -214,6 +215,7 @@ export function render(){
   petHandleIdentityChange();  // ログインユーザーの切替を検知し、デジタル盆栽の放置判定を読み直す
   mpHandleIdentityChange();   // ログインユーザーの切替を検知し、マインド・パレットのキャンバスを読み直す
   scenarioModeHandleIdentityChange(); // ログインユーザーの切替を検知し、シナリオモードの進捗を読み直す
+  pgHandleIdentityChange();   // ログインユーザーの切替を検知し、Linuxプレイグラウンドの状態を読み直す
   renderStatusBar();   // 画面が変わっても常に最新の Lv/BP/AC を反映
   updateHeaderNav(false); // デフォルトは非表示。表示すべき画面側で個別に true にする
   updateHeaderTitle();
@@ -6246,6 +6248,14 @@ export function applyCloudMindPalette(data){
 // 再描画しない（一覧画面のクリア済みバッジ等は次回入室時に反映される）
 export function applyCloudScenarioMode(data){
   scenarioModeApplyCloud(data);
+}
+
+// クラウド（Firestoreの users/{uid}.playground）から届いたデータをこの端末へ
+// 反映する。db.jsのonSnapshotから呼ばれる。ログインごとに最初の1回だけ実際の
+// 復元が行われ（pgApplyCloud内部でガード）、以降のsnapshotは無視される
+export function applyCloudPlayground(data){
+  if(!pgApplyCloud(data)) return;
+  pgOnCloudRestored();
 }
 
 // 画面固有の一時UI状態（モード・選択中付箋・ズーム/パン量など）を閉じ込めた

@@ -6,6 +6,7 @@ const GROUPS = [
   ["権限", ["chmod","chown"]],
   ["システム情報", ["df","du","free","ps","top","kill","killall","hostname","whoami","id","uname","date","cal","crontab"]],
   ["シェル", ["history","clear","man","help","env","export","alias","unalias","which","whereis"]],
+  ["リダイレクト／パイプ", ["tee"]],
 ];
 
 export default function help(){

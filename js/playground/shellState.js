@@ -52,6 +52,18 @@ export class ShellState {
     this.nextPid = 1200;
   }
 
+  // Firestoreへ保存する形（プレーンなJSONのみ）に変換する。processes/bootedAtは
+  // 疑似的な表示用データに過ぎないため保存対象に含めない（毎回既定値に戻る）
+  toJSON(){
+    return { env: Object.fromEntries(this.env), aliases: Object.fromEntries(this.aliases) };
+  }
+
+  loadFromJSON(data){
+    if(!data || typeof data !== "object") return;
+    if(data.env && typeof data.env === "object") this.env = new Map(Object.entries(data.env));
+    if(data.aliases && typeof data.aliases === "object") this.aliases = new Map(Object.entries(data.aliases));
+  }
+
   findProcess(pidOrName){
     return this.processes.filter(p => String(p.pid) === String(pidOrName) || p.cmd.split(/\s+/)[0].replace(/^-/, "").replace(/^\[|\]$/g, "") === pidOrName);
   }
