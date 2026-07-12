@@ -19,9 +19,22 @@ import s012 from './data/s012-cleanup-tmp.js';
 import s013 from './data/s013-app-backup.js';
 import s014 from './data/s014-disk-usage-cleanup.js';
 import s015 from './data/s015-kill-runaway-process.js';
+import s016 from './data/s016-employee-id-list.js';
+import s017 from './data/s017-employee-name-list.js';
+import s018 from './data/s018-sales-department-list.js';
+import s019 from './data/s019-high-salary-list.js';
+import s020 from './data/s020-last-field-salary.js';
+import s021 from './data/s021-report-title.js';
+import s022 from './data/s022-report-summary-end.js';
+import s023 from './data/s023-sales-headcount.js';
+import s024 from './data/s024-average-salary.js';
+import s025 from './data/s025-highest-salary.js';
+import s026 from './data/s026-csv-employee-import.js';
+import s027 from './data/s027-formatted-employee-report.js';
 
 export const SCENARIOS = [
   s001, s002, s003, s004, s005, s006, s007, s008, s009, s010, s011, s012, s013, s014, s015,
+  s016, s017, s018, s019, s020, s021, s022, s023, s024, s025, s026, s027,
 ];
 
 export const DIFFICULTY_ORDER = ["初級", "初級〜中級", "中級", "LPIC Level1"];
