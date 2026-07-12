@@ -49,12 +49,20 @@ import s042 from './data/s042-job-ctrlz-mistake.js';
 import s043 from './data/s043-job-background-multitask.js';
 import s044 from './data/s044-job-night-batch.js';
 import s045 from './data/s045-job-prod-incident.js';
+import s046 from './data/s046-lsdir-where-is-file.js';
+import s047 from './data/s047-lsdir-hidden-config.js';
+import s048 from './data/s048-lsdir-latest-version.js';
+import s049 from './data/s049-lsdir-final-check.js';
+import s050 from './data/s050-lsdir-newest-file.js';
+import s051 from './data/s051-lsdir-disk-usage.js';
+import s052 from './data/s052-lsdir-submission-check.js';
 
 export const SCENARIOS = [
   s001, s002, s003, s004, s005, s006, s007, s008, s009, s010, s011, s012, s013, s014, s015,
   s016, s017, s018, s019, s020, s021, s022, s023, s024, s025, s026, s027,
   s028, s029, s030, s031, s032, s033, s034, s035, s036, s037,
   s038, s039, s040, s041, s042, s043, s044, s045,
+  s046, s047, s048, s049, s050, s051, s052,
 ];
 
 export const DIFFICULTY_ORDER = ["初級", "初級〜中級", "中級", "LPIC Level1"];
@@ -68,6 +76,12 @@ export const PACKS = [
     icon: "🔐",
     title: "権限管理編",
     subtitle: "新人インフラエンジニアとして入社したあなたへ、社内のあちこちから「困った」が届きます。依頼内容を読み、Linuxコマンドで一つずつ解決していきましょう。",
+  },
+  {
+    id: "file-dir-newbie",
+    icon: "📁",
+    title: "ファイル・ディレクトリ操作編",
+    subtitle: "新人エンジニアのあなたに、先輩や上司からファイル探しや整理整頓の依頼が舞い込みます。ls コマンドを使いこなして、日々のちょっとした「困った」を解決していきましょう。",
   },
 ];
 
