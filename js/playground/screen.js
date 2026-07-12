@@ -108,9 +108,13 @@ function liveLineHTML(){
   </div>`;
 }
 
+// 送信ボタンはliveLineHTML()の一部として毎回丸ごと差し替わるため、タップで
+// このボタン自身がフォーカスを持ってしまうと（差し替え時にフォーカス中の
+// 要素が消滅し、ページが勝手に先頭へスクロールし直す）カテゴリタブと同じ
+// 問題が起きる。onPressで常にフォーカスを持たせないようにする。
 function wireLiveLineButton(){
   const btn = app.querySelector("#pg-term-send-btn");
-  if(btn) btn.onclick = () => submitLiveCommand();
+  if(btn) onPress(btn, () => submitLiveCommand());
 }
 
 function renderTerminalBody(){
@@ -123,16 +127,19 @@ function renderTerminalBody(){
 
 // 入力バッファが変わるたび（文字入力・矢印移動・履歴呼び出し等）に、
 // ライブ行だけを描き直す。ターミナル本体の他の行やページのスクロール
-// 位置には一切手を触れない。
+// 位置には一切手を触れない（万一フォーカスが残っていてもスクロール位置を
+// 保持する）。
 function updateLiveLine(){
   const el = terminalBodyEl();
   if(!el) return;
-  const wasNearBottom = isNearBottom(el);
-  const old = el.querySelector("#pg-term-live");
-  if(old) old.outerHTML = liveLineHTML();
-  else el.insertAdjacentHTML("beforeend", liveLineHTML());
-  wireLiveLineButton();
-  if(wasNearBottom) el.scrollTop = el.scrollHeight;
+  withScrollPreserved(() => {
+    const wasNearBottom = isNearBottom(el);
+    const old = el.querySelector("#pg-term-live");
+    if(old) old.outerHTML = liveLineHTML();
+    else el.insertAdjacentHTML("beforeend", liveLineHTML());
+    wireLiveLineButton();
+    if(wasNearBottom) el.scrollTop = el.scrollHeight;
+  });
 }
 
 function appendTerminalRecords(records){
@@ -174,9 +181,13 @@ function evaluateMission(pipeline, raw, isError){
   appendTerminalRecords([
     { kind:"line", tokens:[{ text: categoryDone ? "🎉 このカテゴリのミッションをすべて達成しました！" : "✅ Mission Complete!", cls:"pg-mission-toast" }] },
   ]);
-  renderCategoryTabs();
-  renderMissionCard();
-  renderHintCard();
+  // コマンド実行の結果としてカテゴリタブ／カードが差し替わる場合も、
+  // ページのスクロール位置が勝手に動かないようにする
+  withScrollPreserved(() => {
+    renderCategoryTabs();
+    renderMissionCard();
+    renderHintCard();
+  });
 }
 
 // ------------------------------------------------------------------------
@@ -390,7 +401,7 @@ function wireKeyboard(){
   const kb = app.querySelector("#pg-app-keyboard");
   if(!kb) return;
   kb.querySelectorAll("[data-kb-char]").forEach(btn => {
-    btn.onclick = () => {
+    onPress(btn, () => {
       const ch = btn.dataset.kbChar;
       if(ctrlArmed){
         ctrlArmed = false;
@@ -399,11 +410,11 @@ function wireKeyboard(){
         if(ch === "l"){ clearTerminal(); return; }
       }
       insertText(ch);
-    };
+    });
   });
   const bind = (id, handler) => {
     const btn = kb.querySelector(id);
-    if(btn) btn.onclick = handler;
+    if(btn) onPress(btn, handler);
   };
   bind("#pg-kb-tab", () => tabComplete());
   bind("#pg-kb-ctrl", () => { ctrlArmed = !ctrlArmed; updateCtrlKeyVisual(); });
