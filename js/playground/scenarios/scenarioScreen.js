@@ -24,7 +24,7 @@ import { evaluateGoal } from './goalCheckers.js';
 import { applyInitialEnv } from './initEnv.js';
 import { serializeSession, restoreSession } from './vfsSnapshot.js';
 import { isScenarioCleared, getScenarioInProgress, saveScenarioProgress, markScenarioCleared } from './progressStore.js';
-import { renderTerminalBody, clearTerminal, wireTerminalTap, wireTermKeys, pushSystemMessage } from './scenarioTerminal.js';
+import { renderTerminalBody, clearTerminal, wireTerminalTap, wireKeyboard, keyboardHTML, installScrollGuard, withScrollPreserved, pushSystemMessage } from './scenarioTerminal.js';
 
 const DIFF_CLASS = { "初級": "beginner", "初級〜中級": "lower-mid", "中級": "mid", "LPIC Level1": "lpic" };
 
@@ -260,6 +260,7 @@ function renderScenarioPlayScreen(scenarioId){
   const diffClass = DIFF_CLASS[scenario.difficulty] || "mid";
 
   app.innerHTML = `
+  <div id="scn-root">
     <div class="scn-play-head">
       <button type="button" class="quit" id="scn-back-to-list">← シナリオ一覧</button>
       <button type="button" class="pg-reset-btn" id="scn-reset">🔄 リセット</button>
@@ -286,28 +287,25 @@ function renderScenarioPlayScreen(scenarioId){
         <button type="button" class="pg-terminal-clear" id="scn-terminal-clear">🗑 クリア</button>
       </div>
       <div class="pg-terminal-body" id="scn-terminal-body"></div>
-      <div class="pg-term-keys">
-        <button type="button" class="pg-term-key pg-term-key--wide" id="scn-key-tab">Tab補完</button>
-        <button type="button" class="pg-term-key" id="scn-key-up">↑</button>
-        <button type="button" class="pg-term-key" id="scn-key-down">↓</button>
-        <button type="button" class="pg-term-key" id="scn-key-ctrlc">Ctrl+C</button>
-      </div>
+      ${keyboardHTML()}
     </div>
     <div class="pg-cards">
       <div class="pg-card scn-progress-card" id="scn-progress-card"></div>
       <div class="pg-card scn-hint-card" id="scn-hint-card"></div>
     </div>
+  </div>
   `;
 
   renderTerminalBody(s, terminalHooks(s));
   renderProgressCard();
   renderHintCard();
   wireTerminalTap();
-  wireTermKeys(s);
+  wireKeyboard(s, terminalHooks(s));
+  installScrollGuard(app.querySelector("#scn-root"));
 
   app.querySelector("#scn-back-to-list").onclick = () => { S.scenarioId = null; renderScenarioScreen(); };
   app.querySelector("#scn-reset").onclick = () => resetSession(s);
-  app.querySelector("#scn-terminal-clear").onclick = () => clearTerminal(s, terminalHooks(s));
+  app.querySelector("#scn-terminal-clear").onclick = () => withScrollPreserved(() => clearTerminal(s, terminalHooks(s)));
 
   window.scrollTo(0, 0);
 }
