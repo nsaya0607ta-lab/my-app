@@ -2909,6 +2909,14 @@ const RULES_LIST_ICON_SVG = `
     <line x1="7.6" y1="17.8" x2="13" y2="17.8"></line>
   </svg>`;
 
+// イントロドン専用アイコン（音符の線画。絵文字は使わない）
+const INTROQUIZ_LAUNCHER_ICON_SVG = `
+  <svg viewBox="0 0 24 24" width="21" height="21" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M9 18V6l10-2v12"></path>
+    <circle cx="6.5" cy="18" r="2.5"></circle>
+    <circle cx="16.5" cy="16" r="2.5"></circle>
+  </svg>`;
+
 /* =========================================================================
    📱 「各種機能」「学習」タブ用ボトムシート
    BottomNavigationの2タブから開く、画面下からスライドインするiOS風の
@@ -3077,7 +3085,7 @@ const QUICK_MENU_ITEMS = [
   { key: "news-world", icon: `<span class="launcher-emoji" aria-hidden="true">🌐</span>`, label: "F-NEWS", variant: "news-world" },
   { key: "portfolio", icon: STOCK_LAUNCHER_ICON_SVG, label: "株価", variant: "stock" },
   { key: "calendar", icon: CALENDAR_APP_LAUNCHER_ICON_SVG, label: "カレンダー", variant: "calendar" },
-  { key: "introquiz", icon: `<span class="launcher-emoji" aria-hidden="true">🎵</span>`, label: "イントロドン", variant: "introquiz" },
+  { key: "introquiz", icon: INTROQUIZ_LAUNCHER_ICON_SVG, label: "イントロドン", variant: "introquiz" },
   { key: "settings", icon: SETTINGS_GEAR_ICON_SVG, label: "設定", variant: "settings" },
   { key: "rules", icon: RULES_LIST_ICON_SVG, label: "ルール", variant: "rules" },
 ];
