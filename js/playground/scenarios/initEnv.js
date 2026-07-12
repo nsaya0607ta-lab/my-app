@@ -21,6 +21,9 @@ export function applyInitialEnv(vfs, shellState, spec){
   (spec.chmod || []).forEach(c => { vfs.chmod(c.path, c.mode, { recursive: !!c.recursive }); });
   (spec.env || []).forEach(e => { shellState.env.set(e.name, e.value); });
   (spec.processes || []).forEach(p => { shellState.processes.push(p); });
+  // 「昨夜のバッチが止まったまま」のように、シナリオ開始時点ですでに
+  // 停止中／実行中のジョブがある状態を再現する（jobs/fg/bgシナリオ用）
+  (spec.jobs || []).forEach(j => { shellState.addJob(j.cmd, j.status || "stopped"); });
   if(spec.cwd) vfs.changeDir(spec.cwd);
   vfs.isRootUser = wasRootUser;
   // strictChownは「所有者の変更にroot権限が必要」という実際のLinuxの挙動を

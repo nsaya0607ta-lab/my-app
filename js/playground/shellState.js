@@ -48,6 +48,8 @@ export class ShellState {
     this.aliases = defaultAliases();
     this.processes = defaultProcesses();
     this.cronJobs = []; // crontabコマンドで登録されたジョブ（{min,hour,dom,mon,dow,command,raw}）
+    this.jobs = []; // シェルのジョブテーブル（&で背景実行 / Ctrl+Zで停止したジョブ）。{id,pid,cmd,status:"running"|"stopped"}
+    this.nextJobId = 1;
     this.bootedAt = new Date();
     this.nextPid = 1200;
   }
@@ -73,5 +75,29 @@ export class ShellState {
     if(idx === -1) return false;
     this.processes.splice(idx, 1);
     return true;
+  }
+
+  // &（バックグラウンド実行）で新しいジョブを登録する。jobs/fg/bgコマンドは
+  // すべてこのジョブテーブルを介して操作する（ps/killが見るprocessesとは
+  // 別の一覧。実際のシェルも「ジョブ」と「プロセス」は別の概念）
+  addJob(cmd, status = "running"){
+    const job = { id: this.nextJobId++, pid: this.nextPid++, cmd, status };
+    this.jobs.push(job);
+    return job;
+  }
+
+  // 引数なし（現在のジョブ＝直近に追加されたもの）または %1 / 1 のような
+  // ジョブ番号指定でジョブを1件探す（fg/bgの対象決定に使う）
+  findJob(token){
+    if(!this.jobs.length) return null;
+    if(token === undefined || token === null || token === "") return this.jobs[this.jobs.length - 1];
+    const id = parseInt(String(token).replace(/^%/, ""), 10);
+    if(Number.isNaN(id)) return null;
+    return this.jobs.find(j => j.id === id) || null;
+  }
+
+  removeJob(job){
+    const idx = this.jobs.indexOf(job);
+    if(idx !== -1) this.jobs.splice(idx, 1);
   }
 }

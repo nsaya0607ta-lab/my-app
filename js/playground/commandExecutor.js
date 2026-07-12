@@ -12,7 +12,7 @@
      clear   … clearコマンド実行時のみ true
    ========================================================================= */
 import { COMMAND_REGISTRY } from './commands/index.js';
-import { errLine, fsError } from './commands/_util.js';
+import { errLine, fsError, outLine } from './commands/_util.js';
 
 function expandAliases(pipeline, aliases){
   return pipeline.map(stage => {
@@ -39,6 +39,7 @@ function linesToText(lines){
 
 export function executeCommand(env, pipeline){
   const { vfs, state, session } = env;
+  const background = !!pipeline.background;
   const expanded = expandAliases(pipeline, state.aliases);
 
   let stdin = null;
@@ -82,6 +83,15 @@ export function executeCommand(env, pipeline){
     const res = vfs.writeFile(lastStage.redirect, linesToText(lastLines), { append: lastStage.append });
     if(res.error) err.push(fsError("bash", null, res.error));
     displayLines = [];
+  }
+
+  // "cmd &" のようにバックグラウンド実行が指定された場合、実行結果の出力
+  // ではなく「[ジョブ番号] 疑似PID」だけを表示し、シェルのジョブテーブルへ
+  // 登録する（jobs/fg/bgコマンドが後から操作できるようにするため）。
+  if(background && !overlay){
+    const cmdText = expanded.map(s => [s.cmd, ...s.args].join(" ")).join(" | ");
+    const job = state.addJob(cmdText);
+    return { lines: [ outLine(`[${job.id}] ${job.pid}`) ], err, isError: err.length > 0, pipeline: expanded, job };
   }
 
   return { lines: displayLines, err, overlay, awaitPassword, isError: err.length > 0, pipeline: expanded };

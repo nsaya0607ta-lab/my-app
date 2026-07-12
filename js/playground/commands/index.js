@@ -58,13 +58,17 @@ import tee from './tee.js';
 import awk from './awk.js';
 import su from './su.js';
 import exitCmd from './exit.js';
+import sleep from './sleep.js';
+import jobs from './jobs.js';
+import fg from './fg.js';
+import bg from './bg.js';
 
 export const COMMAND_REGISTRY = {
   pwd, ls, cd, mkdir, rmdir, touch, cp, mv, rm, cat, less, head, tail, echo, nano,
   find, locate, which, whereis, grep, sort, uniq, wc, cut, tr, chmod, chown, chgrp, ln,
   df, du, free, ps, top, kill, killall, hostname, whoami, id, uname, date, cal,
   history, clear, man, help, env, export: exportCmd, alias, unalias, crontab, tee, awk,
-  su, exit: exitCmd,
+  su, exit: exitCmd, sleep, jobs, fg, bg,
 };
 
 export const COMMAND_NAMES = Object.keys(COMMAND_REGISTRY);
