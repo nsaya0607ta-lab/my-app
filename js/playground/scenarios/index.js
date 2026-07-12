@@ -31,13 +31,36 @@ import s024 from './data/s024-average-salary.js';
 import s025 from './data/s025-highest-salary.js';
 import s026 from './data/s026-csv-employee-import.js';
 import s027 from './data/s027-formatted-employee-report.js';
+import s028 from './data/s028-perm-script-exec.js';
+import s029 from './data/s029-perm-employee-file.js';
+import s030 from './data/s030-perm-investigate-ls.js';
+import s031 from './data/s031-perm-explain-755.js';
+import s032 from './data/s032-perm-chown-owner.js';
+import s033 from './data/s033-perm-chgrp-group.js';
+import s034 from './data/s034-perm-chown-owner-group.js';
+import s035 from './data/s035-perm-chown-denied.js';
+import s036 from './data/s036-perm-su-exit.js';
+import s037 from './data/s037-perm-backup-combo.js';
 
 export const SCENARIOS = [
   s001, s002, s003, s004, s005, s006, s007, s008, s009, s010, s011, s012, s013, s014, s015,
   s016, s017, s018, s019, s020, s021, s022, s023, s024, s025, s026, s027,
+  s028, s029, s030, s031, s032, s033, s034, s035, s036, s037,
 ];
 
 export const DIFFICULTY_ORDER = ["初級", "初級〜中級", "中級", "LPIC Level1"];
+
+// 「権限管理編」のように、番号どおりの物語（ストーリー）として通しで遊ぶ
+// ことを想定したシナリオ群。packを持つシナリオは、難易度別の一覧からは
+// 除外され、代わりにこの並び順（＝物語の進行順）で1つの章として表示される。
+export const PACKS = [
+  {
+    id: "permissions-newbie",
+    icon: "🔐",
+    title: "権限管理編",
+    subtitle: "新人インフラエンジニアとして入社したあなたへ、社内のあちこちから「困った」が届きます。依頼内容を読み、Linuxコマンドで一つずつ解決していきましょう。",
+  },
+];
 
 export function getScenarioById(id){
   return SCENARIOS.find(s => s.id === id) || null;
@@ -49,9 +72,17 @@ export function nextScenarioId(id){
   return SCENARIOS[idx + 1].id;
 }
 
-// 難易度→カテゴリごとにグルーピングした一覧（シナリオ選択画面用）
+// 難易度→カテゴリごとにグルーピングした一覧（シナリオ選択画面用。パックに
+// 属するシナリオはscenariosByPack()側に表示されるため、ここでは除外する）
 export function scenariosByDifficulty(){
   return DIFFICULTY_ORDER
-    .map(diff => ({ difficulty: diff, scenarios: SCENARIOS.filter(s => s.difficulty === diff) }))
+    .map(diff => ({ difficulty: diff, scenarios: SCENARIOS.filter(s => s.difficulty === diff && !s.pack) }))
     .filter(g => g.scenarios.length);
+}
+
+// パックごとに、物語の進行順（SCENARIOS配列内の並び順）でまとめた一覧
+export function scenariosByPack(){
+  return PACKS
+    .map(pack => ({ ...pack, scenarios: SCENARIOS.filter(s => s.pack === pack.id) }))
+    .filter(p => p.scenarios.length);
 }

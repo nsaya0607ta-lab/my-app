@@ -19,20 +19,23 @@ import { S } from '../../state.js';
 import { VirtualFileSystem } from '../vfs.js';
 import { ShellState } from '../shellState.js';
 import { HistoryManager } from '../historyManager.js';
-import { SCENARIOS, getScenarioById, nextScenarioId, scenariosByDifficulty } from './index.js';
+import { UserSession } from '../users.js';
+import { SCENARIOS, getScenarioById, nextScenarioId, scenariosByDifficulty, scenariosByPack } from './index.js';
 import { evaluateGoal } from './goalCheckers.js';
 import { applyInitialEnv } from './initEnv.js';
 import { serializeSession, restoreSession } from './vfsSnapshot.js';
 import { isScenarioCleared, getScenarioInProgress, saveScenarioProgress, markScenarioCleared } from './progressStore.js';
-import { renderTerminalBody, clearTerminal, wireTerminalTap, wireKeyboard, keyboardHTML, installScrollGuard, withScrollPreserved, pushSystemMessage } from './scenarioTerminal.js';
+import { renderTerminalBody, clearTerminal, wireTerminalTap, wireKeyboard, keyboardHTML, installScrollGuard, withScrollPreserved, pushSystemMessage, refreshLivePrompt } from './scenarioTerminal.js';
 
 const DIFF_CLASS = { "初級": "beginner", "初級〜中級": "lower-mid", "中級": "mid", "LPIC Level1": "lpic" };
 
 let session = null; // 現在プレイ中のシナリオ（{scenarioId, scenario, vfs, shellState, history, records, doneSteps, hintLevel, hintStepId}）
 
-function computeDoneSteps(scenario, vfs, shellState){
-  return scenario.steps.filter(step => evaluateGoal(step.goal, vfs, shellState)).map(step => step.id);
+function computeDoneSteps(scenario, vfs, shellState, ctx){
+  return scenario.steps.filter(step => evaluateGoal(step.goal, vfs, shellState, ctx)).map(step => step.id);
 }
+
+function goalCtx(s){ return { history: s.history.items, userSession: s.userSession }; }
 
 function welcomeRecords(scenario, resumed){
   const text = resumed
@@ -46,18 +49,20 @@ function buildSession(scenarioId){
   const vfs = new VirtualFileSystem();
   const shellState = new ShellState();
   const history = new HistoryManager();
+  const userSession = new UserSession();
   const saved = getScenarioInProgress(scenarioId);
   let resumed = false;
-  if(saved && saved.snapshot && restoreSession(vfs, shellState, saved.snapshot)){
+  if(saved && saved.snapshot && restoreSession(vfs, shellState, saved.snapshot, userSession)){
     resumed = true;
     (saved.history || []).forEach(cmd => history.push(cmd));
   } else {
     applyInitialEnv(vfs, shellState, scenario.initialEnv);
+    vfs.setCurrentUser(userSession.current());
   }
-  const doneSteps = computeDoneSteps(scenario, vfs, shellState);
+  const doneSteps = computeDoneSteps(scenario, vfs, shellState, { history: history.items, userSession });
   const nextStep = scenario.steps.find(step => !doneSteps.includes(step.id)) || null;
   return {
-    scenarioId, scenario, vfs, shellState, history,
+    scenarioId, scenario, vfs, shellState, history, userSession,
     records: welcomeRecords(scenario, resumed),
     doneSteps,
     hintLevel: 0,
@@ -74,14 +79,14 @@ function ensureSession(scenarioId){
 function persistCurrentAttempt(s){
   saveScenarioProgress(s.scenarioId, {
     doneSteps: s.doneSteps,
-    snapshot: serializeSession(s.vfs, s.shellState),
+    snapshot: serializeSession(s.vfs, s.shellState, s.userSession),
     history: s.history.items,
   });
 }
 
 function onExecuted(s){
   const wasComplete = s.doneSteps.length === s.scenario.steps.length;
-  s.doneSteps = computeDoneSteps(s.scenario, s.vfs, s.shellState);
+  s.doneSteps = computeDoneSteps(s.scenario, s.vfs, s.shellState, goalCtx(s));
   const nowComplete = s.doneSteps.length === s.scenario.steps.length;
   const nextStep = firstUnmetStep(s);
   const nextStepId = nextStep ? nextStep.id : null;
@@ -218,15 +223,18 @@ function renderHintCard(){
 function resetSession(s){
   s.vfs.reset();
   s.shellState.reset();
+  s.userSession.reset();
   applyInitialEnv(s.vfs, s.shellState, s.scenario.initialEnv);
+  s.vfs.setCurrentUser(s.userSession.current());
   s.history.reset();
   s.records = welcomeRecords(s.scenario, false);
-  s.doneSteps = computeDoneSteps(s.scenario, s.vfs, s.shellState);
+  s.doneSteps = computeDoneSteps(s.scenario, s.vfs, s.shellState, goalCtx(s));
   const nextStep = firstUnmetStep(s);
   s.hintStepId = nextStep ? nextStep.id : null;
   s.hintLevel = 0;
   persistCurrentAttempt(s);
   renderTerminalBody(s, terminalHooks(s));
+  refreshLivePrompt(s);
   renderProgressBar();
   renderProgressCard();
   renderHintCard();
@@ -241,10 +249,8 @@ function scenarioStatusBadge(id){
   return "";
 }
 
-function renderScenarioListScreen(){
-  const groups = scenariosByDifficulty();
-  const groupsHTML = groups.map(g => {
-    const cards = g.scenarios.map(sc => `
+function scenarioCardHTML(sc){
+  return `
       <button type="button" class="scn-card" data-scenario="${esc(sc.id)}">
         <div class="scn-card-top">
           <span class="scn-card-avatar">${esc(sc.requester.avatar)}</span>
@@ -253,7 +259,28 @@ function renderScenarioListScreen(){
         </div>
         <div class="scn-card-title">${esc(sc.title)}</div>
         <div class="scn-card-req">${esc(sc.requester.name)}からの依頼</div>
-      </button>`).join("");
+      </button>`;
+}
+
+// 「権限管理編」のような一連の物語（story）を持つシナリオパックは、難易度別
+// グルーピングとは別に、番号どおりの順番（＝物語の進行順）でひとまとめの
+// 章として表示する。パックに属さない既存シナリオは従来どおり難易度別に表示。
+function packSectionHTML(pack){
+  const cards = pack.scenarios.map(scenarioCardHTML).join("");
+  return `<div class="scn-pack">
+      <div class="scn-pack-head"><span class="scn-pack-icon">${esc(pack.icon || "🔐")}</span><span class="scn-pack-title">${esc(pack.title)}</span></div>
+      <div class="scn-pack-desc">${esc(pack.subtitle || "")}</div>
+      <div class="scn-card-grid">${cards}</div>
+    </div>`;
+}
+
+function renderScenarioListScreen(){
+  const packs = scenariosByPack();
+  const packsHTML = packs.map(packSectionHTML).join("");
+
+  const groups = scenariosByDifficulty();
+  const groupsHTML = groups.map(g => {
+    const cards = g.scenarios.map(scenarioCardHTML).join("");
     return `<div class="scn-group">
       <div class="scn-group-title">${esc(g.difficulty)}</div>
       <div class="scn-card-grid">${cards}</div>
@@ -267,6 +294,7 @@ function renderScenarioListScreen(){
       <h2 class="sel-title">シナリオモード</h2>
     </div>
     <div class="scn-intro-text">依頼内容を読んで、目的を達成するために必要なコマンドを自分で考えて実行してみましょう。コマンドの正解は1つではありません。</div>
+    ${packsHTML}
     ${groupsHTML}
   `;
   app.querySelectorAll("[data-go]").forEach(b => b.onclick = () => go(b.dataset.go));
@@ -312,7 +340,7 @@ function renderScenarioPlayScreen(scenarioId){
     <div class="pg-terminal-card" id="scn-terminal-card">
       <div class="pg-terminal-head">
         <span class="pg-terminal-dots"><span></span><span></span><span></span></span>
-        <span class="pg-terminal-title">student@linux</span>
+        <span class="pg-terminal-title" id="scn-terminal-title">${esc(s.userSession.current().username)}@linux</span>
         <button type="button" class="pg-terminal-clear" id="scn-terminal-clear">🗑 クリア</button>
       </div>
       <div class="pg-terminal-body" id="scn-terminal-body"></div>

@@ -7,7 +7,10 @@ export default function chown(ctx){
   const err = [];
   paths.forEach(path => {
     const res = ctx.vfs.chown(path, spec, { recursive: flags.has("R") });
-    if(res.error) err.push(fsError("chown", "cannot access", res.error));
+    if(res.error){
+      if(res.error.error === "EPERM") err.push(errLine(`chown: changing ownership of '${path}': Operation not permitted`));
+      else err.push(fsError("chown", "cannot access", res.error));
+    }
   });
   return { lines:[], err };
 }

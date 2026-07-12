@@ -16,6 +16,7 @@ export const ERRNO_TEXT = {
   EEXIST: "File exists",
   ELOOP: "Too many levels of symbolic links",
   EINVAL: "invalid mode",
+  EPERM: "Operation not permitted",
 };
 
 export function errnoText(err){
@@ -84,7 +85,7 @@ export { MONTH_ABBR, WEEK_ABBR };
 export const PATH_COMMANDS = [
   "pwd","ls","cd","mkdir","rmdir","touch","cp","mv","rm","cat","less","head","tail",
   "echo","nano","find","locate","which","whereis","grep","sort","uniq","wc","cut","tr",
-  "chmod","chown","ln","df","du","free","ps","top","kill","killall","hostname","whoami",
+  "chmod","chown","chgrp","ln","df","du","free","ps","top","kill","killall","hostname","whoami",
   "id","uname","date","cal","history","clear","man","help","env","export","alias","unalias",
   "crontab","tee","awk","su","exit",
 ];
@@ -96,6 +97,6 @@ export const BIN_DIR = {
 
 export function binPathFor(cmd){
   if(cmd in BIN_DIR) return BIN_DIR[cmd];
-  return ["ls","cp","mv","rm","cat","mkdir","rmdir","touch","chmod","chown","ln","df","du","free","ps","kill","hostname","whoami","id","uname","date","which","su"].includes(cmd)
+  return ["ls","cp","mv","rm","cat","mkdir","rmdir","touch","chmod","chown","chgrp","ln","df","du","free","ps","kill","hostname","whoami","id","uname","date","which","su"].includes(cmd)
     ? "/bin" : "/usr/bin";
 }

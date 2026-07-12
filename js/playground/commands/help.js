@@ -3,7 +3,7 @@ import { outLine, LINE } from './_util.js';
 const GROUPS = [
   ["ファイル操作", ["pwd","ls","cd","mkdir","rmdir","touch","cp","mv","rm","ln","find","locate"]],
   ["テキスト処理", ["cat","less","head","tail","echo","nano","grep","sort","uniq","wc","cut","tr","awk"]],
-  ["権限", ["chmod","chown"]],
+  ["権限", ["chmod","chown","chgrp"]],
   ["ユーザー切替", ["su","exit"]],
   ["システム情報", ["df","du","free","ps","top","kill","killall","hostname","whoami","id","uname","date","cal","crontab"]],
   ["シェル", ["history","clear","man","help","env","export","alias","unalias","which","whereis"]],
