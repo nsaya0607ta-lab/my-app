@@ -78,6 +78,25 @@ function onPress(btn, handler){
   btn.addEventListener("pointerdown", (e) => { e.preventDefault(); handler(); });
 }
 
+// このLinuxプレイグラウンド画面の中でだけ効く、最後の保険。原因を問わず
+// （個別のフォーカス対策で拾いきれなかったケースも含めて）画面内のどこを
+// タップしてもページのスクロール位置が勝手に動かないようにする。タップ
+// 直前の位置を覚えておき、そのタップに起因する処理が一通り終わった後
+// （同期処理の直後・次のフレーム・その次のフレーム）に繰り返し復元する。
+function installScrollGuard(root){
+  if(!root) return;
+  const scroller = () => document.scrollingElement || document.documentElement;
+  let guardY = null;
+  const capture = () => { guardY = scroller().scrollTop; };
+  const restore = () => { if(guardY !== null) scroller().scrollTop = guardY; };
+  root.addEventListener("pointerdown", capture, true);
+  root.addEventListener("click", () => {
+    restore();
+    requestAnimationFrame(restore);
+    requestAnimationFrame(() => requestAnimationFrame(restore));
+  }, true);
+}
+
 // ------------------------------------------------------------------------
 // Terminal
 // ------------------------------------------------------------------------
@@ -110,9 +129,13 @@ function liveLineHTML(){
   </div>`;
 }
 
+// 送信ボタンはonPressで常にフォーカスを持たせない。それに加えて、送信
+// ボタン自身（＝ライブ行のDOMノード）を初回作成後は二度と作り直さない
+// （updateLiveLine()は中身のテキストだけを書き換える）ことで、そもそも
+// 「フォーカス中の要素がDOMから消える」状況自体を起こさせない。
 function wireLiveLineButton(){
   const btn = app.querySelector("#pg-term-send-btn");
-  if(btn) btn.onclick = () => submitLiveCommand();
+  if(btn) onPress(btn, () => submitLiveCommand());
 }
 
 function renderTerminalBody(){
@@ -124,16 +147,22 @@ function renderTerminalBody(){
 }
 
 // 入力バッファが変わるたび（文字入力・矢印移動・履歴呼び出し等）に、
-// ライブ行だけを描き直す。ターミナル本体の他の行やページのスクロール
-// 位置には一切手を触れない。
+// ライブ行の表示テキスト（#pg-term-input-display の中身）だけを書き換える。
+// プロンプトや送信ボタンを含む行そのものは作り直さないため、ページの
+// スクロール位置にもフォーカスにも一切影響しない。
 function updateLiveLine(){
   const el = terminalBodyEl();
   if(!el) return;
   const wasNearBottom = isNearBottom(el);
-  const old = el.querySelector("#pg-term-live");
-  if(old) old.outerHTML = liveLineHTML();
-  else el.insertAdjacentHTML("beforeend", liveLineHTML());
-  wireLiveLineButton();
+  const display = el.querySelector("#pg-term-input-display");
+  if(display){
+    const before = esc(liveBuffer.slice(0, liveCursor));
+    const after = esc(liveBuffer.slice(liveCursor));
+    display.innerHTML = `${before}<span class="pg-term-cursor" id="pg-term-cursor"></span>${after}`;
+  } else {
+    el.insertAdjacentHTML("beforeend", liveLineHTML());
+    wireLiveLineButton();
+  }
   if(wasNearBottom) el.scrollTop = el.scrollHeight;
 }
 
@@ -176,9 +205,13 @@ function evaluateMission(pipeline, raw, isError){
   appendTerminalRecords([
     { kind:"line", tokens:[{ text: categoryDone ? "🎉 このカテゴリのミッションをすべて達成しました！" : "✅ Mission Complete!", cls:"pg-mission-toast" }] },
   ]);
-  renderCategoryTabs();
-  renderMissionCard();
-  renderHintCard();
+  // コマンド実行の結果としてカテゴリタブ／カードが差し替わる場合も、
+  // ページのスクロール位置が勝手に動かないようにする
+  withScrollPreserved(() => {
+    renderCategoryTabs();
+    renderMissionCard();
+    renderHintCard();
+  });
 }
 
 // ------------------------------------------------------------------------
@@ -399,7 +432,7 @@ function wireKeyboard(){
   const kb = app.querySelector("#pg-app-keyboard");
   if(!kb) return;
   kb.querySelectorAll("[data-kb-char]").forEach(btn => {
-    btn.onclick = () => {
+    onPress(btn, () => {
       const raw = btn.dataset.kbChar;
       if(ctrlArmed){
         ctrlArmed = false;
@@ -409,11 +442,11 @@ function wireKeyboard(){
       }
       const ch = capsOn && /[a-z]/.test(raw) ? raw.toUpperCase() : raw;
       insertText(ch);
-    };
+    });
   });
   const bind = (id, handler) => {
     const btn = kb.querySelector(id);
-    if(btn) btn.onclick = handler;
+    if(btn) onPress(btn, handler);
   };
   bind("#pg-kb-tab", () => tabComplete());
   bind("#pg-kb-ctrl", () => { ctrlArmed = !ctrlArmed; updateCtrlKeyVisual(); });
@@ -647,6 +680,7 @@ export function renderPlaygroundScreen(){
   ).join("");
 
   app.innerHTML = `
+  <div class="pg-root" id="pg-root">
     <div class="pg-head">
       <h2 class="pg-head-title">Linux プレイグラウンド</h2>
       <div class="pg-head-actions">
@@ -677,6 +711,7 @@ export function renderPlaygroundScreen(){
       <div class="pg-card pg-mission-card" id="pg-mission-card"></div>
       <div class="pg-card pg-hint-card" id="pg-hint-card"></div>
     </div>
+  </div>
   `;
 
   renderTerminalBody();
@@ -687,6 +722,7 @@ export function renderPlaygroundScreen(){
   wireTerminalTap();
   wireKeyboard();
   wireChips();
+  installScrollGuard(app.querySelector("#pg-root"));
 
   const resetBtn = app.querySelector("#pg-reset");
   if(resetBtn) resetBtn.onclick = () => openResetConfirmModal();
