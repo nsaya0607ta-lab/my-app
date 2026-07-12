@@ -30,6 +30,7 @@ import { MISSION_CATEGORIES, MISSIONS_BY_CATEGORY, categoryProgress, currentMiss
 import { history, missionProgress, resetAll, vfs, shellState } from './playgroundState.js';
 import { pgSaveNow, pgScheduleSave } from './cloudSync.js';
 import { COMMAND_NAMES } from './commands/index.js';
+import { buildTopLines } from './commands/top.js';
 
 let answerRevealed = false;
 let terminalRecords = []; // {kind:"cmd", promptPath, text} | {kind:"line", tokens}
@@ -267,6 +268,7 @@ function runCommand(raw){
 function openCommandOverlay(overlay){
   if(overlay.type === "nano") openNanoModal(overlay);
   else if(overlay.type === "less") openLessModal(overlay);
+  else if(overlay.type === "top") openTopModal();
 }
 
 function openNanoModal(payload){
@@ -328,6 +330,97 @@ function openLessModal(payload){
   document.addEventListener("keydown", onKey);
   ov.querySelector("#pg-less-close").onclick = close;
   ov.addEventListener("click", (e) => { if(e.target === ov) close(); });
+}
+
+// top（フルスクリーン疑似ターミナル）：実際のtopのように、開いている間は
+// 約1秒ごとに画面内容だけを書き換え続ける（オーバーレイ自体は作り直さない）。
+// qで終了、kでPID指定のプロセス終了（学習用の疑似killなので実害はない）。
+// q/kのキー入力はdocumentへのkeydownリスナーで捕まえており、通常のコマンド
+// 入力（liveBuffer/アプリ内キーボード）とは完全に分離して扱う。
+function topFootHintHTML(){
+  return `<span class="pg-top-hint">自動更新中（約1秒ごと）</span>
+    <button type="button" class="pg-top-btn" id="pg-top-kill-btn">k キル</button>
+    <button type="button" class="pg-top-btn" id="pg-top-quit-btn">q 終了</button>`;
+}
+
+function topFootKillHTML(){
+  return `<span class="pg-top-kill-label">PID to kill:</span>
+    <input type="text" inputmode="numeric" pattern="[0-9]*" class="pg-top-kill-input" id="pg-top-kill-input" autocomplete="off">
+    <button type="button" class="pg-top-kill-ok" id="pg-top-kill-ok">送信</button>`;
+}
+
+function openTopModal(){
+  const ov = document.createElement("div");
+  ov.className = "modal-ov pg-top-ov";
+  ov.innerHTML = `
+    <div class="pg-top-modal">
+      <pre class="pg-top-content" id="pg-top-content"></pre>
+      <div class="pg-top-foot" id="pg-top-foot"></div>
+    </div>`;
+  document.body.appendChild(ov);
+  const contentEl = ov.querySelector("#pg-top-content");
+  const footEl = ov.querySelector("#pg-top-foot");
+  let killMode = false;
+  let msgTimer = null;
+  let timer = null;
+
+  const draw = () => {
+    contentEl.textContent = buildTopLines(shellState).map(tokens => tokens.map(t => t.text).join("")).join("\n");
+  };
+
+  const showHint = () => {
+    killMode = false;
+    clearTimeout(msgTimer);
+    footEl.innerHTML = topFootHintHTML();
+    footEl.querySelector("#pg-top-kill-btn").onclick = () => showKillPrompt();
+    footEl.querySelector("#pg-top-quit-btn").onclick = () => close();
+  };
+
+  const showMessage = (text) => {
+    footEl.innerHTML = `<span class="pg-top-msg">${esc(text)}</span>`;
+    clearTimeout(msgTimer);
+    msgTimer = setTimeout(showHint, 1500);
+  };
+
+  const showKillPrompt = () => {
+    killMode = true;
+    footEl.innerHTML = topFootKillHTML();
+    const input = footEl.querySelector("#pg-top-kill-input");
+    const submit = () => {
+      const raw = input.value;
+      const pid = parseInt(raw, 10);
+      if(!raw || Number.isNaN(pid)){ showHint(); return; }
+      const killed = shellState.killPid(pid);
+      draw();
+      showMessage(killed ? `Signal 15 (TERM) を PID ${pid} に送信しました` : `kill: (${pid}) - No such process`);
+    };
+    footEl.querySelector("#pg-top-kill-ok").onclick = submit;
+    input.addEventListener("input", () => { input.value = input.value.replace(/\D/g, ""); });
+    input.addEventListener("keydown", (e) => {
+      if(e.key === "Enter"){ e.preventDefault(); submit(); }
+      else if(e.key === "Escape"){ e.preventDefault(); showHint(); }
+    });
+    input.focus();
+  };
+
+  const close = () => {
+    clearInterval(timer);
+    clearTimeout(msgTimer);
+    document.removeEventListener("keydown", onKey);
+    ov.remove();
+    renderTerminalBody();
+  };
+
+  const onKey = (e) => {
+    if(killMode) return; // killモード中はPID入力欄側で処理する
+    if(e.key === "q"){ e.preventDefault(); close(); }
+    else if(e.key === "k"){ e.preventDefault(); showKillPrompt(); }
+  };
+
+  draw();
+  showHint();
+  timer = setInterval(draw, 1000);
+  document.addEventListener("keydown", onKey);
 }
 
 // ------------------------------------------------------------------------

@@ -81,7 +81,7 @@ export const systemMissions = [
   },
   {
     id: "system-10", category: "system", level: "beginner",
-    title: "top で現在のプロセス状況をリアルタイム表示（本環境では1回分のスナップショット）してください。",
+    title: "top で現在のプロセス状況をリアルタイム表示してください。",
     hint: "top",
     answer: "top",
     explanation: "top はCPU使用率順にプロセスを並べて表示する、代表的なプロセス監視コマンドです。",
