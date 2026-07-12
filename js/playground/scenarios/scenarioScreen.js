@@ -4,7 +4,7 @@
    （js/playground/screen.js、ミッションモード）は変更せず、同じVFS/
    ShellState/Parser/Executor/コマンド群のうえに独立した画面として追加する。
 
-   ・一覧画面（S.scenarioId === null）… 難易度別にシナリオをカード表示
+   ・一覧画面（S.scenarioId === null）… カテゴリ別（〜編）にシナリオをカード表示
    ・プレイ画面（S.scenarioId !== null）… 依頼内容の吹き出し＋ターミナル＋
      進捗チェックリスト＋ヒント／解説／次のシナリオ
 
@@ -20,7 +20,7 @@ import { VirtualFileSystem } from '../vfs.js';
 import { ShellState } from '../shellState.js';
 import { HistoryManager } from '../historyManager.js';
 import { UserSession } from '../users.js';
-import { SCENARIOS, getScenarioById, nextScenarioId, scenariosByDifficulty, scenariosByPack } from './index.js';
+import { SCENARIOS, getScenarioById, nextScenarioId, scenariosByCategory, scenariosByPack } from './index.js';
 import { evaluateGoal } from './goalCheckers.js';
 import { applyInitialEnv } from './initEnv.js';
 import { serializeSession, restoreSession } from './vfsSnapshot.js';
@@ -262,9 +262,9 @@ function scenarioCardHTML(sc){
       </button>`;
 }
 
-// 「権限管理編」のような一連の物語（story）を持つシナリオパックは、難易度別
+// 「権限管理編」のような一連の物語（story）を持つシナリオパックは、カテゴリ別
 // グルーピングとは別に、番号どおりの順番（＝物語の進行順）でひとまとめの
-// 章として表示する。パックに属さない既存シナリオは従来どおり難易度別に表示。
+// 章として表示する。パックに属さない既存シナリオはカテゴリごとに「〜編」として表示。
 function packSectionHTML(pack){
   const cards = pack.scenarios.map(scenarioCardHTML).join("");
   return `<div class="scn-pack">
@@ -278,11 +278,11 @@ function renderScenarioListScreen(){
   const packs = scenariosByPack();
   const packsHTML = packs.map(packSectionHTML).join("");
 
-  const groups = scenariosByDifficulty();
+  const groups = scenariosByCategory();
   const groupsHTML = groups.map(g => {
     const cards = g.scenarios.map(scenarioCardHTML).join("");
     return `<div class="scn-group">
-      <div class="scn-group-title">${esc(g.difficulty)}</div>
+      <div class="scn-group-title">${esc(g.category)}編</div>
       <div class="scn-card-grid">${cards}</div>
     </div>`;
   }).join("");

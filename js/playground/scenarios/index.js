@@ -65,10 +65,8 @@ export const SCENARIOS = [
   s046, s047, s048, s049, s050, s051, s052,
 ];
 
-export const DIFFICULTY_ORDER = ["初級", "初級〜中級", "中級", "LPIC Level1"];
-
 // 「権限管理編」のように、番号どおりの物語（ストーリー）として通しで遊ぶ
-// ことを想定したシナリオ群。packを持つシナリオは、難易度別の一覧からは
+// ことを想定したシナリオ群。packを持つシナリオは、カテゴリ別の一覧からは
 // 除外され、代わりにこの並び順（＝物語の進行順）で1つの章として表示される。
 export const PACKS = [
   {
@@ -95,12 +93,20 @@ export function nextScenarioId(id){
   return SCENARIOS[idx + 1].id;
 }
 
-// 難易度→カテゴリごとにグルーピングした一覧（シナリオ選択画面用。パックに
-// 属するシナリオはscenariosByPack()側に表示されるため、ここでは除外する）
-export function scenariosByDifficulty(){
-  return DIFFICULTY_ORDER
-    .map(diff => ({ difficulty: diff, scenarios: SCENARIOS.filter(s => s.difficulty === diff && !s.pack) }))
-    .filter(g => g.scenarios.length);
+// カテゴリごとにグルーピングした一覧（シナリオ選択画面用。パックに属する
+// シナリオはscenariosByPack()側に表示されるため、ここでは除外する）
+export function scenariosByCategory(){
+  const groups = [];
+  const byCategory = new Map();
+  SCENARIOS.filter(s => !s.pack).forEach(s => {
+    if(!byCategory.has(s.category)){
+      const group = { category: s.category, scenarios: [] };
+      byCategory.set(s.category, group);
+      groups.push(group);
+    }
+    byCategory.get(s.category).scenarios.push(s);
+  });
+  return groups;
 }
 
 // パックごとに、物語の進行順（SCENARIOS配列内の並び順）でまとめた一覧
