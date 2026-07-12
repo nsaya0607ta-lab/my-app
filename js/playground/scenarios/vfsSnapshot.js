@@ -39,6 +39,9 @@ export function serializeSession(vfs, shellState, userSession){
       env: Object.fromEntries(shellState.env.entries()),
       cronJobs: JSON.parse(JSON.stringify(shellState.cronJobs || [])),
       processes: JSON.parse(JSON.stringify(shellState.processes || [])),
+      jobs: JSON.parse(JSON.stringify(shellState.jobs || [])),
+      nextJobId: shellState.nextJobId,
+      nextPid: shellState.nextPid,
     },
     session: userSession ? { stack: userSession.stack.slice(), everRoot: !!userSession.everRoot } : null,
   };
@@ -56,6 +59,9 @@ export function restoreSession(vfs, shellState, snapshot, userSession){
       if(snapshot.shell.env && typeof snapshot.shell.env === "object") shellState.env = new Map(Object.entries(snapshot.shell.env));
       if(Array.isArray(snapshot.shell.cronJobs)) shellState.cronJobs = snapshot.shell.cronJobs;
       if(Array.isArray(snapshot.shell.processes) && snapshot.shell.processes.length) shellState.processes = snapshot.shell.processes;
+      if(Array.isArray(snapshot.shell.jobs)) shellState.jobs = snapshot.shell.jobs;
+      if(typeof snapshot.shell.nextJobId === "number") shellState.nextJobId = snapshot.shell.nextJobId;
+      if(typeof snapshot.shell.nextPid === "number") shellState.nextPid = snapshot.shell.nextPid;
     }
     if(userSession && snapshot.session && Array.isArray(snapshot.session.stack)){
       const valid = snapshot.session.stack.filter(name => userSession.users.has(name));

@@ -122,6 +122,16 @@ export const GOAL_CHECKERS = {
   // 指定したプロセスが（kill/killallで）いなくなっている
   processGone: (vfs, shell, g) => !shell.processes.some(p => (g.pid && p.pid === g.pid) || (g.match && p.cmd.includes(g.match))),
 
+  // ジョブテーブル（&でのバックグラウンド実行・jobs/fg/bg）の状態を判定する。
+  // state:"running"/"stopped" は該当ジョブがその状態で存在するか、
+  // state:"none" は該当ジョブがジョブテーブルから消えている（fgで完了した等）
+  // ことを判定する。match指定時はコマンド文字列の部分一致で対象を絞り込む。
+  job: (vfs, shell, g) => {
+    const matches = shell.jobs.filter(j => !g.match || j.cmd.includes(g.match));
+    if(g.state === "none") return matches.length === 0;
+    return matches.some(j => j.status === g.state);
+  },
+
   // ディスク使用量が閾値未満になっている（削除・整理系シナリオ用）
   diskUsageUnder: (vfs, shell, g) => {
     const n = nodeAt(vfs, g.path);

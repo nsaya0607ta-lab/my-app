@@ -41,11 +41,20 @@ import s034 from './data/s034-perm-chown-owner-group.js';
 import s035 from './data/s035-perm-chown-denied.js';
 import s036 from './data/s036-perm-su-exit.js';
 import s037 from './data/s037-perm-backup-combo.js';
+import s038 from './data/s038-job-endless-backup.js';
+import s039 from './data/s039-job-safe-stop.js';
+import s040 from './data/s040-job-long-task-bg.js';
+import s041 from './data/s041-job-heavy-server.js';
+import s042 from './data/s042-job-ctrlz-mistake.js';
+import s043 from './data/s043-job-background-multitask.js';
+import s044 from './data/s044-job-night-batch.js';
+import s045 from './data/s045-job-prod-incident.js';
 
 export const SCENARIOS = [
   s001, s002, s003, s004, s005, s006, s007, s008, s009, s010, s011, s012, s013, s014, s015,
   s016, s017, s018, s019, s020, s021, s022, s023, s024, s025, s026, s027,
   s028, s029, s030, s031, s032, s033, s034, s035, s036, s037,
+  s038, s039, s040, s041, s042, s043, s044, s045,
 ];
 
 export const DIFFICULTY_ORDER = ["初級", "初級〜中級", "中級", "LPIC Level1"];

@@ -62,15 +62,25 @@ function parseStage(tokens){
 }
 
 // 戻り値: ステージ（{cmd,args,redirect,append}）の配列。空入力は null。
+// 末尾が単独の "&" トークンの場合はバックグラウンド実行の指定として取り除き、
+// 配列自身に background フラグを立てて返す（呼び出し側の型を変えないため、
+// 配列に直接プロパティを生やす。executeCommand()側でこのフラグを見る）。
 export function parseCommand(raw){
   const trimmed = (raw||"").trim();
   if(!trimmed) return null;
   const tokens = tokenize(trimmed);
+  let background = false;
+  if(tokens.length && tokens[tokens.length - 1] === "&"){
+    tokens.pop();
+    background = true;
+  }
   const stagesTokens = [[]];
   tokens.forEach(t => {
     if(t === "|") stagesTokens.push([]);
     else stagesTokens[stagesTokens.length-1].push(t);
   });
   const pipeline = stagesTokens.filter(t => t.length).map(parseStage);
-  return pipeline.length ? pipeline : null;
+  if(!pipeline.length) return null;
+  pipeline.background = background;
+  return pipeline;
 }
