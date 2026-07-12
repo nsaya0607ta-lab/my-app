@@ -32,4 +32,12 @@ export class HistoryManager {
     this.cursor++;
     return this.cursor === this.items.length ? this.draft : this.items[this.cursor];
   }
+
+  toJSON(){ return this.items.slice(); }
+
+  loadFromJSON(items){
+    this.items = Array.isArray(items) ? items.filter(s => typeof s === "string") : [];
+    this.cursor = this.items.length;
+    this.draft = "";
+  }
 }

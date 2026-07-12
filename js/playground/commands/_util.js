@@ -85,7 +85,7 @@ export const PATH_COMMANDS = [
   "pwd","ls","cd","mkdir","rmdir","touch","cp","mv","rm","cat","less","head","tail",
   "echo","nano","find","locate","which","whereis","grep","sort","uniq","wc","cut","tr",
   "chmod","chown","ln","df","du","free","ps","top","kill","killall","hostname","whoami",
-  "id","uname","date","cal","history","clear","man","help","env","export","alias","unalias",
+  "id","uname","date","cal","history","clear","man","help","env","export","alias","unalias","tee",
 ];
 
 export const BIN_DIR = {

@@ -1,10 +1,11 @@
 /* =========================================================================
    CommandParser — ターミナルへの入力1行を「パイプライン」（ステージの配列）
-   に変換する。各ステージは { cmd, args, redirect, append } の形。
+   に変換する。各ステージは { cmd, args, redirect, append, inputRedirect } の形。
    対応する記法：
      "..." '...'   クォート（内部の空白・記号をまとめて1トークンにする）
      >  file        上書きリダイレクト
      >> file        追記リダイレクト
+     <  file        入力リダイレクト（先頭ステージの標準入力にファイルを渡す）
      cmd1 | cmd2     パイプ（cmd1の標準出力をcmd2の標準入力に渡す）
    ========================================================================= */
 
@@ -35,6 +36,11 @@ function tokenize(raw){
       else tokens.push(">");
       continue;
     }
+    if(ch === "<"){
+      if(cur){ tokens.push(cur); cur = ""; }
+      tokens.push("<");
+      continue;
+    }
     cur += ch;
   }
   if(cur) tokens.push(cur);
@@ -44,14 +50,15 @@ function tokenize(raw){
 function parseStage(tokens){
   const cmd = tokens[0];
   const rest = tokens.slice(1);
-  const redirIdx = rest.findIndex(t => t === ">" || t === ">>");
-  if(redirIdx === -1) return { cmd, args: rest, redirect: null, append: false };
-  return {
-    cmd,
-    args: rest.slice(0, redirIdx),
-    redirect: rest[redirIdx+1] || null,
-    append: rest[redirIdx] === ">>",
-  };
+  const args = [];
+  let redirect = null, append = false, inputRedirect = null;
+  for(let i = 0; i < rest.length; i++){
+    const t = rest[i];
+    if(t === ">" || t === ">>"){ redirect = rest[++i] || null; append = t === ">>"; continue; }
+    if(t === "<"){ inputRedirect = rest[++i] || null; continue; }
+    args.push(t);
+  }
+  return { cmd, args, redirect, append, inputRedirect };
 }
 
 // 戻り値: ステージ（{cmd,args,redirect,append}）の配列。空入力は null。
