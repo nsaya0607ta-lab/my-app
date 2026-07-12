@@ -86,7 +86,7 @@ export const PATH_COMMANDS = [
   "echo","nano","find","locate","which","whereis","grep","sort","uniq","wc","cut","tr",
   "chmod","chown","ln","df","du","free","ps","top","kill","killall","hostname","whoami",
   "id","uname","date","cal","history","clear","man","help","env","export","alias","unalias",
-  "crontab","tee",
+  "crontab","tee","awk",
 ];
 
 export const BIN_DIR = {

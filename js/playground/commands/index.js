@@ -54,12 +54,13 @@ import alias from './alias.js';
 import unalias from './unalias.js';
 import crontab from './crontab.js';
 import tee from './tee.js';
+import awk from './awk.js';
 
 export const COMMAND_REGISTRY = {
   pwd, ls, cd, mkdir, rmdir, touch, cp, mv, rm, cat, less, head, tail, echo, nano,
   find, locate, which, whereis, grep, sort, uniq, wc, cut, tr, chmod, chown, ln,
   df, du, free, ps, top, kill, killall, hostname, whoami, id, uname, date, cal,
-  history, clear, man, help, env, export: exportCmd, alias, unalias, crontab, tee,
+  history, clear, man, help, env, export: exportCmd, alias, unalias, crontab, tee, awk,
 };
 
 export const COMMAND_NAMES = Object.keys(COMMAND_REGISTRY);

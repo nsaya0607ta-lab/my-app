@@ -40,6 +40,7 @@ let terminalRecords = []; // {kind:"cmd", promptPath, text} | {kind:"line", toke
 let liveBuffer = "";
 let liveCursor = 0;
 let ctrlArmed = false;
+let capsOn = false;
 let keyboardOpen = false;
 
 function welcomeRecord(text){
@@ -53,6 +54,7 @@ function resetTerminal(){
   liveBuffer = "";
   liveCursor = 0;
   ctrlArmed = false;
+  capsOn = false;
   keyboardOpen = false;
 }
 resetTerminal();
@@ -356,6 +358,7 @@ const KB_ROWS = [
   ["a","s","d","f","g","h","j","k","l"],
   ["z","x","c","v","b","n","m"],
   ["-","_","/",".","*","|",">","<","&","$","~"],
+  ["'","\"","{","}","(",")",":",";",",","=","!","+","%"],
 ];
 
 function keyboardHTML(){
@@ -366,6 +369,7 @@ function keyboardHTML(){
     <div class="pg-kb-row">
       <button type="button" class="pg-kb-key pg-kb-key--wide" id="pg-kb-tab">Tab</button>
       <button type="button" class="pg-kb-key${ctrlArmed ? " pg-kb-key--active" : ""}" id="pg-kb-ctrl">Ctrl</button>
+      <button type="button" class="pg-kb-key${capsOn ? " pg-kb-key--active" : ""}" id="pg-kb-shift">Shift</button>
       <button type="button" class="pg-kb-key" id="pg-kb-left">←</button>
       <button type="button" class="pg-kb-key" id="pg-kb-up">↑</button>
       <button type="button" class="pg-kb-key" id="pg-kb-down">↓</button>
@@ -386,18 +390,24 @@ function updateCtrlKeyVisual(){
   if(btn) btn.classList.toggle("pg-kb-key--active", ctrlArmed);
 }
 
+function updateCapsKeyVisual(){
+  const btn = app.querySelector("#pg-kb-shift");
+  if(btn) btn.classList.toggle("pg-kb-key--active", capsOn);
+}
+
 function wireKeyboard(){
   const kb = app.querySelector("#pg-app-keyboard");
   if(!kb) return;
   kb.querySelectorAll("[data-kb-char]").forEach(btn => {
     btn.onclick = () => {
-      const ch = btn.dataset.kbChar;
+      const raw = btn.dataset.kbChar;
       if(ctrlArmed){
         ctrlArmed = false;
         updateCtrlKeyVisual();
-        if(ch === "c"){ ctrlC(); return; }
-        if(ch === "l"){ clearTerminal(); return; }
+        if(raw === "c"){ ctrlC(); return; }
+        if(raw === "l"){ clearTerminal(); return; }
       }
+      const ch = capsOn && /[a-z]/.test(raw) ? raw.toUpperCase() : raw;
       insertText(ch);
     };
   });
@@ -407,6 +417,7 @@ function wireKeyboard(){
   };
   bind("#pg-kb-tab", () => tabComplete());
   bind("#pg-kb-ctrl", () => { ctrlArmed = !ctrlArmed; updateCtrlKeyVisual(); });
+  bind("#pg-kb-shift", () => { capsOn = !capsOn; updateCapsKeyVisual(); });
   bind("#pg-kb-left", () => moveCursor(-1));
   bind("#pg-kb-right", () => moveCursor(1));
   bind("#pg-kb-up", () => historyStep(-1));
