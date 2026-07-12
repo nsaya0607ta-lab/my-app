@@ -87,6 +87,12 @@ function matchAnswer(answerText, candidates) {
     if (normalizedCandidate === normalizedInput) {
       return { exact: true, score: 1, field: c.field, value: c.value };
     }
+    // 「YOASOBI 夜に駆ける」のように、正式なタイトルの前後にアーティスト名や
+    // 「歌ってください」等の余計な語が付いていても、タイトルそのものが丸ごと
+    // 含まれていれば正解にする（音声認識結果は特にこの形になりやすい）
+    if (normalizedCandidate.length >= 2 && normalizedInput.includes(normalizedCandidate)) {
+      return { exact: true, score: 1, field: c.field, value: c.value };
+    }
     const score = similarity(answerText, c.value);
     if (score > best.score) best = { exact: false, score, field: c.field, value: c.value };
   }
