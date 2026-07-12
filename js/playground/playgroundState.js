@@ -11,17 +11,21 @@ import { VirtualFileSystem } from './vfs.js';
 import { ShellState } from './shellState.js';
 import { HistoryManager } from './historyManager.js';
 import { MissionProgress } from './missionProgress.js';
+import { UserSession } from './users.js';
 
 export const vfs = new VirtualFileSystem();
 export const shellState = new ShellState();
 export const history = new HistoryManager();
 export const missionProgress = new MissionProgress();
+export const session = new UserSession();
 
 export function resetAll(){
   vfs.reset();
   shellState.reset();
   history.reset();
   missionProgress.reset();
+  session.reset();
+  vfs.setCurrentUser(session.current());
 }
 
 // Firestoreの users/{uid}.playground へ保存できる、プレーンなJSONに変換する
@@ -31,6 +35,7 @@ export function serialize(){
     shell: shellState.toJSON(),
     history: history.toJSON(),
     missions: missionProgress.toJSON(),
+    session: session.toJSON(),
   };
 }
 
@@ -43,5 +48,7 @@ export function restore(data){
   if(data.shell) shellState.loadFromJSON(data.shell);
   if(data.history) history.loadFromJSON(data.history);
   if(data.missions) missionProgress.loadFromJSON(data.missions);
+  if(data.session) session.loadFromJSON(data.session);
+  vfs.setCurrentUser(session.current());
   return restoredVfs;
 }

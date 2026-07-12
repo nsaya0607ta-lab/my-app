@@ -38,7 +38,9 @@ function makeLink(target, owner=USER, group=GROUP){
 function buildInitialRoot(){
   const root = makeDir("root", "root");
   ROOT_DEFAULT_DIRS.forEach(name => { root.children[name] = makeDir(name === "root" ? "root" : USER); });
-  root.children.root = makeDir("root", "root");
+  // /root は実際のLinuxと同様 root専用（700）にし、一般ユーザーからは
+  // cd/lsできないようにする（「root専用ディレクトリ」の最小の例）
+  root.children.root = makeDir("root", "root", "rwx------");
   root.children.etc.children.hostname = makeFile("linux-playground\n", "root", "root");
   root.children.etc.children.passwd = makeFile("root:x:0:0:root:/root:/bin/bash\nstudent:x:1000:1000:student:/home/student:/bin/bash\n", "root", "root");
 
@@ -139,8 +141,23 @@ export class VirtualFileSystem {
 
   reset(){
     this.root = buildInitialRoot();
-    this.cwd = HOME_PATH.slice();
+    this.currentUser = USER;
+    this.currentGroup = GROUP;
+    this.isRootUser = false;
+    this.currentHomeSegs = HOME_PATH.slice();
+    this.cwd = this.currentHomeSegs.slice();
   }
+
+  // su/exit から呼ばれる。パーミッション判定の基準となる「現在のユーザー」を
+  // 切り替える。cwdはここでは変更しない（作業ディレクトリは維持される）。
+  setCurrentUser(user){
+    this.currentUser = user.username;
+    this.currentGroup = user.group;
+    this.isRootUser = !!user.isRoot;
+    this.currentHomeSegs = user.home.split("/").filter(Boolean);
+  }
+
+  homeSegs(){ return this.currentHomeSegs; }
 
   // Firestoreへ保存する形（プレーンなJSONのみ）に変換する
   toJSON(){
@@ -162,7 +179,7 @@ export class VirtualFileSystem {
   resolvePath(pathStr, base){
     let segs;
     if(pathStr.startsWith("/")) segs = [];
-    else if(pathStr === "~" || pathStr.startsWith("~/")) segs = HOME_PATH.slice();
+    else if(pathStr === "~" || pathStr.startsWith("~/")) segs = this.homeSegs().slice();
     else segs = (base || this.cwd).slice();
     const rest = pathStr.startsWith("~") ? pathStr.slice(1) : pathStr;
     rest.split("/").filter(Boolean).forEach(part => {
@@ -219,7 +236,7 @@ export class VirtualFileSystem {
 
   // プロンプトに使う短縮パス（ホーム配下なら ~ で省略。例: ~/study）
   promptPath(){
-    const home = HOME_PATH.join("/");
+    const home = this.homeSegs().join("/");
     const cur = this.cwd.join("/");
     if(cur === home) return "~";
     if(cur.startsWith(home + "/")) return "~" + cur.slice(home.length);
@@ -228,12 +245,14 @@ export class VirtualFileSystem {
 
   // --- パーミッション判定 -------------------------------------------------
   permClass(node){
-    if(node.owner === USER) return 0;
-    if(node.group === GROUP) return 1;
+    if(node.owner === this.currentUser) return 0;
+    if(node.group === this.currentGroup) return 1;
     return 2;
   }
   can(node, perm){
     if(!node) return false;
+    // root は実際のLinuxと同様、ファイルのパーミッションに関わらず常に許可される
+    if(this.isRootUser) return true;
     const idx = { r:0, w:1, x:2 }[perm];
     const cls = this.permClass(node);
     return node.mode[cls*3 + idx] !== "-";
@@ -289,7 +308,7 @@ export class VirtualFileSystem {
         built.push(part);
         if(!cur.children[part]){
           if(!this.can(cur, "w")) return { error:{ error:"EACCES", path: built.join("/") } };
-          cur.children[part] = makeDir();
+          cur.children[part] = makeDir(this.currentUser, this.currentGroup);
         } else if(cur.children[part].type !== "dir"){
           return { error:{ error:"ENOTDIR", path: built.join("/") } };
         }
@@ -302,7 +321,7 @@ export class VirtualFileSystem {
     if(!parent || parent.type !== "dir") return { error:{ error:"ENOENT", path: pathStr } };
     if(!this.can(parent, "w")) return { error:{ error:"EACCES", path: pathStr } };
     if(parent.children[name]) return { error:{ error:"EEXIST", path: pathStr } };
-    parent.children[name] = makeDir();
+    parent.children[name] = makeDir(this.currentUser, this.currentGroup);
     return { ok:true };
   }
 
@@ -332,7 +351,7 @@ export class VirtualFileSystem {
       return { ok:true };
     }
     if(!this.can(parent, "w")) return { error:{ error:"EACCES", path: pathStr } };
-    parent.children[name] = makeFile("");
+    parent.children[name] = makeFile("", this.currentUser, this.currentGroup);
     return { ok:true };
   }
 
@@ -363,7 +382,7 @@ export class VirtualFileSystem {
       return { ok:true };
     }
     if(!this.can(parent, "w")) return { error:{ error:"EACCES", path: pathStr } };
-    parent.children[name] = makeFile(content);
+    parent.children[name] = makeFile(content, this.currentUser, this.currentGroup);
     return { ok:true };
   }
 
@@ -449,7 +468,7 @@ export class VirtualFileSystem {
     if(!this.can(parent, "w")) return { error:{ error:"EACCES", path: linkPathStr } };
     if(opts.symbolic){
       const targetSegs = this.resolvePath(targetPathStr);
-      parent.children[linkName] = makeLink(targetSegs);
+      parent.children[linkName] = makeLink(targetSegs, this.currentUser, this.currentGroup);
       return { ok:true };
     }
     const targetSegs = this.resolvePath(targetPathStr);

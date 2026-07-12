@@ -49,6 +49,10 @@ export const MAN_PAGES = {
   ]},
   chmod:  { synopsis:"chmod MODE FILE...", desc:"ファイルのアクセス権を変更する。8進数（755など）またはシンボリック（u+x など）で指定する。" },
   chown:  { synopsis:"chown OWNER[:GROUP] FILE...", desc:"ファイルの所有者・所属グループを変更する（本環境では表示上の変更のみ）。" },
+  su:     { synopsis:"su [ユーザー名]", desc:"別のユーザーとしてシェルを実行する。ユーザー名を省略するとrootに切り替える。パスワードの入力が求められる（rootから実行した場合は不要）。", options:[
+    ["Password:","パスワードは画面に表示されない。正しい場合のみユーザーが切り替わり、誤っている場合は Authentication failure と表示される"],
+  ]},
+  exit:   { synopsis:"exit", desc:"su で切り替えたユーザーから、1つ前のユーザーへ戻る。" },
   ln:     { synopsis:"ln [-s] TARGET LINK", desc:"リンクを作成する。既定はハードリンク、-sでシンボリックリンクを作成する。" },
   df:     { synopsis:"df [-h]", desc:"マウントされているファイルシステムのディスク使用量を表示する。", options:[["-h","人間が読みやすい単位で表示する"]] },
   du:     { synopsis:"du [-sh] [PATH]", desc:"ファイル・ディレクトリの使用容量を再帰的に集計する。", options:[
