@@ -8,6 +8,7 @@ export const S = {
   deck:[], idx:0, picks:[], sel:[], revealed:false, last:null,
   commandCmd:null,             // コマンド別演習中に選択中のコマンド（例："grep"）。通常演習/試験ではnull
   newsDetail:null,             // ニュース詳細画面に表示中の項目（{title,content,dateKey,label,icon,returnScreen}）
+  scenarioId:null,             // シナリオモードで選択中のシナリオID。nullなら一覧表示
 };
 
 export const state = {

@@ -435,6 +435,7 @@ h1.title.title--badge{margin:2px 0 0;}
 .sheet-item-label{flex:1;font-size:15px;font-weight:700;}
 .sheet-item-chevron{flex:none;color:var(--muted);font-size:17px;line-height:1;}
 .launcher-icon-playground{background:linear-gradient(150deg,#ecfeff,#a5f3fc);box-shadow:0 5px 14px rgba(8,145,178,.20),inset 0 1px 0 rgba(255,255,255,.6);}
+.launcher-icon-scenario{background:linear-gradient(150deg,#fff7ed,#fed7aa);box-shadow:0 5px 14px rgba(217,119,6,.20),inset 0 1px 0 rgba(255,255,255,.6);}
 
 /* ===== 📰 今日のニュース検定（.modal-ov/.modalを土台に使う） ===== */
 .nq-modal{text-align:center;}
@@ -2109,3 +2110,71 @@ body[data-theme="dark"] .menu-btn:active{box-shadow:0 4px 10px rgba(0,0,0,.3), i
 .pg-less-end{flex:none;font-size:11px;color:#facc15;font-weight:800;}
 .pg-less-btn{flex:none;background:#1e293b;border:1px solid #334155;color:#f8fafc;font-weight:700;font-size:12px;padding:9px 14px;border-radius:10px;cursor:pointer;}
 .pg-less-btn:active{transform:scale(.97);}
+
+/* =========================================================================
+   🧑‍💼 シナリオモード — 実務の依頼を読み、自分でコマンドを組み立てて解決する
+   学習モード。ターミナル本体は既存のプレイグラウンド（.pg-terminal-*等）を
+   そのまま流用し、ここでは一覧画面・依頼の吹き出し・進捗表示だけを追加する。
+   ========================================================================= */
+.scn-intro-text{font-size:12.5px;color:var(--muted);line-height:1.6;margin:-6px 0 16px;}
+
+.scn-group{margin-bottom:20px;}
+.scn-group-title{font-size:12.5px;font-weight:800;color:var(--accent);margin-bottom:9px;padding-left:2px;}
+.scn-card-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;}
+@media (max-width:420px){ .scn-card-grid{grid-template-columns:1fr;} }
+
+.scn-card{
+  text-align:left;background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:13px 14px;
+  cursor:pointer;box-shadow:0 2px 8px rgba(15,23,42,.05);display:flex;flex-direction:column;gap:6px;
+}
+.scn-card:active{background:var(--bg2);}
+.scn-card-top{display:flex;align-items:center;gap:7px;}
+.scn-card-avatar{font-size:17px;flex:none;}
+.scn-card-cat{flex:1;font-size:10.5px;font-weight:800;color:var(--muted);text-transform:none;}
+.scn-card-badge{flex:none;font-size:10px;font-weight:800;border-radius:99px;padding:2px 8px;background:rgba(2,132,199,.1);color:var(--accent);}
+.scn-card-badge--done{background:rgba(22,163,74,.12);color:var(--good);}
+.scn-card-badge--progress{background:rgba(217,119,6,.14);color:var(--gold);}
+.scn-card-title{font-size:13.5px;font-weight:800;color:var(--text);line-height:1.4;}
+.scn-card-req{font-size:11px;color:var(--muted);}
+
+.scn-play-head{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:12px;}
+.scn-title-row{display:flex;align-items:flex-start;justify-content:space-between;gap:10px;margin-bottom:8px;}
+.scn-title{flex:1;min-width:0;font-size:18px;font-weight:800;color:var(--text);margin:0;letter-spacing:-.01em;line-height:1.35;}
+.scn-diff-badge{flex:none;font-size:11px;font-weight:800;border-radius:99px;padding:4px 11px;white-space:nowrap;background:rgba(2,132,199,.1);color:var(--accent);}
+.scn-diff-badge--beginner{background:rgba(22,163,74,.12);color:var(--good);}
+.scn-diff-badge--lower-mid{background:rgba(13,148,136,.14);color:#0d9488;}
+.scn-diff-badge--mid{background:rgba(2,132,199,.12);color:var(--accent);}
+.scn-diff-badge--lpic{background:rgba(217,119,6,.16);color:var(--gold);}
+
+.scn-progress-bar-row{display:flex;align-items:center;gap:10px;margin-bottom:16px;}
+.scn-progress-bar{flex:1;height:7px;border-radius:99px;background:var(--surface2);overflow:hidden;}
+.scn-progress-bar-fill{height:100%;border-radius:99px;background:linear-gradient(90deg,var(--accent),#38bdf8);transition:width .25s ease;}
+.scn-progress-count{flex:none;font-size:11.5px;font-weight:800;color:var(--muted);}
+
+.scn-request-bubble{
+  display:flex;gap:11px;background:var(--surface);border:1px solid var(--line);border-radius:16px;
+  padding:14px;margin-bottom:16px;box-shadow:0 2px 8px rgba(15,23,42,.05);
+}
+.scn-request-avatar{
+  flex:none;width:38px;height:38px;border-radius:50%;background:var(--bg2);display:flex;align-items:center;
+  justify-content:center;font-size:19px;
+}
+.scn-request-body{flex:1;min-width:0;}
+.scn-request-name{font-size:12.5px;font-weight:800;color:var(--text);margin-bottom:5px;}
+.scn-request-role{font-size:10.5px;font-weight:600;color:var(--muted);margin-left:7px;}
+.scn-request-text p{font-size:13px;color:var(--text);line-height:1.7;margin:0 0 4px;}
+.scn-request-text p:last-child{margin-bottom:0;}
+
+.scn-step-list{display:flex;flex-direction:column;gap:7px;}
+.scn-step-row{display:flex;align-items:flex-start;gap:7px;font-size:12px;color:var(--muted);line-height:1.5;}
+.scn-step-row--done{color:var(--text);}
+.scn-step-mark{flex:none;font-size:12px;line-height:1.5;}
+.scn-step-label{flex:1;min-width:0;}
+
+.scn-action-row{display:flex;flex-direction:column;gap:8px;margin-top:10px;}
+.scn-action-row .pg-card-btn{margin-top:0;}
+.scn-action-row .pg-card-btn:disabled{opacity:.45;cursor:default;}
+
+.scn-explain-modal{max-width:440px;}
+.scn-explain-modal .modal-title{color:var(--accent);}
+.scn-explain-modal .pg-help-body{max-height:60vh;overflow-y:auto;padding-right:2px;margin-bottom:14px;}

@@ -5,6 +5,7 @@ import { gcalLoadAuthorName, go, loadGcalStore, loadGcalTodoStore, loadPortfolio
 import { S, state } from './state.js';
 import { markPetActivity } from './pet.js';
 import { mpExportRaw } from './mindpalette.js';
+import { scenarioModeExportRaw } from './playground/scenarios/progressStore.js';
 
 export let PASS = 700;   // 選択中の資格の合格ライン（loadCertで設定）
 
@@ -441,11 +442,14 @@ export function seedCloudFromLocal(){
   const mindPalette = mpExportRaw();
   const hasMindPalette = Array.isArray(mindPalette.boards)
     && mindPalette.boards.some(b => (b.notes && b.notes.length) || (b.links && b.links.length));
-  if(Object.keys(patch).length || loadCoins() || hasPortfolio || hasGcal || hasMindPalette){
+  const scenarioMode = scenarioModeExportRaw();
+  const hasScenarioMode = (scenarioMode.cleared && scenarioMode.cleared.length) || Object.keys(scenarioMode.inProgress || {}).length;
+  if(Object.keys(patch).length || loadCoins() || hasPortfolio || hasGcal || hasMindPalette || hasScenarioMode){
     const payload = { certs: patch, coins: loadCoins(), updatedAt:new Date().toISOString() };
     if(hasPortfolio) payload.portfolio = portfolio;
     if(hasGcal) payload.gcal = { store: gcalStore, todos: gcalTodos, authorName: gcalAuthorName };
     if(hasMindPalette) payload.mindPalette = mindPalette;
+    if(hasScenarioMode) payload.scenarioMode = scenarioMode;
     try{
       window.FirebaseSync.setDoc(window.FirebaseSync.doc(state.db,"users",state.currentUserId),
         payload, { merge:true });
