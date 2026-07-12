@@ -42,7 +42,7 @@ export default function ls(ctx){
     }
     let entries = res.entries;
     if(entries.length === 1 && entries[0].name === target){
-      // ls した対象がファイル1つだった場合
+      // ls した対象がファイル1つだった場合（実際のLinuxと同様、total行は出さない）
     } else {
       entries = opts.all ? entries : entries.filter(e => !e.name.startsWith("."));
       if(opts.all){
@@ -52,8 +52,8 @@ export default function ls(ctx){
           ...entries,
         ];
       }
+      if(opts.long) lines.push(LINE(`total ${entries.length}`));
     }
-    if(opts.long) lines.push(LINE(`total ${entries.length}`));
     renderList(entries, opts, lines);
   });
 

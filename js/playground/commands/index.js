@@ -30,6 +30,7 @@ import cut from './cut.js';
 import tr from './tr.js';
 import chmod from './chmod.js';
 import chown from './chown.js';
+import chgrp from './chgrp.js';
 import ln from './ln.js';
 import df from './df.js';
 import du from './du.js';
@@ -60,7 +61,7 @@ import exitCmd from './exit.js';
 
 export const COMMAND_REGISTRY = {
   pwd, ls, cd, mkdir, rmdir, touch, cp, mv, rm, cat, less, head, tail, echo, nano,
-  find, locate, which, whereis, grep, sort, uniq, wc, cut, tr, chmod, chown, ln,
+  find, locate, which, whereis, grep, sort, uniq, wc, cut, tr, chmod, chown, chgrp, ln,
   df, du, free, ps, top, kill, killall, hostname, whoami, id, uname, date, cal,
   history, clear, man, help, env, export: exportCmd, alias, unalias, crontab, tee, awk,
   su, exit: exitCmd,

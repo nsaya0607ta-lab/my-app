@@ -48,7 +48,8 @@ export const MAN_PAGES = {
     ["-d","SET1に含まれる文字を削除する"], ["-s","連続して繰り返される同一文字を1文字に圧縮する"],
   ]},
   chmod:  { synopsis:"chmod MODE FILE...", desc:"ファイルのアクセス権を変更する。8進数（755など）またはシンボリック（u+x など）で指定する。" },
-  chown:  { synopsis:"chown OWNER[:GROUP] FILE...", desc:"ファイルの所有者・所属グループを変更する（本環境では表示上の変更のみ）。" },
+  chown:  { synopsis:"chown OWNER[:GROUP] FILE...", desc:"ファイルの所有者・所属グループを変更する。実際のLinuxでは所有者の変更にroot権限が必要（一般ユーザーがオーナー変更を試みると Operation not permitted になる）。" },
+  chgrp:  { synopsis:"chgrp GROUP FILE...", desc:"ファイルの所属グループだけを変更する。所有者はそのままのグループのみ変えたい場合はこちらを使う（グループ変更は一般ユーザーでも行える）。" },
   su:     { synopsis:"su [ユーザー名]", desc:"別のユーザーとしてシェルを実行する。ユーザー名を省略するとrootに切り替える。パスワードの入力が求められる（rootから実行した場合は不要）。", options:[
     ["Password:","パスワードは画面に表示されない。正しい場合のみユーザーが切り替わり、誤っている場合は Authentication failure と表示される"],
   ]},

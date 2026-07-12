@@ -9,6 +9,7 @@
    1件追加するだけでよい（シナリオ側は type 名を指定するだけで良い設計）。
    ========================================================================= */
 import { cronJobsMatch } from '../cronUtil.js';
+import { modeToOctal } from '../vfs.js';
 
 function nodeAt(vfs, path, opts = {}){
   const segs = vfs.resolvePath(path);
@@ -68,6 +69,33 @@ export const GOAL_CHECKERS = {
     return checkPermRule(n.mode, g.rule);
   },
 
+  // 8進数のモードが厳密に一致しているか（755のような「この数字ちょうど」
+  // を求めるシナリオ用。8進数指定でもシンボリック指定でも、結果として
+  // 同じmodeになれば通る＝コマンドの書き方は問わない）
+  octal: (vfs, shell, g) => {
+    const n = nodeAt(vfs, g.path, { raw: true });
+    if(!n) return false;
+    return modeToOctal(n.mode) === g.value;
+  },
+
+  // 所有者(owner)が指定した値になっているか
+  owner: (vfs, shell, g) => {
+    const n = nodeAt(vfs, g.path, { raw: true });
+    return !!n && n.owner === g.value;
+  },
+
+  // 所属グループ(group)が指定した値になっているか
+  group: (vfs, shell, g) => {
+    const n = nodeAt(vfs, g.path, { raw: true });
+    return !!n && n.group === g.value;
+  },
+
+  // 所有者・グループを同時に指定した値へ変更できているか（chown user:group）
+  ownerGroup: (vfs, shell, g) => {
+    const n = nodeAt(vfs, g.path, { raw: true });
+    return !!n && n.owner === g.owner && n.group === g.group;
+  },
+
   // シンボリックリンクが存在する（target指定時はリンク先の一致も確認）
   symlink: (vfs, shell, g) => {
     const n = nodeAt(vfs, g.path, { raw: true });
@@ -101,13 +129,36 @@ export const GOAL_CHECKERS = {
     return vfs.du(n) < g.maxBytes;
   },
 
+  // これまでに実行したコマンド（履歴）の中に条件を満たすものがあるか。
+  // ls -l で権限を確認する、のような「状態を変えない操作」を行ったかどうかは
+  // VFS/ShellStateの現在の状態だけでは判定できないため、履歴を直接見る。
+  commandRan: (vfs, shell, g, ctx) => {
+    const list = (ctx && ctx.history) || [];
+    return list.some(raw => {
+      const parts = raw.trim().split(/\s+/).filter(Boolean);
+      if(!parts.length) return false;
+      if(g.cmd && parts[0] !== g.cmd) return false;
+      if(g.flag && !parts.slice(1).some(p => /^-[a-zA-Z]+$/.test(p) && p.includes(g.flag))) return false;
+      if(g.pattern && !new RegExp(g.pattern, g.flags || "").test(raw)) return false;
+      return true;
+    });
+  },
+
+  // 一度でもrootユーザーへ切り替えたことがあるか（su成功後はexitで戻っても
+  // 保持され続けるフラグを見る＝「rootで作業した」達成感がexitで消えない）
+  becameRoot: (vfs, shell, g, ctx) => !!(ctx && ctx.userSession && ctx.userSession.everRoot),
+
+  // rootへ切り替えた実績があり、かつ今は最初にログインしたユーザーまで
+  // exitで戻ってきているか（su → 作業 → exit の一連の流れができたか）
+  backToOriginalUser: (vfs, shell, g, ctx) => !!(ctx && ctx.userSession && ctx.userSession.everRoot && ctx.userSession.stack.length === 1),
+
   // 上記だけでは表現しづらい判定を、シナリオ定義ファイル側で直接書くための逃げ道
-  custom: (vfs, shell, g) => !!g.fn(vfs, shell),
+  custom: (vfs, shell, g, ctx) => !!g.fn(vfs, shell, ctx),
 };
 
-export function evaluateGoal(goal, vfs, shell){
+export function evaluateGoal(goal, vfs, shell, ctx){
   const checker = GOAL_CHECKERS[goal.type];
   if(!checker) return false;
-  try{ return !!checker(vfs, shell, goal); }
+  try{ return !!checker(vfs, shell, goal, ctx || {}); }
   catch(e){ return false; }
 }

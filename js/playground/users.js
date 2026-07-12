@@ -31,6 +31,9 @@ export class UserSession {
   reset(){
     this.users = defaultUsers();
     this.stack = [USER]; // 末尾が現在有効なユーザー。suでpush、exitでpopする
+    // 一度でもrootへ切り替えたことがあるか（exitで戻った後も保持する）。
+    // シナリオモードで「rootに切り替えて作業した」を判定するのに使う。
+    this.everRoot = false;
   }
 
   current(){ return this.users.get(this.stack[this.stack.length - 1]); }
@@ -40,6 +43,7 @@ export class UserSession {
   switchTo(username){
     if(!this.users.has(username)) return false;
     this.stack.push(username);
+    if(this.current().isRoot) this.everRoot = true;
     return true;
   }
 
@@ -51,11 +55,12 @@ export class UserSession {
     return true;
   }
 
-  toJSON(){ return { stack: this.stack.slice() }; }
+  toJSON(){ return { stack: this.stack.slice(), everRoot: this.everRoot }; }
   loadFromJSON(data){
     if(!data || !Array.isArray(data.stack)) return;
     const valid = data.stack.filter(name => this.users.has(name));
     this.stack = valid.length ? valid : [USER];
+    this.everRoot = !!data.everRoot;
   }
 }
 

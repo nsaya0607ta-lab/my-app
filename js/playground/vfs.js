@@ -146,6 +146,10 @@ export class VirtualFileSystem {
     this.isRootUser = false;
     this.currentHomeSegs = HOME_PATH.slice();
     this.cwd = this.currentHomeSegs.slice();
+    // 既定では（他のミッションと同様）一般ユーザーでもchownを自由に使える
+    // 学習用の緩和挙動のまま。シナリオ側がinitEnvで明示的にtrueにした時だけ、
+    // 実際のLinuxと同様「所有者の変更にはroot権限が必要」を再現する。
+    this.strictChown = false;
   }
 
   // su/exit から呼ばれる。パーミッション判定の基準となる「現在のユーザー」を
@@ -503,6 +507,12 @@ export class VirtualFileSystem {
     const node = this.rawChild(segs);
     if(!node) return { error:{ error:"ENOENT", path: pathStr } };
     const [owner, group] = ownerSpec.split(":");
+    // 実際のLinuxでは所有者の変更はroot専用（グループ変更は一般ユーザーでも
+    // 自分が所属するグループへなら可能）。strictChownが有効なシナリオでのみ
+    // この制約を再現する（既定では他ミッションと同じく自由に変更できる）。
+    if(owner && this.strictChown && !this.isRootUser){
+      return { error:{ error:"EPERM", path: pathStr } };
+    }
     const apply = (n) => { if(owner) n.owner = owner; if(group) n.group = group; };
     apply(node);
     if(opts.recursive && node.type === "dir"){

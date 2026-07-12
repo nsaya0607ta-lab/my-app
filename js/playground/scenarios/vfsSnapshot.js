@@ -32,28 +32,36 @@ function deserializeNode(data){
   return base;
 }
 
-export function serializeSession(vfs, shellState){
+export function serializeSession(vfs, shellState, userSession){
   return {
-    vfs: { root: serializeNode(vfs.root), cwd: vfs.cwd.slice() },
+    vfs: { root: serializeNode(vfs.root), cwd: vfs.cwd.slice(), strictChown: !!vfs.strictChown },
     shell: {
       env: Object.fromEntries(shellState.env.entries()),
       cronJobs: JSON.parse(JSON.stringify(shellState.cronJobs || [])),
       processes: JSON.parse(JSON.stringify(shellState.processes || [])),
     },
+    session: userSession ? { stack: userSession.stack.slice(), everRoot: !!userSession.everRoot } : null,
   };
 }
 
-export function restoreSession(vfs, shellState, snapshot){
+export function restoreSession(vfs, shellState, snapshot, userSession){
   if(!snapshot || typeof snapshot !== "object") return false;
   try{
     if(snapshot.vfs && snapshot.vfs.root && snapshot.vfs.root.type === "dir"){
       vfs.root = deserializeNode(snapshot.vfs.root);
       vfs.cwd = Array.isArray(snapshot.vfs.cwd) ? snapshot.vfs.cwd.slice() : vfs.cwd;
+      vfs.strictChown = !!snapshot.vfs.strictChown;
     }
     if(snapshot.shell){
       if(snapshot.shell.env && typeof snapshot.shell.env === "object") shellState.env = new Map(Object.entries(snapshot.shell.env));
       if(Array.isArray(snapshot.shell.cronJobs)) shellState.cronJobs = snapshot.shell.cronJobs;
       if(Array.isArray(snapshot.shell.processes) && snapshot.shell.processes.length) shellState.processes = snapshot.shell.processes;
+    }
+    if(userSession && snapshot.session && Array.isArray(snapshot.session.stack)){
+      const valid = snapshot.session.stack.filter(name => userSession.users.has(name));
+      userSession.stack = valid.length ? valid : userSession.stack;
+      userSession.everRoot = !!snapshot.session.everRoot;
+      vfs.setCurrentUser(userSession.current());
     }
     return true;
   }catch(e){ return false; }

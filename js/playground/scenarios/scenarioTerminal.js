@@ -27,6 +27,7 @@ import { COMMAND_NAMES } from '../commands/index.js';
 import { buildTopLines } from '../commands/top.js';
 import { parseCrontabText } from '../cronUtil.js';
 import { createAppKeyboard } from '../appKeyboard.js';
+import { verifyPassword, applyUserEnv } from '../users.js';
 
 // アプリ内キーボード方式の入力状態。シナリオは同時に1つしかプレイしない
 // ため、screen.js（ミッションモード）と同じくモジュール変数で持てば足りる。
@@ -36,9 +37,15 @@ import { createAppKeyboard } from '../appKeyboard.js';
 let liveBuffer = "";
 let liveCursor = 0;
 
+// su実行中、パスワード入力待ちの状態。null以外の間は、次に送信された1行は
+// コマンドではなく「suで切り替えようとしているユーザー名」に対するパスワード
+// として扱う（実際のLinuxのsuと同様、入力中は一切エコー表示しない）。
+let pendingPassword = null;
+
 function resetLiveInput(){
   liveBuffer = "";
   liveCursor = 0;
+  pendingPassword = null;
   appKeyboard.reset();
 }
 
@@ -94,7 +101,7 @@ function tokensToHTML(tokens){
 
 function recordToHTML(record){
   if(record.kind === "cmd"){
-    return `<div class="pg-term-line"><span class="pg-term-prompt">student@linux:${esc(record.promptPath)}$</span> <span class="pg-term-cmd">${esc(record.text)}</span></div>`;
+    return `<div class="pg-term-line"><span class="pg-term-prompt">${esc(record.promptUser)}@linux:${esc(record.promptPath)}${esc(record.promptChar)}</span> <span class="pg-term-cmd">${esc(record.text)}</span></div>`;
   }
   return `<div class="pg-term-line">${tokensToHTML(record.tokens)}</div>`;
 }
@@ -102,17 +109,29 @@ function recordToHTML(record){
 function termBodyEl(){ return app.querySelector("#scn-terminal-body"); }
 function isNearBottom(el){ return el.scrollHeight - el.scrollTop - el.clientHeight < 40; }
 
+// 現在の実効ユーザー・作業ディレクトリから、実際のプロンプト文字列
+// （root は # 、一般ユーザーは $ ）を組み立てる
+function promptString(session){
+  const user = session.userSession ? session.userSession.current().username : "student";
+  const isRoot = session.userSession ? session.userSession.isRoot() : false;
+  return `${user}@linux:${session.vfs.promptPath()}${isRoot ? "#" : "$"}`;
+}
+
 // バッファ＋カーソル位置だけをもとに、あたかも本物の<input>があるかの
 // ような見た目（緑の点滅カーソルがテキストの途中にも置ける）を描画する。
 // 実際のフォーカス可能な入力要素は存在しないため、システムキーボードは
 // 絶対に開かない。実行は右側の送信ボタン、またはアプリ内キーボードの
 // Enterで行う。
 function liveLineHTML(session){
-  const before = esc(liveBuffer.slice(0, liveCursor));
-  const after = esc(liveBuffer.slice(liveCursor));
+  // パスワード入力待ちの間は、実際のLinuxのsuと同様に一切エコーしない
+  // （打った文字が見えない。カーソルも動かさず固定表示にする）
+  const promptText = pendingPassword ? "Password:" : promptString(session);
+  const display = pendingPassword
+    ? `<span class="pg-term-cursor" id="scn-term-cursor"></span>`
+    : `${esc(liveBuffer.slice(0, liveCursor))}<span class="pg-term-cursor" id="scn-term-cursor"></span>${esc(liveBuffer.slice(liveCursor))}`;
   return `<div class="pg-term-line pg-term-live" id="scn-term-live">
-    <span class="pg-term-prompt">student@linux:${esc(session.vfs.promptPath())}$</span>
-    <span class="pg-term-input-display" id="scn-term-input-display">${before}<span class="pg-term-cursor" id="scn-term-cursor"></span>${after}</span>
+    <span class="pg-term-prompt">${esc(promptText)}</span>
+    <span class="pg-term-input-display" id="scn-term-input-display">${display}</span>
     <button type="button" class="pg-term-send-btn" id="scn-term-send-btn" aria-label="実行">▶</button>
   </div>`;
 }
@@ -144,14 +163,28 @@ function updateLiveLine(session, hooks){
   const wasNearBottom = isNearBottom(el);
   const display = el.querySelector("#scn-term-input-display");
   if(display){
-    const before = esc(liveBuffer.slice(0, liveCursor));
-    const after = esc(liveBuffer.slice(liveCursor));
-    display.innerHTML = `${before}<span class="pg-term-cursor" id="scn-term-cursor"></span>${after}`;
+    display.innerHTML = pendingPassword
+      ? `<span class="pg-term-cursor" id="scn-term-cursor"></span>`
+      : `${esc(liveBuffer.slice(0, liveCursor))}<span class="pg-term-cursor" id="scn-term-cursor"></span>${esc(liveBuffer.slice(liveCursor))}`;
   } else {
     el.insertAdjacentHTML("beforeend", liveLineHTML(session));
     wireLiveLineButton(session, hooks);
   }
   if(wasNearBottom) el.scrollTop = el.scrollHeight;
+}
+
+// ライブ行のプロンプト文字列とターミナルヘッダのタイトルを、現在の
+// session（ユーザー・作業ディレクトリ）に合わせて再描画する。新しい行を
+// 追加しない「その場でのプロンプト更新だけ」が必要な場面（su成功時・
+// exit時など）で使う。
+export function refreshLivePrompt(session){
+  const el = termBodyEl();
+  if(el){
+    const liveEl = el.querySelector(".pg-term-live .pg-term-prompt");
+    if(liveEl) liveEl.textContent = pendingPassword ? "Password:" : promptString(session);
+  }
+  const titleEl = app.querySelector("#scn-terminal-title");
+  if(titleEl && session.userSession) titleEl.textContent = `${session.userSession.current().username}@linux`;
 }
 
 function appendRecords(session, records){
@@ -163,8 +196,7 @@ function appendRecords(session, records){
   const html = records.map(recordToHTML).join("");
   if(live) live.insertAdjacentHTML("beforebegin", html);
   else el.insertAdjacentHTML("beforeend", html);
-  const liveEl = el.querySelector(".pg-term-live .pg-term-prompt");
-  if(liveEl) liveEl.textContent = `student@linux:${session.vfs.promptPath()}$`;
+  refreshLivePrompt(session);
   if(wasNearBottom) el.scrollTop = el.scrollHeight;
 }
 
@@ -179,21 +211,47 @@ export function clearTerminal(session, hooks){
 }
 
 function runCommand(session, hooks, raw){
+  const promptUser = session.userSession ? session.userSession.current().username : "student";
   const promptPath = session.vfs.promptPath();
+  const promptChar = (session.userSession && session.userSession.isRoot()) ? "#" : "$";
   session.history.push(raw);
   const pipeline = parseCommand(raw);
   if(!pipeline) return;
-  const result = executeCommand({ vfs: session.vfs, state: session.shellState, history: session.history.items }, pipeline);
+  const result = executeCommand({ vfs: session.vfs, state: session.shellState, session: session.userSession, history: session.history.items }, pipeline);
   if(result.clear){
     clearTerminal(session, hooks);
     hooks.onExecuted();
     return;
   }
-  const records = [{ kind: "cmd", promptPath, text: raw }];
+  // su がパスワードを要求した場合、次の1行はコマンドではなくパスワード
+  // 入力として扱う（appendRecords()より前にセットし、直後のプロンプト
+  // 更新が最初から "Password:" を表示するようにする）
+  if(result.awaitPassword) pendingPassword = result.awaitPassword;
+  const records = [{ kind: "cmd", promptUser, promptPath, promptChar, text: raw }];
   (result.lines || []).forEach(tokens => records.push({ kind: "line", tokens }));
   (result.err || []).forEach(tokens => records.push({ kind: "line", tokens }));
   appendRecords(session, records);
   if(result.overlay) openCommandOverlay(session, hooks, result.overlay);
+  if(result.awaitPassword) updateLiveLine(session, hooks);
+  hooks.onExecuted();
+}
+
+// su のパスワード入力待ちに対する送信処理。実際のLinuxと同様、パスワードが
+// 正しい場合のみユーザーを切り替え、成功時は何も出力しない。誤っている
+// 場合は "Authentication failure" とだけ表示し、元のユーザーのままにする。
+function submitPassword(session, hooks, rawPassword){
+  const targetName = pendingPassword;
+  pendingPassword = null;
+  const user = session.userSession.find(targetName);
+  const ok = verifyPassword(user, rawPassword);
+  if(ok){
+    session.userSession.switchTo(user.username);
+    applyUserEnv(session.vfs, session.shellState, user);
+    refreshLivePrompt(session);
+  } else {
+    appendRecords(session, [{ kind: "line", tokens: [{ text: "su: Authentication failure", cls: "pg-err" }] }]);
+  }
+  updateLiveLine(session, hooks);
   hooks.onExecuted();
 }
 
@@ -410,6 +468,7 @@ function moveCursor(session, hooks, delta){
 }
 
 function historyStep(session, hooks, dir){
+  if(pendingPassword) return; // パスワード入力中は履歴呼び出しを無効化する
   const v = dir < 0 ? session.history.prev(liveBuffer) : session.history.next();
   if(v !== null){
     liveBuffer = v;
@@ -419,6 +478,7 @@ function historyStep(session, hooks, dir){
 }
 
 function tabComplete(session, hooks){
+  if(pendingPassword) return; // パスワード入力中はTab補完を無効化する
   const commandNames = [...COMMAND_NAMES, ...session.shellState.aliases.keys()];
   const result = getCompletions(liveBuffer, liveCursor, { vfs: session.vfs, commandNames });
   if(result.completion){
@@ -433,7 +493,16 @@ function tabComplete(session, hooks){
 }
 
 function ctrlC(session, hooks){
-  appendRecords(session, [{ kind: "cmd", promptPath: session.vfs.promptPath(), text: `${liveBuffer}^C` }]);
+  if(pendingPassword){
+    // パスワード入力中のCtrl+Cは、実際のsuと同様に入力内容を一切見せず
+    // 中断だけする（Authentication failureは出さない＝そもそも未確定）
+    pendingPassword = null;
+    appendRecords(session, [{ kind: "line", tokens: [{ text: "Password: ^C" }] }]);
+  } else {
+    const promptUser = session.userSession ? session.userSession.current().username : "student";
+    const promptChar = (session.userSession && session.userSession.isRoot()) ? "#" : "$";
+    appendRecords(session, [{ kind: "cmd", promptUser, promptPath: session.vfs.promptPath(), promptChar, text: `${liveBuffer}^C` }]);
+  }
   liveBuffer = "";
   liveCursor = 0;
   updateLiveLine(session, hooks);
@@ -441,6 +510,12 @@ function ctrlC(session, hooks){
 
 function submitLiveCommand(session, hooks){
   const raw = liveBuffer;
+  if(pendingPassword){
+    liveBuffer = "";
+    liveCursor = 0;
+    submitPassword(session, hooks, raw);
+    return;
+  }
   if(!raw.trim()) return;
   liveBuffer = "";
   liveCursor = 0;
@@ -485,6 +560,7 @@ const appKeyboard = createAppKeyboard({
       updateLiveLine(currentSession, currentHooks);
     },
     insertChip: (cmd, needsArg) => {
+      if(pendingPassword) return; // パスワード入力中はコマンドチップの差し込みを無効化する
       liveBuffer = needsArg ? cmd + " " : cmd;
       liveCursor = liveBuffer.length;
       updateLiveLine(currentSession, currentHooks);
