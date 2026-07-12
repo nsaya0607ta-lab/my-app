@@ -31,6 +31,7 @@ import { history, missionProgress, resetAll, vfs, shellState } from './playgroun
 import { pgSaveNow, pgScheduleSave } from './cloudSync.js';
 import { COMMAND_NAMES } from './commands/index.js';
 import { buildTopLines } from './commands/top.js';
+import { createAppKeyboard } from './appKeyboard.js';
 
 let answerRevealed = false;
 let terminalRecords = []; // {kind:"cmd", promptPath, text} | {kind:"line", tokens}
@@ -40,9 +41,6 @@ let terminalRecords = []; // {kind:"cmd", promptPath, text} | {kind:"line", toke
 // ターミナルへ直接入力しているように」見せる（実DOM<input>は存在しない）。
 let liveBuffer = "";
 let liveCursor = 0;
-let ctrlArmed = false;
-let capsOn = false;
-let keyboardOpen = false;
 
 function welcomeRecord(text){
   return { kind:"line", tokens:[{ text, cls:"pg-muted" }] };
@@ -54,11 +52,8 @@ function resetTerminal(){
   ];
   liveBuffer = "";
   liveCursor = 0;
-  ctrlArmed = false;
-  capsOn = false;
-  keyboardOpen = false;
+  appKeyboard.reset();
 }
-resetTerminal();
 
 // コマンド実行・ミッション切替・ヒント表示などの「その場での差し替え」
 // 操作が、フォーカスされていたボタンの消滅（iOS Safariが要素の消失時に
@@ -486,129 +481,51 @@ function submitLiveCommand(){
 
 // 黒いターミナル部分をタップした時だけ、アプリ内キーボードを開く。
 // システムキーボードにつながるフォーカス移動は一切行わない。
-function setKeyboardOpen(open){
-  keyboardOpen = open;
-  const kb = app.querySelector("#pg-app-keyboard");
-  if(kb) kb.classList.toggle("pg-app-keyboard--open", keyboardOpen);
-}
-
 function wireTerminalTap(){
   const el = terminalBodyEl();
   if(!el) return;
   el.addEventListener("click", (e) => {
     if(e.target.closest(".pg-term-send-btn")) return;
-    if(!keyboardOpen) setKeyboardOpen(true);
+    if(!appKeyboard.isOpen()) appKeyboard.setOpen(true);
   });
 }
 
-// アプリ内キーボード — LPIC Level1の学習に最低限必要な記号を含む、
-// システムキーボードを一切使わない専用キーボード。
-const KB_ROWS = [
-  ["1","2","3","4","5","6","7","8","9","0"],
-  ["q","w","e","r","t","y","u","i","o","p"],
-  ["a","s","d","f","g","h","j","k","l"],
-  ["z","x","c","v","b","n","m"],
-  ["-","_","/",".","*","|",">","<","&","$","~"],
-  ["'","\"","{","}","(",")",":",";",",","=","!","+","%"],
-];
-
-function keyboardHTML(){
-  const rows = KB_ROWS.map(row =>
-    `<div class="pg-kb-row">${row.map(k => `<button type="button" class="pg-kb-key" data-kb-char="${esc(k)}">${esc(k)}</button>`).join("")}</div>`
-  ).join("");
-  return `<div class="pg-app-keyboard${keyboardOpen ? " pg-app-keyboard--open" : ""}" id="pg-app-keyboard">
-    <div class="pg-kb-row">
-      <button type="button" class="pg-kb-key pg-kb-key--wide" id="pg-kb-tab">Tab</button>
-      <button type="button" class="pg-kb-key${ctrlArmed ? " pg-kb-key--active" : ""}" id="pg-kb-ctrl">Ctrl</button>
-      <button type="button" class="pg-kb-key${capsOn ? " pg-kb-key--active" : ""}" id="pg-kb-shift">Shift</button>
-      <button type="button" class="pg-kb-key" id="pg-kb-left">←</button>
-      <button type="button" class="pg-kb-key" id="pg-kb-up">↑</button>
-      <button type="button" class="pg-kb-key" id="pg-kb-down">↓</button>
-      <button type="button" class="pg-kb-key" id="pg-kb-right">→</button>
-      <button type="button" class="pg-kb-key pg-kb-key--wide" id="pg-kb-back">⌫</button>
-    </div>
-    ${rows}
-    <div class="pg-kb-row">
-      <button type="button" class="pg-kb-key pg-kb-key--space" id="pg-kb-space">Space</button>
-      <button type="button" class="pg-kb-key pg-kb-key--enter" id="pg-kb-enter">Enter</button>
-      <button type="button" class="pg-kb-key pg-kb-key--wide" id="pg-kb-close" aria-label="キーボードを閉じる">▼</button>
-    </div>
-  </div>`;
+// コマンドチップ（よく使うコマンド）はターミナルの入力バッファへ文字列を
+// 差し込むだけ。実行はしない。フォーカス移動を一切行わないため、システム
+// キーボードは開かず、画面がスクロールすることもない。
+function setChipBuffer(cmd, needsArg){
+  liveBuffer = needsArg ? cmd + " " : cmd;
+  liveCursor = liveBuffer.length;
+  updateLiveLine();
 }
 
-function updateCtrlKeyVisual(){
-  const btn = app.querySelector("#pg-kb-ctrl");
-  if(btn) btn.classList.toggle("pg-kb-key--active", ctrlArmed);
+function escKey(){
+  liveBuffer = "";
+  liveCursor = 0;
+  updateLiveLine();
 }
 
-function updateCapsKeyVisual(){
-  const btn = app.querySelector("#pg-kb-shift");
-  if(btn) btn.classList.toggle("pg-kb-key--active", capsOn);
-}
-
-function wireKeyboard(){
-  const kb = app.querySelector("#pg-app-keyboard");
-  if(!kb) return;
-  kb.querySelectorAll("[data-kb-char]").forEach(btn => {
-    onPress(btn, () => {
-      const raw = btn.dataset.kbChar;
-      if(ctrlArmed){
-        ctrlArmed = false;
-        updateCtrlKeyVisual();
-        if(raw === "c"){ ctrlC(); return; }
-        if(raw === "l"){ clearTerminal(); return; }
-      }
-      const ch = capsOn && /[a-z]/.test(raw) ? raw.toUpperCase() : raw;
-      insertText(ch);
-    });
-  });
-  const bind = (id, handler) => {
-    const btn = kb.querySelector(id);
-    if(btn) onPress(btn, handler);
-  };
-  bind("#pg-kb-tab", () => tabComplete());
-  bind("#pg-kb-ctrl", () => { ctrlArmed = !ctrlArmed; updateCtrlKeyVisual(); });
-  bind("#pg-kb-shift", () => { capsOn = !capsOn; updateCapsKeyVisual(); });
-  bind("#pg-kb-left", () => moveCursor(-1));
-  bind("#pg-kb-right", () => moveCursor(1));
-  bind("#pg-kb-up", () => historyStep(-1));
-  bind("#pg-kb-down", () => historyStep(1));
-  bind("#pg-kb-back", () => backspaceChar());
-  bind("#pg-kb-space", () => insertText(" "));
-  bind("#pg-kb-enter", () => submitLiveCommand());
-  bind("#pg-kb-close", () => setKeyboardOpen(false));
-}
-
-const QUICK_COMMANDS = [
-  { cmd:"ls -l", needsArg:false },
-  { cmd:"cd", needsArg:true },
-  { cmd:"pwd", needsArg:false },
-  { cmd:"mkdir", needsArg:true },
-  { cmd:"touch", needsArg:true },
-  { cmd:"cat", needsArg:true },
-  { cmd:"grep", needsArg:true },
-  { cmd:"chmod", needsArg:true },
-  { cmd:"find .", needsArg:false },
-  { cmd:"echo", needsArg:true },
-  { cmd:"man", needsArg:true },
-  { cmd:"clear", needsArg:false },
-  { cmd:"help", needsArg:false },
-];
-
-// コマンドチップはターミナルの入力バッファへ文字列を差し込むだけ。
-// フォーカス移動を一切行わないため、システムキーボードもアプリ内
-// キーボードも開かず、画面がスクロールすることもない。
-function wireChips(){
-  app.querySelectorAll("[data-pg-chip]").forEach(btn => {
-    btn.onclick = () => {
-      const cmd = btn.dataset.pgChip;
-      const needsArg = btn.dataset.pgArg === "1";
-      liveBuffer = needsArg ? cmd + " " : cmd;
-      liveCursor = liveBuffer.length;
-      updateLiveLine();
-    };
-  });
-}
+// アプリ内キーボード本体（見た目・押下判定・記号の長押しなど）は
+// appKeyboard.js に集約されている。ここではバッファ操作の実体だけを
+// コールバックとして渡す。
+const appKeyboard = createAppKeyboard({
+  idPrefix: "pg",
+  getRoot: () => app,
+  withScrollPreserved,
+  actions: {
+    insertChar: (ch) => insertText(ch),
+    backspace: () => backspaceChar(),
+    moveCursor: (delta) => moveCursor(delta),
+    historyStep: (dir) => historyStep(dir),
+    tabComplete: () => tabComplete(),
+    ctrlC: () => ctrlC(),
+    clearTerminal: () => clearTerminal(),
+    submit: () => submitLiveCommand(),
+    escKey: () => escKey(),
+    insertChip: (cmd, needsArg) => setChipBuffer(cmd, needsArg),
+  },
+});
+resetTerminal();
 
 // ------------------------------------------------------------------------
 // CategoryTabs / MissionCard / HintCard
@@ -791,10 +708,6 @@ export function pgOnCloudRestored(){
 // 画面エントリポイント（render.jsのrender()ディスパッチから呼ばれる）
 // ------------------------------------------------------------------------
 export function renderPlaygroundScreen(){
-  const chipsHTML = QUICK_COMMANDS.map(c =>
-    `<button type="button" class="pg-chip" data-pg-chip="${esc(c.cmd)}" data-pg-arg="${c.needsArg ? "1" : "0"}">${esc(c.cmd)}</button>`
-  ).join("");
-
   app.innerHTML = `
   <div class="pg-root" id="pg-root">
     <div class="pg-head">
@@ -819,9 +732,8 @@ export function renderPlaygroundScreen(){
         <button type="button" class="pg-terminal-clear" id="pg-terminal-clear">🗑 クリア</button>
       </div>
       <div class="pg-terminal-body" id="pg-terminal-body"></div>
-      ${keyboardHTML()}
     </div>
-    <div class="pg-chip-row">${chipsHTML}</div>
+    ${appKeyboard.html()}
     <div class="pg-cat-tabs" id="pg-cat-tabs"></div>
     <div class="pg-cards">
       <div class="pg-card pg-mission-card" id="pg-mission-card"></div>
@@ -836,8 +748,7 @@ export function renderPlaygroundScreen(){
   renderMissionCard();
   renderHintCard();
   wireTerminalTap();
-  wireKeyboard();
-  wireChips();
+  appKeyboard.wire();
   installScrollGuard(app.querySelector("#pg-root"));
 
   const resetBtn = app.querySelector("#pg-reset");

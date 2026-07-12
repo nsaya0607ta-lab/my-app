@@ -26,6 +26,7 @@ import { getCompletions } from '../completion.js';
 import { COMMAND_NAMES } from '../commands/index.js';
 import { buildTopLines } from '../commands/top.js';
 import { parseCrontabText } from '../cronUtil.js';
+import { createAppKeyboard } from '../appKeyboard.js';
 
 // アプリ内キーボード方式の入力状態。シナリオは同時に1つしかプレイしない
 // ため、screen.js（ミッションモード）と同じくモジュール変数で持てば足りる。
@@ -34,14 +35,11 @@ import { parseCrontabText } from '../cronUtil.js';
 // ように」見せる（実DOM<input>は存在しない）。
 let liveBuffer = "";
 let liveCursor = 0;
-let ctrlArmed = false;
-let keyboardOpen = false;
 
 function resetLiveInput(){
   liveBuffer = "";
   liveCursor = 0;
-  ctrlArmed = false;
-  keyboardOpen = false;
+  appKeyboard.reset();
 }
 
 // コマンド実行・ターミナルクリアなどの「その場での差し替え」操作が、DOM
@@ -452,86 +450,54 @@ function submitLiveCommand(session, hooks){
 
 // 黒いターミナル部分をタップした時だけ、アプリ内キーボードを開く。
 // システムキーボードにつながるフォーカス移動は一切行わない。
-function setKeyboardOpen(open){
-  keyboardOpen = open;
-  const kb = app.querySelector("#scn-app-keyboard");
-  if(kb) kb.classList.toggle("pg-app-keyboard--open", keyboardOpen);
-}
-
 export function wireTerminalTap(){
   const el = termBodyEl();
   if(!el) return;
   el.addEventListener("click", (e) => {
     if(e.target.closest(".pg-term-send-btn")) return;
-    if(!keyboardOpen) setKeyboardOpen(true);
+    if(!appKeyboard.isOpen()) appKeyboard.setOpen(true);
   });
 }
 
-// アプリ内キーボード — screen.js（ミッションモード）と同一構成。
-// システムキーボードを一切使わない専用キーボード。
-const KB_ROWS = [
-  ["1","2","3","4","5","6","7","8","9","0"],
-  ["q","w","e","r","t","y","u","i","o","p"],
-  ["a","s","d","f","g","h","j","k","l"],
-  ["z","x","c","v","b","n","m"],
-  ["-","_","/",".","*","|",">","<","&","$","~"],
-];
+// アプリ内キーボード本体（見た目・押下判定・記号の長押しなど）は
+// screen.js（ミッションモード）と共通のappKeyboard.jsに集約されている。
+// シナリオは同時に1つしかプレイしないため、直近に wireKeyboard() へ渡された
+// session/hooks をモジュール変数で覚えておき、コールバックから参照する。
+let currentSession = null;
+let currentHooks = null;
+
+const appKeyboard = createAppKeyboard({
+  idPrefix: "scn",
+  getRoot: () => app,
+  withScrollPreserved,
+  actions: {
+    insertChar: (ch) => insertText(currentSession, currentHooks, ch),
+    backspace: () => backspaceChar(currentSession, currentHooks),
+    moveCursor: (delta) => moveCursor(currentSession, currentHooks, delta),
+    historyStep: (dir) => historyStep(currentSession, currentHooks, dir),
+    tabComplete: () => tabComplete(currentSession, currentHooks),
+    ctrlC: () => ctrlC(currentSession, currentHooks),
+    clearTerminal: () => clearTerminal(currentSession, currentHooks),
+    submit: () => submitLiveCommand(currentSession, currentHooks),
+    escKey: () => {
+      liveBuffer = "";
+      liveCursor = 0;
+      updateLiveLine(currentSession, currentHooks);
+    },
+    insertChip: (cmd, needsArg) => {
+      liveBuffer = needsArg ? cmd + " " : cmd;
+      liveCursor = liveBuffer.length;
+      updateLiveLine(currentSession, currentHooks);
+    },
+  },
+});
 
 export function keyboardHTML(){
-  const rows = KB_ROWS.map(row =>
-    `<div class="pg-kb-row">${row.map(k => `<button type="button" class="pg-kb-key" data-kb-char="${esc(k)}">${esc(k)}</button>`).join("")}</div>`
-  ).join("");
-  return `<div class="pg-app-keyboard" id="scn-app-keyboard">
-    <div class="pg-kb-row">
-      <button type="button" class="pg-kb-key pg-kb-key--wide" id="scn-kb-tab">Tab</button>
-      <button type="button" class="pg-kb-key" id="scn-kb-ctrl">Ctrl</button>
-      <button type="button" class="pg-kb-key" id="scn-kb-left">←</button>
-      <button type="button" class="pg-kb-key" id="scn-kb-up">↑</button>
-      <button type="button" class="pg-kb-key" id="scn-kb-down">↓</button>
-      <button type="button" class="pg-kb-key" id="scn-kb-right">→</button>
-      <button type="button" class="pg-kb-key pg-kb-key--wide" id="scn-kb-back">⌫</button>
-    </div>
-    ${rows}
-    <div class="pg-kb-row">
-      <button type="button" class="pg-kb-key pg-kb-key--space" id="scn-kb-space">Space</button>
-      <button type="button" class="pg-kb-key pg-kb-key--enter" id="scn-kb-enter">Enter</button>
-      <button type="button" class="pg-kb-key pg-kb-key--wide" id="scn-kb-close" aria-label="キーボードを閉じる">▼</button>
-    </div>
-  </div>`;
-}
-
-function updateCtrlKeyVisual(){
-  const btn = app.querySelector("#scn-kb-ctrl");
-  if(btn) btn.classList.toggle("pg-kb-key--active", ctrlArmed);
+  return appKeyboard.html();
 }
 
 export function wireKeyboard(session, hooks){
-  const kb = app.querySelector("#scn-app-keyboard");
-  if(!kb) return;
-  kb.querySelectorAll("[data-kb-char]").forEach(btn => {
-    onPress(btn, () => {
-      const ch = btn.dataset.kbChar;
-      if(ctrlArmed){
-        ctrlArmed = false;
-        updateCtrlKeyVisual();
-        if(ch === "c"){ ctrlC(session, hooks); return; }
-        if(ch === "l"){ clearTerminal(session, hooks); return; }
-      }
-      insertText(session, hooks, ch);
-    });
-  });
-  const bind = (id, handler) => {
-    const btn = kb.querySelector(id);
-    if(btn) onPress(btn, handler);
-  };
-  bind("#scn-kb-tab", () => tabComplete(session, hooks));
-  bind("#scn-kb-ctrl", () => { ctrlArmed = !ctrlArmed; updateCtrlKeyVisual(); });
-  bind("#scn-kb-left", () => moveCursor(session, hooks, -1));
-  bind("#scn-kb-right", () => moveCursor(session, hooks, 1));
-  bind("#scn-kb-up", () => historyStep(session, hooks, -1));
-  bind("#scn-kb-down", () => historyStep(session, hooks, 1));
-  bind("#scn-kb-back", () => backspaceChar(session, hooks));
-  bind("#scn-kb-space", () => insertText(session, hooks, " "));
-  bind("#scn-kb-enter", () => submitLiveCommand(session, hooks));
-  bind("#scn-kb-close", () => setKeyboardOpen(false));
+  currentSession = session;
+  currentHooks = hooks;
+  appKeyboard.wire();
 }
