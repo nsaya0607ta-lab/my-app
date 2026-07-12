@@ -216,6 +216,10 @@ import { S, state } from './state.js';
 
     // ログイン状態の監視。ログイン中はそのアカウントのデータをリアルタイム同期
     onAuthStateChanged(auth, (user) => {
+      // TEMPORARY DEBUG（原因特定後に削除）: このコールバックが再発火すると
+      // onSnapshotが購読し直され、その最初の配信で再度applyCloudPlaygroundが
+      // 走る可能性がある
+      if (window.__pgDebugLog) window.__pgDebugLog(`🔥[db.js] onAuthStateChanged発火 user=${user ? user.uid : null}`);
       state.authReady = true;
       if (user) {
         state.currentUser = user;
@@ -233,7 +237,11 @@ import { S, state } from './state.js';
         state.lbAutoDone = false;
         // 自分宛てのカレンダー通知（共有カレンダーの登録・削除）の受信を開始
         if (user.email) gcalStartNotifyListener(user.email);
+        // TEMPORARY DEBUG（原因特定後に削除）
+        if (window.__pgDebugLog) window.__pgDebugLog("[db.js] onSnapshotリスナーを（再）購読");
         state.unsub = onSnapshot(doc(state.db, "users", state.currentUserId), (docSnap) => {
+          // TEMPORARY DEBUG（原因特定後に削除）
+          if (window.__pgDebugLog) window.__pgDebugLog(`[db.js] onSnapshot発火 fromCache=${docSnap.metadata && docSnap.metadata.fromCache} hasPendingWrites=${docSnap.metadata && docSnap.metadata.hasPendingWrites}`);
           if (docSnap.exists()) {
             const data = docSnap.data();
             // アカウント共通のコイン残高をこの端末へ反映

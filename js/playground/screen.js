@@ -114,17 +114,31 @@ function pgDebugPanelBody(){
     panel.appendChild(body);
     document.body.appendChild(panel);
   }
-  return document.getElementById("pg-debug-panel-body");
+  return panel;
+}
+
+// ログはdb.js/render.js/cloudSync.js側からもプレイグラウンド画面に入る前に
+// 飛んでくる（ログイン処理・identity変化検知など）。それらの発生時点では
+// パネルを非表示にし（下部ナビ操作をふさがないため）、プレイグラウンド画面
+// を開いている間だけ表示する。ログ自体は画面に関係なくすべて記録する。
+function pgDebugSyncPanelVisibility(panel){
+  panel.style.display = (S.screen === "playground") ? "" : "none";
 }
 
 function pgDebugPrint(line){
-  const body = pgDebugPanelBody();
+  const panel = pgDebugPanelBody();
+  pgDebugSyncPanelVisibility(panel);
+  const body = panel.querySelector("#pg-debug-panel-body");
   const row = document.createElement("div");
   row.textContent = line;
   body.appendChild(row);
   body.scrollTop = body.scrollHeight; // パネル自身のスクロール。ページのscrollYには無関係
   while(body.childNodes.length > 150) body.removeChild(body.firstChild);
 }
+// db.js/render.js/cloudSync.js側からも同じオンスクリーンパネルへログを
+// 出せるよう、循環import を避けるためwindow経由のブリッジを用意する
+// （原因特定後、この計測コード一式ごと削除する）
+window.__pgDebugLog = pgDebugPrint;
 
 function pgDebugSnap(label){
   const active = document.activeElement;
@@ -803,6 +817,8 @@ function openResetConfirmModal(){
 // クラウド復元フック（render.js の applyCloudPlayground から呼ばれる）
 // ------------------------------------------------------------------------
 export function pgOnCloudRestored(){
+  // TEMPORARY DEBUG（原因特定後に削除）
+  if(window.__pgDebugLog) window.__pgDebugLog(`🔥🔥[screen.js] pgOnCloudRestored発火 S.screen=${S.screen} → renderPlaygroundScreen()実行=${S.screen === "playground"}`);
   answerRevealed = false;
   resetTerminal();
   terminalRecords.push(welcomeRecord("☁️ 前回の続きを復元しました。"));
