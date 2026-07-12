@@ -115,9 +115,12 @@ async function main() {
 
   const header = ["id", "title", "artist", "videoId", "titleKana", "titleRomaji", "titleEn", "artistKana", "artistRomaji", "active"];
   const lines = [header.join(",")];
-  items.forEach((item, i) => {
+  items.forEach((item) => {
     const { artist, title } = guessArtistTitle(item.rawTitle, item.channelTitle);
-    lines.push([`pl${i + 1}`, title, artist, item.videoId, "", "", "", "", "", "TRUE"].map(csvField).join(","));
+    // idはvideoIdをそのまま使う（プレイリストへの曲追加・並べ替え後に再取得しても
+    // 既存曲のドキュメントIDがぶれず、importIntroQuizSongs.js のmerge:trueで
+    // 正しく同じ曲として上書き更新できるようにするため）
+    lines.push([`yt_${item.videoId}`, title, artist, item.videoId, "", "", "", "", "", "TRUE"].map(csvField).join(","));
   });
 
   fs.writeFileSync(outPath, lines.join("\n") + "\n", "utf8");
