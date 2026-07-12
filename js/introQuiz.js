@@ -37,10 +37,7 @@ import { esc, saveCoins } from './core.js';
 import { S, state } from './state.js';
 import { app, go, renderStatusBar } from './render.js';
 import * as VoiceprintManager from './voiceprint/VoiceprintManager.js';
-import * as ParticipantManager from './voiceprint/ParticipantManager.js';
 import * as registrantsUI from './voiceprint/registrantsUI.js';
-import { identifySpeaker } from './voiceprint/SpeakerRecognitionService.js';
-import { AudioRecorder, isSupported as recorderSupported } from './voiceprint/AudioRecorder.js';
 
 // ---- 画面内の状態管理 ----
 // このモジュールが管理するのは「イントロドン画面がマウントされている間」
@@ -52,7 +49,6 @@ let hiddenPlayer = null;
 let revealPlayer = null;
 let hiddenStarted = false;   // 「1回目の再生ボタン」で0秒から再生済みか
 let fallbackPlayTimer = null;
-let speakerCaptureRecorder = null; // 再生中の「誰が話したか」判定用に並行録音しているAudioRecorder
 let lastStartParams = { mode: "random" }; // 「別のモードで遊ぶ」等で使う直近のモード
 
 const YT_API_LOAD_TIMEOUT_MS = 12000;
@@ -157,7 +153,6 @@ function destroyPlayers() {
   if (fallbackPlayTimer) { clearTimeout(fallbackPlayTimer); fallbackPlayTimer = null; }
   if (hiddenPlayer) { try { hiddenPlayer.destroy(); } catch (e) {} hiddenPlayer = null; }
   if (revealPlayer) { try { revealPlayer.destroy(); } catch (e) {} revealPlayer = null; }
-  if (speakerCaptureRecorder) { try { speakerCaptureRecorder.cancel(); } catch (e) {} speakerCaptureRecorder = null; }
   registrantsUI.cancelActiveRecording();
   hiddenStarted = false;
   stopActiveSpeech();
@@ -215,10 +210,13 @@ function normalizeVoiceText(str) {
   return hira.replace(VOICE_STRIP_RE, "").trim();
 }
 
-// 「はい！」「ハイ！」「はい」などの表記ゆれをすべて拾う
+// 「はい！」「ハイ！」「はい」「あ、はい」「はいはい」などの表記ゆれ・
+// 前後の余計な音（フィラーや助詞）を拾いこぼさないよう、先頭一致ではなく
+// 文中のどこかに「はい」が含まれていれば拾う（「はい」を聞き取れないという
+// 声が多かったため、判定はできるだけ緩めにしている）
 function isBuzzWord(text) {
   const n = normalizeVoiceText(text);
-  return !!n && (n === "はい" || n.startsWith("はい"));
+  return !!n && n.includes("はい");
 }
 
 // SpeechRecognitionはlang="ja-JP"だと同音異義語をIMEのように漢字へ自動変換して
@@ -426,21 +424,6 @@ function renderEditRegistrantScreen(myGen, id) {
     onNameSaved: () => renderRegistrantListScreen(myGen),
     onRerecord: (name) => renderRegisterStep2Screen(myGen, name, id),
   }, id);
-}
-
-// ------------------------------------------------------------------------
-// 参加者選択（「何人で遊ぶか」ではなく「誰が遊ぶか」を選ぶ）
-// ------------------------------------------------------------------------
-function renderParticipantSelectScreen(myGen, startParams) {
-  registrantsUI.renderParticipantSelect({
-    renderCard,
-    onBack: () => renderSetupScreen(myGen),
-    onOpenRegistrants: () => renderRegistrantListScreen(myGen),
-    onStart: () => {
-      renderCard(loadingCardHTML("出題を準備しています…"));
-      startQuiz(myGen, startParams);
-    },
-  });
 }
 
 // ------------------------------------------------------------------------
@@ -688,7 +671,8 @@ function renderSetupScreen(myGen) {
       lastStartParams = params;
       activePlaySeconds = playSeconds;
       activeTimeLimit = timeLimit;
-      renderParticipantSelectScreen(myGen, params);
+      renderCard(loadingCardHTML("出題を準備しています…"));
+      startQuiz(myGen, params);
     };
   }
 }
@@ -750,11 +734,6 @@ function renderQuizState(myGen, sessionId, videoId, startParams) {
   let fallbackPlayTimer2 = null;
   let playClipTimer = null;   // 「再生秒数」設定に応じた自動一時停止
   let roundTimeoutTimer = null; // 「制限時間」設定に応じた自動タイムアップ
-
-  // 今回のゲームに参加している登録者（「誰が「はい！」と言ったか」の判定候補）。
-  // 誰も選ばれていない・登録者がいない場合は判定をスキップし、従来どおりの
-  // 「はい！」検知だけのフローで動く（後方互換）
-  const participantsForThisRound = ParticipantManager.getSelectedParticipants();
 
   function setGiveupEnabled(enabled) {
     if (giveupBtn) giveupBtn.disabled = !enabled;
@@ -836,37 +815,7 @@ function renderQuizState(myGen, sessionId, videoId, startParams) {
     buzzed = false;
     renderPlayingUI(false);
     startBuzzListening();
-    startSpeakerCapture();
     scheduleGameplayTimers();
-  }
-
-  // 「誰が話したか」判定用の並行録音。SpeechRecognitionとは別に
-  // 生の音声データを確保しておき、「はい！」検知の瞬間に確定させる
-  async function startSpeakerCapture() {
-    if (!participantsForThisRound.length || !recorderSupported()) return;
-    const recorder = new AudioRecorder();
-    try {
-      await recorder.start();
-    } catch (e) { return; } // マイク権限なし等：話者判定なしで従来どおり続行
-    if (myGen !== renderGeneration || phase !== "playing") { recorder.cancel(); return; }
-    speakerCaptureRecorder = recorder;
-  }
-
-  async function stopSpeakerCapture() {
-    const recorder = speakerCaptureRecorder;
-    speakerCaptureRecorder = null;
-    if (!recorder) return null;
-    try { return await recorder.stop(); } catch (e) { return null; }
-  }
-
-  function renderSpeakerMatchedUI(name) {
-    const el = stage();
-    if (!el) return;
-    el.innerHTML = `
-      <div class="iq-vp-matched">
-        <div class="iq-vp-matched-name">${esc(name)}さんが</div>
-        <div class="iq-vp-matched-sub">回答権を獲得しました！</div>
-      </div>`;
   }
 
   // ゲーム設定（再生秒数・制限時間）を再生開始のタイミングで仕込む。
@@ -943,25 +892,6 @@ function renderQuizState(myGen, sessionId, videoId, startParams) {
     if (roundTimeoutTimer) { clearTimeout(roundTimeoutTimer); roundTimeoutTimer = null; }
     stopActiveSpeech();
     if (hiddenPlayer) { try { hiddenPlayer.pauseVideo(); } catch (e) {} }
-    resolveSpeakerAndProceed();
-  }
-
-  // 参加者が選ばれていれば「誰が話したか」を判定してから回答受付へ進む。
-  // SpeakerRecognitionServiceは差し替え可能な抽象なので、ここは判定結果の
-  // 有無だけを見て分岐する（判定ロジックの中身には一切関知しない）
-  async function resolveSpeakerAndProceed() {
-    const blob = await stopSpeakerCapture();
-    if (myGen !== renderGeneration) return;
-    if (blob && participantsForThisRound.length) {
-      let match = null;
-      try { match = await identifySpeaker(blob, participantsForThisRound); } catch (e) {}
-      if (myGen !== renderGeneration) return;
-      if (match) {
-        renderSpeakerMatchedUI(match.name);
-        setTimeout(() => { if (myGen === renderGeneration) enterAnsweringPhase(); }, 1300);
-        return;
-      }
-    }
     enterAnsweringPhase();
   }
 
@@ -1157,7 +1087,6 @@ function renderQuizState(myGen, sessionId, videoId, startParams) {
       finished = true;
       listenGen++;
       stopActiveSpeech();
-      if (speakerCaptureRecorder) { try { speakerCaptureRecorder.cancel(); } catch (e) {} speakerCaptureRecorder = null; }
       if (hiddenPlayer) { try { hiddenPlayer.pauseVideo(); } catch (e) {} }
       setGiveupEnabled(false);
       // サーバーが確定させた増分だけをこの端末のAC表示にも即時反映する

@@ -1,9 +1,9 @@
 /* =========================================================================
-   registrantsUI — 声紋登録機能の画面（設定 / 登録者一覧 / 新規登録 / 編集 /
-   参加者選択）の描画だけを担当する。データの読み書きはVoiceprintManager・
-   ParticipantManagerへ、録音はAudioRecorderへ、声紋抽出はSpeakerRecognition
-   Serviceへそれぞれ委譲し、このモジュール自身はDOM組み立てとイベント配線
-   だけを行う（音声認識ロジックとUIを密結合にしないための分離）。
+   registrantsUI — 声紋登録機能の画面（設定 / 登録者一覧 / 新規登録 / 編集）の
+   描画だけを担当する。データの読み書きはVoiceprintManagerへ、録音は
+   AudioRecorderへ、声紋抽出はSpeakerRecognitionServiceへそれぞれ委譲し、
+   このモジュール自身はDOM組み立てとイベント配線だけを行う（音声認識ロジック
+   とUIを密結合にしないための分離）。
 
    呼び出し側（js/introQuiz.js）が画面遷移（router）を持ち、各関数へは
    「今のカードを描き替える関数（renderCard）」と「戻る/次へ」のコールバックを
@@ -16,7 +16,6 @@
    ========================================================================= */
 import { esc, fmt } from '../core.js';
 import * as VoiceprintManager from './VoiceprintManager.js';
-import * as ParticipantManager from './ParticipantManager.js';
 import { AudioRecorder, isSupported as recorderSupported } from './AudioRecorder.js';
 import { extractVoiceprint, isSupported as speakerIdSupported } from './SpeakerRecognitionService.js';
 
@@ -35,7 +34,6 @@ const ICON_CHECK_CIRCLE = `<svg viewBox="0 0 24 24" width="26" height="26" fill=
 const ICON_WARNING = `<svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3.5 21.5 20h-19L12 3.5Z"></path><line x1="12" y1="10" x2="12" y2="14.2"></line><circle cx="12" cy="17" r="0.6" fill="currentColor" stroke="none"></circle></svg>`;
 const ICON_REC_DOT = `<svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor" stroke="none"><circle cx="12" cy="12" r="8"></circle></svg>`;
 const ICON_STOP_SQUARE = `<svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor" stroke="none"><rect x="5" y="5" width="14" height="14" rx="2"></rect></svg>`;
-const ICON_PEOPLE = `<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="8.5" r="3.2"></circle><path d="M3 20c.6-3.6 3-5.6 6-5.6s5.4 2 6 5.6"></path><circle cx="17.5" cy="9.5" r="2.4"></circle><path d="M16 14.3c2.4.4 4 2.1 4.4 4.5"></path></svg>`;
 const ICON_SMALL_CHECK = `<svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><polyline points="5 12.5 9.5 17 19 6.5"></polyline></svg>`;
 const ICON_SMALL_WARN = `<svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M12 4 21 19H3L12 4Z"></path><line x1="12" y1="10" x2="12" y2="13.6"></line></svg>`;
 
@@ -314,58 +312,4 @@ export function renderEditRegistrant(ctx, id) {
   };
   const rerecordBtn = document.getElementById("iq-vp-rerecord");
   if (rerecordBtn) rerecordBtn.onclick = () => ctx.onRerecord(registrant.name);
-}
-
-// ------------------------------------------------------------------------
-// ゲーム開始前：参加者選択（「何人で遊ぶか」の代わりに「誰が遊ぶか」を選ぶ）
-// ------------------------------------------------------------------------
-export function renderParticipantSelect(ctx) {
-  const list = VoiceprintManager.list();
-  const selected = new Set(ParticipantManager.getSelectedIds());
-
-  if (!list.length) {
-    ctx.renderCard(`
-      <div class="iq-card">
-        <div class="iq-card-title"><span class="iq-card-icon">${ICON_PEOPLE}</span>参加者を選ぶ</div>
-        <div class="iq-msg">まだ登録者がいません。先に「登録者管理」から声紋を登録してください。</div>
-        <button type="button" class="cta" id="iq-vp-goto-settings">${ICON_MIC}登録者管理を開く</button>
-        <button type="button" class="ghost" id="iq-vp-skip">登録せずに始める</button>
-      </div>`, ctx.onBack);
-    const gotoBtn = document.getElementById("iq-vp-goto-settings");
-    const skipBtn = document.getElementById("iq-vp-skip");
-    if (gotoBtn) gotoBtn.onclick = () => ctx.onOpenRegistrants();
-    if (skipBtn) skipBtn.onclick = () => ctx.onStart([]);
-    return;
-  }
-
-  function renderList() {
-    const rowsHTML = list.map((r) => `
-      <label class="iq-vp-check-row" data-id="${esc(r.id)}">
-        <input type="checkbox" class="iq-vp-checkbox" data-check="${esc(r.id)}" ${selected.has(r.id) ? "checked" : ""} />
-        ${avatarHTML(r, 40)}
-        <span class="iq-vp-check-name">${esc(r.name)}</span>
-      </label>`).join("");
-
-    ctx.renderCard(`
-      <div class="iq-card">
-        <div class="iq-card-title"><span class="iq-card-icon">${ICON_PEOPLE}</span>参加者を選ぶ</div>
-        <div class="iq-msg">今回参加する人にチェックを付けてください。</div>
-        <div class="iq-vp-check-list">${rowsHTML}</div>
-        <div class="iq-hint" id="iq-vp-count">${selected.size}人が参加します</div>
-        <button type="button" class="iq-start-btn" id="iq-vp-start">ゲーム開始</button>
-      </div>`, ctx.onBack);
-
-    document.querySelectorAll("[data-check]").forEach((cb) => {
-      cb.onchange = () => {
-        ParticipantManager.toggle(cb.dataset.check);
-        if (cb.checked) selected.add(cb.dataset.check); else selected.delete(cb.dataset.check);
-        const countEl = document.getElementById("iq-vp-count");
-        if (countEl) countEl.textContent = `${selected.size}人が参加します`;
-      };
-    });
-    const startBtn = document.getElementById("iq-vp-start");
-    if (startBtn) startBtn.onclick = () => ctx.onStart([...selected]);
-  }
-
-  renderList();
 }
