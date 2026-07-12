@@ -36,6 +36,11 @@
 import { esc, saveCoins } from './core.js';
 import { S, state } from './state.js';
 import { app, go, renderStatusBar } from './render.js';
+import * as VoiceprintManager from './voiceprint/VoiceprintManager.js';
+import * as ParticipantManager from './voiceprint/ParticipantManager.js';
+import * as registrantsUI from './voiceprint/registrantsUI.js';
+import { identifySpeaker } from './voiceprint/SpeakerRecognitionService.js';
+import { AudioRecorder, isSupported as recorderSupported } from './voiceprint/AudioRecorder.js';
 
 // ---- 画面内の状態管理 ----
 // このモジュールが管理するのは「イントロドン画面がマウントされている間」
@@ -47,6 +52,7 @@ let hiddenPlayer = null;
 let revealPlayer = null;
 let hiddenStarted = false;   // 「1回目の再生ボタン」で0秒から再生済みか
 let fallbackPlayTimer = null;
+let speakerCaptureRecorder = null; // 再生中の「誰が話したか」判定用に並行録音しているAudioRecorder
 let lastStartParams = { mode: "random" }; // 「別のモードで遊ぶ」等で使う直近のモード
 
 const YT_API_LOAD_TIMEOUT_MS = 12000;
@@ -79,6 +85,7 @@ const ICON_EMPTY = `<svg viewBox="0 0 24 24" width="26" height="26" fill="none" 
 const ICON_MINUS = `<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><line x1="5" y1="12" x2="19" y2="12"></line></svg>`;
 const ICON_PLUS = `<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>`;
 const ICON_PLAY_SMALL = `<svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor" stroke="none"><polygon points="6,4 20,12 6,20"></polygon></svg>`;
+const ICON_SETTINGS_GEAR = `<svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3.2"></circle><path d="M19.4 13.5a1.7 1.7 0 0 0 .34 1.87l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.7 1.7 0 0 0-1.87-.34 1.7 1.7 0 0 0-1.04 1.56V19.5a2 2 0 1 1-4 0v-.09A1.7 1.7 0 0 0 8.96 17.85a1.7 1.7 0 0 0-1.87.34l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.7 1.7 0 0 0 4.6 13.5 1.7 1.7 0 0 0 3.04 12.46H2.95a2 2 0 1 1 0-4h.09A1.7 1.7 0 0 0 4.6 7.42 1.7 1.7 0 0 0 4.26 5.55l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.7 1.7 0 0 0 8.96 3.06 1.7 1.7 0 0 0 10 1.5V1.41a2 2 0 1 1 4 0v.09A1.7 1.7 0 0 0 15.04 3.06a1.7 1.7 0 0 0 1.87-.34l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.7 1.7 0 0 0 19.4 7.42 1.7 1.7 0 0 0 20.96 8.46h.09a2 2 0 1 1 0 4h-.09a1.7 1.7 0 0 0-1.56 1.04Z"></path></svg>`;
 
 // 出題モードのカタログ。「available:false」は今後追加予定の枠（プレイリスト・
 // 年代別・ジャンル）で、カード自体は表示するが選択不可（近日公開）にする。
@@ -150,6 +157,8 @@ function destroyPlayers() {
   if (fallbackPlayTimer) { clearTimeout(fallbackPlayTimer); fallbackPlayTimer = null; }
   if (hiddenPlayer) { try { hiddenPlayer.destroy(); } catch (e) {} hiddenPlayer = null; }
   if (revealPlayer) { try { revealPlayer.destroy(); } catch (e) {} revealPlayer = null; }
+  if (speakerCaptureRecorder) { try { speakerCaptureRecorder.cancel(); } catch (e) {} speakerCaptureRecorder = null; }
+  registrantsUI.cancelActiveRecording();
   hiddenStarted = false;
   stopActiveSpeech();
 }
@@ -275,6 +284,7 @@ function screenShellHTML(bodyHTML) {
   return `
     <div class="iq-header">
       <button type="button" class="quit iq-back-btn" id="iq-back">${ICON_CHEVRON_LEFT}<span>ホーム</span></button>
+      <button type="button" class="iq-settings-btn" id="iq-settings" aria-label="設定" title="設定">${ICON_SETTINGS_GEAR}</button>
     </div>
     <h1 class="iq-title">イントロドン</h1>
     <div class="iq-body" id="iq-body">${bodyHTML}</div>`;
@@ -285,11 +295,20 @@ function wireBackButton(onBack) {
   if (back) back.onclick = () => (onBack ? onBack() : leaveIntroQuiz());
 }
 
+// 設定ボタンはどの内部画面からでも常に同じ入口（設定トップ）へ遷移する。
+// renderCard()経由で毎回配線し直すため、現在有効な世代（renderGeneration）を
+// そのつど直接参照すればよく、呼び出し元からmyGenを渡し回す必要がない
+function wireSettingsButton() {
+  const btn = app.querySelector("#iq-settings");
+  if (btn) btn.onclick = () => openSettingsRoot(renderGeneration);
+}
+
 function renderCard(bodyHTML, onBack) {
   const body = app.querySelector("#iq-body");
   if (body) body.innerHTML = bodyHTML;
   else app.innerHTML = screenShellHTML(bodyHTML); // 念のためのフォールバック（通常は既にシェルが存在する）
   wireBackButton(onBack);
+  wireSettingsButton();
 }
 
 function loadingCardHTML(text) {
@@ -324,11 +343,87 @@ export function renderIntroQuizScreen() {
         <div class="iq-msg">イントロドンで遊ぶにはログインしてください（ゲストモードでは挑戦できません）。</div>
       </div>`);
     wireBackButton();
+    wireSettingsButton();
     return;
   }
 
   app.innerHTML = screenShellHTML("");
   renderSetupScreen(renderGeneration);
+}
+
+// 設定ボタンの共通入口：どの内部画面にいてもここから設定トップへ入る。
+// 再生中の音・音声認識・録音を確実に止めてから遷移する
+function openSettingsRoot(myGen) {
+  if (myGen !== renderGeneration) return;
+  if (state.guestMode || !state.currentUser) return;
+  destroyPlayers();
+  renderSettingsScreen(myGen);
+}
+
+// ------------------------------------------------------------------------
+// 設定（登録者管理・ゲーム設定・音声設定）
+// ------------------------------------------------------------------------
+function renderSettingsScreen(myGen) {
+  registrantsUI.renderSettingsScreen({
+    renderCard,
+    onBack: () => renderSetupScreen(myGen),
+    onOpenRegistrants: () => renderRegistrantListScreen(myGen),
+  });
+}
+
+function renderRegistrantListScreen(myGen) {
+  registrantsUI.renderRegistrantList({
+    renderCard,
+    onBack: () => renderSettingsScreen(myGen),
+    onAdd: () => renderRegisterStep1Screen(myGen),
+    onEdit: (id) => renderEditRegistrantScreen(myGen, id),
+  });
+}
+
+function renderRegisterStep1Screen(myGen) {
+  registrantsUI.renderRegisterStep1({
+    renderCard,
+    onBack: () => renderRegistrantListScreen(myGen),
+    onNext: (name) => renderRegisterStep2Screen(myGen, name, null),
+  });
+}
+
+// editId: nullなら新規登録（VoiceprintManager.add）、指定ありなら声紋の録り直し（updateVoiceprint）
+function renderRegisterStep2Screen(myGen, name, editId) {
+  registrantsUI.renderRegisterStep2({
+    renderCard,
+    isCurrent: () => myGen === renderGeneration,
+    onBack: () => (editId ? renderEditRegistrantScreen(myGen, editId) : renderRegisterStep1Screen(myGen)),
+    onSaved: (voiceprint) => {
+      if (editId) VoiceprintManager.updateVoiceprint(editId, voiceprint);
+      else VoiceprintManager.add({ name, voiceprint });
+      renderRegistrantListScreen(myGen);
+    },
+  }, name);
+}
+
+function renderEditRegistrantScreen(myGen, id) {
+  registrantsUI.renderEditRegistrant({
+    renderCard,
+    onBack: () => renderRegistrantListScreen(myGen),
+    onNameSaved: () => renderRegistrantListScreen(myGen),
+    onRerecord: (name) => renderRegisterStep2Screen(myGen, name, id),
+  }, id);
+}
+
+// ------------------------------------------------------------------------
+// 参加者選択（「何人で遊ぶか」ではなく「誰が遊ぶか」を選ぶ）
+// ------------------------------------------------------------------------
+function renderParticipantSelectScreen(myGen, startParams) {
+  registrantsUI.renderParticipantSelect({
+    renderCard,
+    onBack: () => renderSetupScreen(myGen),
+    onOpenRegistrants: () => renderRegistrantListScreen(myGen),
+    onStart: () => {
+      renderCard(loadingCardHTML("出題を準備しています…"));
+      startQuiz(myGen, startParams);
+    },
+  });
 }
 
 // ------------------------------------------------------------------------
@@ -576,8 +671,7 @@ function renderSetupScreen(myGen) {
       lastStartParams = params;
       activePlaySeconds = playSeconds;
       activeTimeLimit = timeLimit;
-      renderCard(loadingCardHTML("出題を準備しています…"));
-      startQuiz(myGen, params);
+      renderParticipantSelectScreen(myGen, params);
     };
   }
 }
@@ -639,6 +733,11 @@ function renderQuizState(myGen, sessionId, videoId, startParams) {
   let fallbackPlayTimer2 = null;
   let playClipTimer = null;   // 「再生秒数」設定に応じた自動一時停止
   let roundTimeoutTimer = null; // 「制限時間」設定に応じた自動タイムアップ
+
+  // 今回のゲームに参加している登録者（「誰が「はい！」と言ったか」の判定候補）。
+  // 誰も選ばれていない・登録者がいない場合は判定をスキップし、従来どおりの
+  // 「はい！」検知だけのフローで動く（後方互換）
+  const participantsForThisRound = ParticipantManager.getSelectedParticipants();
 
   function setGiveupEnabled(enabled) {
     if (giveupBtn) giveupBtn.disabled = !enabled;
@@ -720,7 +819,37 @@ function renderQuizState(myGen, sessionId, videoId, startParams) {
     buzzed = false;
     renderPlayingUI(false);
     startBuzzListening();
+    startSpeakerCapture();
     scheduleGameplayTimers();
+  }
+
+  // 「誰が話したか」判定用の並行録音。SpeechRecognitionとは別に
+  // 生の音声データを確保しておき、「はい！」検知の瞬間に確定させる
+  async function startSpeakerCapture() {
+    if (!participantsForThisRound.length || !recorderSupported()) return;
+    const recorder = new AudioRecorder();
+    try {
+      await recorder.start();
+    } catch (e) { return; } // マイク権限なし等：話者判定なしで従来どおり続行
+    if (myGen !== renderGeneration || phase !== "playing") { recorder.cancel(); return; }
+    speakerCaptureRecorder = recorder;
+  }
+
+  async function stopSpeakerCapture() {
+    const recorder = speakerCaptureRecorder;
+    speakerCaptureRecorder = null;
+    if (!recorder) return null;
+    try { return await recorder.stop(); } catch (e) { return null; }
+  }
+
+  function renderSpeakerMatchedUI(name) {
+    const el = stage();
+    if (!el) return;
+    el.innerHTML = `
+      <div class="iq-vp-matched">
+        <div class="iq-vp-matched-name">${esc(name)}さんが</div>
+        <div class="iq-vp-matched-sub">回答権を獲得しました！</div>
+      </div>`;
   }
 
   // ゲーム設定（再生秒数・制限時間）を再生開始のタイミングで仕込む。
@@ -792,6 +921,25 @@ function renderQuizState(myGen, sessionId, videoId, startParams) {
     if (roundTimeoutTimer) { clearTimeout(roundTimeoutTimer); roundTimeoutTimer = null; }
     stopActiveSpeech();
     if (hiddenPlayer) { try { hiddenPlayer.pauseVideo(); } catch (e) {} }
+    resolveSpeakerAndProceed();
+  }
+
+  // 参加者が選ばれていれば「誰が話したか」を判定してから回答受付へ進む。
+  // SpeakerRecognitionServiceは差し替え可能な抽象なので、ここは判定結果の
+  // 有無だけを見て分岐する（判定ロジックの中身には一切関知しない）
+  async function resolveSpeakerAndProceed() {
+    const blob = await stopSpeakerCapture();
+    if (myGen !== renderGeneration) return;
+    if (blob && participantsForThisRound.length) {
+      let match = null;
+      try { match = await identifySpeaker(blob, participantsForThisRound); } catch (e) {}
+      if (myGen !== renderGeneration) return;
+      if (match) {
+        renderSpeakerMatchedUI(match.name);
+        setTimeout(() => { if (myGen === renderGeneration) enterAnsweringPhase(); }, 1300);
+        return;
+      }
+    }
     enterAnsweringPhase();
   }
 
@@ -986,6 +1134,7 @@ function renderQuizState(myGen, sessionId, videoId, startParams) {
       finished = true;
       listenGen++;
       stopActiveSpeech();
+      if (speakerCaptureRecorder) { try { speakerCaptureRecorder.cancel(); } catch (e) {} speakerCaptureRecorder = null; }
       if (hiddenPlayer) { try { hiddenPlayer.pauseVideo(); } catch (e) {} }
       setGiveupEnabled(false);
       // サーバーが確定させた増分だけをこの端末のAC表示にも即時反映する
