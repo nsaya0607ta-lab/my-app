@@ -1830,6 +1830,11 @@ body[data-theme="dark"] .menu-btn:active{box-shadow:0 4px 10px rgba(0,0,0,.3), i
    🎵 イントロドン（曲名を入力して当てるクイズ）－ 専用フルスクリーン画面
    本体は.stats-dashと同系統の「白基調・丸み・淡いシャドウ」のカードを土台にする
    ========================================================================= */
+/* 音量調整（hiddenPlayerはcontrols:0のためネイティブの音量UIが無く、代わりに常設） */
+.iq-volume-row{display:flex;align-items:center;gap:8px;margin-bottom:12px;}
+.iq-volume-icon{font-size:15px;flex:none;}
+.iq-volume-slider{flex:1;height:4px;accent-color:var(--accent);cursor:pointer;}
+
 .iq-card{
   position:relative; overflow:hidden; padding:22px 18px 20px;
   border-radius:20px; border:1px solid var(--line);

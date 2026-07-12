@@ -185,11 +185,31 @@ function leaveIntroQuiz() {
   go("select");
 }
 
+// ---- 音量調整（hiddenPlayer・revealPlayer共通。端末・ブラウザに保存して次回も維持） ----
+const VOLUME_STORAGE_KEY = "introQuizVolume";
+function loadVolume() {
+  try {
+    const v = parseInt(localStorage.getItem(VOLUME_STORAGE_KEY), 10);
+    return isNaN(v) ? 70 : Math.min(100, Math.max(0, v));
+  } catch (e) { return 70; }
+}
+function saveVolume(v) {
+  try { localStorage.setItem(VOLUME_STORAGE_KEY, String(v)); } catch (e) {}
+}
+function applyVolume(v) {
+  if (hiddenPlayer && typeof hiddenPlayer.setVolume === "function") { try { hiddenPlayer.setVolume(v); } catch (e) {} }
+  if (revealPlayer && typeof revealPlayer.setVolume === "function") { try { revealPlayer.setVolume(v); } catch (e) {} }
+}
+
 function screenShellHTML(bodyHTML) {
   return `
     <div class="q-head" style="margin-bottom:14px">
       <button class="quit" id="iq-back">← ホーム</button>
       <span class="q-count">🎵 イントロドン</span>
+    </div>
+    <div class="iq-volume-row">
+      <span class="iq-volume-icon" aria-hidden="true">🔊</span>
+      <input type="range" id="iq-volume" class="iq-volume-slider" min="0" max="100" value="${loadVolume()}" aria-label="音量">
     </div>
     <div class="iq-card">${bodyHTML}</div>`;
 }
@@ -199,11 +219,23 @@ function wireBackButton(onBack) {
   if (back) back.onclick = () => (onBack ? onBack() : leaveIntroQuiz());
 }
 
+function wireVolumeControl() {
+  const slider = app.querySelector("#iq-volume");
+  if (!slider) return;
+  slider.value = String(loadVolume());
+  slider.oninput = () => {
+    const v = parseInt(slider.value, 10) || 0;
+    saveVolume(v);
+    applyVolume(v);
+  };
+}
+
 function renderCard(bodyHTML, onBack) {
   const card = app.querySelector(".iq-card");
   if (card) card.innerHTML = bodyHTML;
   else app.innerHTML = screenShellHTML(bodyHTML); // 念のためのフォールバック（通常は既にシェルが存在する）
   wireBackButton(onBack);
+  wireVolumeControl();
 }
 
 function renderErrorState(myGen, message, onRetry) {
@@ -230,11 +262,13 @@ export function renderIntroQuizScreen() {
       <div class="iq-headline">🔒 ログインが必要です</div>
       <div class="iq-msg">イントロドンで遊ぶにはログインしてください（ゲストモードでは挑戦できません）。</div>`);
     wireBackButton();
+    wireVolumeControl();
     return;
   }
 
   app.innerHTML = screenShellHTML("");
   wireBackButton();
+  wireVolumeControl();
   renderModeSelect(renderGeneration);
 }
 
@@ -400,6 +434,7 @@ function renderQuizState(myGen, sessionId, videoId, startParams) {
           readyFired = true;
           clearTimeout(readyTimer);
           if (myGen !== renderGeneration) return;
+          try { hiddenPlayer.setVolume(loadVolume()); } catch (e) {}
           startPlayback();
         },
         onStateChange: (ev) => {
@@ -765,6 +800,7 @@ function renderResultState(myGen, data, startParams) {
       events: {
         onReady: (ev) => {
           if (myGen !== renderGeneration) return;
+          try { ev.target.setVolume(loadVolume()); } catch (e) {}
           try { ev.target.playVideo(); } catch (e) {}
           // モバイルSafari等で自動再生がブロックされた場合の保険：
           // 1.5秒後もまだ再生されていなければ、手動再生ボタンを表示する
