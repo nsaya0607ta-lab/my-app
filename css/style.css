@@ -2010,51 +2010,72 @@ body[data-theme="dark"] .menu-btn:active{box-shadow:0 4px 10px rgba(0,0,0,.3), i
   display:none;
   background:#0f1830;
   border-top:1px solid #263756;
-  padding:10px 8px calc(10px + env(safe-area-inset-bottom));
+  padding:6px 7px calc(6px + env(safe-area-inset-bottom));
+  flex-direction:column;
+  /* キーボード上のスワイプ／長押しでは、内部スクロールも含めて一切
+     動かさない。iPhone標準キーボードと同じ「タップした時だけ反応し、
+     指を動かしてもキーボード自体は絶対に動かない」操作感にするため。
+     スクロールしたい時は、この領域の外（ターミナルなど）で行う。 */
+  touch-action:none;overscroll-behavior:none;
 }
 .pg-app-keyboard--open{
-  display:block;
+  display:flex;
   position:fixed;left:0;right:0;
   bottom:calc(var(--bnav-h) + env(safe-area-inset-bottom));
   z-index:450;
   max-width:480px;margin:0 auto;box-sizing:border-box;
-  max-height:min(78vh,620px);
-  max-height:min(calc(100dvh - var(--bnav-h) - env(safe-area-inset-bottom) - 16px),620px);
-  overflow-y:auto;-webkit-overflow-scrolling:touch;
-  overscroll-behavior-y:contain;touch-action:pan-y;
+  /* 画面の高さに応じて自動調整（レスポンシブ）。ターミナルが常に画面の
+     約60%見えるよう、キーボードは常に画面の約40%以内に収める。
+     iPhone SE〜Pro Maxの実機の高さで、ターミナルと重ならないよう検証
+     済みの値（下の.pg-terminal-body--kbopenと対で調整すること） */
+  height:230px;
+  overflow:hidden; /* 内部スクロールそのものを発生させない＝絶対に動かない */
   border-radius:20px 20px 0 0;
   box-shadow:0 -14px 34px rgba(2,6,23,.5),0 -1px 0 rgba(255,255,255,.03) inset;
+}
+@media (max-height:800px){
+  .pg-app-keyboard--open{height:clamp(200px,35dvh,240px);}
+}
+@media (min-height:900px){
+  .pg-app-keyboard--open{height:clamp(230px,34dvh,275px);}
 }
 
 /* よく使うコマンド（キーボード最上部・横スクロール）。タップすると入力欄へ
    コマンド名を差し込むだけで、実行はしない。文字キーと見分けやすいよう
-   ピル型・別配色にする */
+   ピル型・別配色にする。この行だけは横スクロールを許可する（ターミナルや
+   キーボード全体を動かすスクロールとは別物） */
 .pg-kb-quick-row{
-  display:flex;gap:7px;overflow-x:auto;padding:2px 2px 10px;margin-bottom:8px;
+  display:flex;gap:6px;overflow-x:auto;flex:0 0 auto;
+  padding:2px 2px 7px;margin-bottom:6px;
   border-bottom:1px solid #22314e;
   -webkit-overflow-scrolling:touch;touch-action:pan-x;overscroll-behavior-x:contain;
 }
 .pg-kb-chip{
   flex:none;background:#182644;border:1px solid #2c4066;color:#bcd2f5;
-  font-family:ui-monospace,"SFMono-Regular",Menlo,Consolas,monospace;font-weight:700;font-size:12.5px;
-  padding:8px 14px;border-radius:99px;cursor:pointer;-webkit-tap-highlight-color:transparent;
-  transition:transform .08s ease,background .08s ease;
+  font-family:ui-monospace,"SFMono-Regular",Menlo,Consolas,monospace;font-weight:700;font-size:12px;
+  padding:6px 12px;border-radius:99px;cursor:pointer;-webkit-tap-highlight-color:transparent;
+  transition:transform .08s ease,background .08s ease;touch-action:pan-x;
 }
 .pg-kb-chip.pg-kb-key--pressed{background:var(--accent);border-color:var(--accent);color:#fff;transform:translateY(1px) scale(.96);}
 
-.pg-kb-row{display:flex;gap:6px;margin-bottom:6px;}
-.pg-kb-row:last-child{margin-bottom:0;}
+/* キー本体の行群。残りの高さいっぱいに均等分配され（flex）、内容が
+   コンテナからはみ出すことがない＝スクロールが発生しようがない構造 */
+.pg-kb-body{
+  flex:1 1 auto;min-height:0;display:flex;flex-direction:column;gap:3px;
+  touch-action:none;box-sizing:border-box;
+}
+.pg-kb-row{display:flex;gap:4px;flex:1 1 0;min-height:0;box-sizing:border-box;}
 .pg-kb-row--inset8{padding:0 4%;}
 .pg-kb-row--inset16{padding:0 8%;}
-.pg-kb-row--nav{padding:0 14%;}
 
 .pg-kb-key{
-  position:relative;flex:1 1 0;min-width:0;min-height:46px;
+  position:relative;flex:1 1 0;min-width:0;min-height:0;box-sizing:border-box;
   background:linear-gradient(180deg,#1c2c4c,#16233f);
   border:1px solid #2c3f63;color:#eef2f9;
-  font-family:ui-monospace,"SFMono-Regular",Menlo,Consolas,monospace;font-weight:700;font-size:15px;
-  padding:10px 2px;border-radius:12px;cursor:pointer;text-align:center;
+  font-family:ui-monospace,"SFMono-Regular",Menlo,Consolas,monospace;font-weight:700;font-size:14px;
+  padding:2px;border-radius:10px;cursor:pointer;text-align:center;
   -webkit-tap-highlight-color:transparent;-webkit-user-select:none;user-select:none;
+  touch-action:none;
   box-shadow:0 2px 0 rgba(0,0,0,.28),0 1px 0 rgba(255,255,255,.05) inset;
   transition:transform .06s ease,background .06s ease,box-shadow .06s ease;
   display:flex;align-items:center;justify-content:center;
@@ -2102,12 +2123,17 @@ body[data-theme="dark"] .menu-btn:active{box-shadow:0 4px 10px rgba(0,0,0,.3), i
 }
 
 /* キーボードが開いている間は、下の出力エリアを少し縮めて画面下部固定
-   キーボードとの取り合いを確保する */
-.pg-terminal-body--kbopen{height:min(24vh,190px);}
+   キーボードとの取り合いを確保する。キーボード自体を画面の約40%に抑えた
+   ぶん、ターミナルは常に画面の約60%見える広さを保つ */
+.pg-terminal-body--kbopen{height:min(32vh,280px);}
+@media (max-height:800px){ .pg-terminal-body--kbopen{height:min(22vh,150px);} }
+@media (min-height:900px){ .pg-terminal-body--kbopen{height:min(38vh,340px);} }
 
+/* Esc/Tab/Ctrl/Shift/←↑↓→/⌫を1行に収めた影響で、幅の狭い端末では
+   文字ラベルが詰まりやすいため、その行だけ少し縮める */
 @media (max-width:360px){
-  .pg-kb-key{min-height:42px;font-size:13.5px;padding:8px 1px;}
-  .pg-kb-key--fn,.pg-kb-key--shortcut,.pg-kb-key--space{font-size:11px;}
+  .pg-kb-row--fn{gap:2px;}
+  .pg-kb-key--fn{font-size:10px;}
 }
 
 .pg-cards{display:grid;grid-template-columns:1fr 1fr;gap:10px;}
