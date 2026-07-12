@@ -309,15 +309,15 @@ function renderScenarioPlayScreen(scenarioId){
         <div class="scn-request-text">${scenario.request.map(line => `<p>${esc(line)}</p>`).join("")}</div>
       </div>
     </div>
-    <div class="pg-terminal-card">
+    <div class="pg-terminal-card" id="scn-terminal-card">
       <div class="pg-terminal-head">
         <span class="pg-terminal-dots"><span></span><span></span><span></span></span>
         <span class="pg-terminal-title">student@linux</span>
         <button type="button" class="pg-terminal-clear" id="scn-terminal-clear">🗑 クリア</button>
       </div>
       <div class="pg-terminal-body" id="scn-terminal-body"></div>
+      ${keyboardHTML()}
     </div>
-    ${keyboardHTML()}
     <div class="pg-cards">
       <div class="pg-card scn-progress-card" id="scn-progress-card"></div>
       <div class="pg-card scn-hint-card" id="scn-hint-card"></div>

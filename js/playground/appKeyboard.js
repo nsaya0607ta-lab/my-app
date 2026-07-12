@@ -214,20 +214,17 @@ export function createAppKeyboard({ idPrefix, getRoot, actions, withScrollPreser
   }
 
   function html(){
-    const rows = [
-      quickRowHTML(),
+    const bodyRows = [
       `<div class="pg-kb-row pg-kb-row--fn">
         <button type="button" class="pg-kb-key pg-kb-key--fn" id="${idPrefix}-kb-esc">Esc</button>
         <button type="button" class="pg-kb-key pg-kb-key--fn" id="${idPrefix}-kb-tab">Tab</button>
         <button type="button" class="pg-kb-key pg-kb-key--fn${ctrlArmed ? " pg-kb-key--active" : ""}" id="${idPrefix}-kb-ctrl">Ctrl</button>
         <button type="button" class="pg-kb-key pg-kb-key--fn${capsOn ? " pg-kb-key--active" : ""}" id="${idPrefix}-kb-shift">Shift</button>
-        <button type="button" class="pg-kb-key pg-kb-key--fn pg-kb-key--back" id="${idPrefix}-kb-back">⌫</button>
-      </div>`,
-      `<div class="pg-kb-row pg-kb-row--nav">
         <button type="button" class="pg-kb-key pg-kb-key--nav" id="${idPrefix}-kb-left" aria-label="カーソルを左へ">←</button>
         <button type="button" class="pg-kb-key pg-kb-key--nav" id="${idPrefix}-kb-up" aria-label="履歴を戻す">↑</button>
         <button type="button" class="pg-kb-key pg-kb-key--nav" id="${idPrefix}-kb-down" aria-label="履歴を進める">↓</button>
         <button type="button" class="pg-kb-key pg-kb-key--nav" id="${idPrefix}-kb-right" aria-label="カーソルを右へ">→</button>
+        <button type="button" class="pg-kb-key pg-kb-key--fn pg-kb-key--back" id="${idPrefix}-kb-back">⌫</button>
       </div>`,
       `<div class="pg-kb-row">${NUMBER_ROW.map(k => keyBtn(k)).join("")}</div>`,
       `<div class="pg-kb-row">${LETTER_ROWS[0].map(k => keyBtn(k)).join("")}</div>`,
@@ -242,6 +239,7 @@ export function createAppKeyboard({ idPrefix, getRoot, actions, withScrollPreser
         <button type="button" class="pg-kb-key pg-kb-key--close" id="${idPrefix}-kb-close" aria-label="キーボードを閉じる">▼</button>
       </div>`,
     ].join("");
+    const rows = quickRowHTML() + `<div class="pg-kb-body">${bodyRows}</div>`;
     return `<div class="pg-app-keyboard${keyboardOpen ? " pg-app-keyboard--open" : ""}" id="${kbId}">${rows}</div>`;
   }
 
@@ -291,8 +289,13 @@ export function createAppKeyboard({ idPrefix, getRoot, actions, withScrollPreser
     const root = getRoot();
     const kb = root ? root.querySelector(`#${kbId}`) : null;
     if(kb) kb.classList.toggle("pg-app-keyboard--open", keyboardOpen);
-    const body = root ? root.querySelector(`#${idPrefix}-terminal-body`) : null;
-    if(body) body.classList.toggle("pg-terminal-body--kbopen", keyboardOpen);
+    const card = root ? root.querySelector(`#${idPrefix}-terminal-card`) : null;
+    if(card) card.classList.toggle("pg-terminal-card--kbopen", keyboardOpen);
+    // キーボードは黒いターミナルの枠内に組み込まれているため、開いている間は
+    // ヘッダーの紹介カードなど上部の付帯要素を畳み、ターミナル＋キーボードに
+    // 縦の余白を回す（画面上部にこのクラスを立てるだけで、CSS側で制御する）
+    const pageRoot = root ? root.querySelector(`#${idPrefix}-root`) : null;
+    if(pageRoot) pageRoot.classList.toggle("pg-kb-active", keyboardOpen);
   }
 
   function reset(){

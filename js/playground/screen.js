@@ -725,15 +725,15 @@ export function renderPlaygroundScreen(){
       </div>
     </div>
     <div class="pg-sync-note" id="pg-sync-note"></div>
-    <div class="pg-terminal-card">
+    <div class="pg-terminal-card" id="pg-terminal-card">
       <div class="pg-terminal-head">
         <span class="pg-terminal-dots"><span></span><span></span><span></span></span>
         <span class="pg-terminal-title">student@linux</span>
         <button type="button" class="pg-terminal-clear" id="pg-terminal-clear">🗑 クリア</button>
       </div>
       <div class="pg-terminal-body" id="pg-terminal-body"></div>
+      ${appKeyboard.html()}
     </div>
-    ${appKeyboard.html()}
     <div class="pg-cat-tabs" id="pg-cat-tabs"></div>
     <div class="pg-cards">
       <div class="pg-card pg-mission-card" id="pg-mission-card"></div>
