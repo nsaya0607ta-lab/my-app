@@ -7,8 +7,9 @@
 
    このファイルが担う「コンポーネント」：
      ・Terminal        … renderTerminalBody() / appendTerminalRecords()
-     ・CommandInput     … wireCommandInput()（Enter送信・↑↓履歴・Tab補完・
-                          Ctrl+C・モバイル向け補助キー行）
+     ・CommandInput     … アプリ内キーボード方式の疑似入力（liveBuffer/
+                          liveCursor・履歴・Tab補完・Ctrl修飾・アプリ内
+                          キーボード）。システムキーボードは一切使わない。
      ・CategoryTabs     … renderCategoryTabs()（ミッションのカテゴリ切替）
      ・MissionCard      … renderMissionCard()
      ・HintCard         … renderHintCard()
@@ -33,6 +34,14 @@ import { COMMAND_NAMES } from './commands/index.js';
 let answerRevealed = false;
 let terminalRecords = []; // {kind:"cmd", promptPath, text} | {kind:"line", tokens}
 
+// アプリ内キーボード方式の入力状態。スマホのシステムキーボードは一切使わず、
+// この文字列バッファとカーソル位置だけをターミナル上に描画して「本物の
+// ターミナルへ直接入力しているように」見せる（実DOM<input>は存在しない）。
+let liveBuffer = "";
+let liveCursor = 0;
+let ctrlArmed = false;
+let keyboardOpen = false;
+
 function welcomeRecord(text){
   return { kind:"line", tokens:[{ text, cls:"pg-muted" }] };
 }
@@ -41,8 +50,31 @@ function resetTerminal(){
   terminalRecords = [
     welcomeRecord("student ホームディレクトリへようこそ。help と入力すると使えるコマンド一覧を確認できます（Tabキーで補完、| でパイプ、> でリダイレクトも使えます）。"),
   ];
+  liveBuffer = "";
+  liveCursor = 0;
+  ctrlArmed = false;
+  keyboardOpen = false;
 }
 resetTerminal();
+
+// ミッション切替・ヒント表示などの「その場での差し替え」操作が、フォーカス
+// されていたボタンの消滅（iOS Safariが要素の消失時にスクロール位置を見失う
+// 挙動）につられてページを勝手にスクロールさせないようにするためのガード。
+function withScrollPreserved(fn){
+  const scroller = document.scrollingElement || document.documentElement;
+  const x = scroller.scrollLeft, y = scroller.scrollTop;
+  fn();
+  scroller.scrollLeft = x;
+  scroller.scrollTop = y;
+}
+
+// 上と同じ理由で、タップのたびに再描画されるボタン（カテゴリタブ／ヒント
+// カードのボタンなど）はclickではなくpointerdownでハンドリングする。
+// pointerdownでpreventDefaultすることで、ボタン自身がフォーカスを持つ前に
+// 処理を終えられる（wireTermKeysと同じ既存の手法）。
+function onPress(btn, handler){
+  btn.addEventListener("pointerdown", (e) => { e.preventDefault(); handler(); });
+}
 
 // ------------------------------------------------------------------------
 // Terminal
@@ -62,13 +94,23 @@ function terminalBodyEl(){ return app.querySelector("#pg-terminal-body"); }
 
 function isNearBottom(el){ return el.scrollHeight - el.scrollTop - el.clientHeight < 40; }
 
+// バッファ＋カーソル位置だけをもとに、あたかも本物の<input>があるかのような
+// 見た目（緑の点滅カーソルがテキストの途中にも置ける）を描画する。実際の
+// フォーカス可能な入力要素は存在しないため、システムキーボードは絶対に
+// 開かない。実行は右側の送信ボタン（アプリ内キーボードのEnterは改行）のみ。
 function liveLineHTML(){
-  return `<form class="pg-term-line pg-term-live" id="pg-term-input-form" autocomplete="off">
+  const before = esc(liveBuffer.slice(0, liveCursor));
+  const after = esc(liveBuffer.slice(liveCursor));
+  return `<div class="pg-term-line pg-term-live" id="pg-term-live">
     <span class="pg-term-prompt">student@linux:${esc(vfs.promptPath())}$</span>
-    <input type="text" id="pg-term-input" class="pg-term-input" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" inputmode="text">
-    <span class="pg-term-cursor" id="pg-term-cursor"></span>
-    <button type="submit" class="pg-term-send-btn" aria-label="送信">➤</button>
-  </form>`;
+    <span class="pg-term-input-display" id="pg-term-input-display">${before}<span class="pg-term-cursor" id="pg-term-cursor"></span>${after}</span>
+    <button type="button" class="pg-term-send-btn" id="pg-term-send-btn" aria-label="実行">▶</button>
+  </div>`;
+}
+
+function wireLiveLineButton(){
+  const btn = app.querySelector("#pg-term-send-btn");
+  if(btn) btn.onclick = () => submitLiveCommand();
 }
 
 function renderTerminalBody(){
@@ -76,7 +118,21 @@ function renderTerminalBody(){
   if(!el) return;
   el.innerHTML = terminalRecords.map(recordToHTML).join("") + liveLineHTML();
   el.scrollTop = el.scrollHeight;
-  wireCommandInput();
+  wireLiveLineButton();
+}
+
+// 入力バッファが変わるたび（文字入力・矢印移動・履歴呼び出し等）に、
+// ライブ行だけを描き直す。ターミナル本体の他の行やページのスクロール
+// 位置には一切手を触れない。
+function updateLiveLine(){
+  const el = terminalBodyEl();
+  if(!el) return;
+  const wasNearBottom = isNearBottom(el);
+  const old = el.querySelector("#pg-term-live");
+  if(old) old.outerHTML = liveLineHTML();
+  else el.insertAdjacentHTML("beforeend", liveLineHTML());
+  wireLiveLineButton();
+  if(wasNearBottom) el.scrollTop = el.scrollHeight;
 }
 
 function appendTerminalRecords(records){
@@ -94,13 +150,8 @@ function appendTerminalRecords(records){
 }
 
 function clearTerminal(){
-  const hadFocus = app.querySelector("#pg-term-input") === document.activeElement;
   terminalRecords = [];
   renderTerminalBody();
-  if(hadFocus){
-    const input = app.querySelector("#pg-term-input");
-    if(input) input.focus();
-  }
 }
 
 // ------------------------------------------------------------------------
@@ -220,86 +271,150 @@ function openLessModal(payload){
 }
 
 // ------------------------------------------------------------------------
-// CommandInput（Enter送信・↑↓履歴・Tab補完・Ctrl+C）
+// CommandInput（バッファ操作。実行は▶ボタンのみ。アプリ内キーボードの
+// Enterは改行、↑↓は履歴、Tabは補完、Ctrlは次の文字と組み合わせる修飾キー）
 // ------------------------------------------------------------------------
-function historyStep(input, dir){
-  const v = dir < 0 ? history.prev(input.value) : history.next();
+function insertText(str){
+  liveBuffer = liveBuffer.slice(0, liveCursor) + str + liveBuffer.slice(liveCursor);
+  liveCursor += str.length;
+  updateLiveLine();
+}
+
+function backspaceChar(){
+  if(liveCursor <= 0) return;
+  liveBuffer = liveBuffer.slice(0, liveCursor - 1) + liveBuffer.slice(liveCursor);
+  liveCursor -= 1;
+  updateLiveLine();
+}
+
+function moveCursor(delta){
+  liveCursor = Math.max(0, Math.min(liveBuffer.length, liveCursor + delta));
+  updateLiveLine();
+}
+
+function historyStep(dir){
+  const v = dir < 0 ? history.prev(liveBuffer) : history.next();
   if(v !== null){
-    input.value = v;
-    requestAnimationFrame(() => input.setSelectionRange(input.value.length, input.value.length));
+    liveBuffer = v;
+    liveCursor = liveBuffer.length;
+    updateLiveLine();
   }
 }
 
-function tabComplete(input){
-  const pos = input.selectionStart ?? input.value.length;
+function tabComplete(){
   const commandNames = [...COMMAND_NAMES, ...shellState.aliases.keys()];
-  const result = getCompletions(input.value, pos, { vfs, commandNames });
+  const result = getCompletions(liveBuffer, liveCursor, { vfs, commandNames });
   if(result.completion){
-    const before = input.value.slice(0, result.wordStart);
-    const after = input.value.slice(pos);
-    input.value = before + result.completion + after;
-    const newPos = before.length + result.completion.length;
-    requestAnimationFrame(() => input.setSelectionRange(newPos, newPos));
+    const before = liveBuffer.slice(0, result.wordStart);
+    const after = liveBuffer.slice(liveCursor);
+    liveBuffer = before + result.completion + after;
+    liveCursor = before.length + result.completion.length;
+    updateLiveLine();
   } else if(result.matches.length > 1){
     appendTerminalRecords([{ kind:"line", tokens:[{ text: result.matches.map(m => m.label).join("  ") }] }]);
   }
 }
 
-function ctrlC(input){
-  appendTerminalRecords([{ kind:"cmd", promptPath: vfs.promptPath(), text: `${input.value}^C` }]);
-  input.value = "";
+function ctrlC(){
+  appendTerminalRecords([{ kind:"cmd", promptPath: vfs.promptPath(), text: `${liveBuffer}^C` }]);
+  liveBuffer = "";
+  liveCursor = 0;
+  updateLiveLine();
 }
 
-function wireCommandInput(){
-  const form = app.querySelector("#pg-term-input-form");
-  const input = app.querySelector("#pg-term-input");
-  if(!form || !input) return;
-  form.onsubmit = (e) => {
-    e.preventDefault();
-    const raw = input.value;
-    if(!raw.trim()) return;
-    input.value = "";
-    runCommand(raw);
-  };
-  input.onkeydown = (e) => {
-    if(e.key === "Tab"){ e.preventDefault(); tabComplete(input); }
-    else if(e.key === "ArrowUp"){ e.preventDefault(); historyStep(input, -1); }
-    else if(e.key === "ArrowDown"){ e.preventDefault(); historyStep(input, 1); }
-    else if(e.key === "c" && e.ctrlKey){ e.preventDefault(); ctrlC(input); }
-  };
+function submitLiveCommand(){
+  const raw = liveBuffer;
+  if(!raw.trim()) return;
+  liveBuffer = "";
+  liveCursor = 0;
+  updateLiveLine();
+  runCommand(raw);
 }
 
-// ターミナル部分をタップしたときだけ入力欄へフォーカスし、キーボードを表示する。
-// 拡大・移動・強調表示は一切行わない（フォーカスするだけ）。
+// 黒いターミナル部分をタップした時だけ、アプリ内キーボードを開く。
+// システムキーボードにつながるフォーカス移動は一切行わない。
+function setKeyboardOpen(open){
+  keyboardOpen = open;
+  const kb = app.querySelector("#pg-app-keyboard");
+  if(kb) kb.classList.toggle("pg-app-keyboard--open", keyboardOpen);
+}
+
 function wireTerminalTap(){
   const el = terminalBodyEl();
   if(!el) return;
   el.addEventListener("click", (e) => {
     if(e.target.closest(".pg-term-send-btn")) return;
-    const input = app.querySelector("#pg-term-input");
-    if(input && document.activeElement !== input) input.focus();
+    if(!keyboardOpen) setKeyboardOpen(true);
   });
 }
 
-// モバイル向け補助キー行（Tab補完・履歴・Ctrl+C）。物理キーボードが無い
-// 端末でもTab補完や↑↓履歴を使えるようにする。pointerdownでボタン自身への
-// フォーカス移動を止め、入力欄のフォーカス（＝ソフトキーボード表示）を保つ。
-function wireTermKeys(){
+// アプリ内キーボード — LPIC Level1の学習に最低限必要な記号を含む、
+// システムキーボードを一切使わない専用キーボード。
+const KB_ROWS = [
+  ["1","2","3","4","5","6","7","8","9","0"],
+  ["q","w","e","r","t","y","u","i","o","p"],
+  ["a","s","d","f","g","h","j","k","l"],
+  ["z","x","c","v","b","n","m"],
+  ["-","_","/",".","*","|",">","<","&","$","~"],
+];
+
+function keyboardHTML(){
+  const rows = KB_ROWS.map(row =>
+    `<div class="pg-kb-row">${row.map(k => `<button type="button" class="pg-kb-key" data-kb-char="${esc(k)}">${esc(k)}</button>`).join("")}</div>`
+  ).join("");
+  return `<div class="pg-app-keyboard${keyboardOpen ? " pg-app-keyboard--open" : ""}" id="pg-app-keyboard">
+    <div class="pg-kb-row">
+      <button type="button" class="pg-kb-key pg-kb-key--wide" id="pg-kb-tab">Tab</button>
+      <button type="button" class="pg-kb-key${ctrlArmed ? " pg-kb-key--active" : ""}" id="pg-kb-ctrl">Ctrl</button>
+      <button type="button" class="pg-kb-key" id="pg-kb-left">←</button>
+      <button type="button" class="pg-kb-key" id="pg-kb-up">↑</button>
+      <button type="button" class="pg-kb-key" id="pg-kb-down">↓</button>
+      <button type="button" class="pg-kb-key" id="pg-kb-right">→</button>
+      <button type="button" class="pg-kb-key pg-kb-key--wide" id="pg-kb-back">⌫</button>
+    </div>
+    ${rows}
+    <div class="pg-kb-row">
+      <button type="button" class="pg-kb-key pg-kb-key--space" id="pg-kb-space">Space</button>
+      <button type="button" class="pg-kb-key pg-kb-key--enter" id="pg-kb-enter">Enter</button>
+      <button type="button" class="pg-kb-key pg-kb-key--wide" id="pg-kb-close" aria-label="キーボードを閉じる">▼</button>
+    </div>
+  </div>`;
+}
+
+function updateCtrlKeyVisual(){
+  const btn = app.querySelector("#pg-kb-ctrl");
+  if(btn) btn.classList.toggle("pg-kb-key--active", ctrlArmed);
+}
+
+function wireKeyboard(){
+  const kb = app.querySelector("#pg-app-keyboard");
+  if(!kb) return;
+  kb.querySelectorAll("[data-kb-char]").forEach(btn => {
+    btn.onclick = () => {
+      const ch = btn.dataset.kbChar;
+      if(ctrlArmed){
+        ctrlArmed = false;
+        updateCtrlKeyVisual();
+        if(ch === "c"){ ctrlC(); return; }
+        if(ch === "l"){ clearTerminal(); return; }
+      }
+      insertText(ch);
+    };
+  });
   const bind = (id, handler) => {
-    const btn = app.querySelector(id);
-    if(!btn) return;
-    btn.addEventListener("pointerdown", (e) => {
-      e.preventDefault();
-      const input = app.querySelector("#pg-term-input");
-      if(!input) return;
-      input.focus();
-      handler(input);
-    });
+    const btn = kb.querySelector(id);
+    if(btn) btn.onclick = handler;
   };
-  bind("#pg-key-tab", (input) => tabComplete(input));
-  bind("#pg-key-up", (input) => historyStep(input, -1));
-  bind("#pg-key-down", (input) => historyStep(input, 1));
-  bind("#pg-key-ctrlc", (input) => ctrlC(input));
+  bind("#pg-kb-tab", () => tabComplete());
+  bind("#pg-kb-ctrl", () => { ctrlArmed = !ctrlArmed; updateCtrlKeyVisual(); });
+  bind("#pg-kb-left", () => moveCursor(-1));
+  bind("#pg-kb-right", () => moveCursor(1));
+  bind("#pg-kb-up", () => historyStep(-1));
+  bind("#pg-kb-down", () => historyStep(1));
+  bind("#pg-kb-back", () => backspaceChar());
+  bind("#pg-kb-space", () => insertText(" "));
+  bind("#pg-kb-enter", () => insertText("\n"));
+  bind("#pg-kb-close", () => setKeyboardOpen(false));
 }
 
 const QUICK_COMMANDS = [
@@ -318,16 +433,17 @@ const QUICK_COMMANDS = [
   { cmd:"help", needsArg:false },
 ];
 
+// コマンドチップはターミナルの入力バッファへ文字列を差し込むだけ。
+// フォーカス移動を一切行わないため、システムキーボードもアプリ内
+// キーボードも開かず、画面がスクロールすることもない。
 function wireChips(){
   app.querySelectorAll("[data-pg-chip]").forEach(btn => {
     btn.onclick = () => {
-      const input = app.querySelector("#pg-term-input");
-      if(!input) return;
       const cmd = btn.dataset.pgChip;
       const needsArg = btn.dataset.pgArg === "1";
-      input.value = needsArg ? cmd + " " : cmd;
-      input.focus();
-      input.setSelectionRange(input.value.length, input.value.length);
+      liveBuffer = needsArg ? cmd + " " : cmd;
+      liveCursor = liveBuffer.length;
+      updateLiveLine();
     };
   });
 }
@@ -349,14 +465,16 @@ function renderCategoryTabs(){
     </button>`;
   }).join("");
   el.querySelectorAll("[data-pg-cat]").forEach(btn => {
-    btn.onclick = () => {
-      missionProgress.activeCategory = btn.dataset.pgCat;
-      answerRevealed = false;
+    onPress(btn, () => {
+      withScrollPreserved(() => {
+        missionProgress.activeCategory = btn.dataset.pgCat;
+        answerRevealed = false;
+        renderCategoryTabs();
+        renderMissionCard();
+        renderHintCard();
+      });
       pgScheduleSave();
-      renderCategoryTabs();
-      renderMissionCard();
-      renderHintCard();
-    };
+    });
   });
 }
 
@@ -386,7 +504,7 @@ function renderMissionCard(){
     <div class="pg-card-body">${esc(mission.title)}</div>
     <button type="button" class="cta pg-card-btn" id="pg-mission-hint-btn">${answerRevealed ? "答えを隠す" : "ヒントを見る"}</button>`;
   const btn = el.querySelector("#pg-mission-hint-btn");
-  if(btn) btn.onclick = () => { answerRevealed = !answerRevealed; renderMissionCard(); renderHintCard(); };
+  if(btn) onPress(btn, () => withScrollPreserved(() => { answerRevealed = !answerRevealed; renderMissionCard(); renderHintCard(); }));
 }
 
 function renderHintCard(){
@@ -405,7 +523,7 @@ function renderHintCard(){
     ${answerRevealed ? `<div class="pg-answer">正解: <code>${esc(mission.answer)}</code><div class="pg-answer-explain">${esc(mission.explanation || "")}</div></div>` : ""}
     <button type="button" class="ghost pg-card-btn" id="pg-hint-answer-btn">${answerRevealed ? "答えを隠す" : "答えを見る"}</button>`;
   const btn = el.querySelector("#pg-hint-answer-btn");
-  if(btn) btn.onclick = () => { answerRevealed = !answerRevealed; renderMissionCard(); renderHintCard(); };
+  if(btn) onPress(btn, () => withScrollPreserved(() => { answerRevealed = !answerRevealed; renderMissionCard(); renderHintCard(); }));
 }
 
 // ------------------------------------------------------------------------
@@ -540,12 +658,7 @@ export function renderPlaygroundScreen(){
         <button type="button" class="pg-terminal-clear" id="pg-terminal-clear">🗑 クリア</button>
       </div>
       <div class="pg-terminal-body" id="pg-terminal-body"></div>
-      <div class="pg-term-keys">
-        <button type="button" class="pg-term-key pg-term-key--wide" id="pg-key-tab">Tab補完</button>
-        <button type="button" class="pg-term-key" id="pg-key-up">↑</button>
-        <button type="button" class="pg-term-key" id="pg-key-down">↓</button>
-        <button type="button" class="pg-term-key" id="pg-key-ctrlc">Ctrl+C</button>
-      </div>
+      ${keyboardHTML()}
     </div>
     <div class="pg-chip-row">${chipsHTML}</div>
     <div class="pg-cat-tabs" id="pg-cat-tabs"></div>
@@ -561,7 +674,7 @@ export function renderPlaygroundScreen(){
   renderMissionCard();
   renderHintCard();
   wireTerminalTap();
-  wireTermKeys();
+  wireKeyboard();
   wireChips();
 
   const resetBtn = app.querySelector("#pg-reset");

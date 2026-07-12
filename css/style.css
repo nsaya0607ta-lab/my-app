@@ -1991,6 +1991,33 @@ body[data-theme="dark"] .menu-btn:active{box-shadow:0 4px 10px rgba(0,0,0,.3), i
 }
 .pg-term-send-btn:active{transform:scale(.94);}
 
+/* ===== ミッションモードのライブ入力行（実<input>を使わない疑似入力表示）
+   バッファの内容をそのままテキストとして描き、間に点滅カーソルを挟むだけ。
+   フォーカス可能な要素ではないため、システムキーボードは開かない。 ===== */
+.pg-term-input-display{
+  flex:1 1 auto;min-width:40px;max-width:100%;margin-left:2px;
+  color:#f8fafc;font-family:inherit;font-size:inherit;line-height:1.4;
+  white-space:pre-wrap;word-break:break-word;
+}
+
+/* ===== アプリ内キーボード（システムキーボードの代わり）
+   黒いターミナルをタップした時だけ表示される。システムキーボードには
+   一切接続されない、タップで文字バッファを操作するだけのボタン群。 ===== */
+.pg-app-keyboard{display:none;background:#111a2e;border-top:1px solid #1e293b;padding:8px 8px 10px;}
+.pg-app-keyboard--open{display:block;}
+.pg-kb-row{display:flex;gap:4px;margin-bottom:4px;}
+.pg-kb-row:last-child{margin-bottom:0;}
+.pg-kb-key{
+  flex:1 1 0;min-width:0;background:#1e293b;border:1px solid #334155;color:#e2e8f0;
+  font-family:ui-monospace,"SFMono-Regular",Menlo,Consolas,monospace;font-weight:700;font-size:12.5px;
+  padding:8px 2px;border-radius:7px;cursor:pointer;text-align:center;-webkit-tap-highlight-color:transparent;
+}
+.pg-kb-key:active{background:#334155;}
+.pg-kb-key--active{background:var(--accent);border-color:var(--accent);color:#fff;}
+.pg-kb-key--wide{flex:1.7 1 0;}
+.pg-kb-key--space{flex:5 1 0;}
+.pg-kb-key--enter{flex:2 1 0;background:linear-gradient(90deg,var(--accent),#0ea5e9);border-color:transparent;color:#fff;}
+
 .pg-chip-row{display:flex;gap:8px;overflow-x:auto;padding-bottom:4px;margin-bottom:16px;-webkit-overflow-scrolling:touch;}
 .pg-chip{
   flex:none;background:var(--surface);border:1.5px solid var(--line);color:var(--text);
