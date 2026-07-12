@@ -97,7 +97,7 @@ function isNearBottom(el){ return el.scrollHeight - el.scrollTop - el.clientHeig
 // バッファ＋カーソル位置だけをもとに、あたかも本物の<input>があるかのような
 // 見た目（緑の点滅カーソルがテキストの途中にも置ける）を描画する。実際の
 // フォーカス可能な入力要素は存在しないため、システムキーボードは絶対に
-// 開かない。実行は右側の送信ボタン（アプリ内キーボードのEnterは改行）のみ。
+// 開かない。実行は右側の送信ボタン、またはアプリ内キーボードのEnterで行う。
 function liveLineHTML(){
   const before = esc(liveBuffer.slice(0, liveCursor));
   const after = esc(liveBuffer.slice(liveCursor));
@@ -271,8 +271,8 @@ function openLessModal(payload){
 }
 
 // ------------------------------------------------------------------------
-// CommandInput（バッファ操作。実行は▶ボタンのみ。アプリ内キーボードの
-// Enterは改行、↑↓は履歴、Tabは補完、Ctrlは次の文字と組み合わせる修飾キー）
+// CommandInput（バッファ操作。実行は▶ボタンまたはアプリ内キーボードの
+// Enterで行う。↑↓は履歴、Tabは補完、Ctrlは次の文字と組み合わせる修飾キー）
 // ------------------------------------------------------------------------
 function insertText(str){
   liveBuffer = liveBuffer.slice(0, liveCursor) + str + liveBuffer.slice(liveCursor);
@@ -413,7 +413,7 @@ function wireKeyboard(){
   bind("#pg-kb-down", () => historyStep(1));
   bind("#pg-kb-back", () => backspaceChar());
   bind("#pg-kb-space", () => insertText(" "));
-  bind("#pg-kb-enter", () => insertText("\n"));
+  bind("#pg-kb-enter", () => submitLiveCommand());
   bind("#pg-kb-close", () => setKeyboardOpen(false));
 }
 
