@@ -9,8 +9,6 @@ import { UI_THEME_DATA } from './data/uithemes.js';
 import { TAP_SOUND_DATA } from './data/tapsounds.js';
 import { playTapSound } from './audio.js';
 import { notifyDailySummary, notifyReminder, notifyScheduleCreated, notifyScheduleDeleted } from './notifications.js';
-import { syncLocalNotificationJobs } from './pushJobs.js';
-import { currentNotificationPermission, pushEnvironmentInfo, pushIsSupported, requestPushPermission } from './push.js';
 import { S, state } from './state.js';
 import { markPetActivity, petHandleIdentityChange, petIsNeglected, petNextStage, petStageForLevel } from './pet.js';
 import { mpActiveBoardId, mpAddLink, mpAddNote, mpApplyCloud, mpBoardChain, mpBoardMeta, mpClearAll, mpCreateBoard, mpDeleteBoard, mpDeleteNote, mpGetState, mpGroupNotes, mpHandleIdentityChange, mpListBoards, mpRandomColor, mpRemoveLink, mpRenameBoard, mpSuggestKeywords, mpSwitchBoard, mpTotalBoardCount, mpUpdateNote } from './mindpalette.js';
@@ -3215,9 +3213,6 @@ export function loadGcalStore(){
 function saveGcalStore(store){
   try{ localStorage.setItem(gcalStorageKey(GCAL_STORE_KEY), JSON.stringify(store)); }catch(e){}
   syncGcalToCloud();
-  // 予定の登録・変更・削除はすべてここを通るため、サーバー側で開始5分前
-  // 通知を送るためのジョブ（notificationJobs）もここで一括して同期する
-  syncLocalNotificationJobs(store);
 }
 
 function gcalGenId(prefix){
@@ -5819,41 +5814,6 @@ export function renderSelect(){
    丸ごと差し替わる領域）の外、document.bodyに直接オーバーレイを追加する
    方式。これによりスキン/タップ音の選択でapp側を再描画しても閉じない。
    ========================================================================= */
-// プッシュ通知（FCM）の対応状況・許可状態のキャッシュ。isSupported()の判定が
-// 非同期なため、設定モーダルを開く直前にrefreshPushStatus()で更新してから
-// 使う（値そのものはモーダルを開いている間、同期的なHTML生成から参照する）
-let pushStatusCache = { supported: false, permission: "default", isIOS: false, isStandalone: false };
-async function refreshPushStatus(){
-  const supported = await pushIsSupported();
-  const env = pushEnvironmentInfo();
-  pushStatusCache = { supported, permission: currentNotificationPermission(), isIOS: env.isIOS, isStandalone: env.isStandalone };
-}
-
-function pushSettingsSectionHTML(){
-  const st = pushStatusCache;
-  let statusLine, showButton = true, buttonLabel = "🔔 プッシュ通知を有効にする";
-  if(!st.supported){
-    showButton = false;
-    statusLine = (st.isIOS && !st.isStandalone)
-      ? "📱 iPhoneでプッシュ通知を受け取るには、Safariの共有メニューから「ホーム画面に追加」し、追加したアイコンからこのアプリを開いてください。"
-      : "この端末・ブラウザはプッシュ通知に対応していません。";
-  } else if(st.permission === "granted"){
-    buttonLabel = "🔔 通知を再登録する";
-    statusLine = "✅ この端末でプッシュ通知は有効です。アプリを閉じていても、予定の開始5分前と朝7時に通知が届きます。";
-  } else if(st.permission === "denied"){
-    showButton = false;
-    statusLine = "🚫 通知がブロックされています。ブラウザ／端末のサイト設定から通知を許可すると受け取れるようになります。";
-  } else {
-    statusLine = "有効にすると、アプリを閉じていても予定の開始5分前と朝7時に通知が届くようになります。";
-  }
-  return `
-    <div class="settings-section">
-      <div class="settings-section-title">🔔 プッシュ通知</div>
-      <div class="settings-push-status">${esc(statusLine)}</div>
-      ${showButton ? `<button type="button" class="settings-push-btn" id="settings-push-enable">${esc(buttonLabel)}</button>` : ""}
-    </div>`;
-}
-
 function settingsModalBodyHTML(){
   const skinCards = UI_THEME_DATA.map(th => {
     const applied = (S.uiTheme || "default") === th.key;
@@ -5887,8 +5847,7 @@ function settingsModalBodyHTML(){
     <div class="settings-section">
       <div class="settings-section-title">🔊 タップ音設定（効果音の選択）</div>
       <div class="settings-sound-list">${soundRows}</div>
-    </div>
-    ${pushSettingsSectionHTML()}`;
+    </div>`;
 }
 
 function wireSettingsModal(ov){
@@ -5908,23 +5867,13 @@ function wireSettingsModal(ov){
     playTapSound(); // 選んだ音をその場で試聴
     refresh();
   });
-  const pushBtn = ov.querySelector("#settings-push-enable");
-  if(pushBtn) pushBtn.onclick = async () => {
-    playTapSound();
-    pushBtn.disabled = true;
-    pushBtn.textContent = "処理中…";
-    await requestPushPermission();
-    await refreshPushStatus();
-    refresh();
-  };
   const closeBtn = ov.querySelector("#settings-modal-close");
   if(closeBtn) closeBtn.onclick = () => { playTapSound(); closeSettingsModal(ov); };
 }
 
 function closeSettingsModal(ov){ try{ ov.remove(); }catch(e){} }
 
-async function openSettingsModal(){
-  await refreshPushStatus();
+function openSettingsModal(){
   const ov = document.createElement("div");
   ov.className = "modal-ov";
   ov.innerHTML = `

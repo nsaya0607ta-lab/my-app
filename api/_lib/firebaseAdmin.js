@@ -4,7 +4,6 @@
 const { initializeApp, cert, getApps } = require("firebase-admin/app");
 const { getAuth } = require("firebase-admin/auth");
 const { getFirestore } = require("firebase-admin/firestore");
-const { getMessaging } = require("firebase-admin/messaging");
 
 // Firebase Admin SDKの初期化はサーバーレス関数のコールドスタートごとに
 // 一度だけ行えばよい（既存インスタンスがあれば使い回す）。
@@ -20,7 +19,7 @@ function getAdmin() {
       privateKey: (process.env.FIREBASE_PRIVATE_KEY || "").replace(/\\n/g, "\n"),
     }),
   });
-  return { auth: () => getAuth(app), firestore: () => getFirestore(app), messaging: () => getMessaging(app) };
+  return { auth: () => getAuth(app), firestore: () => getFirestore(app) };
 }
 
 // リクエストの Authorization: Bearer <FirebaseのIDトークン> を検証し、
