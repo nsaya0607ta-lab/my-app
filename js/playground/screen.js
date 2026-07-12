@@ -57,23 +57,48 @@ function resetTerminal(){
 }
 resetTerminal();
 
-// ミッション切替・ヒント表示などの「その場での差し替え」操作が、フォーカス
-// されていたボタンの消滅（iOS Safariが要素の消失時にスクロール位置を見失う
-// 挙動）につられてページを勝手にスクロールさせないようにするためのガード。
+// コマンド実行・ミッション切替・ヒント表示などの「その場での差し替え」
+// 操作が、フォーカスされていたボタンの消滅（iOS Safariが要素の消失時に
+// スクロール位置を見失う挙動）や、DOM更新（要素の追加・置き換えによる
+// 高さの変化）につられてページを勝手にスクロールさせないようにするための
+// ガード。ページ全体の縦横スクロール位置に加えて、renderCategoryTabs()が
+// innerHTMLで丸ごと作り直す「ファイル内容操作」などのカテゴリタブ列
+// （#pg-cat-tabs）自身の横スクロール位置も、作り直しのたびにリセットされて
+// しまうため、ここで合わせて保存・復元する。
+// ブラウザによっては、この関数の同期処理が終わった後の描画フレームで
+// 非同期にスクロール位置を調整し直すことがあるため、同期的な復元1回だけ
+// では不十分。次フレーム以降でも重ねて復元することで確実に元の位置へ戻す。
 function withScrollPreserved(fn){
   const scroller = document.scrollingElement || document.documentElement;
+  const catTabs = app.querySelector("#pg-cat-tabs");
   const x = scroller.scrollLeft, y = scroller.scrollTop;
+  const tabsX = catTabs ? catTabs.scrollLeft : null;
+  const restore = () => {
+    scroller.scrollLeft = x;
+    scroller.scrollTop = y;
+    if(catTabs && tabsX !== null) catTabs.scrollLeft = tabsX;
+  };
   fn();
-  scroller.scrollLeft = x;
-  scroller.scrollTop = y;
+  restore();
+  requestAnimationFrame(restore);
+  requestAnimationFrame(() => requestAnimationFrame(restore));
 }
 
-// 上と同じ理由で、タップのたびに再描画されるボタン（カテゴリタブ／ヒント
-// カードのボタンなど）はclickではなくpointerdownでハンドリングする。
-// pointerdownでpreventDefaultすることで、ボタン自身がフォーカスを持つ前に
-// 処理を終えられる（wireTermKeysと同じ既存の手法）。
+// このプレイグラウンド画面内のボタンは、タップ操作すべてを共通してこの
+// onPress()経由で扱う（送信▶ボタン・アプリ内キーボードの全キー・カテゴリ
+// タブ・ヒント/ミッションカードのボタン）。
+// ・clickではなくpointerdownでハンドリングし、preventDefaultすることで、
+//   ボタン自身がフォーカスを持つ前に処理を終えられる（wireTermKeysと同じ
+//   既存の手法）。
+// ・ハンドラ本体を必ずwithScrollPreserved()で包むことで、「個別のボタンで
+//   スクロール保護を書き忘れる」という抜け漏れ（Enterキー／▶ボタンでの
+//   コマンド実行がこれに該当し、ページが勝手に一番上へ戻る不具合の原因
+//   だった）を、共通入口側で構造的に防ぐ。
 function onPress(btn, handler){
-  btn.addEventListener("pointerdown", (e) => { e.preventDefault(); handler(); });
+  btn.addEventListener("pointerdown", (e) => {
+    e.preventDefault();
+    withScrollPreserved(handler);
+  });
 }
 
 // このLinuxプレイグラウンド画面の中でだけ効く、最後の保険。原因を問わず
@@ -499,13 +524,11 @@ function renderCategoryTabs(){
   }).join("");
   el.querySelectorAll("[data-pg-cat]").forEach(btn => {
     onPress(btn, () => {
-      withScrollPreserved(() => {
-        missionProgress.activeCategory = btn.dataset.pgCat;
-        answerRevealed = false;
-        renderCategoryTabs();
-        renderMissionCard();
-        renderHintCard();
-      });
+      missionProgress.activeCategory = btn.dataset.pgCat;
+      answerRevealed = false;
+      renderCategoryTabs();
+      renderMissionCard();
+      renderHintCard();
       pgScheduleSave();
     });
   });
@@ -537,7 +560,7 @@ function renderMissionCard(){
     <div class="pg-card-body">${esc(mission.title)}</div>
     <button type="button" class="cta pg-card-btn" id="pg-mission-hint-btn">${answerRevealed ? "答えを隠す" : "ヒントを見る"}</button>`;
   const btn = el.querySelector("#pg-mission-hint-btn");
-  if(btn) onPress(btn, () => withScrollPreserved(() => { answerRevealed = !answerRevealed; renderMissionCard(); renderHintCard(); }));
+  if(btn) onPress(btn, () => { answerRevealed = !answerRevealed; renderMissionCard(); renderHintCard(); });
 }
 
 function renderHintCard(){
@@ -556,7 +579,7 @@ function renderHintCard(){
     ${answerRevealed ? `<div class="pg-answer">正解: <code>${esc(mission.answer)}</code><div class="pg-answer-explain">${esc(mission.explanation || "")}</div></div>` : ""}
     <button type="button" class="ghost pg-card-btn" id="pg-hint-answer-btn">${answerRevealed ? "答えを隠す" : "答えを見る"}</button>`;
   const btn = el.querySelector("#pg-hint-answer-btn");
-  if(btn) onPress(btn, () => withScrollPreserved(() => { answerRevealed = !answerRevealed; renderMissionCard(); renderHintCard(); }));
+  if(btn) onPress(btn, () => { answerRevealed = !answerRevealed; renderMissionCard(); renderHintCard(); });
 }
 
 // ------------------------------------------------------------------------
@@ -718,7 +741,7 @@ export function renderPlaygroundScreen(){
   const helpBtn = app.querySelector("#pg-help");
   if(helpBtn) helpBtn.onclick = () => openHelpModal();
   const clearBtn = app.querySelector("#pg-terminal-clear");
-  if(clearBtn) clearBtn.onclick = () => clearTerminal();
+  if(clearBtn) clearBtn.onclick = () => withScrollPreserved(() => clearTerminal());
 
   window.scrollTo(0,0);
 }
