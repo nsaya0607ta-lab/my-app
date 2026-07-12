@@ -57,6 +57,54 @@ function resetTerminal(){
 }
 resetTerminal();
 
+// ============================================================================
+// 🔍 TEMPORARY DEBUG INSTRUMENTATION — 原因調査用。原因が特定できたら必ず削除する。
+// 実行ボタン押下（pointerdown）を起点に、
+//   A. fn()実行前 → B. fn()実行直後(復元前) → C. 同期restore直後 →
+//   D. 1xrAF到達時(restore前) → E. 1xrAF内restore直後 →
+//   F. 2xrAF到達時(restore前) → G. 2xrAF内restore直後 →
+//   H. +300ms → I. +1000ms
+// の各チェックポイントで scrollY / activeElement / #pg-cat-tabsのscrollLeft を
+// console.logへ出力する。あわせて、この区間中に発生した window の生の
+// 'scroll' イベントをすべて（何がいつ起こしたイベントか特定できるよう）
+// タイムスタンプ付きで記録する。実機のSafari/Chromeの開発者ツールで
+// コンソールを開いた状態で再現手順を実行し、[PG-DEBUG]ログを確認すること。
+// ============================================================================
+function pgDebugSnap(label){
+  const active = document.activeElement;
+  const catTabs = app.querySelector("#pg-cat-tabs");
+  // eslint-disable-next-line no-console
+  console.log(`[PG-DEBUG] ${label}`, {
+    scrollY: window.scrollY,
+    scrollX: window.scrollX,
+    docScrollTop: (document.scrollingElement || document.documentElement).scrollTop,
+    active: active ? `${active.tagName}${active.id ? "#" + active.id : ""}` : null,
+    catTabsScrollLeft: catTabs ? catTabs.scrollLeft : null,
+    t: performance.now().toFixed(1),
+  });
+}
+let pgDebugScrollWatchOn = false;
+function pgDebugArmScrollWatch(ms){
+  if(pgDebugScrollWatchOn) return;
+  pgDebugScrollWatchOn = true;
+  const start = performance.now();
+  const onScroll = () => {
+    // eslint-disable-next-line no-console
+    console.log("[PG-DEBUG] ⚡ window 'scroll' event fired", {
+      scrollY: window.scrollY,
+      dt: (performance.now() - start).toFixed(1) + "ms",
+    });
+  };
+  window.addEventListener("scroll", onScroll, { passive: true });
+  setTimeout(() => {
+    window.removeEventListener("scroll", onScroll);
+    pgDebugScrollWatchOn = false;
+  }, ms);
+}
+// ============================================================================
+// 🔍 TEMPORARY DEBUG INSTRUMENTATION ここまで
+// ============================================================================
+
 // コマンド実行・ミッション切替・ヒント表示などの「その場での差し替え」
 // 操作が、フォーカスされていたボタンの消滅（iOS Safariが要素の消失時に
 // スクロール位置を見失う挙動）や、DOM更新（要素の追加・置き換えによる
@@ -73,15 +121,27 @@ function withScrollPreserved(fn){
   const catTabs = app.querySelector("#pg-cat-tabs");
   const x = scroller.scrollLeft, y = scroller.scrollTop;
   const tabsX = catTabs ? catTabs.scrollLeft : null;
-  const restore = () => {
+  pgDebugArmScrollWatch(2000);
+  pgDebugSnap("A. fn()実行前");
+  const restore = (tag) => {
     scroller.scrollLeft = x;
     scroller.scrollTop = y;
     if(catTabs && tabsX !== null) catTabs.scrollLeft = tabsX;
+    pgDebugSnap(tag);
   };
   fn();
-  restore();
-  requestAnimationFrame(restore);
-  requestAnimationFrame(() => requestAnimationFrame(restore));
+  pgDebugSnap("B. fn()実行直後（復元前）");
+  restore("C. 同期restore直後");
+  requestAnimationFrame(() => {
+    pgDebugSnap("D. 1xrAF到達時（restore前）");
+    restore("E. 1xrAF内restore直後");
+    requestAnimationFrame(() => {
+      pgDebugSnap("F. 2xrAF到達時（restore前）");
+      restore("G. 2xrAF内restore直後");
+      setTimeout(() => pgDebugSnap("H. +300ms"), 300);
+      setTimeout(() => pgDebugSnap("I. +1000ms"), 1000);
+    });
+  });
 }
 
 // このプレイグラウンド画面内のボタンは、タップ操作すべてを共通してこの
