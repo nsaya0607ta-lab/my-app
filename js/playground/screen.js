@@ -27,20 +27,33 @@ import { parseCommand } from './commandParser.js';
 import { executeCommand } from './commandExecutor.js';
 import { getCompletions } from './completion.js';
 import { MISSION_CATEGORIES, MISSIONS_BY_CATEGORY, categoryProgress, currentMissionFor } from './missions/index.js';
-import { history, missionProgress, resetAll, vfs, shellState } from './playgroundState.js';
+import { history, missionProgress, resetAll, vfs, shellState, session } from './playgroundState.js';
+import { verifyPassword, applyUserEnv } from './users.js';
 import { pgSaveNow, pgScheduleSave } from './cloudSync.js';
 import { COMMAND_NAMES } from './commands/index.js';
 import { buildTopLines } from './commands/top.js';
 import { createAppKeyboard } from './appKeyboard.js';
 
 let answerRevealed = false;
-let terminalRecords = []; // {kind:"cmd", promptPath, text} | {kind:"line", tokens}
+let terminalRecords = []; // {kind:"cmd", promptUser, promptPath, promptChar, text} | {kind:"line", tokens}
 
 // アプリ内キーボード方式の入力状態。スマホのシステムキーボードは一切使わず、
 // この文字列バッファとカーソル位置だけをターミナル上に描画して「本物の
 // ターミナルへ直接入力しているように」見せる（実DOM<input>は存在しない）。
 let liveBuffer = "";
 let liveCursor = 0;
+
+// su実行中、パスワード入力待ちの状態。null以外の間は、次に送信された
+// 1行はコマンドとしてではなく「suで切り替えようとしているユーザー名」に
+// 対するパスワードとして扱う（実際のLinuxのsuと同様、入力中は一切
+// エコー表示しない）。
+let pendingPassword = null;
+
+// 現在の実効ユーザー・作業ディレクトリから、実際のプロンプト文字列
+// （root は # 、一般ユーザーは $ ）を組み立てる
+function promptString(){
+  return `${session.current().username}@linux:${vfs.promptPath()}${session.isRoot() ? "#" : "$"}`;
+}
 
 function welcomeRecord(text){
   return { kind:"line", tokens:[{ text, cls:"pg-muted" }] };
@@ -52,6 +65,7 @@ function resetTerminal(){
   ];
   liveBuffer = "";
   liveCursor = 0;
+  pendingPassword = null;
   appKeyboard.reset();
 }
 
@@ -127,7 +141,7 @@ function tokensToHTML(tokens){
 
 function recordToHTML(record){
   if(record.kind === "cmd"){
-    return `<div class="pg-term-line"><span class="pg-term-prompt">student@linux:${esc(record.promptPath)}$</span> <span class="pg-term-cmd">${esc(record.text)}</span></div>`;
+    return `<div class="pg-term-line"><span class="pg-term-prompt">${esc(record.promptUser)}@linux:${esc(record.promptPath)}${esc(record.promptChar)}</span> <span class="pg-term-cmd">${esc(record.text)}</span></div>`;
   }
   return `<div class="pg-term-line">${tokensToHTML(record.tokens)}</div>`;
 }
@@ -141,11 +155,15 @@ function isNearBottom(el){ return el.scrollHeight - el.scrollTop - el.clientHeig
 // フォーカス可能な入力要素は存在しないため、システムキーボードは絶対に
 // 開かない。実行は右側の送信ボタン、またはアプリ内キーボードのEnterで行う。
 function liveLineHTML(){
-  const before = esc(liveBuffer.slice(0, liveCursor));
-  const after = esc(liveBuffer.slice(liveCursor));
+  // パスワード入力待ちの間は、実際のLinuxのsuと同様に一切エコーしない
+  // （打った文字が見えない。カーソルも動かさず固定表示にする）
+  const promptText = pendingPassword ? "Password:" : promptString();
+  const display = pendingPassword
+    ? `<span class="pg-term-cursor" id="pg-term-cursor"></span>`
+    : `${esc(liveBuffer.slice(0, liveCursor))}<span class="pg-term-cursor" id="pg-term-cursor"></span>${esc(liveBuffer.slice(liveCursor))}`;
   return `<div class="pg-term-line pg-term-live" id="pg-term-live">
-    <span class="pg-term-prompt">student@linux:${esc(vfs.promptPath())}$</span>
-    <span class="pg-term-input-display" id="pg-term-input-display">${before}<span class="pg-term-cursor" id="pg-term-cursor"></span>${after}</span>
+    <span class="pg-term-prompt">${esc(promptText)}</span>
+    <span class="pg-term-input-display" id="pg-term-input-display">${display}</span>
     <button type="button" class="pg-term-send-btn" id="pg-term-send-btn" aria-label="実行">▶</button>
   </div>`;
 }
@@ -177,14 +195,28 @@ function updateLiveLine(){
   const wasNearBottom = isNearBottom(el);
   const display = el.querySelector("#pg-term-input-display");
   if(display){
-    const before = esc(liveBuffer.slice(0, liveCursor));
-    const after = esc(liveBuffer.slice(liveCursor));
-    display.innerHTML = `${before}<span class="pg-term-cursor" id="pg-term-cursor"></span>${after}`;
+    display.innerHTML = pendingPassword
+      ? `<span class="pg-term-cursor" id="pg-term-cursor"></span>`
+      : `${esc(liveBuffer.slice(0, liveCursor))}<span class="pg-term-cursor" id="pg-term-cursor"></span>${esc(liveBuffer.slice(liveCursor))}`;
   } else {
     el.insertAdjacentHTML("beforeend", liveLineHTML());
     wireLiveLineButton();
   }
   if(wasNearBottom) el.scrollTop = el.scrollHeight;
+}
+
+// ライブ行のプロンプト文字列とターミナルヘッダのタイトルを、現在の
+// session（ユーザー・作業ディレクトリ）に合わせて再描画する。新しい行を
+// 追加しない「その場でのプロンプト更新だけ」が必要な場面（su成功時・
+// exit時など）で使う。
+function refreshLivePrompt(){
+  const el = terminalBodyEl();
+  if(el){
+    const liveEl = el.querySelector(".pg-term-live .pg-term-prompt");
+    if(liveEl) liveEl.textContent = pendingPassword ? "Password:" : promptString();
+  }
+  const titleEl = app.querySelector("#pg-terminal-title");
+  if(titleEl) titleEl.textContent = `${session.current().username}@linux`;
 }
 
 function appendTerminalRecords(records){
@@ -196,8 +228,7 @@ function appendTerminalRecords(records){
   const html = records.map(recordToHTML).join("");
   if(live) live.insertAdjacentHTML("beforebegin", html);
   else el.insertAdjacentHTML("beforeend", html);
-  const liveEl = el.querySelector(".pg-term-live .pg-term-prompt");
-  if(liveEl) liveEl.textContent = `student@linux:${vfs.promptPath()}$`;
+  refreshLivePrompt();
   if(wasNearBottom) el.scrollTop = el.scrollHeight;
 }
 
@@ -239,22 +270,48 @@ function evaluateMission(pipeline, raw, isError){
 // コマンド実行（CommandInputからの送信を受ける入り口）
 // ------------------------------------------------------------------------
 function runCommand(raw){
+  const promptUser = session.current().username;
   const promptPath = vfs.promptPath();
+  const promptChar = session.isRoot() ? "#" : "$";
   history.push(raw);
   const pipeline = parseCommand(raw); // raw is guaranteed non-blank by the caller
   if(!pipeline) return;
-  const result = executeCommand({ vfs, state: shellState, history: history.items }, pipeline);
+  const result = executeCommand({ vfs, state: shellState, session, history: history.items }, pipeline);
   evaluateMission(result.pipeline || pipeline, raw, !!result.isError);
   pgScheduleSave();
   if(result.clear){
     clearTerminal();
     return;
   }
-  const records = [{ kind:"cmd", promptPath, text: raw }];
+  // su がパスワードを要求した場合、次の1行はコマンドではなくパスワード
+  // 入力として扱う（appendTerminalRecords()より前にセットし、直後の
+  // プロンプト更新が最初から "Password:" を表示するようにする）
+  if(result.awaitPassword) pendingPassword = result.awaitPassword;
+  const records = [{ kind:"cmd", promptUser, promptPath, promptChar, text: raw }];
   (result.lines || []).forEach(tokens => records.push({ kind:"line", tokens }));
   (result.err || []).forEach(tokens => records.push({ kind:"line", tokens }));
   appendTerminalRecords(records);
   if(result.overlay) openCommandOverlay(result.overlay);
+  if(result.awaitPassword) updateLiveLine();
+}
+
+// su のパスワード入力待ちに対する送信処理。実際のLinuxと同様、パスワードが
+// 正しい場合のみユーザーを切り替え、成功時は何も出力しない。誤っている
+// 場合は "Authentication failure" とだけ表示し、元のユーザーのままにする。
+function submitPassword(rawPassword){
+  const targetName = pendingPassword;
+  pendingPassword = null;
+  const user = session.find(targetName);
+  const ok = verifyPassword(user, rawPassword);
+  if(ok){
+    session.switchTo(user.username);
+    applyUserEnv(vfs, shellState, user);
+    refreshLivePrompt();
+  } else {
+    appendTerminalRecords([{ kind:"line", tokens:[{ text:"su: Authentication failure", cls:"pg-err" }] }]);
+  }
+  updateLiveLine();
+  pgScheduleSave();
 }
 
 // ------------------------------------------------------------------------
@@ -441,6 +498,7 @@ function moveCursor(delta){
 }
 
 function historyStep(dir){
+  if(pendingPassword) return; // パスワード入力中は履歴呼び出しを無効化する
   const v = dir < 0 ? history.prev(liveBuffer) : history.next();
   if(v !== null){
     liveBuffer = v;
@@ -450,6 +508,7 @@ function historyStep(dir){
 }
 
 function tabComplete(){
+  if(pendingPassword) return; // パスワード入力中はTab補完を無効化する
   const commandNames = [...COMMAND_NAMES, ...shellState.aliases.keys()];
   const result = getCompletions(liveBuffer, liveCursor, { vfs, commandNames });
   if(result.completion){
@@ -464,7 +523,14 @@ function tabComplete(){
 }
 
 function ctrlC(){
-  appendTerminalRecords([{ kind:"cmd", promptPath: vfs.promptPath(), text: `${liveBuffer}^C` }]);
+  if(pendingPassword){
+    // パスワード入力中のCtrl+Cは、実際のsuと同様に入力内容を一切見せず
+    // 中断だけする（Authentication failureは出さない＝そもそも未確定）
+    pendingPassword = null;
+    appendTerminalRecords([{ kind:"line", tokens:[{ text:"Password: ^C" }] }]);
+  } else {
+    appendTerminalRecords([{ kind:"cmd", promptUser: session.current().username, promptPath: vfs.promptPath(), promptChar: session.isRoot() ? "#" : "$", text: `${liveBuffer}^C` }]);
+  }
   liveBuffer = "";
   liveCursor = 0;
   updateLiveLine();
@@ -472,6 +538,12 @@ function ctrlC(){
 
 function submitLiveCommand(){
   const raw = liveBuffer;
+  if(pendingPassword){
+    liveBuffer = "";
+    liveCursor = 0;
+    submitPassword(raw);
+    return;
+  }
   if(!raw.trim()) return;
   liveBuffer = "";
   liveCursor = 0;
@@ -494,6 +566,7 @@ function wireTerminalTap(){
 // 差し込むだけ。実行はしない。フォーカス移動を一切行わないため、システム
 // キーボードは開かず、画面がスクロールすることもない。
 function setChipBuffer(cmd, needsArg){
+  if(pendingPassword) return; // パスワード入力中はコマンドチップの差し込みを無効化する
   liveBuffer = needsArg ? cmd + " " : cmd;
   liveCursor = liveBuffer.length;
   updateLiveLine();
@@ -728,7 +801,7 @@ export function renderPlaygroundScreen(){
     <div class="pg-terminal-card" id="pg-terminal-card">
       <div class="pg-terminal-head">
         <span class="pg-terminal-dots"><span></span><span></span><span></span></span>
-        <span class="pg-terminal-title">student@linux</span>
+        <span class="pg-terminal-title" id="pg-terminal-title">student@linux</span>
         <button type="button" class="pg-terminal-clear" id="pg-terminal-clear">🗑 クリア</button>
       </div>
       <div class="pg-terminal-body" id="pg-terminal-body"></div>
@@ -743,6 +816,7 @@ export function renderPlaygroundScreen(){
   `;
 
   renderTerminalBody();
+  refreshLivePrompt();
   renderSyncNote();
   renderCategoryTabs();
   renderMissionCard();

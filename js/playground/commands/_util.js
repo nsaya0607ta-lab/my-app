@@ -86,16 +86,16 @@ export const PATH_COMMANDS = [
   "echo","nano","find","locate","which","whereis","grep","sort","uniq","wc","cut","tr",
   "chmod","chown","ln","df","du","free","ps","top","kill","killall","hostname","whoami",
   "id","uname","date","cal","history","clear","man","help","env","export","alias","unalias",
-  "crontab","tee","awk",
+  "crontab","tee","awk","su","exit",
 ];
 
 export const BIN_DIR = {
   cd: null, echo: "/bin", pwd: "/bin", export: null, alias: null, unalias: null,
-  history: null, help: null, clear: "/usr/bin", crontab: "/usr/bin",
+  history: null, help: null, clear: "/usr/bin", crontab: "/usr/bin", exit: null,
 };
 
 export function binPathFor(cmd){
   if(cmd in BIN_DIR) return BIN_DIR[cmd];
-  return ["ls","cp","mv","rm","cat","mkdir","rmdir","touch","chmod","chown","ln","df","du","free","ps","kill","hostname","whoami","id","uname","date","which"].includes(cmd)
+  return ["ls","cp","mv","rm","cat","mkdir","rmdir","touch","chmod","chown","ln","df","du","free","ps","kill","hostname","whoami","id","uname","date","which","su"].includes(cmd)
     ? "/bin" : "/usr/bin";
 }

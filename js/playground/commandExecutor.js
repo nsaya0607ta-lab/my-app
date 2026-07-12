@@ -38,12 +38,13 @@ function linesToText(lines){
 }
 
 export function executeCommand(env, pipeline){
-  const { vfs, state } = env;
+  const { vfs, state, session } = env;
   const expanded = expandAliases(pipeline, state.aliases);
 
   let stdin = null;
   let lastLines = [];
   let overlay = null;
+  let awaitPassword = null;
   let cleared = false;
   const err = [];
 
@@ -63,12 +64,13 @@ export function executeCommand(env, pipeline){
       stdin = "";
       continue;
     }
-    const ctx = { vfs, state, history: env.history, args: stage.args, stdin };
+    const ctx = { vfs, state, session, history: env.history, args: stage.args, stdin };
     const result = handler(ctx) || { lines:[], err:[] };
     if(result.clear){ cleared = true; break; }
     (result.err || []).forEach(l => err.push(l));
     lastLines = result.lines || [];
     if(result.overlay && isLast) overlay = result.overlay;
+    if(result.awaitPassword && isLast) awaitPassword = result.awaitPassword;
     stdin = linesToText(lastLines);
   }
 
@@ -82,5 +84,5 @@ export function executeCommand(env, pipeline){
     displayLines = [];
   }
 
-  return { lines: displayLines, err, overlay, isError: err.length > 0, pipeline: expanded };
+  return { lines: displayLines, err, overlay, awaitPassword, isError: err.length > 0, pipeline: expanded };
 }
