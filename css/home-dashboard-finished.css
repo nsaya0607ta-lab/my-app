@@ -95,6 +95,7 @@ body{
 /* ===== 共通カード ===== */
 #app>.weather-card,
 #app>.gcal-card,
+#app>.news-today-card,
 #app>.acct-bar{
   border:1px solid var(--home-line);
   border-radius:var(--home-radius);
@@ -110,9 +111,11 @@ body{
     #ffffff 100%
   );
 }
-/* 天気カード・今日の予定/タスクカードは上から下へ白→水色のグラデーション */
+/* 天気カード・今日の予定/タスクカード・今日のニュースカードは
+   上から下へ白→水色のグラデーション */
 #app>.weather-card,
-#app>.gcal-card{
+#app>.gcal-card,
+#app>.news-today-card{
   background:linear-gradient(
     180deg,
     #ffffff 0%,
@@ -409,6 +412,26 @@ body{
 .gcal-card .gcal-day-event,
 .gcal-card .gcal-todo-item{border-radius:10px;background:#f5f9fd;}
 
+/* ===== 今日のニュースカード =====
+   天気カードより一回り小さいカードにするため、角丸・余白を控えめにする */
+#app>.news-today-card{
+  border-radius:20px;
+  margin:0 0 7px;
+  padding:10px 13px 9px;
+  overflow:hidden;
+}
+.news-today-card .news-card-head{margin-bottom:8px;}
+.news-today-card .news-today-head-title{color:var(--home-text);}
+.news-today-card .news-today-seeall{color:var(--home-blue);}
+.news-today-card .news-today-title{color:var(--home-text);}
+.news-today-card .news-today-msg,
+.news-today-card .news-today-updated{color:var(--home-muted);}
+.news-today-card .news-today-item:active{background:rgba(7,140,237,.08);}
+.news-today-card .news-today-skeleton span{
+  background:linear-gradient(90deg,#e7f2fb 25%,#f6fbff 37%,#e7f2fb 63%);
+  background-size:400% 100%;
+}
+
 /* ===== アカウントバー ===== */
 #app>.acct-bar{
   display:flex;
@@ -531,6 +554,7 @@ body{
   .weather-card .weather-icon{font-size:15px;}
   .gcal-card .gcal-day-timeline,
   .gcal-card .gcal-day-todo{padding-left:8px;padding-right:8px;}
+  #app>.news-today-card{padding-left:11px;padding-right:11px;}
 }
 
 @media (max-width:340px){
@@ -542,4 +566,6 @@ body{
   .weather-card .weather-top{grid-template-columns:minmax(38px,auto) minmax(0,1fr) minmax(0,1fr) 56px;}
   .weather-card .weather-precip-now-value{font-size:14px;}
   .weather-card .weather-precip-now{font-size:9.5px;}
+  .news-today-card .news-today-head-title{font-size:12.5px;}
+  .news-today-card .news-today-title{font-size:12px;}
 }

@@ -1129,6 +1129,40 @@ h1.title.title--badge{margin:2px 0 0;}
 .njp-detail-body p{margin:0 0 12px;}
 .njp-detail-body p:last-child{margin-bottom:0;}
 
+/* ホーム画面：今日のニュースカード。日本ニュース／海外ニュース画面と
+   同じキャッシュ（js/news.js）から今日分だけを抜き出して見せる、天気カード
+   より一回り小さいカード。カテゴリはタップで各ニュース画面へ遷移する */
+.news-today-card{padding:12px 14px 10px;}
+.news-today-head-title{font-size:13.5px;font-weight:800;color:var(--text);}
+.news-today-seeall{flex:none;padding:3px 4px;border:0;background:transparent;color:var(--accent);
+  font-size:11.5px;font-weight:700;cursor:pointer;}
+.news-today-seeall:active{opacity:.6;}
+.news-today-body{display:flex;flex-direction:column;gap:8px;}
+.news-today-group{display:flex;flex-direction:column;gap:5px;}
+.news-today-group+.news-today-group{padding-top:8px;border-top:1px dashed var(--line);}
+.news-today-tag{align-self:flex-start;display:inline-flex;align-items:center;gap:4px;
+  padding:3px 10px;border-radius:99px;border:1px solid transparent;
+  font-size:11px;font-weight:800;line-height:1.5;cursor:pointer;}
+.news-today-tag-jp{color:#0b5fb0;background:rgba(11,95,176,.10);border-color:rgba(11,95,176,.22);}
+.news-today-tag-world{color:#6d28d9;background:rgba(109,40,217,.10);border-color:rgba(109,40,217,.22);}
+.news-today-list{display:flex;flex-direction:column;gap:1px;list-style:none;margin:0;padding:0;}
+.news-today-item{display:block;width:100%;padding:3px 2px;border:0;border-radius:8px;
+  background:transparent;text-align:left;cursor:pointer;}
+.news-today-item:active{background:var(--bg2);}
+.news-today-title{display:block;overflow:hidden;color:var(--text);font-size:12.5px;
+  font-weight:600;line-height:1.5;white-space:nowrap;text-overflow:ellipsis;}
+.news-today-title::before{content:"・";color:var(--muted);margin-right:1px;}
+.news-today-msg{padding:6px 2px;color:var(--muted);font-size:12px;line-height:1.6;}
+.news-today-msg-error{color:var(--bad);}
+.news-today-skeleton{display:flex;flex-direction:column;gap:6px;padding:4px 2px;}
+.news-today-skeleton span{display:block;height:10px;border-radius:6px;
+  background:linear-gradient(90deg,var(--bg2) 25%,var(--surface) 37%,var(--bg2) 63%);
+  background-size:400% 100%;animation:news-today-shimmer 1.4s ease infinite;}
+.news-today-skeleton span:first-child{width:78%;}
+.news-today-skeleton span:last-child{width:55%;}
+@keyframes news-today-shimmer{0%{background-position:100% 0;}100%{background-position:0 0;}}
+.news-today-updated{margin-top:8px;color:var(--muted);font-size:10.5px;font-weight:600;text-align:right;}
+
 /* MSカード・ホーム画面の統合起動カード：NEWS/STOCKSと同じ.news-cardを
    土台にした独立カード。角丸スクエアのロゴボタン＋テキストを縦横完全
    中央揃えで内包する */

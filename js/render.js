@@ -20,6 +20,7 @@ import { pgApplyCloud, pgHandleIdentityChange } from './playground/cloudSync.js'
 import { renderScenarioScreen } from './playground/scenarios/scenarioScreen.js';
 import { scenarioModeApplyCloud, scenarioModeHandleIdentityChange } from './playground/scenarios/progressStore.js';
 import { applyCustomButtonColors, isLongPressSuppressed, wireButtonColorLongPress } from './buttonColors.js';
+import { fetchNewsCategory, getNewsCategoryState, todaysNewsForCategory } from './news.js';
 
 export const app = document.getElementById("app");
 
@@ -5800,6 +5801,7 @@ export function renderSelect(){
   app.innerHTML = `
     ${weatherCardHTML()}
     ${gcalDayWidgetHTML()}
+    ${newsTodayCardHTML()}
     ${state.currentUser
       ? `<div class="acct-bar"> ${esc(state.currentUser.email||"ログイン中")}<button class="link2" data-logout>ログアウト</button></div>`
       : (state.guestMode ? `<div class="acct-bar">ゲストモード（この端末のみ・同期なし）<button class="link2" data-login>ログイン / 新規登録</button></div>` : "")}
@@ -5816,6 +5818,7 @@ export function renderSelect(){
   const li=app.querySelector("[data-login]"); if(li)li.onclick=()=>{ state.guestMode=false; state.authMode="login"; render(); };
   loadWeatherCard();
   renderGcalDailyWidget();
+  renderNewsTodayCard();
   applyCustomButtonColors(app);
   wireButtonColorLongPress(app);
   window.scrollTo(0,0);
@@ -6849,30 +6852,107 @@ function newsBulkDeleteHTML(){
     </div>`;
 }
 
+/* =========================================================================
+   ホーム画面：今日のニュースカード
+   日本ニュース／海外ニュース画面と同じキャッシュ（js/news.js）を参照するだけで、
+   ホーム表示のために新しくFirestoreへ問い合わせることはしない。天気カード
+   （weatherCardHTML/loadWeatherCard）と同じく、まず空の枠だけを描画し、
+   その枠のidに対してデータを流し込む構成にすることで、ホーム画面全体を
+   作り直さずにこのカードだけを更新できるようにしてある。
+   ========================================================================= */
+const NEWS_HOME_CATEGORIES = [
+  { category: "japan", screenKey: "news-japan", icon: "🇯🇵", tag: "日本", detailLabel: "日本経済", tagClass: "news-today-tag-jp" },
+  { category: "world", screenKey: "news-world", icon: "🌐", tag: "海外", detailLabel: "世界経済", tagClass: "news-today-tag-world" },
+];
+const NEWS_HOME_ITEMS_PER_CATEGORY = 2;
+
+function newsTodayCardHTML(){
+  return `<div class="news-card news-today-card" id="news-today-card"></div>`;
+}
+
+function newsTodayGroupHTML(cat){
+  const { items, error, loading } = getNewsCategoryState(cat.category);
+  const tagHTML = `<button type="button" class="news-today-tag ${cat.tagClass}" data-go="${cat.screenKey}">${cat.icon} ${esc(cat.tag)}</button>`;
+
+  let bodyHTML;
+  if(items === null && loading){
+    bodyHTML = `<div class="news-today-skeleton"><span></span><span></span></div>`;
+  }else if(items === null && error){
+    bodyHTML = `<div class="news-today-msg news-today-msg-error">ニュースを取得できませんでした</div>`;
+  }else{
+    const todays = todaysNewsForCategory(cat.category, NEWS_HOME_ITEMS_PER_CATEGORY);
+    bodyHTML = todays.length
+      ? `<ul class="news-today-list">${todays.map(n => `
+          <li><button type="button" class="news-today-item" data-news-today-id="${esc(n.id)}" data-news-today-cat="${esc(cat.category)}">
+            <span class="news-today-title">${esc(n.title)}</span>
+          </button></li>`).join("")}</ul>`
+      : `<div class="news-today-msg">本日の登録はまだありません</div>`;
+  }
+
+  return `<div class="news-today-group">${tagHTML}${bodyHTML}</div>`;
+}
+
+function newsTodayUpdatedLabel(){
+  const times = NEWS_HOME_CATEGORIES
+    .map(c => getNewsCategoryState(c.category).fetchedAt)
+    .filter(t => t > 0);
+  if(!times.length) return "";
+  const latest = new Date(Math.max(...times));
+  const pad = (n) => String(n).padStart(2, "0");
+  return `更新：${pad(latest.getHours())}:${pad(latest.getMinutes())}`;
+}
+
+// #news-today-card の中身だけを描画・更新する。データが未取得のカテゴリが
+// あればここで取得をキックし、完了時にこの関数を呼び直して差し替える
+// （renderSelect()自体は呼ばない＝天気・予定カードの表示状態はそのまま）
+function renderNewsTodayCard(){
+  const card = document.getElementById("news-today-card");
+  if(!card) return;
+
+  // 未取得のカテゴリだけ取得する。すでに日本／海外ニュース画面側が取得中
+  // であればfetchNewsCategory側で重複取得せず、その完了を待つだけになる
+  NEWS_HOME_CATEGORIES.forEach(cat => {
+    if(getNewsCategoryState(cat.category).items === null){
+      fetchNewsCategory(cat.category).then(() => renderNewsTodayCard());
+    }
+  });
+
+  card.innerHTML = `
+    <div class="news-card-head">
+      <span class="news-today-head-title">📰 今日のニュース</span>
+      <button type="button" class="news-today-seeall" data-go="news-japan">すべて見る ＞</button>
+    </div>
+    <div class="news-today-body">${NEWS_HOME_CATEGORIES.map(newsTodayGroupHTML).join("")}</div>
+    <div class="news-today-updated">${newsTodayUpdatedLabel()}</div>
+  `;
+
+  card.querySelectorAll("[data-go]").forEach(b => b.onclick = () => go(b.dataset.go));
+  card.querySelectorAll("[data-news-today-id]").forEach(b => b.onclick = () => {
+    const catConf = NEWS_HOME_CATEGORIES.find(c => c.category === b.dataset.newsTodayCat);
+    const item = todaysNewsForCategory(b.dataset.newsTodayCat, NEWS_HOME_ITEMS_PER_CATEGORY)
+      .find(n => n.id === b.dataset.newsTodayId);
+    if(!item || !catConf) return;
+    S.newsDetail = { title: item.title, content: item.content, dateKey: item.dateKey, label: catConf.detailLabel, icon: catConf.icon, returnScreen: "select" };
+    go("news-detail");
+  });
+}
+
 // 日本経済・世界経済の両画面が使う共通ロジックを1箇所にまとめたファクトリー。
 // categoryとlabel/iconだけを差し替えれば同じ挙動の画面を量産できる。
 // データはFirestoreのnewsコレクション（window.News、db.js）に保存し、
-// 全ユーザーで共有する
-function createNewsScreen({ category, label, icon }){
+// 全ユーザーで共有する。取得・キャッシュそのものはjs/news.jsに集約してあり、
+// ホーム画面の「今日のニュース」カードとも同じキャッシュを共有する
+// （画面を行き来しても同じカテゴリを2回Firestoreへ取りに行かない）
+function createNewsScreen({ category, label, icon, screenKey }){
   // 画面を離れても選択中の日付を覚えておく（再訪時は前回の続きから）。
   // 未選択（初回訪問）の場合のみ「今日」を初期値にする
   let selected = null;
   // 削除対象としてチェックボックスで選択中のnews.idの集合。日付を切り替えた
   // ときや削除実行後にはリセットする（別の日の選択が残らないように）
   let selectedIds = new Set();
-  // このカテゴリの全件（Firestoreから取得済みの結果）。未取得の間はnull
-  let cache = null;
-  let loading = false;
 
   async function refresh(){
-    if(loading) return;
-    loading = true;
-    try{
-      cache = (window.News ? await window.News.listByCategory(category) : []) || [];
-    }catch(e){
-      cache = cache || [];
-    }
-    loading = false;
+    await fetchNewsCategory(category, { force: true });
     render();
   }
 
@@ -6880,7 +6960,13 @@ function createNewsScreen({ category, label, icon }){
     const now = new Date();
     if(!selected) selected = { y: now.getFullYear(), m: now.getMonth(), d: now.getDate() };
     const { y, m, d } = selected;
-    if(cache === null){ refresh(); }  // 初回のみFirestoreから取得（以後はrefresh()で明示的に再取得）
+    const { items: cache } = getNewsCategoryState(category);
+    // 未取得ならFirestoreから取得する。すでに他画面（ホームの「今日のニュース」
+    // カードなど）が取得中の場合はfetchNewsCategory側で重複取得せず、その
+    // 完了を待つだけになる。取得完了時、まだこの画面を見ている場合だけ再描画する
+    if(cache === null){
+      fetchNewsCategory(category).then(() => { if(S.screen === screenKey) render(); });
+    }
     const allItems = cache || [];
     const selKey = newsDateKey(y, m, d);
     const items = allItems.filter(n => n.dateKey === selKey);
@@ -6976,12 +7062,14 @@ export const renderNewsJapan = createNewsScreen({
   category: "japan",
   label: "日本経済",
   icon: "🇯🇵",
+  screenKey: "news-japan",
 });
 
 export const renderNewsWorld = createNewsScreen({
   category: "world",
   label: "世界経済",
   icon: "🌐",
+  screenKey: "news-world",
 });
 
 // ニュース詳細画面：一覧でカードをタップした際の遷移先。管理者が登録した
