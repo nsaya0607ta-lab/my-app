@@ -221,6 +221,23 @@ function isBuzzWord(text) {
   return !!n && (n === "はい" || n.startsWith("はい"));
 }
 
+// SpeechRecognitionはlang="ja-JP"だと同音異義語をIMEのように漢字へ自動変換して
+// しまい（例：「はい」→「配」「灰」、曲名の読みが違う漢字に変換される等）、
+// 判定の妨げになることがある。この変換を無効化するAPIオプションは無いため、
+// maxAlternativesで複数候補を取り、その中に漢字を含まない（読みのままの）
+// 候補があればそちらを優先して使うことで実質的に回避する。
+const KANJI_RE = /[一-鿿]/;
+function pickNonKanjiTranscript(result) {
+  let fallback = "";
+  for (let j = 0; j < result.length; j++) {
+    const t = result[j] && result[j].transcript;
+    if (!t) continue;
+    if (!fallback) fallback = t;
+    if (!KANJI_RE.test(t)) return t;
+  }
+  return fallback;
+}
+
 // ヘッダー左上「← ホーム」。再生中の音を必ず止めてから画面を離れる
 function leaveIntroQuiz() {
   renderGeneration++; // 進行中の非同期処理をすべて無効化
@@ -895,7 +912,12 @@ function renderQuizState(myGen, sessionId, videoId, startParams) {
     rec.onresult = (ev) => {
       if (myGen !== renderGeneration || myListenGen !== listenGen || buzzed) return;
       for (let i = ev.resultIndex; i < ev.results.length; i++) {
-        if (isBuzzWord(ev.results[i][0].transcript)) { triggerBuzz(); return; }
+        const r = ev.results[i];
+        // 1番目の候補が漢字変換されていて一致しなくても、他の候補（読みのまま）
+        // で一致すれば拾う
+        for (let j = 0; j < r.length; j++) {
+          if (isBuzzWord(r[j].transcript)) { triggerBuzz(); return; }
+        }
       }
     };
     rec.onerror = (ev) => {
@@ -982,7 +1004,8 @@ function renderQuizState(myGen, sessionId, videoId, startParams) {
       let interimText = "", finalText = "";
       for (let i = ev.resultIndex; i < ev.results.length; i++) {
         const r = ev.results[i];
-        if (r.isFinal) finalText += r[0].transcript; else interimText += r[0].transcript;
+        const t = pickNonKanjiTranscript(r);
+        if (r.isFinal) finalText += t; else interimText += t;
       }
       updateLiveTranscript(finalText || interimText);
       const text = finalText.trim();
