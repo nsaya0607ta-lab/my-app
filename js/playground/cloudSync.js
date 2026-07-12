@@ -50,8 +50,6 @@ export function pgSaveNow(){
 // db.jsのonSnapshot（users/{uid}ドキュメント全体の購読）から呼ばれる。
 // 戻り値: 実際に状態を復元してVFSが変わったら true（screen.js側の再描画判定に使う）
 export function pgApplyCloud(data){
-  // TEMPORARY DEBUG（原因特定後に削除）
-  if(window.__pgDebugLog) window.__pgDebugLog(`[cloudSync] pgApplyCloud呼び出し hydrated=${hydrated}`);
   if(hydrated) return false;
   hydrated = true;
   return restore(data);
@@ -63,8 +61,6 @@ export function pgApplyCloud(data){
 export function pgHandleIdentityChange(){
   const uid = state.currentUserId || "guest";
   if(identityToken === uid) return;
-  // TEMPORARY DEBUG（原因特定後に削除）
-  if(window.__pgDebugLog) window.__pgDebugLog(`[cloudSync] identity変化検知 ${identityToken} -> ${uid}（hydratedをfalseへリセット）`);
   const isFirstRun = identityToken === undefined;
   identityToken = uid;
   hydrated = false;
