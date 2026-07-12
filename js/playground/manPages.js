@@ -73,4 +73,5 @@ export const MAN_PAGES = {
   export: { synopsis:"export NAME=VALUE", desc:"シェル変数を環境変数として設定する。引数なしで実行すると設定済みの一覧を表示する。" },
   alias:  { synopsis:"alias [NAME=VALUE]", desc:"コマンドの別名（エイリアス）を設定する。引数なしで実行すると設定済みの一覧を表示する。" },
   unalias:{ synopsis:"unalias NAME", desc:"設定済みのエイリアスを削除する。" },
+  tee:    { synopsis:"tee [-a] FILE...", desc:"標準入力をそのまま標準出力へ流しつつ、同時にファイルへも書き込む。", options:[["-a","上書きではなく追記する"]] },
 };

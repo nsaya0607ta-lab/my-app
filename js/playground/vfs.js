@@ -93,12 +93,69 @@ export function applyChmodSpec(currentMode, spec){
   return octalDigitToRwx(owner) + octalDigitToRwx(group) + octalDigitToRwx(other);
 }
 
+// --- Firestore保存用のシリアライズ / 復元 -----------------------------------
+// mtimeはDateのままだとFirestoreに保存できない（プレーンなオブジェクトへ変換
+// する際にメソッドが失われる）ため、エポックミリ秒の数値に変換して往復させる。
+function serializeNode(node){
+  if(node.type === "dir"){
+    const children = {};
+    Object.keys(node.children).forEach(k => { children[k] = serializeNode(node.children[k]); });
+    return { type:"dir", children, mode:node.mode, owner:node.owner, group:node.group, mtime:+node.mtime };
+  }
+  if(node.type === "file"){
+    return { type:"file", content:node.content, mode:node.mode, owner:node.owner, group:node.group, mtime:+node.mtime };
+  }
+  return { type:"link", target:node.target.slice(), mode:node.mode, owner:node.owner, group:node.group, mtime:+node.mtime };
+}
+
+function deserializeNode(obj){
+  if(!obj || typeof obj !== "object") return null;
+  const mtime = new Date(typeof obj.mtime === "number" ? obj.mtime : Date.now());
+  if(obj.type === "dir"){
+    const children = {};
+    Object.keys(obj.children || {}).forEach(k => {
+      const child = deserializeNode(obj.children[k]);
+      if(child) children[k] = child;
+    });
+    return { type:"dir", children, mode: obj.mode || MODE_DIR, owner: obj.owner || USER, group: obj.group || GROUP, mtime };
+  }
+  if(obj.type === "file"){
+    return { type:"file", content: typeof obj.content === "string" ? obj.content : "", mode: obj.mode || MODE_FILE, owner: obj.owner || USER, group: obj.group || GROUP, mtime };
+  }
+  if(obj.type === "link"){
+    return { type:"link", target: Array.isArray(obj.target) ? obj.target.slice() : [], mode: obj.mode || MODE_LINK, owner: obj.owner || USER, group: obj.group || GROUP, mtime };
+  }
+  return null;
+}
+
+// 9文字のrwx文字列を3桁の8進数文字列（例:"755"）へ変換する（ミッションの
+// 権限判定など、chmodの指定方法によらず最終的なモードだけを比べたい場合に使う）
+export function modeToOctal(mode){
+  return String(rwxToOctalDigit(mode.slice(0,3))) + rwxToOctalDigit(mode.slice(3,6)) + rwxToOctalDigit(mode.slice(6,9));
+}
+
 export class VirtualFileSystem {
   constructor(){ this.reset(); }
 
   reset(){
     this.root = buildInitialRoot();
     this.cwd = HOME_PATH.slice();
+  }
+
+  // Firestoreへ保存する形（プレーンなJSONのみ）に変換する
+  toJSON(){
+    return { root: serializeNode(this.root), cwd: this.cwd.slice() };
+  }
+
+  // toJSON()で保存したデータから状態を復元する。壊れたデータ（形式不一致等）
+  // の場合は何もせず false を返し、呼び出し側は既定状態のまま使い続ける
+  loadFromJSON(data){
+    if(!data || typeof data !== "object") return false;
+    const root = deserializeNode(data.root);
+    if(!root || root.type !== "dir") return false;
+    this.root = root;
+    this.cwd = (Array.isArray(data.cwd) && data.cwd.length) ? data.cwd.slice() : HOME_PATH.slice();
+    return true;
   }
 
   // pathStr（絶対/相対/~/./..混在可）を、ルートからのセグメント配列へ解決する
