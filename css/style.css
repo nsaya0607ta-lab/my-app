@@ -2204,6 +2204,10 @@ body[data-theme="dark"] .menu-btn:active{box-shadow:0 4px 10px rgba(0,0,0,.3), i
 .scn-step-mark{flex:none;font-size:12px;line-height:1.5;}
 .scn-step-label{flex:1;min-width:0;}
 
+.scn-hint-line{margin-bottom:8px;}
+.scn-hint-line:last-child{margin-bottom:0;}
+.scn-hint-num{display:inline-block;font-weight:800;color:var(--accent);margin-right:6px;}
+
 .scn-action-row{display:flex;flex-direction:column;gap:8px;margin-top:10px;}
 .scn-action-row .pg-card-btn{margin-top:0;}
 .scn-action-row .pg-card-btn:disabled{opacity:.45;cursor:default;}

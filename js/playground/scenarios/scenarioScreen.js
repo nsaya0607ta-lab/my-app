@@ -28,7 +28,7 @@ import { renderTerminalBody, clearTerminal, wireTerminalTap, wireKeyboard, keybo
 
 const DIFF_CLASS = { "初級": "beginner", "初級〜中級": "lower-mid", "中級": "mid", "LPIC Level1": "lpic" };
 
-let session = null; // 現在プレイ中のシナリオ（{scenarioId, scenario, vfs, shellState, history, records, doneSteps, hintOpen}）
+let session = null; // 現在プレイ中のシナリオ（{scenarioId, scenario, vfs, shellState, history, records, doneSteps, hintLevel, hintStepId}）
 
 function computeDoneSteps(scenario, vfs, shellState){
   return scenario.steps.filter(step => evaluateGoal(step.goal, vfs, shellState)).map(step => step.id);
@@ -54,11 +54,14 @@ function buildSession(scenarioId){
   } else {
     applyInitialEnv(vfs, shellState, scenario.initialEnv);
   }
+  const doneSteps = computeDoneSteps(scenario, vfs, shellState);
+  const nextStep = scenario.steps.find(step => !doneSteps.includes(step.id)) || null;
   return {
     scenarioId, scenario, vfs, shellState, history,
     records: welcomeRecords(scenario, resumed),
-    doneSteps: computeDoneSteps(scenario, vfs, shellState),
-    hintOpen: false,
+    doneSteps,
+    hintLevel: 0,
+    hintStepId: nextStep ? nextStep.id : null,
   };
 }
 
@@ -80,9 +83,19 @@ function onExecuted(s){
   const wasComplete = s.doneSteps.length === s.scenario.steps.length;
   s.doneSteps = computeDoneSteps(s.scenario, s.vfs, s.shellState);
   const nowComplete = s.doneSteps.length === s.scenario.steps.length;
+  const nextStep = firstUnmetStep(s);
+  const nextStepId = nextStep ? nextStep.id : null;
+  if(nextStepId !== s.hintStepId){
+    s.hintStepId = nextStepId;
+    s.hintLevel = 0;
+  }
   if(nowComplete && !wasComplete){
     markScenarioCleared(s.scenarioId);
     pushSystemMessage(s, "🎉 シナリオクリア！お疲れさまでした。「解説を見る」で振り返りができます。", "pg-mission-toast");
+    if(s.scenario.clearComment){
+      const req = s.scenario.requester;
+      pushSystemMessage(s, `${req.avatar} ${req.name}「${s.scenario.clearComment}」`, "pg-muted");
+    }
   } else if(!nowComplete){
     persistCurrentAttempt(s);
   }
@@ -153,6 +166,8 @@ function goToNextScenario(currentId){
   renderScenarioScreen();
 }
 
+const HINT_NUMS = ["①", "②", "③", "④", "⑤"];
+
 function renderHintCard(){
   const el = app.querySelector("#scn-hint-card");
   if(!el || !session) return;
@@ -160,25 +175,37 @@ function renderHintCard(){
   const allDone = s.doneSteps.length === s.scenario.steps.length;
   const unlocked = allDone || isScenarioCleared(s.scenarioId);
   const nextStep = firstUnmetStep(s);
+  const hints = nextStep ? (Array.isArray(nextStep.hint) ? nextStep.hint : [nextStep.hint]) : [];
+  const level = Math.min(s.hintLevel || 0, hints.length);
   let body;
   if(allDone){
     body = `<div class="pg-card-body">🎉 このシナリオはクリア済みです。お疲れさまでした。</div>`;
-  } else if(s.hintOpen && nextStep){
-    body = `<div class="pg-card-body">${esc(nextStep.hint)}</div>`;
+  } else if(level > 0 && nextStep){
+    const shown = hints.slice(0, level)
+      .map((h, i) => `<div class="scn-hint-line"><span class="scn-hint-num">ヒント${HINT_NUMS[i] || (i + 1)}</span>${esc(h)}</div>`)
+      .join("");
+    body = `<div class="pg-card-body">${shown}</div>`;
   } else {
     body = `<div class="pg-card-body pg-muted-text">次に何をすればいいか分からなくなったら「ヒントを見る」を押してください。</div>`;
   }
+  const hasMoreHints = nextStep && level < hints.length;
+  const hintBtnLabel = level === 0 ? "ヒントを見る" : (hasMoreHints ? "次のヒントを見る" : "ヒントを隠す");
   const hasNext = !!nextScenarioId(s.scenarioId);
   el.innerHTML = `
     <div class="pg-card-head"><span class="pg-card-ico">💡</span><span class="pg-card-title">ヒント</span></div>
     ${body}
     <div class="scn-action-row">
-      ${!allDone ? `<button type="button" class="ghost pg-card-btn" id="scn-hint-btn">${s.hintOpen ? "ヒントを隠す" : "ヒントを見る"}</button>` : ""}
+      ${!allDone ? `<button type="button" class="ghost pg-card-btn" id="scn-hint-btn">${hintBtnLabel}</button>` : ""}
       <button type="button" class="ghost pg-card-btn" id="scn-explain-btn"${unlocked ? "" : " disabled"}>解説を見る</button>
       <button type="button" class="cta pg-card-btn" id="scn-next-btn"${allDone ? "" : " disabled"}>${hasNext ? "次のシナリオ →" : "シナリオ一覧へ →"}</button>
     </div>`;
   const hintBtn = el.querySelector("#scn-hint-btn");
-  if(hintBtn) hintBtn.onclick = () => { s.hintOpen = !s.hintOpen; renderHintCard(); };
+  if(hintBtn) hintBtn.onclick = () => {
+    if(level === 0) s.hintLevel = 1;
+    else if(hasMoreHints) s.hintLevel = level + 1;
+    else s.hintLevel = 0;
+    renderHintCard();
+  };
   const explainBtn = el.querySelector("#scn-explain-btn");
   if(unlocked) explainBtn.onclick = () => openExplanationModal(s.scenario);
   const nextBtn = el.querySelector("#scn-next-btn");
@@ -195,7 +222,9 @@ function resetSession(s){
   s.history.reset();
   s.records = welcomeRecords(s.scenario, false);
   s.doneSteps = computeDoneSteps(s.scenario, s.vfs, s.shellState);
-  s.hintOpen = false;
+  const nextStep = firstUnmetStep(s);
+  s.hintStepId = nextStep ? nextStep.id : null;
+  s.hintLevel = 0;
   persistCurrentAttempt(s);
   renderTerminalBody(s, terminalHooks(s));
   renderProgressBar();
