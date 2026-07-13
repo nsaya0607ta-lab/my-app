@@ -163,6 +163,10 @@ export class VirtualFileSystem {
 
   homeSegs(){ return this.currentHomeSegs; }
 
+  // su で root 等へ切り替えていても変わらない、既定ユーザー(student)の
+  // ホームパス。シナリオのゴール判定（"~/..."）はここを基準に絶対パス化する。
+  defaultHomeSegs(){ return HOME_PATH.slice(); }
+
   // Firestoreへ保存する形（プレーンなJSONのみ）に変換する
   toJSON(){
     return { root: serializeNode(this.root), cwd: this.cwd.slice() };

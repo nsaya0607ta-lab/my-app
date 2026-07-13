@@ -11,8 +11,18 @@
 import { cronJobsMatch } from '../cronUtil.js';
 import { modeToOctal } from '../vfs.js';
 
+// ゴール判定用のパスは常に既定ユーザー(student)のホームを基準に解決する。
+// su で root に切り替えた後だと vfs.resolvePath の "~" は /root になって
+// しまい、シナリオ開始時にstudentのホーム配下へ作った実ファイルと食い違う
+// ため、ここでは currentHomeSegs ではなく defaultHomeSegs を使って展開する。
+function resolveGoalPath(vfs, path){
+  if(path === "~") return "/" + vfs.defaultHomeSegs().join("/");
+  if(path.startsWith("~/")) return "/" + vfs.defaultHomeSegs().concat(path.slice(2).split("/").filter(Boolean)).join("/");
+  return path;
+}
+
 function nodeAt(vfs, path, opts = {}){
-  const segs = vfs.resolvePath(path);
+  const segs = vfs.resolvePath(resolveGoalPath(vfs, path));
   return opts.raw ? vfs.rawChild(segs) : vfs.getNode(segs);
 }
 
@@ -56,7 +66,7 @@ export const GOAL_CHECKERS = {
 
   // ファイルの中身が条件を満たす（includes=部分一致 / pattern=正規表現）
   fileContains: (vfs, shell, g) => {
-    const res = vfs.readFile(g.path);
+    const res = vfs.readFile(resolveGoalPath(vfs, g.path));
     if(res.error) return false;
     if(g.pattern) return new RegExp(g.pattern, g.flags || "").test(res.content);
     return res.content.includes(g.includes || "");
@@ -101,7 +111,7 @@ export const GOAL_CHECKERS = {
     const n = nodeAt(vfs, g.path, { raw: true });
     if(!n || n.type !== "link") return false;
     if(g.target){
-      const wantSegs = vfs.resolvePath(g.target);
+      const wantSegs = vfs.resolvePath(resolveGoalPath(vfs, g.target));
       if(vfs.absPath(n.target) !== vfs.absPath(wantSegs)) return false;
     }
     return true;
