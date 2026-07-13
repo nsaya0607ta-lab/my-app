@@ -40,6 +40,7 @@ export function serializeSession(vfs, shellState, userSession){
       cronJobs: JSON.parse(JSON.stringify(shellState.cronJobs || [])),
       processes: JSON.parse(JSON.stringify(shellState.processes || [])),
       jobs: JSON.parse(JSON.stringify(shellState.jobs || [])),
+      kernelModules: Array.from((shellState.kernelModules || new Map()).entries()),
       nextJobId: shellState.nextJobId,
       nextPid: shellState.nextPid,
     },
@@ -60,6 +61,7 @@ export function restoreSession(vfs, shellState, snapshot, userSession){
       if(Array.isArray(snapshot.shell.cronJobs)) shellState.cronJobs = snapshot.shell.cronJobs;
       if(Array.isArray(snapshot.shell.processes) && snapshot.shell.processes.length) shellState.processes = snapshot.shell.processes;
       if(Array.isArray(snapshot.shell.jobs)) shellState.jobs = snapshot.shell.jobs;
+      if(Array.isArray(snapshot.shell.kernelModules)) shellState.kernelModules = new Map(snapshot.shell.kernelModules);
       if(typeof snapshot.shell.nextJobId === "number") shellState.nextJobId = snapshot.shell.nextJobId;
       if(typeof snapshot.shell.nextPid === "number") shellState.nextPid = snapshot.shell.nextPid;
     }

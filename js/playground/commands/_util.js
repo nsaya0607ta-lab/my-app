@@ -88,6 +88,7 @@ export const PATH_COMMANDS = [
   "chmod","chown","chgrp","ln","df","du","free","ps","top","kill","killall","hostname","whoami",
   "id","uname","date","cal","history","clear","man","help","env","export","alias","unalias",
   "crontab","tee","awk","su","exit","sleep","jobs","fg","bg",
+  "lspci","lsusb","lsmod","modprobe","modinfo",
 ];
 
 export const BIN_DIR = {

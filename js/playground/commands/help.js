@@ -6,6 +6,7 @@ const GROUPS = [
   ["権限", ["chmod","chown","chgrp"]],
   ["ユーザー切替", ["su","exit"]],
   ["システム情報", ["df","du","free","ps","top","kill","killall","hostname","whoami","id","uname","date","cal","crontab"]],
+  ["ハードウェア／カーネルモジュール", ["lspci","lsusb","lsmod","modprobe","modinfo"]],
   ["ジョブ管理", ["sleep","jobs","fg","bg"]],
   ["シェル", ["history","clear","man","help","env","export","alias","unalias","which","whereis"]],
   ["リダイレクト／パイプ", ["tee"]],

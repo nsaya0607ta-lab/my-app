@@ -62,6 +62,11 @@ import sleep from './sleep.js';
 import jobs from './jobs.js';
 import fg from './fg.js';
 import bg from './bg.js';
+import lspci from './lspci.js';
+import lsusb from './lsusb.js';
+import lsmod from './lsmod.js';
+import modprobe from './modprobe.js';
+import modinfo from './modinfo.js';
 
 export const COMMAND_REGISTRY = {
   pwd, ls, cd, mkdir, rmdir, touch, cp, mv, rm, cat, less, head, tail, echo, nano,
@@ -69,6 +74,7 @@ export const COMMAND_REGISTRY = {
   df, du, free, ps, top, kill, killall, hostname, whoami, id, uname, date, cal,
   history, clear, man, help, env, export: exportCmd, alias, unalias, crontab, tee, awk,
   su, exit: exitCmd, sleep, jobs, fg, bg,
+  lspci, lsusb, lsmod, modprobe, modinfo,
 };
 
 export const COMMAND_NAMES = Object.keys(COMMAND_REGISTRY);
