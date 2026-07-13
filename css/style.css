@@ -2504,13 +2504,23 @@ body[data-theme="dark"] .menu-btn:active{box-shadow:0 4px 10px rgba(0,0,0,.3), i
    ========================================================================= */
 .scn-intro-text{font-size:12.5px;color:var(--muted);line-height:1.6;margin:-6px 0 16px;}
 
-/* シナリオ一覧の各セクション（物語パック／カテゴリ別「〜編」）を、章
-   （チャプター）として目立たせるカード。 */
-.scn-pack{margin-bottom:24px;border:1px solid var(--line);border-radius:16px;padding:14px 14px 16px;background:var(--surface);box-shadow:0 2px 8px rgba(15,23,42,.05);}
-.scn-pack-head{display:flex;align-items:center;gap:8px;margin-bottom:4px;}
-.scn-pack-icon{font-size:20px;flex:none;}
-.scn-pack-title{font-size:15.5px;font-weight:800;color:var(--text);}
-.scn-pack-desc{font-size:12px;color:var(--muted);line-height:1.6;margin:2px 0 14px;}
+/* シナリオ一覧の各セクション（物語パック／カテゴリ別「〜編」）の見出しは、
+   ホーム画面のモード選択ボタン（.menu-btn）と同じガラス調カードで統一する。 */
+.scn-section{margin-bottom:24px;}
+.scn-section-head{
+  display:flex; align-items:center; justify-content:space-between; gap:10px;
+  padding:13px 16px; border-radius:18px; margin-bottom:10px;
+  border:1px solid rgba(255,255,255,.65);
+  background:linear-gradient(155deg,rgba(255,255,255,.85),rgba(255,255,255,.5));
+  -webkit-backdrop-filter:blur(16px) saturate(160%); backdrop-filter:blur(16px) saturate(160%);
+  box-shadow:0 10px 22px rgba(15,23,42,.08), inset 0 1px 0 rgba(255,255,255,.75);
+}
+.scn-section-title{font-size:15.5px;font-weight:800;color:var(--text);}
+.scn-section-count{flex:none;font-size:12px;font-weight:700;color:var(--muted);}
+.scn-section-desc{font-size:12px;color:var(--muted);line-height:1.6;margin:-2px 0 12px;padding:0 2px;}
+body[data-theme="dark"] .scn-section-head{border-color:rgba(255,255,255,.12);
+  background:linear-gradient(155deg,rgba(255,255,255,.07),rgba(255,255,255,.02));
+  box-shadow:0 10px 22px rgba(0,0,0,.35), inset 0 1px 0 rgba(255,255,255,.08);}
 
 .scn-card-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;}
 @media (max-width:420px){ .scn-card-grid{grid-template-columns:1fr;} }

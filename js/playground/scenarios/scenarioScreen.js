@@ -262,30 +262,17 @@ function scenarioCardHTML(sc){
       </button>`;
 }
 
-// カテゴリ名→見出しアイコンの対応表（物語パックのicon指定が無い場合の見た目用）
-const CATEGORY_ICON = {
-  "ファイル操作": "📁",
-  "テキスト処理": "📝",
-  "検索": "🔍",
-  "権限": "🔑",
-  "シェル環境": "🖥️",
-  "権限・cron": "⏰",
-  "ログ調査": "📄",
-  "ファイル管理": "🗂️",
-  "バックアップ": "💾",
-  "ディスク管理": "💽",
-  "プロセス管理": "⚙️",
-  "ジョブ管理・プロセス管理": "⚙️",
-};
-
 // 「権限管理編」のような一連の物語（story）を持つシナリオパックも、カテゴリ別に
-// まとめた「〜編」も、見た目を統一して同じカード形式（アイコン＋タイトル＋
-// シナリオカードのグリッド）で表示する。
-function sectionCardHTML({ icon, title, subtitle, scenarios }){
+// まとめた「〜編」も、見た目を統一してホーム画面の各モードボタンと同じ
+// カード形式（タイトル＋件数＋シナリオカードのグリッド）で表示する。
+function sectionCardHTML({ title, subtitle, scenarios }){
   const cards = scenarios.map(scenarioCardHTML).join("");
-  return `<div class="scn-pack">
-      <div class="scn-pack-head"><span class="scn-pack-icon">${esc(icon || "📦")}</span><span class="scn-pack-title">${esc(title)}</span></div>
-      ${subtitle ? `<div class="scn-pack-desc">${esc(subtitle)}</div>` : ""}
+  return `<div class="scn-section">
+      <div class="scn-section-head">
+        <span class="scn-section-title">${esc(title)}</span>
+        <span class="scn-section-count">${scenarios.length}問</span>
+      </div>
+      ${subtitle ? `<div class="scn-section-desc">${esc(subtitle)}</div>` : ""}
       <div class="scn-card-grid">${cards}</div>
     </div>`;
 }
@@ -293,12 +280,12 @@ function sectionCardHTML({ icon, title, subtitle, scenarios }){
 function renderScenarioListScreen(){
   const packs = scenariosByPack();
   const packsHTML = packs.map(pack => sectionCardHTML({
-    icon: pack.icon, title: pack.title, subtitle: pack.subtitle, scenarios: pack.scenarios,
+    title: pack.title, subtitle: pack.subtitle, scenarios: pack.scenarios,
   })).join("");
 
   const groups = scenariosByCategory();
   const groupsHTML = groups.map(g => sectionCardHTML({
-    icon: CATEGORY_ICON[g.category], title: `${g.category}編`, scenarios: g.scenarios,
+    title: `${g.category}編`, scenarios: g.scenarios,
   })).join("");
 
   app.innerHTML = `
