@@ -71,13 +71,11 @@ export const SCENARIOS = [
 export const PACKS = [
   {
     id: "permissions-newbie",
-    icon: "🔐",
     title: "権限管理編",
     subtitle: "新人インフラエンジニアとして入社したあなたへ、社内のあちこちから「困った」が届きます。依頼内容を読み、Linuxコマンドで一つずつ解決していきましょう。",
   },
   {
     id: "file-dir-newbie",
-    icon: "📁",
     title: "ファイル・ディレクトリ操作編",
     subtitle: "新人エンジニアのあなたに、先輩や上司からファイル探しや整理整頓の依頼が舞い込みます。ls コマンドを使いこなして、日々のちょっとした「困った」を解決していきましょう。",
   },
@@ -93,18 +91,28 @@ export function nextScenarioId(id){
   return SCENARIOS[idx + 1].id;
 }
 
+// 同じテーマなのにcategory表記のゆれで別カードになってしまうものを
+// 1つのカードにまとめるための正規化。data/*.js側のcategory文字列自体は
+// 変えず、一覧表示だけをまとめる。
+const CATEGORY_ALIAS = {
+  "ファイル管理": "ファイル操作",
+  "権限・cron": "権限",
+  "プロセス管理": "ジョブ管理・プロセス管理",
+};
+
 // カテゴリごとにグルーピングした一覧（シナリオ選択画面用。パックに属する
 // シナリオはscenariosByPack()側に表示されるため、ここでは除外する）
 export function scenariosByCategory(){
   const groups = [];
   const byCategory = new Map();
   SCENARIOS.filter(s => !s.pack).forEach(s => {
-    if(!byCategory.has(s.category)){
-      const group = { category: s.category, scenarios: [] };
-      byCategory.set(s.category, group);
+    const category = CATEGORY_ALIAS[s.category] || s.category;
+    if(!byCategory.has(category)){
+      const group = { category, scenarios: [] };
+      byCategory.set(category, group);
       groups.push(group);
     }
-    byCategory.get(s.category).scenarios.push(s);
+    byCategory.get(category).scenarios.push(s);
   });
   return groups;
 }
