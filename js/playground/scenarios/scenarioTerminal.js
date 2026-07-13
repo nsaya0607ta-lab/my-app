@@ -28,6 +28,7 @@ import { buildTopLines } from '../commands/top.js';
 import { parseCrontabText } from '../cronUtil.js';
 import { createAppKeyboard } from '../appKeyboard.js';
 import { verifyPassword, applyUserEnv } from '../users.js';
+import { humanSize } from '../commands/_util.js';
 
 // アプリ内キーボード方式の入力状態。シナリオは同時に1つしかプレイしない
 // ため、screen.js（ミッションモード）と同じくモジュール変数で持てば足りる。
@@ -263,6 +264,7 @@ function openCommandOverlay(session, hooks, overlay){
   else if(overlay.type === "less") openLessModal(overlay);
   else if(overlay.type === "crontab") openCrontabModal(session, hooks, overlay);
   else if(overlay.type === "top") openTopModal(session);
+  else if(overlay.type === "fdisk") openFdiskModal(session, hooks, overlay);
 }
 
 function openNanoModal(session, hooks, payload){
@@ -443,6 +445,218 @@ function openCrontabModal(session, hooks, payload){
   });
   ta.focus();
   ta.setSelectionRange(ta.value.length, ta.value.length);
+}
+
+// fdisk（対話式パーティション編集）：実際のfdiskと同様、1行ずつコマンド／
+// 値を入力していく対話セッションをそのまま再現する。n（新規パーティション）
+// →p（基本パーティション）→パーティション番号→開始セクタ→終了セクタ、と
+// 段階（stage）を進め、最後にw（書き込み）で初めてshellState.disksへ確定
+// する（qで抜けた場合や、書き込み前にモーダルを閉じた場合は一切反映しない
+// ＝実際のfdiskの「メモリ上でだけ変更する」という挙動を再現している）。
+function openFdiskModal(session, hooks, payload){
+  const disk = session.shellState.disks.get(payload.diskName);
+  const totalSectors = Math.floor(disk.sizeBytes / 512);
+  const defaultFirstSector = 2048;
+  const defaultLastSector = totalSectors - 1;
+  // 実際のfdiskと同じく「w で書き込むまではメモリ上だけの変更」を再現する
+  // ため、確定済みのパーティション一覧とは別に作業用コピーを持つ
+  let working = disk.partitions.map(p => ({ ...p }));
+
+  const ov = document.createElement("div");
+  ov.className = "modal-ov pg-fdisk-ov";
+  ov.innerHTML = `
+    <div class="pg-fdisk-modal">
+      <pre class="pg-fdisk-content" id="scn-fdisk-content"></pre>
+      <div class="pg-fdisk-foot">
+        <input type="text" class="pg-fdisk-input" id="scn-fdisk-input" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false">
+        <button type="button" class="pg-fdisk-send" id="scn-fdisk-send">実行</button>
+      </div>
+    </div>`;
+  document.body.appendChild(ov);
+  const contentEl = ov.querySelector("#scn-fdisk-content");
+  const input = ov.querySelector("#scn-fdisk-input");
+
+  let stage = "menu";
+  let draft = null; // { num, firstSector }
+  const outLines = [];
+
+  const print = (text = "") => {
+    outLines.push(text);
+    contentEl.textContent = outLines.join("\n");
+    contentEl.scrollTop = contentEl.scrollHeight;
+  };
+  // 入力した内容を、直前に出したプロンプト行の末尾へエコーする
+  // （実際のターミナルで「プロンプト」に続けて入力が表示されるのと同じ見た目）
+  const echo = (raw) => {
+    outLines[outLines.length - 1] += raw;
+    contentEl.textContent = outLines.join("\n");
+  };
+
+  const nextAvailableNum = () => {
+    for(let n = 1; n <= 4; n++){ if(!working.some(p => p.num === n)) return n; }
+    return null;
+  };
+
+  const promptMenu = () => { stage = "menu"; print(""); print("Command (m for help): "); };
+
+  const printTable = () => {
+    print("");
+    print(`Disk ${disk.device}: ${humanSize(disk.sizeBytes)}, ${disk.sizeBytes} bytes, ${totalSectors} sectors`);
+    print("Units: sectors of 1 * 512 = 512 bytes");
+    print("Disklabel type: gpt");
+    print(`Disk identifier: ${disk.identifier}`);
+    if(working.length){
+      print("");
+      print("Device       Start       End   Sectors  Size Type");
+      working.forEach(p => {
+        const sectorCount = Math.floor(p.sizeBytes / 512);
+        const end = p.firstSector + sectorCount - 1;
+        print(`${(disk.device + p.num).padEnd(12)} ${String(p.firstSector).padStart(9)} ${String(end).padStart(9)} ${String(sectorCount).padStart(9)} ${humanSize(p.sizeBytes).padStart(4)} Linux filesystem`);
+      });
+    }
+  };
+
+  const printHelp = () => {
+    print("");
+    print("Command action");
+    print("   n   add a new partition");
+    print("   d   delete a partition");
+    print("   p   print the partition table");
+    print("   w   write table to disk and exit");
+    print("   q   quit without saving changes");
+    print("   m   print this menu");
+  };
+
+  const close = () => { ov.remove(); renderTerminalBody(session, hooks); };
+
+  const write = () => {
+    const added = working.filter(w => !disk.partitions.some(p => p.num === w.num));
+    if(!added.length){
+      print("");
+      print("No changes to write. Exiting.");
+      close();
+      return;
+    }
+    added.forEach(p => session.shellState.createPartition(payload.diskName, p.num, p.sizeBytes));
+    print("");
+    print("The partition table has been altered.");
+    print("Calling ioctl() to re-read partition table.");
+    print("Syncing disks.");
+    close();
+    hooks.onExecuted();
+  };
+
+  const handleMenu = (val) => {
+    if(val === "n"){
+      const num = nextAvailableNum();
+      if(num === null){ print("The partition table already contains 4 partitions. No free slot."); promptMenu(); return; }
+      draft = { num };
+      print("Partition type");
+      print("   p   primary (0 primary, 0 extended, 4 free)");
+      print("   e   extended (container for logical partitions)");
+      stage = "type";
+      print("Select (default p): ");
+    } else if(val === "d"){
+      if(!working.length){ print("No partition is defined yet!"); promptMenu(); return; }
+      working = [];
+      print("Partition 1 has been deleted.");
+      promptMenu();
+    } else if(val === "p"){
+      printTable();
+      promptMenu();
+    } else if(val === "m"){
+      printHelp();
+      promptMenu();
+    } else if(val === "w"){
+      write();
+    } else if(val === "q"){
+      close();
+    } else if(val === ""){
+      promptMenu();
+    } else {
+      print(`${val}: unknown command`);
+      promptMenu();
+    }
+  };
+
+  const handleType = (val) => {
+    if(val === "" || val === "p"){
+      stage = "number";
+      print(`Partition number (${draft.num}-4, default ${draft.num}): `);
+    } else if(val === "e"){
+      print("この演習では基本パーティション（primary）のみ対応しています。p と入力するか、そのままEnterを押してください。");
+      print("Select (default p): ");
+    } else {
+      print("Invalid input, please enter 'p' or 'e'.");
+      print("Select (default p): ");
+    }
+  };
+
+  const handleNumber = (val) => {
+    const num = val === "" ? draft.num : parseInt(val, 10);
+    if(!Number.isInteger(num) || num < 1 || num > 4 || working.some(p => p.num === num)){
+      print("Value out of range or already in use.");
+      print(`Partition number (${draft.num}-4, default ${draft.num}): `);
+      return;
+    }
+    draft.num = num;
+    stage = "first";
+    print(`First sector (${defaultFirstSector}-${defaultLastSector}, default ${defaultFirstSector}): `);
+  };
+
+  const handleFirst = (val) => {
+    const first = val === "" ? defaultFirstSector : parseInt(val, 10);
+    if(!Number.isInteger(first) || first < defaultFirstSector || first > defaultLastSector){
+      print("Value out of range.");
+      print(`First sector (${defaultFirstSector}-${defaultLastSector}, default ${defaultFirstSector}): `);
+      return;
+    }
+    draft.firstSector = first;
+    stage = "last";
+    print(`Last sector, +/-sectors or +/-size{K,M,G,T,P} (${first}-${defaultLastSector}, default ${defaultLastSector}): `);
+  };
+
+  const handleLast = (val) => {
+    let last = defaultLastSector;
+    if(val !== ""){
+      const n = parseInt(val, 10);
+      if(Number.isInteger(n) && n >= draft.firstSector && n <= defaultLastSector) last = n;
+    }
+    const sizeBytes = (last - draft.firstSector + 1) * 512;
+    working.push({ num: draft.num, sizeBytes, firstSector: draft.firstSector, fsType: null });
+    working.sort((a, b) => a.num - b.num);
+    print("");
+    print(`Created a new partition ${draft.num} of type 'Linux filesystem' and of size ${humanSize(sizeBytes)}.`);
+    draft = null;
+    promptMenu();
+  };
+
+  const handleInput = (val) => {
+    if(stage === "menu") handleMenu(val);
+    else if(stage === "type") handleType(val);
+    else if(stage === "number") handleNumber(val);
+    else if(stage === "first") handleFirst(val);
+    else if(stage === "last") handleLast(val);
+  };
+
+  const submit = () => {
+    const raw = input.value;
+    input.value = "";
+    echo(raw);
+    handleInput(raw.trim());
+  };
+
+  input.addEventListener("keydown", (e) => {
+    if(e.key === "Enter"){ e.preventDefault(); submit(); }
+    else if(e.key === "Escape"){ e.preventDefault(); close(); }
+  });
+  ov.querySelector("#scn-fdisk-send").onclick = submit;
+
+  print("Welcome to fdisk (util-linux 2.39.3).");
+  print("Changes will remain in memory only, until you decide to write them.");
+  print("Be careful before using the write command.");
+  promptMenu();
+  input.focus();
 }
 
 // ------------------------------------------------------------------------

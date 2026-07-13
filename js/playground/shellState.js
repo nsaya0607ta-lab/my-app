@@ -5,6 +5,7 @@
    ========================================================================= */
 import { USER, HOSTNAME } from './constants.js';
 import { MODULE_CATALOG, DEFAULT_LOADED_MODULES } from './moduleCatalog.js';
+import { DISK_CATALOG, DEFAULT_PARTITIONS, DEFAULT_MOUNTS } from './diskCatalog.js';
 
 function defaultEnv(){
   return new Map([
@@ -40,6 +41,21 @@ function defaultKernelModules(){
   return map;
 }
 
+// lsblk / fdisk / mkfs.ext4 / mount / df が参照する「現在のブロックデバイス」の
+// 初期状態。sdb はディスク・パーティション管理編のシナリオで追加される
+// 未使用ディスクで、パーティションを1つも持たない状態から始まる。
+function defaultDisks(){
+  const disks = new Map();
+  Object.keys(DISK_CATALOG).forEach(name => {
+    disks.set(name, { ...DISK_CATALOG[name], partitions: DEFAULT_PARTITIONS[name].map(p => ({ ...p })) });
+  });
+  return disks;
+}
+
+function defaultMounts(){
+  return DEFAULT_MOUNTS.map(m => ({ ...m }));
+}
+
 function defaultProcesses(){
   return [
     { pid:1,   ppid:0,   user:"root",    cpu:0.0, mem:0.1, tty:"?",     stat:"Ss", cmd:"/sbin/init" },
@@ -61,6 +77,8 @@ export class ShellState {
     this.aliases = defaultAliases();
     this.processes = defaultProcesses();
     this.kernelModules = defaultKernelModules(); // 現在読み込まれているカーネルモジュール（Map: 名前 -> {size, usedBy}）
+    this.disks = defaultDisks(); // ブロックデバイス（Map: "sda"/"sdb" -> {device,sizeBytes,model,majMin,identifier,partitions:[{num,sizeBytes,fsType}]})
+    this.mounts = defaultMounts(); // 現在マウントされているファイルシステム（[{device,mountpoint,fsType}]）
     this.cronJobs = []; // crontabコマンドで登録されたジョブ（{min,hour,dom,mon,dow,command,raw}）
     this.jobs = []; // シェルのジョブテーブル（&で背景実行 / Ctrl+Zで停止したジョブ）。{id,pid,cmd,status:"running"|"stopped"}
     this.nextJobId = 1;
@@ -97,6 +115,35 @@ export class ShellState {
   loadModule(name, mod){
     if(this.kernelModules.has(name)) return false;
     this.kernelModules.set(name, { size: mod.size, usedBy: mod.usedBy });
+    return true;
+  }
+
+  // fdiskの "w"（書き込み）でパーティションテーブルを確定する。指定した
+  // ディスク・番号がすでに使われている場合や、ディスクが存在しない場合は
+  // 何もせずfalseを返す。
+  createPartition(diskName, partNum, sizeBytes){
+    const disk = this.disks.get(diskName);
+    if(!disk) return false;
+    if(disk.partitions.some(p => p.num === partNum)) return false;
+    disk.partitions.push({ num: partNum, sizeBytes, fsType: null });
+    disk.partitions.sort((a, b) => a.num - b.num);
+    return true;
+  }
+
+  // "/dev/sdb1" のようなパーティション表記から、実体（{num,sizeBytes,fsType}）を探す
+  findPartition(diskName, partNum){
+    const disk = this.disks.get(diskName);
+    if(!disk) return null;
+    return disk.partitions.find(p => p.num === partNum) || null;
+  }
+
+  isMounted(device){
+    return this.mounts.some(m => m.device === device);
+  }
+
+  mountDevice(device, mountpoint, fsType){
+    if(this.isMounted(device)) return false;
+    this.mounts.push({ device, mountpoint, fsType });
     return true;
   }
 

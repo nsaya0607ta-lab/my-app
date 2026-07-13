@@ -89,12 +89,14 @@ export const PATH_COMMANDS = [
   "id","uname","date","cal","history","clear","man","help","env","export","alias","unalias",
   "crontab","tee","awk","su","exit","sleep","jobs","fg","bg",
   "lspci","lsusb","lsmod","modprobe","modinfo",
+  "lsblk","fdisk","mkfs.ext4","mount",
 ];
 
 export const BIN_DIR = {
   cd: null, echo: "/bin", pwd: "/bin", export: null, alias: null, unalias: null,
   history: null, help: null, clear: "/usr/bin", crontab: "/usr/bin", exit: null,
   jobs: null, fg: null, bg: null,
+  fdisk: "/usr/sbin", "mkfs.ext4": "/usr/sbin", lsblk: "/usr/bin", mount: "/usr/bin",
 };
 
 export function binPathFor(cmd){

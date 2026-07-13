@@ -152,6 +152,29 @@ export const GOAL_CHECKERS = {
   // 指定したカーネルモジュールが（modprobeで）読み込み済みになっているか
   moduleLoaded: (vfs, shell, g) => shell.kernelModules.has(g.name),
 
+  // 指定したディスク（例:"sdb"）に、fdiskで少なくとも1つパーティションが
+  // 作られているか（パーティション番号は問わない＝1でも2でも許容する）
+  partitionCreated: (vfs, shell, g) => {
+    const disk = shell.disks.get(g.diskName);
+    return !!disk && disk.partitions.length > (g.morethan || 0);
+  },
+
+  // 指定したディスクの、いずれかのパーティションに指定したファイルシステム
+  // （mkfs.ext4なら"ext4"）が作成されているか
+  filesystemCreated: (vfs, shell, g) => {
+    const disk = shell.disks.get(g.diskName);
+    return !!disk && disk.partitions.some(p => p.fsType === g.fsType);
+  },
+
+  // 指定したディスク由来のパーティションが、指定したマウントポイントへ
+  // マウントされているか（"/dev/sdb1"のような具体的なパーティション番号は
+  // 問わない＝fdiskでどの番号を選んでも、そのパーティションをマウントすれば通る）
+  mounted: (vfs, shell, g) => shell.mounts.some(m => {
+    if(m.mountpoint !== g.mountpoint) return false;
+    if(!g.diskName) return true;
+    return new RegExp(`^/dev/${g.diskName}\\d+$`).test(m.device);
+  }),
+
   // これまでに実行したコマンド（履歴）の中に条件を満たすものがあるか。
   // ls -l で権限を確認する、のような「状態を変えない操作」を行ったかどうかは
   // VFS/ShellStateの現在の状態だけでは判定できないため、履歴を直接見る。
