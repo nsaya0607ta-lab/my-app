@@ -7,6 +7,7 @@ const GROUPS = [
   ["ユーザー切替", ["su","exit"]],
   ["システム情報", ["df","du","free","ps","top","kill","killall","hostname","whoami","id","uname","date","cal","crontab"]],
   ["ハードウェア／カーネルモジュール", ["lspci","lsusb","lsmod","modprobe","modinfo"]],
+  ["ディスク／パーティション管理", ["lsblk","fdisk","mkfs.ext4","mount"]],
   ["ジョブ管理", ["sleep","jobs","fg","bg"]],
   ["シェル", ["history","clear","man","help","env","export","alias","unalias","which","whereis"]],
   ["リダイレクト／パイプ", ["tee"]],

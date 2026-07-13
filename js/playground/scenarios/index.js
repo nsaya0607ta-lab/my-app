@@ -64,6 +64,7 @@ import s057 from './data/s057-module-modinfo.js';
 import s058 from './data/s058-memory-free.js';
 import s059 from './data/s059-memory-free-h.js';
 import s060 from './data/s060-network-down-combo.js';
+import s061 from './data/s061-new-disk-fdisk.js';
 
 export const SCENARIOS = [
   s001, s002, s003, s004, s005, s006, s007, s008, s009, s010, s011, s012, s013, s014, s015,
@@ -72,6 +73,7 @@ export const SCENARIOS = [
   s038, s039, s040, s041, s042, s043, s044, s045,
   s046, s047, s048, s049, s050, s051, s052,
   s053, s054, s055, s056, s057, s058, s059, s060,
+  s061,
 ];
 
 // 「権限管理編」のように、番号どおりの物語（ストーリー）として通しで遊ぶ

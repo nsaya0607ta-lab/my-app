@@ -41,6 +41,8 @@ export function serializeSession(vfs, shellState, userSession){
       processes: JSON.parse(JSON.stringify(shellState.processes || [])),
       jobs: JSON.parse(JSON.stringify(shellState.jobs || [])),
       kernelModules: Array.from((shellState.kernelModules || new Map()).entries()),
+      disks: Array.from((shellState.disks || new Map()).entries()).map(([name, d]) => [name, { ...d, partitions: d.partitions.map(p => ({ ...p })) }]),
+      mounts: JSON.parse(JSON.stringify(shellState.mounts || [])),
       nextJobId: shellState.nextJobId,
       nextPid: shellState.nextPid,
     },
@@ -62,6 +64,8 @@ export function restoreSession(vfs, shellState, snapshot, userSession){
       if(Array.isArray(snapshot.shell.processes) && snapshot.shell.processes.length) shellState.processes = snapshot.shell.processes;
       if(Array.isArray(snapshot.shell.jobs)) shellState.jobs = snapshot.shell.jobs;
       if(Array.isArray(snapshot.shell.kernelModules)) shellState.kernelModules = new Map(snapshot.shell.kernelModules);
+      if(Array.isArray(snapshot.shell.disks)) shellState.disks = new Map(snapshot.shell.disks.map(([name, d]) => [name, { ...d, partitions: (d.partitions || []).map(p => ({ ...p })) }]));
+      if(Array.isArray(snapshot.shell.mounts)) shellState.mounts = snapshot.shell.mounts;
       if(typeof snapshot.shell.nextJobId === "number") shellState.nextJobId = snapshot.shell.nextJobId;
       if(typeof snapshot.shell.nextPid === "number") shellState.nextPid = snapshot.shell.nextPid;
     }

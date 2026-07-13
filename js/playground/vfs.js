@@ -17,7 +17,11 @@ import { USER, GROUP } from './constants.js';
 
 const HOME_PATH = ["home", "student"];
 const DEFAULT_HOME_DIRS = ["Desktop", "Documents", "Downloads", "Pictures", "Videos"];
-const ROOT_DEFAULT_DIRS = ["bin", "etc", "home", "root", "tmp", "usr", "var"];
+const ROOT_DEFAULT_DIRS = ["bin", "etc", "home", "mnt", "root", "tmp", "usr", "var"];
+// root:root 所有のディレクトリ（実際のLinuxと同様、一般ユーザーからは
+// 書き込みできない＝「ディスク・パーティション管理」編で mkdir /mnt/data を
+// 行うには su で root へ切り替える必要がある）
+const ROOT_OWNED_DIRS = new Set(["root", "mnt"]);
 
 const MODE_DIR = "rwxr-xr-x";
 const MODE_FILE = "rw-r--r--";
@@ -37,7 +41,7 @@ function makeLink(target, owner=USER, group=GROUP){
 
 function buildInitialRoot(){
   const root = makeDir("root", "root");
-  ROOT_DEFAULT_DIRS.forEach(name => { root.children[name] = makeDir(name === "root" ? "root" : USER); });
+  ROOT_DEFAULT_DIRS.forEach(name => { root.children[name] = makeDir(ROOT_OWNED_DIRS.has(name) ? "root" : USER); });
   // /root は実際のLinuxと同様 root専用（700）にし、一般ユーザーからは
   // cd/lsできないようにする（「root専用ディレクトリ」の最小の例）
   root.children.root = makeDir("root", "root", "rwx------");
