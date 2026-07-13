@@ -5830,57 +5830,107 @@ export function renderSelect(){
 
 /* =========================================================================
    ⚙️ 設定モーダル（ホーム画面のカレンダーボタン横のギアボタンから開く）
-   ・スキン設定（背景の配色を4パターンから即時切替。body[data-theme]で適用）
-   ・タップ音設定（Web Audio APIでその場合成する効果音を4パターンから選択）
+   ・トップ画面はシンプルな2つの入口ボタンのみ（背景一覧／タップ音一覧）
+   ・「背景一覧」→ UI_THEME_DATA をカード形式で一覧表示（body[data-theme]で
+     即時切替。フェード演出つき）
+   ・「タップ音一覧」→ TAP_SOUND_DATA をカード形式で一覧表示（選ぶと即試聴）
+   ・テーマ／音を増やしたいときはjs/data/uithemes.js・js/data/tapsounds.jsの
+     配列に1要素足すだけで、カード一覧・切替処理は自動的に対応する。
    他のポップアップ（openGcalAuthorNameModal等）と同じく、#app（render()で
    丸ごと差し替わる領域）の外、document.bodyに直接オーバーレイを追加する
-   方式。これによりスキン/タップ音の選択でapp側を再描画しても閉じない。
+   方式。これによりカード選択でapp側を再描画しても閉じない。
    ========================================================================= */
-function settingsModalBodyHTML(){
-  const skinCards = UI_THEME_DATA.map(th => {
-    const applied = (S.uiTheme || "default") === th.key;
-    return `
-      <button type="button" class="settings-skin-card${applied ? " applied" : ""}" data-theme-pick="${th.key}">
-        <span class="settings-skin-swatch settings-theme-${th.key}"></span>
-        <span class="settings-skin-name">${th.icon} ${esc(th.name)}</span>
-        <span class="settings-skin-sub">${esc(th.sub)}</span>
-        ${applied ? `<span class="settings-check">✓</span>` : ""}
-      </button>`;
-  }).join("");
+let settingsModalView = "main"; // "main" | "themes" | "sounds"
 
-  const soundRows = TAP_SOUND_DATA.map(sd => {
-    const applied = (S.tapSound || "wood") === sd.key;
-    return `
-      <button type="button" class="settings-sound-row${applied ? " applied" : ""}" data-sound-pick="${sd.key}">
-        <span class="settings-sound-icon">${sd.icon}</span>
-        <span class="settings-sound-info">
-          <span class="settings-sound-name">${esc(sd.name)}</span>
-          <span class="settings-sound-sub">${esc(sd.sub)}</span>
-        </span>
-        ${applied ? `<span class="settings-check">✓</span>` : ""}
-      </button>`;
-  }).join("");
+function settingsCardHTML({ key, icon, name, sub, applied, dataAttr }){
+  return `
+    <button type="button" class="settings-card${applied ? " applied" : ""}" data-${dataAttr}="${key}">
+      <span class="settings-card-icon">${icon}</span>
+      <span class="settings-card-info">
+        <span class="settings-card-name">${esc(name)}</span>
+        <span class="settings-card-sub">${esc(sub)}</span>
+      </span>
+      ${applied ? `<span class="settings-check">✓</span>` : ""}
+    </button>`;
+}
 
+function settingsMainHTML(){
   return `
     <div class="settings-section">
-      <div class="settings-section-title">🎨 スキン設定（背景の変更）</div>
-      <div class="settings-skin-grid">${skinCards}</div>
-    </div>
-    <div class="settings-section">
-      <div class="settings-section-title">🔊 タップ音設定（効果音の選択）</div>
-      <div class="settings-sound-list">${soundRows}</div>
+      <button type="button" class="settings-nav-btn" data-settings-nav="themes">
+        <span class="settings-nav-icon">🎨</span>
+        <span class="settings-nav-info">
+          <span class="settings-nav-title">背景一覧</span>
+          <span class="settings-nav-sub">好きな背景テーマを選ぶ（全${UI_THEME_DATA.length}種）</span>
+        </span>
+        <span class="settings-nav-arrow">›</span>
+      </button>
+      <button type="button" class="settings-nav-btn" data-settings-nav="sounds">
+        <span class="settings-nav-icon">🔊</span>
+        <span class="settings-nav-info">
+          <span class="settings-nav-title">タップ音一覧</span>
+          <span class="settings-nav-sub">好きなタップ音を選ぶ（全${TAP_SOUND_DATA.length}種）</span>
+        </span>
+        <span class="settings-nav-arrow">›</span>
+      </button>
     </div>`;
+}
+
+function settingsThemeListHTML(){
+  const cards = UI_THEME_DATA.map(th => settingsCardHTML({
+    key: th.key, icon: th.icon, name: th.name, sub: th.sub,
+    applied: (S.uiTheme || "default") === th.key, dataAttr: "theme-pick",
+  })).join("");
+  return `
+    <div class="settings-subhead">
+      <button type="button" class="settings-back-btn" data-settings-nav="main">‹ 戻る</button>
+      <span class="settings-subhead-title">🎨 背景一覧</span>
+    </div>
+    <div class="settings-card-grid">${cards}</div>`;
+}
+
+function settingsSoundListHTML(){
+  const cards = TAP_SOUND_DATA.map(sd => settingsCardHTML({
+    key: sd.key, icon: sd.icon, name: sd.name, sub: sd.sub,
+    applied: (S.tapSound || "wood") === sd.key, dataAttr: "sound-pick",
+  })).join("");
+  return `
+    <div class="settings-subhead">
+      <button type="button" class="settings-back-btn" data-settings-nav="main">‹ 戻る</button>
+      <span class="settings-subhead-title">🔊 タップ音一覧</span>
+    </div>
+    <div class="settings-card-list">${cards}</div>`;
+}
+
+function settingsModalBodyHTML(){
+  if(settingsModalView === "themes") return settingsThemeListHTML();
+  if(settingsModalView === "sounds") return settingsSoundListHTML();
+  return settingsMainHTML();
+}
+
+// UIテーマ切り替えを軽いフェードを挟んで反映する（背景がふわっと切り替わって見える）
+function applyUiThemeAnimated(){
+  document.body.classList.add("theme-fading");
+  setTimeout(() => {
+    applyUiTheme();
+    requestAnimationFrame(() => document.body.classList.remove("theme-fading"));
+  }, 90);
 }
 
 function wireSettingsModal(ov){
   const body = ov.querySelector("#settings-modal-body");
   const refresh = () => { body.innerHTML = settingsModalBodyHTML(); wireSettingsModal(ov); };
 
+  ov.querySelectorAll("[data-settings-nav]").forEach(b => b.onclick = () => {
+    playTapSound();
+    settingsModalView = b.dataset.settingsNav;
+    refresh();
+  });
   ov.querySelectorAll("[data-theme-pick]").forEach(b => b.onclick = () => {
     playTapSound(); // 選択時の操作フィードバックは現在のタップ音設定のまま鳴らす
     S.uiTheme = b.dataset.themePick;
     saveUiTheme(S.uiTheme);
-    applyUiTheme();
+    applyUiThemeAnimated();
     refresh();
   });
   ov.querySelectorAll("[data-sound-pick]").forEach(b => b.onclick = () => {
@@ -5893,9 +5943,10 @@ function wireSettingsModal(ov){
   if(closeBtn) closeBtn.onclick = () => { playTapSound(); closeSettingsModal(ov); };
 }
 
-function closeSettingsModal(ov){ try{ ov.remove(); }catch(e){} }
+function closeSettingsModal(ov){ try{ ov.remove(); }catch(e){} settingsModalView = "main"; }
 
 function openSettingsModal(){
+  settingsModalView = "main";
   const ov = document.createElement("div");
   ov.className = "modal-ov";
   ov.innerHTML = `
@@ -5942,7 +5993,7 @@ function rulesModalBodyHTML(){
     </div>
     <div class="rules-section">
       <div class="rules-section-title">⚙️ 設定</div>
-      <div class="rules-text">設定ボタンから、背景の配色（スキン設定：default／dark／sakura／forestの4種）とタップ音（wood／drop／click／mute）を切り替えられます。</div>
+      <div class="rules-text">設定ボタンから、「背景一覧」（全${UI_THEME_DATA.length}種のテーマ）と「タップ音一覧」（全${TAP_SOUND_DATA.length}種の効果音）をカードから選んで即時切り替えられます。</div>
     </div>
     <div class="rules-section">
       <div class="rules-section-title">📅 カレンダー</div>

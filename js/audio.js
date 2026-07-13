@@ -66,15 +66,105 @@ function playClick(c){
   src.start(t); src.stop(t + 0.03);
 }
 
+// ④「ベル」：基音＋倍音を重ねた軽く綺麗なベルの響き
+function playBell(c){
+  const t = c.currentTime;
+  const master = c.createGain();
+  master.gain.value = 1;
+  master.connect(c.destination);
+  [[1046, 1, 0.5], [2093, 0.35, 0.4], [3136, 0.18, 0.3]].forEach(([freq, amp, dur]) => {
+    const o = c.createOscillator();
+    const g = c.createGain();
+    o.type = "sine";
+    o.frequency.setValueAtTime(freq, t);
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.exponentialRampToValueAtTime(0.15 * amp, t + 0.006);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+    o.connect(g); g.connect(master);
+    o.start(t); o.stop(t + dur + 0.02);
+  });
+}
+
+// ⑤「風鈴」：高めの澄んだ音が少しずつ間隔をあけて連なる涼しげな音
+function playFurin(c){
+  const t = c.currentTime;
+  [[0, 1760], [0.06, 1568], [0.13, 2093]].forEach(([delay, freq]) => {
+    const tt = t + delay;
+    const o = c.createOscillator();
+    const g = c.createGain();
+    o.type = "sine";
+    o.frequency.setValueAtTime(freq, tt);
+    o.frequency.exponentialRampToValueAtTime(freq * 0.92, tt + 0.3);
+    g.gain.setValueAtTime(0.0001, tt);
+    g.gain.exponentialRampToValueAtTime(0.09, tt + 0.012);
+    g.gain.exponentialRampToValueAtTime(0.0001, tt + 0.32);
+    o.connect(g); g.connect(c.destination);
+    o.start(tt); o.stop(tt + 0.34);
+  });
+}
+
+// ⑥「キラッ」：ゲーム風に短く駆け上がるきらめき音
+function playSparkle(c){
+  const t = c.currentTime;
+  const o = c.createOscillator();
+  const g = c.createGain();
+  o.type = "triangle";
+  o.frequency.setValueAtTime(900, t);
+  o.frequency.exponentialRampToValueAtTime(2200, t + 0.1);
+  g.gain.setValueAtTime(0.0001, t);
+  g.gain.exponentialRampToValueAtTime(0.16, t + 0.01);
+  g.gain.exponentialRampToValueAtTime(0.0001, t + 0.18);
+  o.connect(g); g.connect(c.destination);
+  o.start(t); o.stop(t + 0.2);
+}
+
+// ⑦「レトロゲーム」：矩形波2音による8bit風クリック音
+function playRetroGame(c){
+  const t = c.currentTime;
+  [[0, 660], [0.05, 990]].forEach(([delay, freq]) => {
+    const tt = t + delay;
+    const o = c.createOscillator();
+    const g = c.createGain();
+    o.type = "square";
+    o.frequency.setValueAtTime(freq, tt);
+    g.gain.setValueAtTime(0.09, tt);
+    g.gain.exponentialRampToValueAtTime(0.0001, tt + 0.045);
+    o.connect(g); g.connect(c.destination);
+    o.start(tt); o.stop(tt + 0.05);
+  });
+}
+
+// ⑧「iPhone風」：シンプルで心地よい短いタップ音
+function playIphone(c){
+  const t = c.currentTime;
+  const o = c.createOscillator();
+  const g = c.createGain();
+  o.type = "sine";
+  o.frequency.setValueAtTime(1200, t);
+  g.gain.setValueAtTime(0.0001, t);
+  g.gain.exponentialRampToValueAtTime(0.13, t + 0.004);
+  g.gain.exponentialRampToValueAtTime(0.0001, t + 0.06);
+  o.connect(g); g.connect(c.destination);
+  o.start(t); o.stop(t + 0.07);
+}
+
 // kindを省略した場合は現在の設定（S.tapSound）を使う。「mute」は常に無音。
+const TAP_SOUND_PLAYERS = {
+  drop: playDrop,
+  click: playClick,
+  bell: playBell,
+  furin: playFurin,
+  sparkle: playSparkle,
+  retrogame: playRetroGame,
+  iphone: playIphone,
+};
+
 export function playTapSound(kind){
   const key = kind || S.tapSound || "wood";
   if(key === "mute") return;
   const c = ctx();
   if(!c) return;
   try{
-    if(key === "drop") playDrop(c);
-    else if(key === "click") playClick(c);
-    else playWood(c);
+    (TAP_SOUND_PLAYERS[key] || playWood)(c);
   }catch(e){}
 }
