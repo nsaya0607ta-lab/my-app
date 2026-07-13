@@ -178,11 +178,9 @@ function renderHintCard(){
   if(!el || !session) return;
   const s = session;
   const allDone = s.doneSteps.length === s.scenario.steps.length;
-  const unlocked = allDone || isScenarioCleared(s.scenarioId);
   const nextStep = firstUnmetStep(s);
   const hints = nextStep ? (Array.isArray(nextStep.hint) ? nextStep.hint : [nextStep.hint]) : [];
   const level = Math.min(s.hintLevel || 0, hints.length);
-  const answerShown = hints.length > 0 && level >= hints.length;
   let body;
   if(allDone){
     body = `<div class="pg-card-body">🎉 このシナリオはクリア済みです。お疲れさまでした。</div>`;
@@ -196,15 +194,13 @@ function renderHintCard(){
   }
   const hasMoreHints = nextStep && level < hints.length;
   const hintBtnLabel = level === 0 ? "ヒントを見る" : (hasMoreHints ? "次のヒントを見る" : "ヒントを隠す");
-  const answerBtnLabel = answerShown ? "答えを隠す" : "答えを見る";
   const hasNext = !!nextScenarioId(s.scenarioId);
   el.innerHTML = `
     <div class="pg-card-head"><span class="pg-card-ico">💡</span><span class="pg-card-title">ヒント</span></div>
     ${body}
     <div class="scn-action-row">
       ${!allDone ? `<button type="button" class="ghost pg-card-btn" id="scn-hint-btn">${hintBtnLabel}</button>` : ""}
-      ${!allDone ? `<button type="button" class="ghost pg-card-btn" id="scn-answer-btn">${answerBtnLabel}</button>` : ""}
-      <button type="button" class="ghost pg-card-btn" id="scn-explain-btn"${unlocked ? "" : " disabled"}>解説を見る</button>
+      <button type="button" class="ghost pg-card-btn" id="scn-explain-btn">解説を見る</button>
       <button type="button" class="cta pg-card-btn" id="scn-next-btn"${allDone ? "" : " disabled"}>${hasNext ? "次のシナリオ →" : "シナリオ一覧へ →"}</button>
       <button type="button" class="ghost pg-card-btn" id="scn-back-to-list-btn">← シナリオ選択に戻る</button>
     </div>`;
@@ -215,13 +211,8 @@ function renderHintCard(){
     else s.hintLevel = 0;
     renderHintCard();
   };
-  const answerBtn = el.querySelector("#scn-answer-btn");
-  if(answerBtn) answerBtn.onclick = () => {
-    s.hintLevel = answerShown ? 0 : hints.length;
-    renderHintCard();
-  };
   const explainBtn = el.querySelector("#scn-explain-btn");
-  if(unlocked) explainBtn.onclick = () => openExplanationModal(s.scenario);
+  explainBtn.onclick = () => openExplanationModal(s.scenario);
   const nextBtn = el.querySelector("#scn-next-btn");
   if(allDone) nextBtn.onclick = () => goToNextScenario(s.scenarioId);
   el.querySelector("#scn-back-to-list-btn").onclick = () => { S.scenarioId = null; renderScenarioScreen(); };
