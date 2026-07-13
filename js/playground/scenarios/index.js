@@ -56,6 +56,14 @@ import s049 from './data/s049-lsdir-final-check.js';
 import s050 from './data/s050-lsdir-newest-file.js';
 import s051 from './data/s051-lsdir-disk-usage.js';
 import s052 from './data/s052-lsdir-submission-check.js';
+import s053 from './data/s053-gpu-lspci.js';
+import s054 from './data/s054-usb-mouse-lsusb.js';
+import s055 from './data/s055-wifi-lsmod.js';
+import s056 from './data/s056-wifi-modprobe.js';
+import s057 from './data/s057-module-modinfo.js';
+import s058 from './data/s058-memory-free.js';
+import s059 from './data/s059-memory-free-h.js';
+import s060 from './data/s060-network-down-combo.js';
 
 export const SCENARIOS = [
   s001, s002, s003, s004, s005, s006, s007, s008, s009, s010, s011, s012, s013, s014, s015,
@@ -63,6 +71,7 @@ export const SCENARIOS = [
   s028, s029, s030, s031, s032, s033, s034, s035, s036, s037,
   s038, s039, s040, s041, s042, s043, s044, s045,
   s046, s047, s048, s049, s050, s051, s052,
+  s053, s054, s055, s056, s057, s058, s059, s060,
 ];
 
 // 「権限管理編」のように、番号どおりの物語（ストーリー）として通しで遊ぶ

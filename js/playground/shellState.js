@@ -4,6 +4,7 @@
    「リセット」のたびに reset() で初期状態に戻る。
    ========================================================================= */
 import { USER, HOSTNAME } from './constants.js';
+import { MODULE_CATALOG, DEFAULT_LOADED_MODULES } from './moduleCatalog.js';
 
 function defaultEnv(){
   return new Map([
@@ -27,6 +28,18 @@ function defaultAliases(){
   ]);
 }
 
+// lsmod / modprobe が参照する「現在読み込まれているカーネルモジュール」の
+// 初期状態。ハードウェア・カーネルモジュール管理編のシナリオでは、Wi-Fiや
+// 有線LANのドライバをあえて未読み込みにしておき、modprobeで読み込ませる。
+function defaultKernelModules(){
+  const map = new Map();
+  DEFAULT_LOADED_MODULES.forEach(name => {
+    const mod = MODULE_CATALOG[name];
+    map.set(name, { size: mod.size, usedBy: mod.usedBy });
+  });
+  return map;
+}
+
 function defaultProcesses(){
   return [
     { pid:1,   ppid:0,   user:"root",    cpu:0.0, mem:0.1, tty:"?",     stat:"Ss", cmd:"/sbin/init" },
@@ -47,6 +60,7 @@ export class ShellState {
     this.env = defaultEnv();
     this.aliases = defaultAliases();
     this.processes = defaultProcesses();
+    this.kernelModules = defaultKernelModules(); // 現在読み込まれているカーネルモジュール（Map: 名前 -> {size, usedBy}）
     this.cronJobs = []; // crontabコマンドで登録されたジョブ（{min,hour,dom,mon,dow,command,raw}）
     this.jobs = []; // シェルのジョブテーブル（&で背景実行 / Ctrl+Zで停止したジョブ）。{id,pid,cmd,status:"running"|"stopped"}
     this.nextJobId = 1;
@@ -74,6 +88,15 @@ export class ShellState {
     const idx = this.processes.findIndex(p => p.pid === pid);
     if(idx === -1) return false;
     this.processes.splice(idx, 1);
+    return true;
+  }
+
+  // modprobeでモジュールを読み込む。カタログにある{size,usedBy}をそのまま
+  // lsmodの表示用に保持する（既に読み込み済みなら何もしない＝実際のmodprobeと同様、
+  // 二重に読み込んでもエラーにはならない）。
+  loadModule(name, mod){
+    if(this.kernelModules.has(name)) return false;
+    this.kernelModules.set(name, { size: mod.size, usedBy: mod.usedBy });
     return true;
   }
 

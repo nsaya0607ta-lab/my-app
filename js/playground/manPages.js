@@ -94,4 +94,9 @@ export const MAN_PAGES = {
     ["FS / OFS","FSは入力の、OFSはprint出力時のフィールド区切り文字"],
     ["BEGIN / END","BEGINは入力処理前に、ENDは全入力処理後に一度だけ実行されるブロック"],
   ]},
+  lspci:  { synopsis:"lspci", desc:"PCI/PCIeバスに接続されているデバイス（グラフィックボード、ネットワークカード、USBコントローラなど）を一覧表示する。" },
+  lsusb:  { synopsis:"lsusb", desc:"USBバスに接続されているデバイスを一覧表示する。" },
+  lsmod:  { synopsis:"lsmod", desc:"現在カーネルに読み込まれているモジュール（ドライバ）の一覧を表示する。" },
+  modprobe:{ synopsis:"modprobe MODULE", desc:"指定したカーネルモジュールを（依存モジュールも含めて）読み込む。すでに読み込み済みの場合は何もしない。" },
+  modinfo:{ synopsis:"modinfo MODULE", desc:"指定したカーネルモジュールの詳細情報（説明・作者・ライセンス・依存モジュールなど）を表示する。読み込み済みかどうかに関わらず参照できる。" },
 };

@@ -149,6 +149,9 @@ export const GOAL_CHECKERS = {
     return vfs.du(n) < g.maxBytes;
   },
 
+  // 指定したカーネルモジュールが（modprobeで）読み込み済みになっているか
+  moduleLoaded: (vfs, shell, g) => shell.kernelModules.has(g.name),
+
   // これまでに実行したコマンド（履歴）の中に条件を満たすものがあるか。
   // ls -l で権限を確認する、のような「状態を変えない操作」を行ったかどうかは
   // VFS/ShellStateの現在の状態だけでは判定できないため、履歴を直接見る。
