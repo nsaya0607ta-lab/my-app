@@ -1304,51 +1304,68 @@ body[class*="sb-theme-"]::before{ content:""; position:fixed; inset:0; backgroun
 body[data-theme="dark"][class*="sb-theme-"]::before{ background:rgba(0,0,0,.55); }
 
 /* =========================================================================
-   ⚙️ 設定モーダル（スキン設定／タップ音設定）・UIテーマ
+   ⚙️ 設定モーダル（背景一覧／タップ音一覧）・UIテーマ
+   トップ画面はシンプルな2つの入口ボタンのみ（.settings-nav-btn）。
+   「背景一覧」「タップ音一覧」はどちらも同じ.settings-cardコンポーネントで
+   カード表示する（アイコン・名前・説明・選択中チェックマークの4点構成）。
    ========================================================================= */
 
 /* ---- 設定モーダル本体：既存の.modal-ov/.modalを土台に使う ---- */
 .settings-modal{max-width:400px;}
 .settings-modal-title{color:var(--accent);}
-.settings-section{margin-bottom:18px;}
-.settings-section:last-of-type{margin-bottom:14px;}
-.settings-section-title{font-size:12.5px;font-weight:800;color:var(--muted);letter-spacing:.03em;margin-bottom:10px;}
+.settings-section{margin-bottom:4px;display:flex;flex-direction:column;gap:12px;}
 
-.settings-skin-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;}
-.settings-skin-card{position:relative;display:flex;flex-direction:column;align-items:flex-start;gap:6px;
-  padding:11px;border-radius:14px;border:1.5px solid var(--line);background:var(--surface);cursor:pointer;
-  text-align:left;font-family:inherit;transition:border-color .12s,transform .12s;}
-.settings-skin-card:active{transform:scale(.97);}
-.settings-skin-card.applied{border-color:var(--accent);box-shadow:0 0 0 2px rgba(2,132,199,.18);}
-.settings-skin-swatch{display:block;width:100%;height:34px;border-radius:9px;border:1px solid rgba(0,0,0,.06);}
-.settings-skin-name{display:block;font-size:12.5px;font-weight:800;color:var(--text);}
-.settings-skin-sub{display:block;font-size:10.5px;color:var(--muted);}
-.settings-check{position:absolute;top:8px;right:8px;width:18px;height:18px;border-radius:6px;
-  background:var(--accent);color:#fff;font-size:11px;font-weight:800;
-  display:flex;align-items:center;justify-content:center;}
+/* ---- トップ画面：背景一覧／タップ音一覧への入口ボタン ---- */
+.settings-nav-btn{position:relative;display:flex;align-items:center;gap:13px;width:100%;
+  padding:15px 14px;border-radius:16px;border:1.5px solid var(--line);background:var(--surface);
+  cursor:pointer;text-align:left;font-family:inherit;transition:border-color .12s,transform .1s,box-shadow .12s;
+  box-shadow:0 4px 10px rgba(15,23,42,.03);}
+.settings-nav-btn:active{transform:scale(.97);}
+.settings-nav-icon{flex:none;width:40px;height:40px;border-radius:12px;background:var(--bg2);
+  display:flex;align-items:center;justify-content:center;font-size:19px;}
+.settings-nav-info{flex:1;min-width:0;}
+.settings-nav-title{display:block;font-size:14.5px;font-weight:800;color:var(--text);}
+.settings-nav-sub{display:block;font-size:11px;color:var(--muted);margin-top:2px;}
+.settings-nav-arrow{flex:none;font-size:20px;font-weight:700;color:var(--muted);}
 
-/* 各UIテーマのプレビュー用スウォッチ（実際のbody背景と同系色のミニグラデーション） */
-.settings-theme-default{background:linear-gradient(135deg,#e0f2fe,#f8fafc 70%);}
-.settings-theme-dark{background:linear-gradient(135deg,#22314f,#05070f 70%);}
-.settings-theme-sakura{background:linear-gradient(135deg,#f8c7da,#fdf1f4 70%);}
-.settings-theme-forest{background:linear-gradient(135deg,#bfe3c4,#f5f2e6 70%);}
+/* ---- 一覧画面（背景一覧／タップ音一覧）共通の戻るヘッダー ---- */
+.settings-subhead{display:flex;align-items:center;gap:10px;margin-bottom:14px;}
+.settings-back-btn{flex:none;padding:7px 12px;border:none;border-radius:10px;cursor:pointer;
+  font-size:13px;font-weight:700;color:var(--accent);background:var(--bg2);transition:transform .1s;}
+.settings-back-btn:active{transform:scale(.94);}
+.settings-subhead-title{font-size:14.5px;font-weight:800;color:var(--text);}
 
-.settings-sound-list{display:flex;flex-direction:column;gap:8px;}
-.settings-sound-row{position:relative;display:flex;align-items:center;gap:10px;width:100%;
-  padding:10px 12px;border-radius:13px;border:1.5px solid var(--line);background:var(--surface);
-  cursor:pointer;text-align:left;font-family:inherit;transition:border-color .12s,transform .12s;}
-.settings-sound-row:active{transform:scale(.98);}
-.settings-sound-row.applied{border-color:var(--accent);box-shadow:0 0 0 2px rgba(2,132,199,.18);}
-.settings-sound-icon{flex:none;width:32px;height:32px;border-radius:10px;background:var(--bg2);
-  display:flex;align-items:center;justify-content:center;font-size:15px;}
-.settings-sound-info{flex:1;min-width:0;}
-.settings-sound-name{display:block;font-size:13px;font-weight:800;color:var(--text);}
-.settings-sound-sub{display:block;font-size:10.5px;color:var(--muted);margin-top:1px;}
-.settings-sound-row .settings-check{position:static;flex:none;}
+/* ---- カード一覧本体：背景一覧は2列グリッド、タップ音一覧は縦一列 ---- */
+.settings-card-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;max-height:56vh;overflow-y:auto;padding:2px;}
+.settings-card-list{display:flex;flex-direction:column;gap:8px;max-height:56vh;overflow-y:auto;padding:2px;}
 
-.settings-modal-close{width:100%;margin-top:4px;padding:13px;border:none;border-radius:13px;cursor:pointer;
+.settings-card{position:relative;display:flex;align-items:center;gap:10px;width:100%;
+  padding:12px;border-radius:15px;border:1.5px solid var(--line);background:var(--surface);cursor:pointer;
+  text-align:left;font-family:inherit;transition:border-color .12s,box-shadow .12s,transform .1s;}
+.settings-card-grid .settings-card{flex-direction:column;align-items:flex-start;gap:8px;}
+.settings-card:active{transform:scale(.96);}
+.settings-card.applied{border-color:#2563eb;box-shadow:0 0 0 2.5px rgba(37,99,235,.22);animation:settingsCardPop .2s ease;}
+@keyframes settingsCardPop{0%{transform:scale(1);}45%{transform:scale(1.055);}100%{transform:scale(1);}}
+
+.settings-card-icon{flex:none;width:38px;height:38px;border-radius:11px;background:var(--bg2);
+  display:flex;align-items:center;justify-content:center;font-size:18px;}
+.settings-card-grid .settings-card-icon{width:100%;height:40px;font-size:21px;}
+.settings-card-info{flex:1;min-width:0;}
+.settings-card-name{display:block;font-size:13px;font-weight:800;color:var(--text);}
+.settings-card-sub{display:block;font-size:10.5px;color:var(--muted);margin-top:2px;line-height:1.35;}
+.settings-check{position:absolute;top:9px;right:9px;width:19px;height:19px;border-radius:7px;
+  background:#2563eb;color:#fff;font-size:11px;font-weight:800;
+  display:flex;align-items:center;justify-content:center;box-shadow:0 2px 5px rgba(37,99,235,.35);}
+
+.settings-modal-close{width:100%;margin-top:14px;padding:13px;border:none;border-radius:13px;cursor:pointer;
   font-size:14px;font-weight:700;color:var(--text);background:var(--bg2);transition:transform .1s;}
 .settings-modal-close:active{transform:scale(.98);}
+
+/* ---- 背景（UIテーマ）変更時のふんわりフェード演出 ----
+   カードで新しいテーマを選ぶと一瞬だけbodyを薄くし、テーマ切替後にすぐ
+   フェードインさせることで「背景がふわっと切り替わる」演出にする */
+body{transition:opacity .22s ease;}
+body.theme-fading{opacity:.35;}
 
 /* ---- ルールモーダル本体：既存の.modal-ov/.modalを土台に使う ---- */
 .rules-modal{max-width:420px;}
@@ -1382,17 +1399,75 @@ body[data-theme="forest"]{
   --good:#3f9d5d; --gold:#a9822f; --bad:#c1443b;
   background:radial-gradient(120% 90% at 50% -10%, #dcefe0 0%, #f5f2e6 65%) fixed;
 }
+/* ①🐶わんこカフェ：肉球モチーフ・ベージュ×ブラウンのやさしい配色 */
+body[data-theme="dogcafe"]{
+  --bg:#f7ede0; --bg2:#efe0c9; --surface:#fffaf2; --surface2:#e9d9bd;
+  --line:#ddc7a1; --accent:#a9702f; --text:#4a3423; --muted:#a08662;
+  --good:#5b8c5a; --gold:#c98a2c; --bad:#c15a3f;
+  background:radial-gradient(120% 90% at 50% -10%, #f2e2c8 0%, #f7ede0 65%) fixed;
+}
+/* ②🐱ねこ日和：猫シルエット・クリームカラーの落ち着いた配色 */
+body[data-theme="catday"]{
+  --bg:#faf6ec; --bg2:#f2ead4; --surface:#fffdf7; --surface2:#ece0c2;
+  --line:#ddcfa8; --accent:#8a6d5c; --text:#4a3f38; --muted:#93877a;
+  --good:#5b9d6c; --gold:#c79a45; --bad:#c1665a;
+}
+/* ③☁️ゆめかわスカイ：雲と虹のふんわりパステルブルー */
+body[data-theme="dreamsky"]{
+  --bg:#eaf4ff; --bg2:#dcefff; --surface:#ffffff; --surface2:#cfe8ff;
+  --line:#bfe0fb; --accent:#5fa8dd; --text:#2c3e52; --muted:#7c93ab;
+  --good:#3fa17e; --gold:#d9a44d; --bad:#e0748f;
+  background:radial-gradient(120% 90% at 50% -10%, #eadcff 0%, #eaf4ff 55%, #dff7ec 100%) fixed;
+}
+/* ④🌸和風さくら：桜と和柄の上品な淡いピンク */
+body[data-theme="wasakura"]{
+  --bg:#fdf2f0; --bg2:#fbe6e6; --surface:#fffbfa; --surface2:#f5dbdd;
+  --line:#eccdd0; --accent:#b8536b; --text:#4a2b30; --muted:#a1818a;
+  --good:#4f8f5e; --gold:#b98a3e; --bad:#b85454;
+  background:
+    repeating-linear-gradient(135deg, rgba(184,83,107,.05) 0 2px, transparent 2px 26px),
+    radial-gradient(120% 90% at 50% -10%, #fbe3e6 0%, #fdf2f0 65%) fixed;
+}
+/* ⑤🌌ギャラクシー：星空・宇宙を思わせる幻想的なネイビー */
+body[data-theme="galaxy"]{
+  --bg:#0d1030; --bg2:#161a44; --surface:#1b1f52; --surface2:#242a63;
+  --line:#343a7c; --accent:#9d84ff; --text:#e8e6ff; --muted:#8f89bd;
+  --good:#4fd1a5; --gold:#f0c766; --bad:#ff6b8a;
+  background:
+    radial-gradient(1.6px 1.6px at 15% 20%,#fff,transparent),
+    radial-gradient(1.2px 1.2px at 35% 65%,#fff,transparent),
+    radial-gradient(1.8px 1.8px at 60% 30%,#fff,transparent),
+    radial-gradient(1.2px 1.2px at 80% 75%,#fff,transparent),
+    radial-gradient(1.4px 1.4px at 90% 15%,#fff,transparent),
+    radial-gradient(1.2px 1.2px at 25% 85%,#fff,transparent),
+    radial-gradient(120% 90% at 50% -10%, #262c66 0%, #0d1030 65%) fixed;
+}
+/* 各UIテーマの入口カード用スウォッチ（設定＞背景一覧のミニプレビュー） */
+.settings-theme-default{background:linear-gradient(135deg,#e0f2fe,#f8fafc 70%);}
+.settings-theme-dark{background:linear-gradient(135deg,#22314f,#05070f 70%);}
+.settings-theme-sakura{background:linear-gradient(135deg,#f8c7da,#fdf1f4 70%);}
+.settings-theme-forest{background:linear-gradient(135deg,#bfe3c4,#f5f2e6 70%);}
+.settings-theme-dogcafe{background:linear-gradient(135deg,#e9d9bd,#fffaf2 70%);}
+.settings-theme-catday{background:linear-gradient(135deg,#ece0c2,#fffdf7 70%);}
+.settings-theme-dreamsky{background:linear-gradient(135deg,#dcefff,#eadcff 70%);}
+.settings-theme-wasakura{background:linear-gradient(135deg,#f5dbdd,#fdf2f0 70%);}
+.settings-theme-galaxy{background:linear-gradient(135deg,#242a63,#0d1030 70%);}
+
 /* ダークテーマは半透明の白ガラス面がそのままだと浮いてしまうため、
-   主要な大面積コンポーネントのみ暗色ガラスに調整する */
-body[data-theme="dark"] .statusbar{background:rgba(20,29,51,.75);}
-body[data-theme="dark"] .an-card{background:rgba(20,29,51,.7);}
-body[data-theme="dark"] .sb-skin-card{background:rgba(20,29,51,.6);}
-body[data-theme="dark"] .news-arrow{background:rgba(20,29,51,.7);}
+   主要な大面積コンポーネントのみ暗色ガラスに調整する（ギャラクシーも同様） */
+body[data-theme="dark"] .statusbar, body[data-theme="galaxy"] .statusbar{background:rgba(20,29,51,.75);}
+body[data-theme="dark"] .an-card, body[data-theme="galaxy"] .an-card{background:rgba(20,29,51,.7);}
+body[data-theme="dark"] .sb-skin-card, body[data-theme="galaxy"] .sb-skin-card{background:rgba(20,29,51,.6);}
+body[data-theme="dark"] .news-arrow, body[data-theme="galaxy"] .news-arrow{background:rgba(20,29,51,.7);}
 body[data-theme="dark"] .pcount-btn{background:linear-gradient(180deg,#182642,#141d33);}
+body[data-theme="galaxy"] .pcount-btn{background:linear-gradient(180deg,#242a63,#1b1f52);}
 body[data-theme="dark"] .menu-btn{border-color:rgba(255,255,255,.12);
   background:linear-gradient(155deg,rgba(255,255,255,.07),rgba(255,255,255,.02));
   box-shadow:0 10px 22px rgba(0,0,0,.35), inset 0 1px 0 rgba(255,255,255,.08);}
-body[data-theme="dark"] .menu-btn:active{box-shadow:0 4px 10px rgba(0,0,0,.3), inset 0 1px 0 rgba(255,255,255,.06);}
+body[data-theme="galaxy"] .menu-btn{border-color:rgba(255,255,255,.12);
+  background:linear-gradient(155deg,rgba(255,255,255,.07),rgba(255,255,255,.02));
+  box-shadow:0 10px 22px rgba(0,0,0,.35), inset 0 1px 0 rgba(255,255,255,.08);}
+body[data-theme="dark"] .menu-btn:active, body[data-theme="galaxy"] .menu-btn:active{box-shadow:0 4px 10px rgba(0,0,0,.3), inset 0 1px 0 rgba(255,255,255,.06);}
 
 /* ============ 追加：資格カードの出題プール数 ============ */
 .cert-pool{ margin-top:8px; font-family:ui-monospace,Menlo,Consolas,monospace; font-size:11px; letter-spacing:.04em; color:var(--muted); }
