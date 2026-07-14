@@ -72,7 +72,7 @@ import s065 from './data/s065-fhs-root-files.js';
 import s066 from './data/s066-fhs-var-disk-pressure.js';
 import s067 from './data/s067-fhs-tmp-cleanup.js';
 import s068 from './data/s068-fhs-boot-trouble.js';
-import s069 from './data/s069-fhs-devices.js';
+import s069 from './data/s069-fhs-dev-devices.js';
 import s070 from './data/s070-fhs-proc-system-info.js';
 import s071 from './data/s071-fhs-sys-device-info.js';
 import s072 from './data/s072-pkg-redhat-httpd-install.js';
