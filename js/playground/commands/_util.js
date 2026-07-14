@@ -90,6 +90,7 @@ export const PATH_COMMANDS = [
   "crontab","tee","awk","su","exit","sleep","jobs","fg","bg",
   "lspci","lsusb","lsmod","modprobe","modinfo",
   "lsblk","fdisk","mkfs.ext4","mount",
+  "rpm","yum","dnf","dpkg","apt",
 ];
 
 export const BIN_DIR = {
