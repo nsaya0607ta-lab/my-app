@@ -65,6 +65,16 @@ import s058 from './data/s058-memory-free.js';
 import s059 from './data/s059-memory-free-h.js';
 import s060 from './data/s060-network-down-combo.js';
 import s061 from './data/s061-new-disk-fdisk.js';
+import s062 from './data/s062-fhs-web-log.js';
+import s063 from './data/s063-fhs-etc-config.js';
+import s064 from './data/s064-fhs-home-user-files.js';
+import s065 from './data/s065-fhs-root-files.js';
+import s066 from './data/s066-fhs-var-disk-pressure.js';
+import s067 from './data/s067-fhs-tmp-cleanup.js';
+import s068 from './data/s068-fhs-boot-trouble.js';
+import s069 from './data/s069-fhs-dev-devices.js';
+import s070 from './data/s070-fhs-proc-system-info.js';
+import s071 from './data/s071-fhs-sys-device-info.js';
 
 export const SCENARIOS = [
   s001, s002, s003, s004, s005, s006, s007, s008, s009, s010, s011, s012, s013, s014, s015,
@@ -74,6 +84,7 @@ export const SCENARIOS = [
   s046, s047, s048, s049, s050, s051, s052,
   s053, s054, s055, s056, s057, s058, s059, s060,
   s061,
+  s062, s063, s064, s065, s066, s067, s068, s069, s070, s071,
 ];
 
 // 「権限管理編」のように、番号どおりの物語（ストーリー）として通しで遊ぶ
@@ -89,6 +100,11 @@ export const PACKS = [
     id: "file-dir-newbie",
     title: "ファイル・ディレクトリ操作編",
     subtitle: "新人エンジニアのあなたに、先輩や上司からファイル探しや整理整頓の依頼が舞い込みます。ls コマンドを使いこなして、日々のちょっとした「困った」を解決していきましょう。",
+  },
+  {
+    id: "fhs-operations",
+    title: "FHS・ディレクトリ構成編",
+    subtitle: "FHSはLinuxのディレクトリ構成を統一する標準規格です。障害対応や保守作業の依頼を読み、/etc・/home・/root・/var・/tmp・/boot・/dev・/proc・/sysのどこを確認するべきか判断しましょう。",
   },
 ];
 
