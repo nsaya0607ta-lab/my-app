@@ -71,6 +71,11 @@ import lsblk from './lsblk.js';
 import fdisk from './fdisk.js';
 import mkfsExt4 from './mkfs.ext4.js';
 import mount from './mount.js';
+import rpm from './rpm.js';
+import yum from './yum.js';
+import dnf from './dnf.js';
+import dpkg from './dpkg.js';
+import apt from './apt.js';
 
 export const COMMAND_REGISTRY = {
   pwd, ls, cd, mkdir, rmdir, touch, cp, mv, rm, cat, less, head, tail, echo, nano,
@@ -80,6 +85,7 @@ export const COMMAND_REGISTRY = {
   su, exit: exitCmd, sleep, jobs, fg, bg,
   lspci, lsusb, lsmod, modprobe, modinfo,
   lsblk, fdisk, "mkfs.ext4": mkfsExt4, mount,
+  rpm, yum, dnf, dpkg, apt,
 };
 
 export const COMMAND_NAMES = Object.keys(COMMAND_REGISTRY);
