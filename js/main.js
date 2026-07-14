@@ -2,6 +2,7 @@ import './db.js';
 import { loadCoins, loadTapSound, loadUiTheme, migrateOldData } from './core.js';
 import { go, openQuickMenuSheet, openStudyMenuSheet, render, renderSettings } from './render.js';
 import './home-news-date-sync.js';
+import { initStockDetailUI } from './stock-detail.js';
 import { playTapSound } from './audio.js';
 import { S, state } from './state.js';
 import { checkNewsQuizPopup } from './newsQuiz.js';
@@ -28,6 +29,10 @@ document.querySelectorAll(".bnav-btn").forEach(b => b.addEventListener("click", 
   if(nav === "study-menu") return openStudyMenuSheet();
   go(nav);
 }));
+
+// 株価／保有株画面の銘柄行をタップしたときだけ、詳細オーバーレイを開く。
+// イベント委譲のため、バックグラウンド更新で行が再生成されても再登録は不要。
+initStockDetailUI();
 
 migrateOldData();
 S.coins = loadCoins();
