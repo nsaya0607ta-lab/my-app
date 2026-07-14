@@ -72,9 +72,21 @@ import s065 from './data/s065-fhs-root-files.js';
 import s066 from './data/s066-fhs-var-disk-pressure.js';
 import s067 from './data/s067-fhs-tmp-cleanup.js';
 import s068 from './data/s068-fhs-boot-trouble.js';
-import s069 from './data/s069-fhs-dev-devices.js';
+import s069 from './data/s069-fhs-devices.js';
 import s070 from './data/s070-fhs-proc-system-info.js';
 import s071 from './data/s071-fhs-sys-device-info.js';
+import s072 from './data/s072-pkg-redhat-httpd-install.js';
+import s073 from './data/s073-pkg-redhat-rpm-query.js';
+import s074 from './data/s074-pkg-redhat-remove.js';
+import s075 from './data/s075-pkg-redhat-yum-update.js';
+import s076 from './data/s076-pkg-redhat-search.js';
+import s077 from './data/s077-pkg-redhat-local-rpm.js';
+import s078 from './data/s078-pkg-debian-apache-install.js';
+import s079 from './data/s079-pkg-debian-query.js';
+import s080 from './data/s080-pkg-debian-remove.js';
+import s081 from './data/s081-pkg-debian-update-upgrade.js';
+import s082 from './data/s082-pkg-debian-local-deb-fix.js';
+import s083 from './data/s083-pkg-debian-search-install.js';
 
 export const SCENARIOS = [
   s001, s002, s003, s004, s005, s006, s007, s008, s009, s010, s011, s012, s013, s014, s015,
@@ -85,6 +97,7 @@ export const SCENARIOS = [
   s053, s054, s055, s056, s057, s058, s059, s060,
   s061,
   s062, s063, s064, s065, s066, s067, s068, s069, s070, s071,
+  s072, s073, s074, s075, s076, s077, s078, s079, s080, s081, s082, s083,
 ];
 
 // 「権限管理編」のように、番号どおりの物語（ストーリー）として通しで遊ぶ
@@ -105,6 +118,11 @@ export const PACKS = [
     id: "fhs-operations",
     title: "FHS・ディレクトリ構成編",
     subtitle: "FHSはLinuxのディレクトリ構成を統一する標準規格です。障害対応や保守作業の依頼を読み、/etc・/home・/root・/var・/tmp・/boot・/dev・/proc・/sysのどこを確認するべきか判断しましょう。",
+  },
+  {
+    id: "software-management",
+    title: "ソフトウェア管理編",
+    subtitle: "Red Hat系とDebian系の違いを見極め、rpm・yum・dnf・dpkg・aptを使い分けます。インストール、削除、更新、検索、確認、ローカルパッケージ、依存関係修復を実務形式で練習しましょう。",
   },
 ];
 
