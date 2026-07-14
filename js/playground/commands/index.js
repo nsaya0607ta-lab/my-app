@@ -35,6 +35,7 @@ import ln from './ln.js';
 import df from './df.js';
 import du from './du.js';
 import free from './free.js';
+import { fallocate, mkswap, swapon, sudo } from './swap.js';
 import ps from './ps.js';
 import top from './top.js';
 import kill from './kill.js';
@@ -80,11 +81,12 @@ import apt from './apt.js';
 export const COMMAND_REGISTRY = {
   pwd, ls, cd, mkdir, rmdir, touch, cp, mv, rm, cat, less, head, tail, echo, nano,
   find, locate, which, whereis, grep, sort, uniq, wc, cut, tr, chmod, chown, chgrp, ln,
-  df, du, free, ps, top, kill, killall, hostname, whoami, id, uname, date, cal,
+  df, du, free, fallocate, mkswap, swapon, sudo,
+  ps, top, kill, killall, hostname, whoami, id, uname, date, cal,
   history, clear, man, help, env, export: exportCmd, alias, unalias, crontab, tee, awk,
   su, exit: exitCmd, sleep, jobs, fg, bg,
   lspci, lsusb, lsmod, modprobe, modinfo,
-  lsblk, fdisk, "mkfs.ext4": mkfsExt4, mount,
+  lsblk, fdisk, 'mkfs.ext4': mkfsExt4, mount,
   rpm, yum, dnf, dpkg, apt,
 };
 

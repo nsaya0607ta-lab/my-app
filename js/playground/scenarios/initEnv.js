@@ -13,9 +13,9 @@ export function applyInitialEnv(vfs, shellState, spec){
   vfs.isRootUser = true;
   (spec.dirs || []).forEach(path => { vfs.makeDir(path, { parents: true }); });
   (spec.files || []).forEach(f => {
-    vfs.writeFile(f.path, f.content || "");
+    vfs.writeFile(f.path, f.content || '');
     if(f.mode) vfs.chmod(f.path, f.mode);
-    if(f.owner || f.group) vfs.chown(f.path, `${f.owner || ""}:${f.group || ""}`);
+    if(f.owner || f.group) vfs.chown(f.path, `${f.owner || ''}:${f.group || ''}`);
   });
   (spec.symlinks || []).forEach(s => { vfs.link(s.target, s.path, { symbolic: true }); });
   (spec.chmod || []).forEach(c => { vfs.chmod(c.path, c.mode, { recursive: !!c.recursive }); });
@@ -23,7 +23,22 @@ export function applyInitialEnv(vfs, shellState, spec){
   (spec.processes || []).forEach(p => { shellState.processes.push(p); });
   // 「昨夜のバッチが止まったまま」のように、シナリオ開始時点ですでに
   // 停止中／実行中のジョブがある状態を再現する（jobs/fg/bgシナリオ用）
-  (spec.jobs || []).forEach(j => { shellState.addJob(j.cmd, j.status || "stopped"); });
+  (spec.jobs || []).forEach(j => { shellState.addJob(j.cmd, j.status || 'stopped'); });
+  // Swap領域作成編の舞台設定。実ファイルは上のfilesで作り、ここでは
+  // fallocate/mkswap/swaponが参照する容量・初期化・有効化状態だけを保持する。
+  if(Array.isArray(spec.swapFiles)){
+    shellState.swapFiles = new Map();
+    spec.swapFiles.forEach(s => {
+      const path = vfs.absPath(vfs.resolvePath(s.path));
+      shellState.swapFiles.set(path, {
+        path,
+        sizeBytes: s.sizeBytes || 0,
+        usedBytes: s.usedBytes || 0,
+        initialized: !!s.initialized,
+        active: !!s.active,
+      });
+    });
+  }
   if(spec.cwd) vfs.changeDir(spec.cwd);
   vfs.isRootUser = wasRootUser;
   // strictChownは「所有者の変更にroot権限が必要」という実際のLinuxの挙動を

@@ -95,6 +95,7 @@ import s088 from './data/s088-disk-du-log-summary.js';
 import s089 from './data/s089-disk-du-largest-entry.js';
 import s090 from './data/s090-disk-df-du-investigation.js';
 import s091 from './data/s091-disk-du-directory-details.js';
+import { s092, s093, s094, s095, s096, s097, s098, s099, s100 } from './data/swap-file-basics.js';
 
 export const SCENARIOS = [
   s001, s002, s003, s004, s005, s006, s007, s008, s009, s010, s011, s012, s013, s014, s015,
@@ -107,6 +108,7 @@ export const SCENARIOS = [
   s062, s063, s064, s065, s066, s067, s068, s069, s070, s071,
   s072, s073, s074, s075, s076, s077, s078, s079, s080, s081, s082, s083,
   s084, s085, s086, s087, s088, s089, s090, s091,
+  s092, s093, s094, s095, s096, s097, s098, s099, s100,
 ];
 
 // 「権限管理編」のように、番号どおりの物語（ストーリー）として通しで遊ぶ
@@ -114,29 +116,34 @@ export const SCENARIOS = [
 // 除外され、代わりにこの並び順（＝物語の進行順）で1つの章として表示される。
 export const PACKS = [
   {
-    id: "permissions-newbie",
-    title: "権限管理編",
-    subtitle: "新人インフラエンジニアとして入社したあなたへ、社内のあちこちから「困った」が届きます。依頼内容を読み、Linuxコマンドで一つずつ解決していきましょう。",
+    id: 'permissions-newbie',
+    title: '権限管理編',
+    subtitle: '新人インフラエンジニアとして入社したあなたへ、社内のあちこちから「困った」が届きます。依頼内容を読み、Linuxコマンドで一つずつ解決していきましょう。',
   },
   {
-    id: "file-dir-newbie",
-    title: "ファイル・ディレクトリ操作編",
-    subtitle: "新人エンジニアのあなたに、先輩や上司からファイル探しや整理整頓の依頼が舞い込みます。ls コマンドを使いこなして、日々のちょっとした「困った」を解決していきましょう。",
+    id: 'file-dir-newbie',
+    title: 'ファイル・ディレクトリ操作編',
+    subtitle: '新人エンジニアのあなたに、先輩や上司からファイル探しや整理整頓の依頼が舞い込みます。ls コマンドを使いこなして、日々のちょっとした「困った」を解決していきましょう。',
   },
   {
-    id: "fhs-operations",
-    title: "FHS・ディレクトリ構成編",
-    subtitle: "FHSはLinuxのディレクトリ構成を統一する標準規格です。障害対応や保守作業の依頼を読み、/etc・/home・/root・/var・/tmp・/boot・/dev・/proc・/sysのどこを確認するべきか判断しましょう。",
+    id: 'fhs-operations',
+    title: 'FHS・ディレクトリ構成編',
+    subtitle: 'FHSはLinuxのディレクトリ構成を統一する標準規格です。障害対応や保守作業の依頼を読み、/etc・/home・/root・/var・/tmp・/boot・/dev・/proc・/sysのどこを確認するべきか判断しましょう。',
   },
   {
-    id: "software-management",
-    title: "ソフトウェア管理編",
-    subtitle: "Red Hat系とDebian系の違いを見極め、rpm・yum・dnf・dpkg・aptを使い分けます。インストール、削除、更新、検索、確認、ローカルパッケージ、依存関係修復を実務形式で練習しましょう。",
+    id: 'software-management',
+    title: 'ソフトウェア管理編',
+    subtitle: 'Red Hat系とDebian系の違いを見極め、rpm・yum・dnf・dpkg・aptを使い分けます。インストール、削除、更新、検索、確認、ローカルパッケージ、依存関係修復を実務形式で練習しましょう。',
   },
   {
-    id: "disk-usage-basics",
-    title: "ディスク容量確認編",
-    subtitle: "dfでファイルシステム全体の空き容量を確認し、duでファイルやディレクトリごとの使用容量を調べます。全体を見るべきか、特定の場所へ絞るべきかを実務シナリオで判断しましょう。",
+    id: 'disk-usage-basics',
+    title: 'ディスク容量確認編',
+    subtitle: 'dfでファイルシステム全体の空き容量を確認し、duでファイルやディレクトリごとの使用容量を調べます。全体を見るべきか、特定の場所へ絞るべきかを実務シナリオで判断しましょう。',
+  },
+  {
+    id: 'swap-file-basics',
+    title: 'Swap領域作成編',
+    subtitle: 'メモリ不足に備えて2GBのSwapファイルを追加します。作成、権限設定、初期化、有効化、確認、/etc/fstabによる自動有効化までを、現場の依頼形式で順番に練習しましょう。',
   },
 ];
 
@@ -154,9 +161,9 @@ export function nextScenarioId(id){
 // 1つのカードにまとめるための正規化。data/*.js側のcategory文字列自体は
 // 変えず、一覧表示だけをまとめる。
 const CATEGORY_ALIAS = {
-  "ファイル管理": "ファイル操作",
-  "権限・cron": "権限",
-  "プロセス管理": "ジョブ管理・プロセス管理",
+  'ファイル管理': 'ファイル操作',
+  '権限・cron': '権限',
+  'プロセス管理': 'ジョブ管理・プロセス管理',
 };
 
 // カテゴリごとにグルーピングした一覧（シナリオ選択画面用。パックに属する
