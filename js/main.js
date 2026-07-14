@@ -1,6 +1,7 @@
 import './db.js';
 import { loadCoins, loadTapSound, loadUiTheme, migrateOldData } from './core.js';
 import { go, openQuickMenuSheet, openStudyMenuSheet, render, renderSettings } from './render.js';
+import './home-news-date-sync.js';
 import { playTapSound } from './audio.js';
 import { S, state } from './state.js';
 import { checkNewsQuizPopup } from './newsQuiz.js';
