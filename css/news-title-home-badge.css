@@ -1,0 +1,19 @@
+/* ホーム画面の「今日のニュース」を、天気カードの「ホーム」と同じバッジ表示にする。 */
+.news-today-card .news-today-head-title{
+  display:inline-block;
+  padding:3px 12px;
+  border:1px solid var(--home-badge-border);
+  border-radius:10px;
+  background:var(--home-badge-bg);
+  color:var(--home-text);
+  font-size:0;
+  font-weight:800;
+  line-height:1.4;
+  white-space:nowrap;
+}
+
+/* 元の「📰 今日のニュース」は残したまま、見た目上は文字だけに置き換える。 */
+.news-today-card .news-today-head-title::before{
+  content:"今日のニュース";
+  font-size:12px;
+}
