@@ -1,12 +1,44 @@
 import { parseFlags, humanSize, outLine, errLine } from './_util.js';
 
+// シェルが通常行う * の展開を、学習用ターミナルではdu側で最小限再現する。
+// 対象は「*」と「ディレクトリ/*」のみ。隠しファイルは通常のシェルと同様に除外する。
+function expandTargets(vfs, rawTargets){
+  const expanded = [];
+  rawTargets.forEach(target => {
+    if(target !== "*" && !target.endsWith("/*")){
+      expanded.push(target);
+      return;
+    }
+
+    const base = target === "*" ? "." : (target.slice(0, -2) || "/");
+    const segs = vfs.resolvePath(base);
+    const node = vfs.getNode(segs);
+    if(!node || node.type !== "dir"){
+      expanded.push(target);
+      return;
+    }
+
+    const names = Object.keys(node.children).filter(name => !name.startsWith(".")).sort();
+    if(!names.length){
+      expanded.push(target);
+      return;
+    }
+
+    names.forEach(name => {
+      if(target === "*") expanded.push(name);
+      else expanded.push(`${base.replace(/\/$/, "")}/${name}`);
+    });
+  });
+  return expanded;
+}
+
 export default function du(ctx){
   const { flags, operands } = parseFlags(ctx.args);
   const human = flags.has("h");
   const all = flags.has("a");
   const summarize = flags.has("s");
   const showTotal = flags.has("c");
-  const targets = operands.length ? operands : ["."];
+  const targets = expandTargets(ctx.vfs, operands.length ? operands : ["."]);
   const fmt = (bytes) => human ? humanSize(bytes) : String(Math.max(1, Math.ceil(bytes / 1024)));
 
   const collect = (node, path, acc) => {

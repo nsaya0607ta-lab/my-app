@@ -87,6 +87,14 @@ import s080 from './data/s080-pkg-debian-remove.js';
 import s081 from './data/s081-pkg-debian-update-upgrade.js';
 import s082 from './data/s082-pkg-debian-local-deb-fix.js';
 import s083 from './data/s083-pkg-debian-search-install.js';
+import s084 from './data/s084-disk-df-free-space.js';
+import s085 from './data/s085-disk-df-high-usage.js';
+import s086 from './data/s086-disk-du-var-total.js';
+import s087 from './data/s087-disk-du-home-total.js';
+import s088 from './data/s088-disk-du-log-summary.js';
+import s089 from './data/s089-disk-du-largest-entry.js';
+import s090 from './data/s090-disk-df-du-investigation.js';
+import s091 from './data/s091-disk-du-directory-details.js';
 
 export const SCENARIOS = [
   s001, s002, s003, s004, s005, s006, s007, s008, s009, s010, s011, s012, s013, s014, s015,
@@ -98,6 +106,7 @@ export const SCENARIOS = [
   s061,
   s062, s063, s064, s065, s066, s067, s068, s069, s070, s071,
   s072, s073, s074, s075, s076, s077, s078, s079, s080, s081, s082, s083,
+  s084, s085, s086, s087, s088, s089, s090, s091,
 ];
 
 // 「権限管理編」のように、番号どおりの物語（ストーリー）として通しで遊ぶ
@@ -123,6 +132,11 @@ export const PACKS = [
     id: "software-management",
     title: "ソフトウェア管理編",
     subtitle: "Red Hat系とDebian系の違いを見極め、rpm・yum・dnf・dpkg・aptを使い分けます。インストール、削除、更新、検索、確認、ローカルパッケージ、依存関係修復を実務形式で練習しましょう。",
+  },
+  {
+    id: "disk-usage-basics",
+    title: "ディスク容量確認編",
+    subtitle: "dfでファイルシステム全体の空き容量を確認し、duでファイルやディレクトリごとの使用容量を調べます。全体を見るべきか、特定の場所へ絞るべきかを実務シナリオで判断しましょう。",
   },
 ];
 
