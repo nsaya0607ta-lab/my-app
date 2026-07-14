@@ -1,6 +1,6 @@
 /* =========================================================================
    ニュース取得の共通処理。
-   日本ニュース画面・海外ニュース画面・ホーム画面の「今日のニュース」カードは
+   日本ニュース画面・海外ニュース画面・ホーム画面のニュースカードは
    すべてこのモジュールを通してFirestore（window.News、db.js）へアクセスする。
    カテゴリごとにメモリ上へキャッシュし、CACHE_TTL_MS内の再訪問では
    Firestoreへ問い合わせない（画面を行き来しても不要なAPIアクセスを増やさない）。
@@ -56,12 +56,17 @@ export function invalidateNewsCategory(category){
   entry(category).fetchedAt = 0;
 }
 
-// 今日の日付のニュースだけを、登録の新しい順に返す（limit指定でその件数まで）
-export function todaysNewsForCategory(category, limit){
+// 指定した日付（YYYY-MM-DD）のニュースだけを、登録の新しい順に返す。
+// ホームの予定カードで日付を前後させた際も、同じ日付のニュースへ連動させるための共通処理。
+export function newsForCategoryOnDate(category, dateKey, limit){
   const items = entry(category).items || [];
-  const key = todayKey();
-  const todays = items
-    .filter(n => n.dateKey === key)
+  const selected = items
+    .filter(n => n.dateKey === dateKey)
     .sort((a, b) => (b.createdAt || "").localeCompare(a.createdAt || ""));
-  return typeof limit === "number" ? todays.slice(0, limit) : todays;
+  return typeof limit === "number" ? selected.slice(0, limit) : selected;
+}
+
+// 今日の日付のニュースだけを返す既存API。ニュース検定などの本日専用処理との互換性を保つ。
+export function todaysNewsForCategory(category, limit){
+  return newsForCategoryOnDate(category, todayKey(), limit);
 }
