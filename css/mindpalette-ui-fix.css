@@ -1,3 +1,5 @@
+:root{--panel:#fff}
+
 /* マインドパレット：タイトルを省いたコンパクトヘッダー */
 .mp-screen-clean-header .top{display:none!important}
 .mp-screen-clean-header .shell{padding-top:max(12px,env(safe-area-inset-top))}
@@ -18,8 +20,41 @@
 .mpx-action-sheet button.cancel{justify-content:center;min-height:52px;margin-top:10px!important;border:1px solid #cbd5e1!important;border-radius:13px!important;background:#f1f5f9!important;color:#334155!important;text-align:center!important}
 .mpx-action-sheet button.cancel:active{background:#e2e8f0!important}
 
+/* 移動・名前変更モーダル：未定義だった--panelを補完し、全レイヤーを完全不透明にする */
+.mpx-overlay:not(.mpx-action-overlay){z-index:2200!important;opacity:1!important;transition:none!important;background:rgba(15,23,42,.72)!important;-webkit-backdrop-filter:blur(3px);backdrop-filter:blur(3px)}
+.mpx-dialog,.mpx-move-dialog{position:relative;z-index:1;isolation:isolate;box-sizing:border-box;width:min(520px,calc(100vw - 28px))!important;max-height:calc(100dvh - max(32px,env(safe-area-inset-top)) - max(32px,env(safe-area-inset-bottom)))!important;overflow:auto;overscroll-behavior:contain;background:#fff!important;background-image:none!important;color:#0f172a!important;border:1px solid #cbd5e1!important;border-radius:20px!important;padding:18px!important;box-shadow:0 28px 90px rgba(2,6,23,.48),0 6px 22px rgba(2,6,23,.22)!important;opacity:1!important;filter:none!important;-webkit-backdrop-filter:none!important;backdrop-filter:none!important;transform:none!important}
+.mpx-overlay.show .mpx-dialog,.mpx-overlay.show .mpx-move-dialog{transform:none!important}
+.mpx-dialog-title{position:relative;z-index:2;margin:0 0 14px!important;padding:0;color:#0f172a!important;background:#fff!important;font-size:18px!important;line-height:1.45}
+.mpx-dialog-input{display:block;width:100%;background:#fff!important;background-image:none!important;color:#0f172a!important;border:1px solid #94a3b8!important;box-shadow:none!important;opacity:1!important;filter:none!important}
+.mpx-dialog-input::placeholder{color:#64748b!important;opacity:1}
+.mpx-dialog-input:focus{background:#fff!important;border-color:#0284c7!important;box-shadow:0 0 0 3px #bae6fd!important}
+.mpx-dialog-error{position:relative;z-index:2;background:#fff!important;color:#b42318!important;opacity:1!important}
+.mpx-move-body{position:relative;z-index:2;background:#fff!important;color:#0f172a!important;opacity:1!important}
+.mpx-move-dialog .mpx-breadcrumb{background:#f8fafc!important;background-image:none!important;border-color:#cbd5e1!important;opacity:1!important;filter:none!important}
+.mpx-move-dialog .mpx-crumb{color:#475569!important;opacity:1!important}
+.mpx-move-dialog .mpx-crumb.active{background:#e0f2fe!important;color:#075985!important}
+.mpx-move-current{padding:10px 12px;background:#f8fafc!important;color:#334155!important;border:1px solid #dbe3ec;border-radius:12px;opacity:1!important}
+.mpx-move-current b{color:#0f172a!important}
+.mpx-move-dialog .mpx-up-btn{background:#fff!important;color:#0f172a!important;border-color:#94a3b8!important;opacity:1!important}
+.mpx-move-dialog .mpx-up-btn:disabled{background:#f1f5f9!important;color:#94a3b8!important;opacity:1!important}
+.mpx-move-folder-list{background:#fff!important;border-color:#cbd5e1!important;opacity:1!important;filter:none!important}
+.mpx-move-folder{min-height:52px;background:#fff!important;background-image:none!important;color:#0f172a!important;border-bottom-color:#dbe3ec!important;opacity:1!important;filter:none!important}
+.mpx-move-folder:hover,.mpx-move-folder:active{background:#eef6ff!important}
+.mpx-move-folder.disabled{background:#f8fafc!important;color:#94a3b8!important;opacity:1!important;cursor:not-allowed}
+.mpx-move-empty{background:#fff!important;color:#64748b!important;opacity:1!important}
+.mpx-dialog-actions{position:sticky;z-index:4;bottom:-18px;display:flex;margin:12px -18px -18px!important;padding:12px 18px calc(12px + env(safe-area-inset-bottom));background:#fff!important;background-image:none!important;border-top:1px solid #e2e8f0;opacity:1!important;filter:none!important}
+.mpx-dialog-actions button{min-height:46px;opacity:1!important;filter:none!important}
+.mpx-dialog-actions .secondary{background:#f1f5f9!important;color:#334155!important;border-color:#cbd5e1!important}
+.mpx-dialog-actions .primary{background:#0284c7!important;color:#fff!important;border-color:#0284c7!important}
+.mpx-dialog-actions .secondary:active{background:#e2e8f0!important}
+.mpx-dialog-actions .primary:active{background:#0369a1!important}
+
 @media (max-width:640px){
   .mpx-action-sheet{border-radius:20px 20px 0 0!important;padding-left:10px!important;padding-right:10px!important}
   .mpx-action-sheet button{min-height:60px;padding-left:16px!important;padding-right:16px!important}
   .mp-screen-clean-header .shell{padding-top:max(10px,env(safe-area-inset-top))}
+  .mpx-overlay:not(.mpx-action-overlay){padding:max(12px,env(safe-area-inset-top)) 12px max(12px,env(safe-area-inset-bottom))!important}
+  .mpx-dialog,.mpx-move-dialog{width:100%!important;max-height:calc(100dvh - max(24px,env(safe-area-inset-top)) - max(24px,env(safe-area-inset-bottom)))!important;border-radius:18px!important;padding:16px!important}
+  .mpx-dialog-actions{bottom:-16px;margin:12px -16px -16px!important;padding:12px 16px calc(12px + env(safe-area-inset-bottom))}
+  .mpx-dialog-actions button{flex:1;padding:12px 10px!important}
 }
