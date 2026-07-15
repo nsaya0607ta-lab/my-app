@@ -24,6 +24,7 @@ const FALLBACK_WAIT_MS = 10000;
 let authReadyValue = !!state.authReady;
 let firebaseAuthResolved = !!state.authReady;
 let cloudDataValue = state.cloudData;
+let currentUserIdValue = state.currentUserId;
 let preparedUid = null;
 let readyUid = null;
 let syncingUid = null;
@@ -223,27 +224,35 @@ Object.defineProperty(state, "cloudData", {
   }
 });
 
-// currentUserId と db は db.js 内で設定されるため、初回だけ短い間隔で準備完了を
-// 監視する。同期開始後・同期完了後は軽量な比較だけで終了する。
-setInterval(() => {
-  const uid = state.currentUserId || null;
-  if(!uid){
-    if(preparedUid !== null){
-      preparedUid = null;
-      readyUid = null;
-      syncingUid = null;
-      cloudDataValue = null;
-      syncGeneration++;
-      clearTimeout(fallbackTimer);
-      fallbackTimer = null;
-    }
-    if(firebaseAuthResolved && !authReadyValue){
-      authReadyValue = true;
-      dispatchReady();
-    }
-    return;
-  }
+// db.js がログインユーザーIDを切り替えた瞬間に同期を開始する。
+// ポーリングを使わないため、待ち時間や常時実行の負荷を増やさない。
+Object.defineProperty(state, "currentUserId", {
+  configurable: true,
+  enumerable: true,
+  get(){ return currentUserIdValue; },
+  set(value){
+    const uid = value || null;
+    const changed = currentUserIdValue !== uid;
+    currentUserIdValue = uid;
 
-  prepareIdentity(uid);
-  if(state.db && readyUid !== uid) syncInitialLearningData(uid);
-}, 50);
+    if(!uid){
+      if(changed || preparedUid !== null){
+        preparedUid = null;
+        readyUid = null;
+        syncingUid = null;
+        cloudDataValue = null;
+        syncGeneration++;
+        clearTimeout(fallbackTimer);
+        fallbackTimer = null;
+      }
+      if(firebaseAuthResolved){
+        authReadyValue = true;
+        dispatchReady();
+      }
+      return;
+    }
+
+    prepareIdentity(uid);
+    if(state.db && readyUid !== uid) syncInitialLearningData(uid);
+  }
+});
