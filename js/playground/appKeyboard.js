@@ -172,6 +172,17 @@ function quickRowHTML(){
   return `<div class="pg-kb-quick-row">${chips}</div>`;
 }
 
+// 問題文で入力が求められる日本語の文章など、このキーボードのキーでは
+// 打てない文字列をワンタップでカーソル位置へ差し込むためのチップ行。
+// シナリオ定義（quickTexts）から渡された時だけ、コマンドチップ行の上に表示する
+function textRowHTML(quickTexts){
+  if(!quickTexts || !quickTexts.length) return "";
+  const chips = quickTexts.map(t =>
+    `<button type="button" class="pg-kb-chip pg-kb-chip--text" data-kb-text="${esc(t)}">${esc(t)}</button>`
+  ).join("");
+  return `<div class="pg-kb-quick-row pg-kb-text-row"><span class="pg-kb-text-label">あ</span>${chips}</div>`;
+}
+
 // idPrefix: "pg"（ミッションモード） / "scn"（シナリオモード）のように
 // 画面ごとに異なる接頭辞を渡し、DOM idの衝突を避ける
 export function createAppKeyboard({ idPrefix, getRoot, actions, withScrollPreserved }){
@@ -213,7 +224,9 @@ export function createAppKeyboard({ idPrefix, getRoot, actions, withScrollPreser
     if(actions.escKey) actions.escKey();
   }
 
-  function html(){
+  // quickTexts: 日本語の文章などキーでは打てない文字列を、ワンタップで
+  // カーソル位置へ差し込むためのチップ（シナリオごとに任意指定）
+  function html({ quickTexts } = {}){
     const bodyRows = [
       `<div class="pg-kb-row pg-kb-row--fn">
         <button type="button" class="pg-kb-key pg-kb-key--fn" id="${idPrefix}-kb-esc">Esc</button>
@@ -239,7 +252,7 @@ export function createAppKeyboard({ idPrefix, getRoot, actions, withScrollPreser
         <button type="button" class="pg-kb-key pg-kb-key--close" id="${idPrefix}-kb-close" aria-label="キーボードを閉じる">▼</button>
       </div>`,
     ].join("");
-    const rows = quickRowHTML() + `<div class="pg-kb-body">${bodyRows}</div>`;
+    const rows = textRowHTML(quickTexts) + quickRowHTML() + `<div class="pg-kb-body">${bodyRows}</div>`;
     return `<div class="pg-app-keyboard${keyboardOpen ? " pg-app-keyboard--open" : ""}" id="${kbId}">${rows}</div>`;
   }
 
@@ -252,6 +265,15 @@ export function createAppKeyboard({ idPrefix, getRoot, actions, withScrollPreser
       bindPressable(btn, {
         withScrollPreserved,
         onTap: () => actions.insertChip(btn.dataset.kbChip, btn.dataset.kbArg === "1"),
+      });
+    });
+
+    // 日本語文チップ：コマンドチップと違い入力欄を置き換えず、カーソル位置へ
+    // そのまま差し込む（echo "…" の "" の中に入れる、といった使い方のため）
+    kb.querySelectorAll("[data-kb-text]").forEach(btn => {
+      bindPressable(btn, {
+        withScrollPreserved,
+        onTap: () => { if(actions.insertSnippet) actions.insertSnippet(btn.dataset.kbText); },
       });
     });
 

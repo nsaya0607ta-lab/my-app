@@ -19,6 +19,8 @@ export default {
     "もう一声、employees.txt の社員データを全部出力したあとに『集計終了』って一言添えてほしいんだ。",
     "report_end.txt という名前で保存してもらえる？",
   ],
+  // アプリ内キーボードでは打てない日本語を、ワンタップで入力欄へ挿入できるようにする
+  quickTexts: ["集計終了"],
   initialEnv: {
     files: [{ path: "~/employees.txt", content: EMP_FILE }],
   },

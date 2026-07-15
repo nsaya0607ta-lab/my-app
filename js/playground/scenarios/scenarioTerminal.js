@@ -779,11 +779,20 @@ const appKeyboard = createAppKeyboard({
       liveCursor = liveBuffer.length;
       updateLiveLine(currentSession, currentHooks);
     },
+    // 日本語文チップ：問題で必要な日本語文などを、入力中のコマンドを消さずに
+    // カーソル位置へそのまま差し込む（日本語キーボードなしで解けるようにする）
+    insertSnippet: (text) => {
+      if(pendingPassword) return; // パスワード入力中は差し込みを無効化する
+      insertText(currentSession, currentHooks, text);
+    },
   },
 });
 
-export function keyboardHTML(){
-  return appKeyboard.html();
+// シナリオ定義に quickTexts（このキーボードでは打てない日本語文などの
+// ワンタップ挿入チップ）があれば、キーボード最上部に表示する
+export function keyboardHTML(session){
+  const quickTexts = (session && session.scenario && session.scenario.quickTexts) || [];
+  return appKeyboard.html({ quickTexts });
 }
 
 export function wireKeyboard(session, hooks){

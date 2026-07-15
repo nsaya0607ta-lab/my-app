@@ -348,7 +348,7 @@ function renderScenarioPlayScreen(scenarioId){
         <button type="button" class="pg-terminal-clear" id="scn-terminal-clear">🗑 クリア</button>
       </div>
       <div class="pg-terminal-body" id="scn-terminal-body"></div>
-      ${keyboardHTML()}
+      ${keyboardHTML(s)}
     </div>
     <div class="pg-cards">
       <div class="pg-card scn-progress-card" id="scn-progress-card"></div>
