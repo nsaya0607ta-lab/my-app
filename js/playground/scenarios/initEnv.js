@@ -39,6 +39,16 @@ export function applyInitialEnv(vfs, shellState, spec){
       });
     });
   }
+  // ディスク・パーティション管理編の舞台設定。fdisk・mkfs.ext4・mountを実行
+  // 済みの状態（例: /dev/sdb1が/mnt/dataへマウント済み）から始めたいシナリオ
+  // （umountの練習など）用に、パーティションとマウント状態を宣言的に再現する。
+  (spec.partitions || []).forEach(p => {
+    const disk = shellState.disks.get(p.diskName);
+    if(!disk || disk.partitions.some(x => x.num === p.num)) return;
+    disk.partitions.push({ num: p.num, sizeBytes: p.sizeBytes || 0, fsType: p.fsType || null });
+    disk.partitions.sort((a, b) => a.num - b.num);
+  });
+  (spec.mounts || []).forEach(m => { shellState.mountDevice(m.device, m.mountpoint, m.fsType); });
   if(spec.cwd) vfs.changeDir(spec.cwd);
   vfs.isRootUser = wasRootUser;
   // strictChownは「所有者の変更にroot権限が必要」という実際のLinuxの挙動を

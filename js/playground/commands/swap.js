@@ -94,7 +94,28 @@ export function swapon(ctx){
   return { lines, err:[] };
 }
 
-const SUDO_HANDLERS = { chmod, tee, fallocate, mkswap, swapon };
+export function swapoff(ctx){
+  if(!ctx.vfs.isRootUser){
+    const target = ctx.args.find(a => !a.startsWith('-')) || ctx.args[0] || '';
+    return { lines:[], err:[ errLine(`swapoff: ${target || 'swapoff'}: swapoff failed: Operation not permitted`) ] };
+  }
+  if(!(ctx.state.swapFiles instanceof Map)) ctx.state.swapFiles = new Map();
+  if(ctx.args.includes('-a') || ctx.args.includes('--all')){
+    ctx.state.swapFiles.forEach((area, key) => {
+      if(area.active) ctx.state.swapFiles.set(key, { ...area, active:false, usedBytes:0 });
+    });
+    return { lines:[], err:[] };
+  }
+  const path = ctx.args.find(a => !a.startsWith('-'));
+  if(!path) return { lines:[], err:[ errLine('usage: swapoff [-a] FILE') ] };
+  const fullPath = absPath(ctx.vfs, path);
+  const area = ctx.state.swapFiles.get(fullPath);
+  if(!area || !area.active) return { lines:[], err:[ errLine(`swapoff: ${path}: swapoff failed: Invalid argument`) ] };
+  ctx.state.swapFiles.set(fullPath, { ...area, active:false, usedBytes:0 });
+  return { lines:[], err:[] };
+}
+
+const SUDO_HANDLERS = { chmod, tee, fallocate, mkswap, swapon, swapoff };
 
 export function sudo(ctx){
   const [name, ...args] = ctx.args;

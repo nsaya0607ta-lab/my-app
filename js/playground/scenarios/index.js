@@ -96,6 +96,27 @@ import s089 from './data/s089-disk-du-largest-entry.js';
 import s090 from './data/s090-disk-df-du-investigation.js';
 import s091 from './data/s091-disk-du-directory-details.js';
 import { s092, s093, s094, s095, s096, s097, s098, s099, s100 } from './data/swap-file-basics.js';
+import s101 from './data/s101-file-mv-rename.js';
+import s102 from './data/s102-file-rmdir-cleanup.js';
+import s103 from './data/s103-locate-find-config.js';
+import s104 from './data/s104-text-less-biglog.js';
+import s105 from './data/s105-text-head-firstlines.js';
+import s106 from './data/s106-text-tail-recent-errors.js';
+import s107 from './data/s107-text-sort-ranking.js';
+import s108 from './data/s108-text-uniq-dedupe.js';
+import s109 from './data/s109-text-cut-csv-column.js';
+import s110 from './data/s110-text-tr-uppercase.js';
+import s111 from './data/s111-text-echo-notice.js';
+import s112 from './data/s112-sysinfo-whoami-id.js';
+import s113 from './data/s113-sysinfo-hostname-uname.js';
+import s114 from './data/s114-sysinfo-date-cal.js';
+import s115 from './data/s115-shell-history-clear.js';
+import s116 from './data/s116-shell-man-lookup.js';
+import s117 from './data/s117-shell-which-whereis.js';
+import s118 from './data/s118-shell-env-check.js';
+import s119 from './data/s119-shell-alias-unalias.js';
+import s120 from './data/s120-swap-swapoff-maintenance.js';
+import s121 from './data/s121-disk-umount-remove.js';
 
 export const SCENARIOS = [
   s001, s002, s003, s004, s005, s006, s007, s008, s009, s010, s011, s012, s013, s014, s015,
@@ -109,6 +130,12 @@ export const SCENARIOS = [
   s072, s073, s074, s075, s076, s077, s078, s079, s080, s081, s082, s083,
   s084, s085, s086, s087, s088, s089, s090, s091,
   s092, s093, s094, s095, s096, s097, s098, s099, s100,
+  s101, s102, s103,
+  s104, s105, s106, s107, s108, s109, s110, s111,
+  s112, s113, s114,
+  s115, s116, s117, s118, s119,
+  s120,
+  s121,
 ];
 
 // 「権限管理編」のように、番号どおりの物語（ストーリー）として通しで遊ぶ
@@ -143,7 +170,7 @@ export const PACKS = [
   {
     id: 'swap-file-basics',
     title: 'Swap領域作成編',
-    subtitle: 'メモリ不足に備えて2GBのSwapファイルを追加します。作成、権限設定、初期化、有効化、確認、/etc/fstabによる自動有効化までを、現場の依頼形式で順番に練習しましょう。',
+    subtitle: 'メモリ不足に備えて2GBのSwapファイルを追加します。作成、権限設定、初期化、有効化、確認、/etc/fstabによる自動有効化、そしてswapoffによる無効化までを、現場の依頼形式で順番に練習しましょう。',
   },
 ];
 
