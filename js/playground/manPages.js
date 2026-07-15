@@ -105,4 +105,6 @@ export const MAN_PAGES = {
   ]},
   "mkfs.ext4":{ synopsis:"mkfs.ext4 デバイス名", desc:"指定したパーティションにext4ファイルシステムを作成する（root権限が必要）。" },
   mount:  { synopsis:"mount デバイス名 マウント先ディレクトリ", desc:"ファイルシステムを持つデバイスを指定したディレクトリへ接続し、利用できるようにする（root権限が必要）。" },
+  umount: { synopsis:"umount デバイス名またはマウント先ディレクトリ", desc:"マウント中のファイルシステムを安全に取り外す（root権限が必要）。OSが使用中のマウントポイントは解除できない。" },
+  swapoff:{ synopsis:"swapoff [-a] FILE", desc:"有効化されているSwap領域を無効化する（root権限が必要）。", options:[["-a","有効なSwap領域をすべて無効化する"]] },
 };
