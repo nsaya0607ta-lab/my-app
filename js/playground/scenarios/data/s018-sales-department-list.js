@@ -19,6 +19,8 @@ export default {
     "employees.txt の中から営業部の社員だけを調べたくて。",
     "該当する行をそのまま sales_employees.txt に保存してもらえますか？",
   ],
+  // アプリ内キーボードでは打てない日本語を、ワンタップで入力欄へ挿入できるようにする
+  quickTexts: ["営業"],
   initialEnv: {
     files: [{ path: "~/employees.txt", content: EMP_FILE }],
   },

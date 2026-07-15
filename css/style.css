@@ -2302,6 +2302,22 @@ body[data-theme="dark"] .menu-btn:active, body[data-theme="galaxy"] .menu-btn:ac
 }
 .pg-kb-chip.pg-kb-key--pressed{background:var(--accent);border-color:var(--accent);color:#fff;transform:translateY(1px) scale(.96);}
 
+/* 問題で必要な日本語文のワンタップ挿入チップ（quickTexts）。キーボードの
+   キーでは打てない文字列を差し込むための行なので、コマンドチップと
+   見分けやすいよう別配色にし、行頭に「あ」ラベルを添える */
+.pg-kb-text-row{border-bottom:1px dashed #22314e;}
+.pg-kb-text-label{
+  flex:none;align-self:center;
+  background:#3b2f14;border:1px solid #6b5518;color:#fbbf24;
+  font-size:11px;font-weight:800;line-height:1;
+  padding:4px 7px;border-radius:7px;
+}
+.pg-kb-chip--text{
+  background:#31270f;border-color:#6b5518;color:#fde68a;
+  font-family:inherit; /* 日本語の文章なので等幅フォント指定は外す */
+}
+.pg-kb-chip--text.pg-kb-key--pressed{background:#b45309;border-color:#b45309;color:#fff;}
+
 /* キー本体の行群。残りの高さいっぱいに均等分配され（flex）、内容が
    コンテナからはみ出すことがない＝スクロールが発生しようがない構造 */
 .pg-kb-body{

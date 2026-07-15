@@ -18,6 +18,8 @@ export default {
     "突然だけど、営業部は今何人いるか教えてくれない？",
     "人数だけで良いんだ。employees.txt を見て、sales_count.txt に保存しておいてもらえるかな。",
   ],
+  // アプリ内キーボードでは打てない日本語を、ワンタップで入力欄へ挿入できるようにする
+  quickTexts: ["営業"],
   initialEnv: {
     files: [{ path: "~/employees.txt", content: EMP_FILE }],
   },
