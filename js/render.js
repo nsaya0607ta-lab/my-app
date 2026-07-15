@@ -1,6 +1,6 @@
 import { CERTS } from './data/certs.js';
 import { DC_PHASES, L, REGIONS } from './data/constants.js';
-import { CONCEPTS, DRAW, PASS, Q, TIERS, applySkin, certById, certStat, commit, correctSet, dcCount, dcPhase, dcTitle, esc, exportCode, fmt, getBP, getProfileName, grade, importCode, isAdminAccount, isMulti, loadHist, loadReviewStats, loadTapSound, loadUiTheme, loadWrong, overallLevel, overallStat, pick, pts, publishLeaderboard, purchaseSkin, questionsForCommand, saveCoins, saveTapSound, saveToCloud, saveUiTheme, selectCert, setBP, setProfileName, skinHandleIdentityChange, stars, start, startCommandPractice, startReview, totalBP } from './core.js';
+import { CONCEPTS, DRAW, PASS, Q, TIERS, applySkin, certById, certStat, commit, correctSet, dcCount, dcPhase, dcTitle, esc, exportCode, fmt, getBP, getProfileName, grade, importCode, isAdminAccount, isMarked, isMulti, loadHist, loadMarked, loadReviewStats, loadTapSound, loadUiTheme, loadWrong, overallLevel, overallStat, pick, pts, publishLeaderboard, purchaseSkin, questionsForCommand, saveCoins, saveTapSound, saveToCloud, saveUiTheme, selectCert, setBP, setProfileName, skinHandleIdentityChange, stars, start, startCommandPractice, startMarkedPractice, startReview, toggleMarked, totalBP } from './core.js';
 import { LPIC1_COMMANDS } from './data/lpic1-commands.js';
 import { getWeather } from './weather.js';
 import { geminiChat, sendGeminiMessage, setGeminiScheduleHandler, setGeminiHomeContextProvider, setGeminiStockContextProvider, pushGeminiMessage } from './gemini.js';
@@ -335,6 +335,7 @@ export async function logout(){
     CERTS.forEach(c=>{
       localStorage.removeItem("cert_"+c.id+"_bp");
       localStorage.removeItem("cert_"+c.id+"_wrong");
+      localStorage.removeItem("cert_"+c.id+"_marked");
       localStorage.removeItem("cert_"+c.id+"_history");
     });
     localStorage.removeItem("profile_name");
@@ -354,6 +355,7 @@ export async function deleteAccount(password){
     CERTS.forEach(c=>{
       localStorage.removeItem("cert_"+c.id+"_bp");
       localStorage.removeItem("cert_"+c.id+"_wrong");
+      localStorage.removeItem("cert_"+c.id+"_marked");
       localStorage.removeItem("cert_"+c.id+"_history");
     });
     localStorage.removeItem("profile_name");
@@ -442,6 +444,7 @@ const MENU_ICON_PRACTICE = `<svg viewBox="0 0 24 24" fill="none" stroke="current
 const MENU_ICON_EXAM = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M9.5 2h5"></path><path d="M12 2v3"></path><circle cx="12" cy="13.5" r="8"></circle><circle cx="12" cy="13.5" r="4"></circle><circle cx="12" cy="13.5" r="1"></circle><path d="m18.2 7.3 1.4-1.4"></path></svg>`;
 const MENU_ICON_REVIEW = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path stroke-width="1.4" opacity=".55" d="M12 5.6C10.3 4.3 7.9 3.8 5.5 4.2a1 1 0 0 0-.8 1v13.2a1 1 0 0 0 1.2 1c2-.4 4-.1 5.5 1a.7.7 0 0 0 1.2 0c1.5-1.1 3.5-1.4 5.5-1a1 1 0 0 0 1.2-1V5.2a1 1 0 0 0-.8-1c-2.4-.4-4.8.1-6.5 1.4Z"></path><path stroke-width="1.4" opacity=".55" d="M12 5.6v14"></path><path stroke-width="2.1" d="M15.6 10.3a4 4 0 1 0 1 4.4"></path><path stroke-width="2.1" d="m16.3 8.7.3 2.2-2.2-.3"></path></svg>`;
 const MENU_ICON_DICT = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5.6C10.3 4.3 7.9 3.8 5.5 4.2a1 1 0 0 0-.8 1v13.2a1 1 0 0 0 1.2 1c2-.4 4-.1 5.5 1a.7.7 0 0 0 1.2 0c1.5-1.1 3.5-1.4 5.5-1a1 1 0 0 0 1.2-1V5.2a1 1 0 0 0-.8-1c-2.4-.4-4.8.1-6.5 1.4Z"></path><path d="M12 5.6v14"></path><text x="6.8" y="13.2" font-size="5.2" font-weight="800" stroke="none" fill="currentColor">A</text><text x="14" y="13.2" font-size="5.2" font-weight="800" stroke="none" fill="currentColor">Z</text></svg>`;
+const MENU_ICON_MARKED = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M7 3.5h10a1 1 0 0 1 1 1V20l-6-3.7L6 20V4.5a1 1 0 0 1 1-1Z"></path><path d="M9.3 9h5.4"></path><path d="M12 6.3v5.4"></path></svg>`;
 
 export function renderHome(){
   updateHeaderNav(true);
@@ -575,6 +578,16 @@ export function renderHome(){
         <span class="menu-btn-chevron">›</span>
       </button>`:`<div class="x-hint" style="margin:0;text-align:center">復習モード：間違えた問題がここに溜まり、再挑戦できます</div>`}
 
+      ${(loadMarked().length)?`
+      <button class="menu-btn menu-btn--marked" data-marked>
+        <span class="menu-btn-icon-wrap">
+          <span class="menu-btn-icon">${MENU_ICON_MARKED}</span>
+          <span class="menu-btn-badge">${loadMarked().length}</span>
+        </span>
+        <span class="menu-btn-text"><span class="menu-btn-label">後で見直す（🔖 ${loadMarked().length} 問）</span></span>
+        <span class="menu-btn-chevron">›</span>
+      </button>`:``}
+
       <button class="menu-btn menu-btn--dict" data-go="dict">
         <span class="menu-btn-icon">${MENU_ICON_DICT}</span>
         <span class="menu-btn-text"><span class="menu-btn-label">用語辞典</span></span>
@@ -598,6 +611,7 @@ export function renderHome(){
   const pcn=app.querySelector("[data-pcancel]"); if(pcn)pcn.onclick=()=>{ state.practicePick=false; render(); };
   app.querySelectorAll("[data-pc]").forEach(b=>b.onclick=()=>start("practice", +b.dataset.pc));
   const rv=app.querySelector("[data-review]"); if(rv)rv.onclick=()=>startReview();
+  const mkd=app.querySelector("[data-marked]"); if(mkd)mkd.onclick=()=>startMarkedPractice();
   app.querySelectorAll("[data-go]").forEach(b=>b.onclick=()=>go(b.dataset.go));
   const lo=app.querySelector("[data-logout]"); if(lo)lo.onclick=()=>logout();
   const li=app.querySelector("[data-login]"); if(li)li.onclick=()=>{ state.guestMode=false; state.authMode="login"; render(); };
@@ -657,14 +671,20 @@ export function renderLpicCommands(){
 
 export function renderQuiz(){
   const q=S.deck[S.idx], pct=(S.idx/S.deck.length)*100, multi=isMulti(q);
-  
+  // 「後で見直す」ブックマークは演習モード（コマンド別・ブックマーク演習を含む）でのみ表示
+  const canMark = S.mode==="practice" && !S.review;
+  const marked = canMark && isMarked(q.id);
+
   app.innerHTML = `
     <div class="q-head">
       <button class="quit" data-go="home">✕ 中断</button>
-      <span class="q-count">${S.review?'<span class="rev-tag-q">🔁 復習</span> ':(S.mode==="practice"?`<span class="mode-tag practice">📝 ${S.commandCmd?esc(S.commandCmd)+" 演習":"演習"}</span> `:'<span class="mode-tag exam">🎯 試験</span> ')}${S.idx+1} <em>/ ${S.deck.length}</em></span>
+      <span class="q-count">${S.review?'<span class="rev-tag-q">🔁 復習</span> ':(S.mode==="practice"?`<span class="mode-tag practice">📝 ${S.commandCmd?esc(S.commandCmd)+" 演習":(S.markedRun?"後で見直す 演習":"演習")}</span> `:'<span class="mode-tag exam">🎯 試験</span> ')}${S.idx+1} <em>/ ${S.deck.length}</em></span>
     </div>
     <div class="progress"><div class="progress-fill" style="width:${pct}%"></div></div>
-    <div class="q-badge"><span class="stars">${stars(q.imp)}</span><span>重要度 ${q.imp}</span><span class="pts">${pts(q)} 点</span>${multi?`<span class="multi">複数選択（${q.c.length}つ）</span>`:""}</div>
+    <div class="q-badge-row">
+      <div class="q-badge"><span class="stars">${stars(q.imp)}</span><span>重要度 ${q.imp}</span><span class="pts">${pts(q)} 点</span>${multi?`<span class="multi">複数選択（${q.c.length}つ）</span>`:""}</div>
+      ${canMark?`<button class="mark-btn${marked?" on":""}" data-mark aria-pressed="${marked}">🔖 ${marked?"登録済み":"後で見直す"}</button>`:""}
+    </div>
     <p class="q-text">${esc(q.q)}</p>
     
     <div class="opts">
@@ -693,6 +713,9 @@ export function renderQuiz(){
   
   // 次へ進む（コミット）処理
   const cm=app.querySelector("[data-commit]"); if(cm) cm.onclick=commit;
+
+  // 🔖 後で見直すブックマークの付け外し（選択状態S.selはrender()で維持される）
+  const mk=app.querySelector("[data-mark]"); if(mk) mk.onclick=()=>{ toggleMarked(q.id); render(); };
 
   // 💡 【新設】戻るボタンが画面にある場合のみ、クリックイベントを紐付ける
   const prevBtn = document.getElementById("quiz-prev");
@@ -769,11 +792,13 @@ export function renderResult(){
     </div>
   `;
   requestAnimationFrame(()=>{ const c=app.querySelector(".gauge-fg"); if(c)c.style.strokeDashoffset=off; });
-  app.querySelector("[data-retry]").onclick=()=>{ if(S.review){ if(loadWrong().length) startReview(); else go("home"); } else if(S.commandCmd){ startCommandPractice(S.commandCmd); } else start(S.mode); };
+  app.querySelector("[data-retry]").onclick=()=>{ if(S.review){ if(loadWrong().length) startReview(); else go("home"); } else if(S.commandCmd){ startCommandPractice(S.commandCmd); } else if(S.markedRun){ if(loadMarked().length) startMarkedPractice(); else go("home"); } else start(S.mode); };
   app.querySelectorAll("[data-go]").forEach(b=>b.onclick=()=>go(b.dataset.go));
 }
 
 export function renderReview(){
+  // 演習モードの解説確認中も「後で見直す」を付け外しできる（試験・復習の解説では非表示）
+  const canMark = S.mode==="practice" && !S.review;
   const rows = S.deck.map((q,i)=>{
     const sel=S.picks[i]||[], cor=correctSet(q), g=grade(q,sel), W=pts(q), multi=isMulti(q);
     let kind,label;
@@ -789,11 +814,13 @@ export function renderReview(){
       return `<div class="${cls}"><span class="opt-key${multi?" box":""}">${L[j]}</span><span class="opt-label">${esc(opt)}</span>${mark}</div>`;
     }).join("");
     const earnTxt = `獲得 ${Math.round(g.earned*10)/10} / ${W} 点`;
+    const markedNow = canMark && isMarked(q.id);
     return `<div class="review-q">
       <div class="review-num"><span>第 ${i+1} 問 ・ 重要度 ${q.imp}${multi?" ・ 複数選択":""}</span><span class="rv-tag ${kind}">${label}・${earnTxt}</span></div>
       <p class="q-text">${esc(q.q)}</p>
       <div class="opts">${opts}</div>
       <div class="expl ${kind}"><strong>解説</strong><span>${esc(q.e)}</span></div>
+      ${canMark?`<button class="mark-btn mark-btn--review${markedNow?" on":""}" data-mark-i="${i}" aria-pressed="${markedNow}">🔖 ${markedNow?"登録済み":"後で見直す"}</button>`:""}
       <div class="qstat" id="qstat-${q.id}">📊 全体正答率：<span class="qstat-v">—</span></div>
     </div>`;
   }).join("");
@@ -803,6 +830,14 @@ export function renderReview(){
     <button class="ghost" data-go="home">🏠 ホームへ戻る</button>
   `;
   app.querySelectorAll("[data-go]").forEach(b=>b.onclick=()=>go(b.dataset.go));
+  // 🔖 各問のブックマーク付け外し（再描画せずボタンだけ更新し、スクロール位置を保つ）
+  app.querySelectorAll("[data-mark-i]").forEach(b=>b.onclick=()=>{
+    const q=S.deck[+b.dataset.markI]; if(!q) return;
+    const on=toggleMarked(q.id);
+    b.classList.toggle("on", on);
+    b.setAttribute("aria-pressed", on);
+    b.textContent=`🔖 ${on?"登録済み":"後で見直す"}`;
+  });
   loadReviewStats();
   window.scrollTo(0,0);
 }

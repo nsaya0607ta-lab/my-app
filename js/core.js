@@ -33,6 +33,26 @@ export function loadWrong(){ try{ const a=JSON.parse(localStorage.getItem(ckey("
 
 export function saveWrong(a){ try{ localStorage.setItem(ckey("wrong"), JSON.stringify([...new Set(a||[])])); }catch(e){} }
 
+/* ===== 「後で見直す」ブックマーク =====
+   演習モード中に🔖ボタンでマークした問題IDのリスト。
+   復習リスト(wrong)と違い正解しても自動では消えず、ユーザーが自分で外すまで残る */
+
+export function loadMarked(){ try{ const a=JSON.parse(localStorage.getItem(ckey("marked")))||[]; return [...new Set(a)]; }catch(e){ return []; } }
+
+export function saveMarked(a){ try{ localStorage.setItem(ckey("marked"), JSON.stringify([...new Set(a||[])])); }catch(e){} }
+
+// 指定問題のブックマークを付け外しし、付いた後の状態(true=登録済み)を返す
+export function toggleMarked(id){
+  const m = loadMarked();
+  const k = m.indexOf(id);
+  if(k>=0) m.splice(k,1); else m.push(id);
+  saveMarked(m);
+  try{ saveToCloud(getBP(), loadWrong(), loadHist()); }catch(e){}
+  return k<0;
+}
+
+export function isMarked(id){ return loadMarked().indexOf(id)>=0; }
+
 export function saveHist(h){ try{ localStorage.setItem(ckey("history"), JSON.stringify(h)); }catch(e){} }
 
 export function shuffle(a){ a=a.slice(); for(let i=a.length-1;i>0;i--){const j=Math.random()*(i+1)|0;[a[i],a[j]]=[a[j],a[i]];} return a; }
@@ -68,6 +88,7 @@ export function grade(q, sel){
 export function start(mode, count){
   state.practicePick=false;
   S.review=false;
+  S.markedRun=false;
   S.commandCmd=null;
   S.mode = (mode==="practice") ? "practice" : "exam";
   const n = (S.mode==="practice") ? (count||10) : DRAW;   // 演習は選択数、試験は従来どおりDRAW
@@ -78,10 +99,26 @@ export function start(mode, count){
 export function startReview(){
   state.practicePick=false;
   S.commandCmd=null;
+  S.markedRun=false;
   const wrong=loadWrong();
   const pool=[...Q, ...ExtraQ].filter(q=>wrong.indexOf(q.id)>=0);
   if(!pool.length){ go("home"); return; }
   S.review=true;
+  S.deck = shuffle(pool).slice(0, Math.min(DRAW, pool.length));
+  S.idx=0; S.picks=[]; S.sel=[]; S.screen="quiz"; render();
+}
+
+// 「後で見直す」演習：ブックマークした問題だけを出題する演習モード
+// （スコア・EXPの扱いは通常の演習と共通。マークは正解しても自動では外れない）
+export function startMarkedPractice(){
+  state.practicePick=false;
+  S.review=false;
+  S.commandCmd=null;
+  const marked=loadMarked();
+  const pool=[...Q, ...ExtraQ].filter(q=>marked.indexOf(q.id)>=0);
+  if(!pool.length){ go("home"); return; }
+  S.mode="practice";
+  S.markedRun=true;
   S.deck = shuffle(pool).slice(0, Math.min(DRAW, pool.length));
   S.idx=0; S.picks=[]; S.sel=[]; S.screen="quiz"; render();
 }
@@ -93,6 +130,7 @@ export function questionsForCommand(cmd){ return ExtraQ.filter(q=>q.cmd===cmd); 
 export function startCommandPractice(cmd){
   state.practicePick=false;
   S.review=false;
+  S.markedRun=false;
   S.mode="practice";
   S.commandCmd=cmd;
   const pool = questionsForCommand(cmd);
@@ -120,7 +158,7 @@ export async function saveToCloud(bp, wrongList, historyList) {
   if (!state.db || !state.currentUserId || !S.cert) return;
   try {
     const patch = {};
-    patch[S.cert] = { bp: bp, wrong: wrongList, history: historyList };
+    patch[S.cert] = { bp: bp, wrong: wrongList, history: historyList, marked: loadMarked() };
     await window.FirebaseSync.setDoc(window.FirebaseSync.doc(state.db, "users", state.currentUserId), {
       certs: patch,
       coins: (S.coins || 0),   // アカウント共通のコイン残高（資格横断）
@@ -291,7 +329,7 @@ export function finish(){
   const certMeta = certById(S.cert);
   if(certMeta && certMeta.vendor === "lpic" && correct > 0) chappyOnLinuxCorrect(correct);
   const unlocked = TIERS.filter(t=>t.bp>prevBp && t.bp<=newBp).map(t=>t.icon+" "+t.name);
-  const modeLabel = (runMode==="review" ? "復習" : runMode==="practice" ? (S.commandCmd ? `${S.commandCmd}コマンド演習` : "演習") : "試験") + S.deck.length + "問";
+  const modeLabel = (runMode==="review" ? "復習" : runMode==="practice" ? (S.commandCmd ? `${S.commandCmd}コマンド演習` : S.markedRun ? "後で見直す演習" : "演習") : "試験") + S.deck.length + "問";
   const entry = {id:Date.now(), date:new Date().toISOString(), modeLabel,
                  mode:runMode, mult, correct, total:S.deck.length, score, scoreMax, earned:Math.ceil(earned), totalPts:total,
                  bpGain:exp, bpTotal:newBp, coinGain, coinTotal:S.coins, unlocked, review:!!S.review};
@@ -354,7 +392,7 @@ export function b64d(b64){ return decodeURIComponent(escape(atob(b64))); }
 export function hash36(s){ let h=5381; for(let i=0;i<s.length;i++){ h=((h*33)^s.charCodeAt(i))>>>0; } return h.toString(36); }
 
 export function exportCode(){
-  const payload={v:1, bp:getBP(), wrong:loadWrong(), hist:loadHist()};
+  const payload={v:1, bp:getBP(), wrong:loadWrong(), marked:loadMarked(), hist:loadHist()};
   const base=JSON.stringify(payload);
   payload.sig=hash36(base);
   return "AZ9-"+b64e(JSON.stringify(payload));
@@ -371,6 +409,7 @@ export function importCode(code){
   if(hash36(JSON.stringify(obj))!==sig) throw new Error("コードが壊れているか、入力ミスがあります");
   if(typeof obj.bp==="number" && obj.bp>=0) setBP(obj.bp);
   if(Array.isArray(obj.wrong)) saveWrong(obj.wrong);
+  if(Array.isArray(obj.marked)) saveMarked(obj.marked);
   if(Array.isArray(obj.hist)) saveHist(obj.hist);
   return obj;
 }
@@ -402,6 +441,7 @@ export function applyCloud(certId){
   try{
     if(d.bp !== undefined) localStorage.setItem("cert_"+certId+"_bp", String(d.bp));
     if(d.wrong !== undefined) localStorage.setItem("cert_"+certId+"_wrong", JSON.stringify([...new Set(d.wrong||[])]));
+    if(d.marked !== undefined) localStorage.setItem("cert_"+certId+"_marked", JSON.stringify([...new Set(d.marked||[])]));
     if(d.history !== undefined) localStorage.setItem("cert_"+certId+"_history", JSON.stringify(d.history));
   }catch(e){}
 }
@@ -433,11 +473,13 @@ export function seedCloudFromLocal(){
   CERTS.forEach(c=>{
     const bp = localStorage.getItem("cert_"+c.id+"_bp");
     const wrong = localStorage.getItem("cert_"+c.id+"_wrong");
+    const marked = localStorage.getItem("cert_"+c.id+"_marked");
     const hist = localStorage.getItem("cert_"+c.id+"_history");
-    if(bp || wrong || hist){
+    if(bp || wrong || marked || hist){
       patch[c.id] = {
         bp: bp ? (parseInt(bp,10)||0) : 0,
         wrong: wrong ? (JSON.parse(wrong)||[]) : [],
+        marked: marked ? (JSON.parse(marked)||[]) : [],
         history: hist ? (JSON.parse(hist)||[]) : []
       };
     }

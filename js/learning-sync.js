@@ -38,6 +38,7 @@ function certStorageKey(certId, name){
 function clearCertLocalData(cert){
   localStorage.removeItem(certStorageKey(cert.id, "bp"));
   localStorage.removeItem(certStorageKey(cert.id, "wrong"));
+  localStorage.removeItem(certStorageKey(cert.id, "marked"));
   localStorage.removeItem(certStorageKey(cert.id, "history"));
 }
 
@@ -67,6 +68,11 @@ function hydrateAllCerts(certs){
         const wrong = Array.isArray(data.wrong) ? [...new Set(data.wrong)] : [];
         localStorage.setItem(certStorageKey(cert.id, "wrong"), JSON.stringify(wrong));
       }else localStorage.removeItem(certStorageKey(cert.id, "wrong"));
+
+      if(data.marked !== undefined){
+        const marked = Array.isArray(data.marked) ? [...new Set(data.marked)] : [];
+        localStorage.setItem(certStorageKey(cert.id, "marked"), JSON.stringify(marked));
+      }else localStorage.removeItem(certStorageKey(cert.id, "marked"));
 
       if(data.history !== undefined){
         const history = Array.isArray(data.history) ? data.history : [];
