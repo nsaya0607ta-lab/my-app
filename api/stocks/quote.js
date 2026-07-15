@@ -24,13 +24,20 @@ async function fetchQuote(symbol, apiKey){
     const j = await r.json();
     // 存在しない/無効なティッカーでもFinnhubは200 {c:0,...} を返すことがあるため、
     // 現在値が取れていないレスポンスはエラー扱いにする
-    if(!j || typeof j.c !== "number" || j.c === 0) throw new Error("no-data");
+    const validNum = (v) => typeof v === "number" && Number.isFinite(v);
+    if(!j || !validNum(j.c) || j.c <= 0) throw new Error("no-data");
+    // 前日終値・始値高値安値・取引時刻はFinnhubが返さないことがある。
+    // その場合は現在値や現在時刻で埋めず、取得できなかったこととして
+    // nullを返す（呼び出し側で「前日比は表示しない」等の判断をするため）
     const data = {
       price: j.c,
-      change: typeof j.d === "number" ? j.d : null,
-      changePercent: typeof j.dp === "number" ? j.dp : null,
-      prevClose: typeof j.pc === "number" ? j.pc : j.c,
-      ts: typeof j.t === "number" ? j.t : Date.now()/1000,
+      change: validNum(j.d) ? j.d : null,
+      changePercent: validNum(j.dp) ? j.dp : null,
+      prevClose: (validNum(j.pc) && j.pc > 0) ? j.pc : null,
+      open: (validNum(j.o) && j.o > 0) ? j.o : null,
+      high: (validNum(j.h) && j.h > 0) ? j.h : null,
+      low: (validNum(j.l) && j.l > 0) ? j.l : null,
+      ts: (validNum(j.t) && j.t > 0) ? j.t : null,
     };
     cache.set(symbol, { data, ts: Date.now() });
     return data;

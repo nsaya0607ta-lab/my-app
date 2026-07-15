@@ -2,20 +2,28 @@
    株価詳細オーバーレイ
    既存のポートフォリオ／ウォッチリスト画面を壊さず、銘柄行をタップしたときだけ
    iPhone向けのダーク・ネオン・ガラス調詳細画面をbody直下へ重ねて表示する。
+
+   表示するのはAPI（Finnhub）またはローカルの保有株データから実際に取得できた
+   値だけ。取得できない項目は0や仮の数値で埋めず、非表示にするか
+   「取得できません」と明記する。固定配列やMath.random等による
+   チャート・指標の自動生成は一切行わない。
    ========================================================================= */
 
+import { loadPortfolio, isUSMarketHoursJST } from "./render.js";
+
 const STOCK_DETAIL_FAVORITES_KEY = "stock_detail_favorites_v1";
-const PERIODS = [
-  { key:"1d", label:"今日", points:24, volatility:0.010 },
-  { key:"1w", label:"1週間", points:28, volatility:0.018 },
-  { key:"1m", label:"1か月", points:30, volatility:0.028 },
-  { key:"3m", label:"3か月", points:34, volatility:0.045 },
-  { key:"1y", label:"1年", points:40, volatility:0.090 },
-  { key:"5y", label:"5年", points:44, volatility:0.180 },
+const PERIOD_LABELS = [
+  { key:"1d", label:"今日" },
+  { key:"1w", label:"1週間" },
+  { key:"1m", label:"1か月" },
+  { key:"3m", label:"3か月" },
+  { key:"1y", label:"1年" },
+  { key:"5y", label:"5年" },
 ];
 
 let activeOverlay = null;
 let previousBodyOverflow = "";
+let requestSeq = 0; // 銘柄切替・再読み込み時のレース対策（古い応答で上書きしない）
 
 function esc(value){
   return String(value == null ? "" : value)
@@ -23,25 +31,11 @@ function esc(value){
     .replace(/"/g,"&quot;").replace(/'/g,"&#39;");
 }
 
-function hashText(text){
-  let h = 2166136261;
-  for(const ch of String(text || "")){
-    h ^= ch.charCodeAt(0);
-    h = Math.imul(h, 16777619);
-  }
-  return h >>> 0;
-}
-
-function rngFactory(seed){
-  let x = seed || 123456789;
-  return () => {
-    x ^= x << 13; x ^= x >>> 17; x ^= x << 5;
-    return ((x >>> 0) % 1000000) / 1000000;
-  };
-}
+function isFiniteNumber(v){ return typeof v === "number" && Number.isFinite(v); }
+function isValidPrice(v){ return isFiniteNumber(v) && v > 0; }
 
 function formatPrice(price){
-  return Number(price || 0).toLocaleString("en-US", { minimumFractionDigits:2, maximumFractionDigits:2 });
+  return Number(price).toLocaleString("en-US", { minimumFractionDigits:2, maximumFractionDigits:2 });
 }
 
 function numberFromText(text){
@@ -60,160 +54,213 @@ function saveFavorites(set){
   try{ localStorage.setItem(STOCK_DETAIL_FAVORITES_KEY, JSON.stringify([...set])); }catch(e){}
 }
 
+// クリックされた行から、実際にDOMへ描画済みのティッカー・銘柄名だけを読む。
+// 価格はここでは取り出さない（「取得中…」の行から仮の価格を作らないため）。
+// 正しい現在値は必ずfetchQuote()経由でAPIから取得する
 function parseRowData(row){
-  const ticker = row.dataset.ticker || row.dataset.holdingTicker || "AAPL";
-  const name = (row.querySelector(".pf-name") || {}).textContent || ticker;
-  const priceText = (row.querySelector(".pf-watch-price") || {}).textContent || "";
-  const changeText = (row.querySelector(".pf-watch-chg") || {}).textContent || "";
-  const price = numberFromText(priceText) || 100 + (hashText(ticker) % 9000) / 100;
-  const changePct = numberFromText(changeText);
-  const prevClose = changePct == null ? price * 0.992 : price / (1 + changePct / 100);
-  return { ticker, name: name.trim() || ticker, price, prevClose };
+  const ticker = row.dataset.ticker || row.dataset.holdingTicker || "";
+  const nameEl = row.querySelector(".pf-name");
+  const name = (nameEl && nameEl.textContent.trim()) || ticker;
+  return { ticker, name };
 }
 
-async function fetchQuote(ticker, fallback){
+// 実際にAPIから取得できた場合だけ { status:"ok", ... } を返す。
+// 失敗時はダミー値へフォールバックせず、エラー種別だけを返す
+async function fetchQuote(ticker){
+  let res;
   try{
-    const res = await fetch(`/api/stocks/quote?symbols=${encodeURIComponent(ticker)}`);
-    if(!res.ok) throw new Error("quote-http-" + res.status);
-    const data = await res.json();
-    const q = data && data.quotes && data.quotes[ticker];
-    if(q && Number(q.price) > 0){
-      return { price:Number(q.price), prevClose:Number(q.prevClose) || Number(q.price), live:true };
-    }
-  }catch(e){}
-  return Object.assign({}, fallback, { live:false });
+    res = await fetch(`/api/stocks/quote?symbols=${encodeURIComponent(ticker)}`);
+  }catch(e){
+    return { status:"error", code:"network" };
+  }
+  if(!res.ok){
+    if(res.status === 500) return { status:"error", code:"server-misconfigured" };
+    if(res.status === 429) return { status:"error", code:"rate-limited" };
+    return { status:"error", code:"http-" + res.status };
+  }
+  let data;
+  try{ data = await res.json(); }catch(e){ return { status:"error", code:"invalid-response" }; }
+  const q = data && data.quotes && data.quotes[ticker];
+  if(!q || !isValidPrice(q.price)) return { status:"error", code:"no-data" };
+  return {
+    status: "ok",
+    ticker,
+    price: q.price,
+    prevClose: isValidPrice(q.prevClose) ? q.prevClose : null,
+    open: isValidPrice(q.open) ? q.open : null,
+    high: isValidPrice(q.high) ? q.high : null,
+    low: isValidPrice(q.low) ? q.low : null,
+    ts: (isFiniteNumber(q.ts) && q.ts > 0) ? q.ts : null,
+  };
 }
 
+// PER・PBR・時価総額は別エンドポイント（別のFinnhubエンドポイント）から取得。
+// 取得できなかった項目はnullのまま返し、呼び出し側で非表示にする
+async function fetchMetrics(ticker){
+  let res;
+  try{
+    res = await fetch(`/api/stocks/metrics?symbol=${encodeURIComponent(ticker)}`);
+  }catch(e){
+    return null;
+  }
+  if(!res.ok) return null;
+  let data;
+  try{ data = await res.json(); }catch(e){ return null; }
+  return {
+    per: (isFiniteNumber(data.per) && data.per > 0) ? data.per : null,
+    pbr: (isFiniteNumber(data.pbr) && data.pbr > 0) ? data.pbr : null,
+    marketCap: (isFiniteNumber(data.marketCap) && data.marketCap > 0) ? data.marketCap : null,
+    currency: (typeof data.currency === "string" && data.currency) ? data.currency : null,
+    fetchedAt: isFiniteNumber(data.fetchedAt) ? data.fetchedAt : null,
+  };
+}
+
+// メイン画面（ポートフォリオ／ウォッチリスト画面）に既に描画されている
+// ウォッチリスト行から、数値として読み取れた実データだけを取り出す。
+// 「取得中…」でまだ数値になっていない行は、仮の値を作らず除外する
 function captureWatchlist(){
-  return [...document.querySelectorAll(".pf-watch-row[data-ticker]")].map(row => {
-    const parsed = parseRowData(row);
-    const changeEl = row.querySelector(".pf-watch-chg");
-    return Object.assign(parsed, { up: !changeEl || changeEl.classList.contains("up") });
-  });
+  return [...document.querySelectorAll(".pf-watch-row[data-ticker]")]
+    .map(row => {
+      const ticker = row.dataset.ticker || "";
+      const name = ((row.querySelector(".pf-name") || {}).textContent || ticker).trim();
+      const priceEl = row.querySelector(".pf-watch-price");
+      const chgEl = row.querySelector(".pf-watch-chg");
+      const price = priceEl ? numberFromText(priceEl.textContent) : null;
+      const changePct = chgEl ? numberFromText(chgEl.textContent) : null;
+      return { ticker, name, price, changePct };
+    })
+    .filter(item => item.ticker && isValidPrice(item.price) && isFiniteNumber(item.changePct));
 }
 
-function capturePortfolio(){
-  const total = (document.querySelector("#pf-hero-total") || {}).textContent || "0 AC";
-  const sub = (document.querySelector("#pf-hero-sub-text") || {}).textContent || "ゲーム内ポートフォリオ";
-  return { total: total.trim(), sub: sub.trim() };
+// 保有中の銘柄データ（実際の取得数量・平均取得単価）をローカル保存された
+// ポートフォリオから読む。保有していなければnullを返す（仮の保有数は作らない）
+function currentHolding(ticker){
+  const pf = loadPortfolio();
+  const h = pf[ticker];
+  if(!h || !(h.shares > 0)) return null;
+  const avgCost = h.shares > 0 ? h.cost / h.shares : null;
+  return { shares: h.shares, avgCost: isValidPrice(avgCost) ? avgCost : null };
 }
 
-function generateSeries(ticker, periodKey, lastPrice){
-  const period = PERIODS.find(p => p.key === periodKey) || PERIODS[0];
-  const rand = rngFactory(hashText(`${ticker}:${periodKey}`));
-  const count = period.points;
-  let close = Math.max(1, lastPrice * (0.92 + rand() * 0.10));
+// Finnhubのタイムスタンプ（UNIX秒）を日本時間の時刻表示に変換する。
+// 当日なら時刻のみ、それ以外は日付も付ける。取得できない場合はnullを返す
+function formatTradeTime(tsSeconds){
+  if(!isFiniteNumber(tsSeconds) || tsSeconds <= 0) return null;
+  const d = new Date(tsSeconds * 1000);
+  if(Number.isNaN(d.getTime())) return null;
+  const fmt = new Intl.DateTimeFormat("ja-JP", { timeZone:"Asia/Tokyo", year:"numeric", month:"2-digit", day:"2-digit", hour:"2-digit", minute:"2-digit", hour12:false });
+  const parts = fmt.formatToParts(d).reduce((o,p) => { o[p.type] = p.value; return o; }, {});
+  const nowParts = fmt.formatToParts(new Date()).reduce((o,p) => { o[p.type] = p.value; return o; }, {});
+  const sameDay = parts.year === nowParts.year && parts.month === nowParts.month && parts.day === nowParts.day;
+  return sameDay ? `${parts.hour}:${parts.minute}` : `${parts.year}/${parts.month}/${parts.day} ${parts.hour}:${parts.minute}`;
+}
+
+function priceSectionHTML(ticker, name, quote, marketOpen){
+  const price = quote.price;
+  const hasChange = isValidPrice(quote.prevClose);
+  const delta = hasChange ? price - quote.prevClose : null;
+  const pct = hasChange ? delta / quote.prevClose * 100 : null;
+  const up = delta != null ? delta >= 0 : null;
+  const tradeTime = formatTradeTime(quote.ts);
+  const changeHTML = delta != null
+    ? `<div class="sd-change ${up?"up":"down"}">${up?"+":""}${formatPrice(delta)} (${up?"+":""}${pct.toFixed(2)}%)</div>`
+    : `<p class="sd-empty-note">前日終値を取得できないため前日比は表示できません</p>`;
+  return `<section class="sd-price-section">
+    <div class="sd-company-line"><span>${esc(name)}</span><span class="sd-market-badge">米国株・USD</span></div>
+    <div class="sd-symbol-line"><strong>${esc(ticker)}</strong><span class="sd-market-status ${marketOpen?"open":"closed"}">${marketOpen?"● 取引時間中":"○ 取引時間外"}</span></div>
+    <div class="sd-price">$${formatPrice(price)}</div>
+    ${changeHTML}
+    <div class="sd-time-note">${marketOpen ? "現在値" : "最終取引価格"}${tradeTime ? ` ・ 最終取引時刻 ${tradeTime}` : " ・ 取引時刻は取得できません"}</div>
+  </section>`;
+}
+
+// 出来高・売買代金はFinnhubの現在値エンドポイントに含まれないため表示しない。
+// 始値・高値・安値・前日終値はAPIから実際に取得できた項目だけを並べる。
+// PER・PBR・時価総額は別エンドポイントから取得できた場合のみ、取得日時と共に表示する
+function metricsSectionHTML(quote, metrics){
   const rows = [];
-  for(let i=0;i<count;i++){
-    const drift = ((i / Math.max(1, count - 1)) - 0.42) * period.volatility * 0.55;
-    const move = (rand() - 0.46) * period.volatility + drift;
-    const open = close;
-    close = Math.max(0.5, open * (1 + move));
-    const spread = Math.max(0.002, period.volatility * (0.28 + rand() * 0.55));
-    const high = Math.max(open, close) * (1 + rand() * spread);
-    const low = Math.min(open, close) * (1 - rand() * spread);
-    const volume = 30 + Math.round(rand() * 70);
-    rows.push({ open, high, low, close, volume });
+  if(quote.open != null) rows.push(["始値", `$${formatPrice(quote.open)}`, ""]);
+  if(quote.high != null) rows.push(["高値", `$${formatPrice(quote.high)}`, "up"]);
+  if(quote.low != null) rows.push(["安値", `$${formatPrice(quote.low)}`, "down"]);
+  if(quote.prevClose != null) rows.push(["前日終値", `$${formatPrice(quote.prevClose)}`, ""]);
+  let fundamentalsNote = "";
+  if(metrics){
+    if(metrics.per != null) rows.push(["PER", metrics.per.toFixed(2), ""]);
+    if(metrics.pbr != null) rows.push(["PBR", metrics.pbr.toFixed(2), ""]);
+    if(metrics.marketCap != null) rows.push(["時価総額", `${Math.round(metrics.marketCap).toLocaleString()}百万${esc(metrics.currency || "")}`, ""]);
+    if((metrics.per != null || metrics.pbr != null || metrics.marketCap != null) && metrics.fetchedAt != null){
+      const t = formatTradeTime(Math.floor(metrics.fetchedAt / 1000));
+      if(t) fundamentalsNote = `<p class="sd-fundamentals-note">PER・PBR・時価総額はリアルタイム株価とは別に取得（取得日時 ${t}）</p>`;
+    }
   }
-  const scale = lastPrice / rows[rows.length - 1].close;
-  return rows.map(r => ({
-    open:r.open*scale, high:r.high*scale, low:r.low*scale, close:r.close*scale, volume:r.volume,
-  }));
+  if(!rows.length) return "";
+  return `<div class="sd-metrics">${rows.map(([label,value,cls]) => `<div><small>${label}</small><strong class="${cls}">${value}</strong></div>`).join("")}</div>${fundamentalsNote}`;
 }
 
-function chartSVG(ticker, periodKey, price){
-  const series = generateSeries(ticker, periodKey, price);
-  const W = 680, H = 310, top = 18, bottom = 70, left = 10, right = 56;
-  const chartH = H - top - bottom;
-  const plotW = W - left - right;
-  const values = series.flatMap(r => [r.high, r.low]);
-  const min = Math.min(...values), max = Math.max(...values);
-  const span = Math.max(0.01, max - min);
-  const y = v => top + (max - v) / span * chartH;
-  const step = plotW / series.length;
-  const candleW = Math.max(3, Math.min(10, step * 0.48));
-  const maxVol = Math.max(...series.map(r => r.volume));
-  const grid = [0,1,2,3].map(i => {
-    const yy = top + chartH * i / 3;
-    const value = max - span * i / 3;
-    return `<g><line x1="${left}" y1="${yy.toFixed(1)}" x2="${W-right}" y2="${yy.toFixed(1)}" class="sd-chart-grid"/><text x="${W-4}" y="${(yy+4).toFixed(1)}" class="sd-chart-y">${formatPrice(value)}</text></g>`;
-  }).join("");
-  const candles = series.map((r,i) => {
-    const x = left + i * step + step / 2;
-    const up = r.close >= r.open;
-    const bodyY = Math.min(y(r.open), y(r.close));
-    const bodyH = Math.max(2, Math.abs(y(r.close)-y(r.open)));
-    const volH = r.volume / maxVol * 46;
-    return `<g class="${up?"up":"down"}">
-      <line x1="${x.toFixed(1)}" y1="${y(r.high).toFixed(1)}" x2="${x.toFixed(1)}" y2="${y(r.low).toFixed(1)}" class="sd-wick"/>
-      <rect x="${(x-candleW/2).toFixed(1)}" y="${bodyY.toFixed(1)}" width="${candleW.toFixed(1)}" height="${bodyH.toFixed(1)}" rx="1.4" class="sd-candle"/>
-      <rect x="${(x-candleW/2).toFixed(1)}" y="${(H-bottom+14+46-volH).toFixed(1)}" width="${candleW.toFixed(1)}" height="${volH.toFixed(1)}" rx="1" class="sd-volume"/>
-    </g>`;
-  }).join("");
-  const closePoints = series.map((r,i) => `${(left+i*step+step/2).toFixed(1)},${y(r.close).toFixed(1)}`).join(" ");
-  return `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="${esc(ticker)}のローソク足チャート">
-    <defs><filter id="sdGlow"><feGaussianBlur stdDeviation="3" result="blur"/><feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge></filter></defs>
-    ${grid}
-    <polyline points="${closePoints}" class="sd-chart-line-shadow"/>
-    ${candles}
-    <line x1="${left}" y1="${y(price).toFixed(1)}" x2="${W-right}" y2="${y(price).toFixed(1)}" class="sd-price-guide"/>
-    <rect x="${W-right+3}" y="${(y(price)-12).toFixed(1)}" width="51" height="24" rx="8" class="sd-price-pill"/>
-    <text x="${W-27}" y="${(y(price)+4).toFixed(1)}" text-anchor="middle" class="sd-price-pill-text">${formatPrice(price)}</text>
-  </svg>`;
+function chartCardHTML(quote, metrics){
+  return `<section class="sd-glass sd-chart-card">
+    <div class="sd-period-tabs">${PERIOD_LABELS.map(p => `<button type="button" disabled>${p.label}</button>`).join("")}</div>
+    <p class="sd-chart-unavailable">この期間のチャートデータは取得できません<br><small>現在のAPIプランでは過去の株価（ローソク足）・出来高データを取得できません</small></p>
+    ${metricsSectionHTML(quote, metrics)}
+  </section>`;
 }
 
-function sparklineSVG(seedText, up=true){
-  const rand = rngFactory(hashText(seedText));
-  let v = 50;
-  const pts = [];
-  for(let i=0;i<18;i++){
-    v += (rand()-.46) * 10 + (up ? .8 : -.8);
-    pts.push(`${(i/17*100).toFixed(1)},${(42-Math.max(4,Math.min(38,v/2))).toFixed(1)}`);
+function portfolioCardHTML(ticker, quote){
+  const holding = currentHolding(ticker);
+  if(!holding){
+    return `<section class="sd-glass sd-portfolio-card sd-portfolio-empty">
+      <span class="sd-card-eyebrow">マイポートフォリオ</span>
+      <p class="sd-empty-note">この銘柄はまだ保有していません</p>
+    </section>`;
   }
-  return `<svg viewBox="0 0 100 44" preserveAspectRatio="none" aria-hidden="true"><polyline points="${pts.join(" ")}"/></svg>`;
-}
-
-function metricData(price, prevClose, ticker){
-  const rand = rngFactory(hashText(ticker));
-  const open = prevClose * (0.992 + rand() * .016);
-  const high = Math.max(price, open) * (1.006 + rand() * .015);
-  const low = Math.min(price, open) * (0.982 + rand() * .012);
-  const volume = 900000 + Math.round(rand() * 8900000);
-  const turnover = price * volume;
-  const per = 14 + rand() * 34;
-  const pbr = 1.2 + rand() * 8.5;
-  return [
-    ["始値", `$${formatPrice(open)}`, ""], ["高値", `$${formatPrice(high)}`, "up"],
-    ["安値", `$${formatPrice(low)}`, "down"], ["出来高", volume.toLocaleString(), ""],
-    ["前日終値", `$${formatPrice(prevClose)}`, ""], ["売買代金", `${Math.round(turnover/1000).toLocaleString()}千$`, ""],
-    ["PER", per.toFixed(2), ""], ["PBR", pbr.toFixed(2), ""],
-  ];
+  const hasPrice = quote && quote.status === "ok";
+  const value = hasPrice ? holding.shares * quote.price : null;
+  const cost = holding.avgCost != null ? holding.avgCost * holding.shares : null;
+  const pnl = (value != null && cost != null) ? value - cost : null;
+  const pnlPct = (pnl != null && cost > 0) ? pnl / cost * 100 : null;
+  return `<section class="sd-glass sd-portfolio-card">
+    <span class="sd-card-eyebrow">マイポートフォリオ</span>
+    <small>保有数量</small><strong>${holding.shares}株</strong>
+    <p>平均取得単価 ${holding.avgCost != null ? "$" + formatPrice(holding.avgCost) : "取得できません"}</p>
+    ${value != null
+      ? `<p>評価額 ${Math.round(value).toLocaleString()} AC</p>`
+      : `<p class="sd-empty-note">現在価格を取得できないため評価額は計算できません</p>`}
+    ${pnl != null ? `<p class="${pnl>=0?"up":"down"}">評価損益 ${pnl>=0?"+":""}${Math.round(pnl).toLocaleString()} AC（${pnlPct>=0?"+":""}${pnlPct.toFixed(2)}%）</p>` : ""}
+  </section>`;
 }
 
 function watchRowsHTML(items, activeTicker){
-  const list = items.length ? items : [
-    {ticker:"NVDA",name:"NVIDIA",price:135.60,prevClose:132.10},
-    {ticker:"MSFT",name:"Microsoft",price:435.12,prevClose:439.20},
-    {ticker:"IONQ",name:"IonQ",price:41.25,prevClose:40.72},
-  ];
-  return list.slice(0,5).map(item => {
-    const change = item.prevClose ? (item.price-item.prevClose)/item.prevClose*100 : 0;
-    const up = change >= 0;
-    return `<button type="button" class="sd-watch-row${item.ticker===activeTicker?" active":""}" data-sd-open-ticker="${esc(item.ticker)}" data-sd-open-name="${esc(item.name)}" data-sd-open-price="${item.price}" data-sd-open-prev="${item.prevClose}">
+  if(!items.length) return `<p class="sd-empty-note">ウォッチリストに表示できる銘柄がありません</p>`;
+  return items.slice(0,5).map(item => {
+    const up = item.changePct >= 0;
+    return `<button type="button" class="sd-watch-row sd-watch-row-nospark${item.ticker===activeTicker?" active":""}" data-sd-open-ticker="${esc(item.ticker)}" data-sd-open-name="${esc(item.name)}">
       <span class="sd-watch-ident"><b>${esc(item.name)}</b><small>${esc(item.ticker)}</small></span>
-      <span class="sd-watch-spark ${up?"up":"down"}">${sparklineSVG(item.ticker, up)}</span>
-      <span class="sd-watch-quote"><b>$${formatPrice(item.price)}</b><small class="${up?"up":"down"}">${up?"+":""}${change.toFixed(2)}%</small></span>
+      <span class="sd-watch-quote"><b>$${formatPrice(item.price)}</b><small class="${up?"up":"down"}">${up?"+":""}${item.changePct.toFixed(2)}%</small></span>
     </button>`;
   }).join("");
 }
 
-function indexesHTML(){
-  const indexes = [["S&P 500","5,486.12",1.23],["NASDAQ","17,862.23",.89],["DOW","39,150.33",-.42],["SOX","5,538.21",1.45]];
-  return indexes.map(([name,value,change]) => `<div class="sd-index-card"><b>${name}</b><span>${value}</span><small class="${change>=0?"up":"down"}">${change>=0?"+":""}${change.toFixed(2)}%</small><i class="${change>=0?"up":"down"}">${sparklineSVG(name, change>=0)}</i></div>`).join("");
+function loadingSectionHTML(name, ticker){
+  return `<section class="sd-price-section">
+    <div class="sd-company-line"><span>${esc(name)}</span></div>
+    <div class="sd-symbol-line"><strong>${esc(ticker)}</strong></div>
+    <p class="sd-loading">株価データを読み込み中…</p>
+  </section>`;
 }
 
-function relativePeriodLabel(periodKey){
-  return ({"1d":"今日","1w":"直近1週間","1m":"直近1か月","3m":"直近3か月","1y":"直近1年","5y":"直近5年"})[periodKey] || "今日";
+const ERROR_MESSAGES = {
+  "no-data": "この銘柄の株価データは現在取得できません。",
+};
+function errorSectionHTML(name, ticker, code){
+  const message = ERROR_MESSAGES[code] || "株価データを取得できませんでした。時間をおいて再度お試しください。";
+  return `<section class="sd-price-section">
+    <div class="sd-company-line"><span>${esc(name)}</span></div>
+    <div class="sd-symbol-line"><strong>${esc(ticker)}</strong></div>
+  </section>
+  <section class="sd-glass sd-error-card">
+    <p>${esc(message)}</p>
+    <button type="button" class="sd-retry-btn" data-sd-retry>再読み込み</button>
+  </section>`;
 }
 
 function closeOverlay(){
@@ -233,64 +280,105 @@ function openTradeFromDetail(side){
 
 async function openDetail(initial){
   closeOverlay();
-  const watchlist = captureWatchlist();
-  const portfolio = capturePortfolio();
   const favorites = loadFavorites();
-  let data = Object.assign({}, initial);
-  let periodKey = "1d";
+  let ticker = initial.ticker;
+  let name = initial.name || ticker;
+  let quote = null;
+  let metrics = null;
+  let loadState = "loading"; // loading | ok | error
+  let errorCode = null;
 
   const overlay = document.createElement("div");
   overlay.className = "stock-detail-overlay";
   overlay.setAttribute("role", "dialog");
   overlay.setAttribute("aria-modal", "true");
-  overlay.setAttribute("aria-label", `${data.name}の株価詳細`);
+  overlay.setAttribute("aria-label", `${name}の株価詳細`);
   previousBodyOverflow = document.body.style.overflow;
   document.body.style.overflow = "hidden";
   document.body.appendChild(overlay);
   activeOverlay = overlay;
 
   function render(){
-    const price = Number(data.price) || 0;
-    const prev = Number(data.prevClose) || price || 1;
-    const delta = price - prev;
-    const pct = prev ? delta / prev * 100 : 0;
-    const up = delta >= 0;
-    const isFavorite = favorites.has(data.ticker);
-    const metrics = metricData(price, prev, data.ticker);
-    const now = new Date();
-    const time = `${String(now.getHours()).padStart(2,"0")}:${String(now.getMinutes()).padStart(2,"0")}`;
+    if(activeOverlay !== overlay) return;
+    const isFavorite = favorites.has(ticker);
+    const marketOpen = isUSMarketHoursJST();
 
+    let bodyHTML;
+    if(loadState === "loading"){
+      bodyHTML = loadingSectionHTML(name, ticker);
+    } else if(loadState === "error"){
+      bodyHTML = errorSectionHTML(name, ticker, errorCode);
+    } else {
+      const watchlist = captureWatchlist();
+      bodyHTML = `
+        ${priceSectionHTML(ticker, name, quote, marketOpen)}
+        ${chartCardHTML(quote, metrics)}
+        ${portfolioCardHTML(ticker, quote)}
+        <section class="sd-glass sd-watch-card">
+          <div class="sd-section-head"><h2>ウォッチリスト</h2><button type="button" data-sd-seeall>すべて見る ›</button></div>
+          <div class="sd-watch-list">${watchRowsHTML(watchlist, ticker)}</div>
+        </section>`;
+    }
+
+    const tradeEnabled = loadState === "ok";
     overlay.innerHTML = `<div class="stock-detail-shell">
       <div class="sd-ambient sd-ambient-a"></div><div class="sd-ambient sd-ambient-b"></div>
       <header class="sd-header"><button type="button" class="sd-icon-btn" data-sd-close aria-label="戻る">‹</button><div class="sd-header-actions"><button type="button" class="sd-icon-btn sd-favorite${isFavorite?" active":""}" data-sd-favorite aria-label="お気に入り">★</button><button type="button" class="sd-icon-btn" data-sd-menu aria-label="メニュー">•••</button></div></header>
       <main class="sd-scroll">
-        <section class="sd-price-section"><div class="sd-company-line"><span>${esc(data.name)}</span><span class="sd-market-badge">米国株 / NASDAQ</span></div><div class="sd-symbol-line"><strong>${esc(data.ticker)}</strong><span>更新 ${time}${data.live===false?"・参考値":""}</span></div><div class="sd-price">$${formatPrice(price)}</div><div class="sd-change ${up?"up":"down"}">${up?"+":""}${formatPrice(delta)} (${up?"+":""}${pct.toFixed(2)}%) <span>${relativePeriodLabel(periodKey)}</span></div></section>
-        <section class="sd-glass sd-chart-card"><div class="sd-period-tabs">${PERIODS.map(p => `<button type="button" class="${periodKey===p.key?"active":""}" data-sd-period="${p.key}">${p.label}</button>`).join("")}</div><div class="sd-chart-wrap">${chartSVG(data.ticker, periodKey, price)}</div><div class="sd-chart-caption"><span>ローソク足</span><span>出来高</span><span class="sd-live-dot">${data.live===false?"参考データ":"リアルタイム価格"}</span></div><div class="sd-metrics">${metrics.map(([label,value,cls]) => `<div><small>${label}</small><strong class="${cls}">${value}</strong></div>`).join("")}</div></section>
-        <section class="sd-glass sd-portfolio-card"><div><span class="sd-card-eyebrow">マイポートフォリオ</span><small>評価額合計</small><strong>${esc(portfolio.total)}</strong><p>${esc(portfolio.sub)}</p></div><div class="sd-portfolio-graph">${sparklineSVG("portfolio", true)}</div><span class="sd-chevron">›</span></section>
-        <section class="sd-section"><div class="sd-section-head"><h2>マーケット</h2><span>主要指数</span></div><div class="sd-index-scroll">${indexesHTML()}</div></section>
-        <section class="sd-glass sd-watch-card"><div class="sd-section-head"><h2>ウォッチリスト</h2><button type="button" data-sd-seeall>すべて見る ›</button></div><div class="sd-watch-list">${watchRowsHTML(watchlist, data.ticker)}</div></section>
-        <p class="sd-disclaimer">※ゲーム内通貨ACを使ったデモ取引画面です。チャートと指標の一部はUI確認用の参考データです。</p><div class="sd-action-spacer"></div>
+        ${bodyHTML}
+        <p class="sd-disclaimer">アプリ内の保有記録機能です。実際の証券口座とは連携していません。取引はゲーム内通貨（AC）を使ったシミュレーションです。</p>
+        <div class="sd-action-spacer"></div>
       </main>
-      <div class="sd-actions"><button type="button" class="sd-trade-btn sell" data-sd-sell>売却</button><button type="button" class="sd-trade-btn buy" data-sd-buy>購入</button></div>
+      <div class="sd-actions"><button type="button" class="sd-trade-btn sell" data-sd-sell${tradeEnabled?"":" disabled"}>売却</button><button type="button" class="sd-trade-btn buy" data-sd-buy${tradeEnabled?"":" disabled"}>購入</button></div>
       <div class="sd-menu-sheet" data-sd-menu-sheet hidden><button type="button" data-sd-menu-refresh>株価を更新</button><button type="button" data-sd-menu-close>閉じる</button></div>
     </div>`;
 
     overlay.querySelector("[data-sd-close]").onclick = closeOverlay;
-    overlay.querySelector("[data-sd-favorite]").onclick = () => { if(favorites.has(data.ticker)) favorites.delete(data.ticker); else favorites.add(data.ticker); saveFavorites(favorites); render(); };
+    overlay.querySelector("[data-sd-favorite]").onclick = () => { if(favorites.has(ticker)) favorites.delete(ticker); else favorites.add(ticker); saveFavorites(favorites); render(); };
     overlay.querySelector("[data-sd-menu]").onclick = () => { const sheet = overlay.querySelector("[data-sd-menu-sheet]"); sheet.hidden = !sheet.hidden; };
     overlay.querySelector("[data-sd-menu-close]").onclick = () => { overlay.querySelector("[data-sd-menu-sheet]").hidden = true; };
-    overlay.querySelector("[data-sd-menu-refresh]").onclick = async () => { const btn = overlay.querySelector("[data-sd-menu-refresh]"); btn.disabled = true; btn.textContent = "更新中…"; data = Object.assign(data, await fetchQuote(data.ticker, data)); render(); };
-    overlay.querySelectorAll("[data-sd-period]").forEach(btn => btn.onclick = () => { periodKey = btn.dataset.sdPeriod; render(); });
-    overlay.querySelectorAll("[data-sd-open-ticker]").forEach(btn => btn.onclick = async () => { data = { ticker:btn.dataset.sdOpenTicker, name:btn.dataset.sdOpenName, price:Number(btn.dataset.sdOpenPrice), prevClose:Number(btn.dataset.sdOpenPrev) }; periodKey = "1d"; render(); data = Object.assign(data, await fetchQuote(data.ticker, data)); if(activeOverlay === overlay) render(); });
-    overlay.querySelector("[data-sd-seeall]").onclick = closeOverlay;
-    overlay.querySelector("[data-sd-buy]").onclick = () => openTradeFromDetail("buy");
-    overlay.querySelector("[data-sd-sell]").onclick = () => openTradeFromDetail("sell");
+    overlay.querySelector("[data-sd-menu-refresh]").onclick = () => { overlay.querySelector("[data-sd-menu-sheet]").hidden = true; load(); };
+    const retryBtn = overlay.querySelector("[data-sd-retry]");
+    if(retryBtn) retryBtn.onclick = load;
+    overlay.querySelectorAll("[data-sd-open-ticker]").forEach(btn => btn.onclick = () => {
+      const newTicker = btn.dataset.sdOpenTicker;
+      const newName = btn.dataset.sdOpenName || newTicker;
+      if(newTicker === ticker) return;
+      ticker = newTicker; name = newName; quote = null; metrics = null;
+      load();
+    });
+    const seeAllBtn = overlay.querySelector("[data-sd-seeall]");
+    if(seeAllBtn) seeAllBtn.onclick = closeOverlay;
+    if(tradeEnabled){
+      overlay.querySelector("[data-sd-buy]").onclick = () => openTradeFromDetail("buy");
+      overlay.querySelector("[data-sd-sell]").onclick = () => openTradeFromDetail("sell");
+    }
+  }
+
+  // 現在値・PER/PBR/時価総額をまとめて取得し直す。銘柄切替・再読み込み・
+  // 初回表示のすべてでこの関数を通す。切替中に古い応答が遅れて届いても
+  // requestSeqで世代を確認し、現在表示中の銘柄でなければ結果を捨てる
+  async function load(){
+    loadState = "loading";
+    errorCode = null;
+    render();
+    const seq = ++requestSeq;
+    const [q, m] = await Promise.all([fetchQuote(ticker), fetchMetrics(ticker)]);
+    if(seq !== requestSeq || activeOverlay !== overlay) return;
+    quote = q;
+    metrics = m;
+    if(q.status === "ok"){
+      loadState = "ok";
+    } else {
+      loadState = "error";
+      errorCode = q.code;
+    }
+    render();
   }
 
   render();
   requestAnimationFrame(() => overlay.classList.add("show"));
-  data = Object.assign(data, await fetchQuote(data.ticker, data));
-  if(activeOverlay === overlay) render();
+  load();
 }
 
 export function initStockDetailUI(){
@@ -298,7 +386,9 @@ export function initStockDetailUI(){
     const row = event.target && event.target.closest ? event.target.closest(".pf-watch-row[data-ticker], .pf-row[data-holding-ticker]") : null;
     if(!row || event.target.closest("button, a, input, [data-rm-ticker], [data-sell-ticker]")) return;
     event.preventDefault();
-    openDetail(parseRowData(row));
+    const meta = parseRowData(row);
+    if(!meta.ticker) return;
+    openDetail(meta);
   });
   document.addEventListener("keydown", (event) => { if(event.key === "Escape" && activeOverlay) closeOverlay(); });
 }
