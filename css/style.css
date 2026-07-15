@@ -659,18 +659,6 @@ h1.title.title--badge{margin:2px 0 0;}
   font-size:8px;font-weight:600;color:var(--muted);white-space:nowrap;}
 .pop-axis-xunit{font-size:7.5px;font-weight:700;color:var(--muted);white-space:nowrap;}
 
-/* 右：天気カードに常設する「デジタル盆栽」の簡易表示。タップすると
-   openPetModal()で進化段階・進捗の詳細モーダルを開く。
-   ボタン単体をカード右側エリアの上下左右中央に配置する */
-.weather-pet{flex:1;min-width:0;border-left:1px solid var(--line);padding-left:10px;display:flex;flex-direction:column;justify-content:center;align-items:center;}
-.weather-pet-btn{display:flex;align-items:center;justify-content:center;
-  width:100%;height:64px;border:none;border-radius:16px;background:transparent;
-  cursor:pointer;transition:transform .1s;}
-.weather-pet-btn:active{transform:scale(.94);}
-.weather-pet-svgwrap{display:block;width:38px;height:48px;}
-.weather-pet-svgwrap svg{width:100%;height:100%;overflow:visible;}
-.weather-pet-btn.pet-dim .weather-pet-svgwrap{filter:grayscale(.55) brightness(.62) saturate(.55);opacity:.75;}
-
 /* ホーム画面右下に常設するフローティングボタン。Gemini相談画面への入口
    （元は天気カード内にあったweather-gemini-btnをここへ移設） */
 .gemini-fab{position:fixed;right:calc(16px + env(safe-area-inset-right));bottom:calc(16px + var(--bnav-h) + env(safe-area-inset-bottom));
@@ -730,11 +718,6 @@ h1.title.title--badge{margin:2px 0 0;}
   border:none;color:#ffffff;font-size:12.5px;font-weight:700;border-radius:12px;padding:9px 0;
   cursor:pointer;box-shadow:0 4px 12px rgba(2,132,199,.25);transition:transform .1s,filter .1s;}
 .cpick-confirm:active{transform:scale(.97);filter:brightness(.95);}
-
-/* デジタル盆栽の詳細モーダル：pet-card自体が濃色カードなので、モーダル側は
-   透明な入れ物にしてカードをそのまま浮かせる */
-.pet-modal{max-width:360px;background:transparent;border:none;box-shadow:none;padding:0;}
-.pet-modal .pet-card{margin-bottom:12px;}
 
 /* ホーム画面：お天気カードの直下・統合起動カードの真上に置く、1ヶ月表示の
    カレンダーカード。タイトル文言は持たず、上段のカレンダー切り替え
@@ -1221,6 +1204,7 @@ h1.title.title--badge{margin:2px 0 0;}
 
 /* 🎵 イントロドンボタン：同じ.ms-logo-btnベースの専用バリエーション */
 .launcher-icon-introquiz{background:linear-gradient(150deg,#fae8ff,#f0abfc);box-shadow:0 5px 14px rgba(162,28,175,.22),inset 0 1px 0 rgba(255,255,255,.6);}
+.launcher-icon-chappy{background:linear-gradient(150deg,#eaf7ff,#bfe6fb);box-shadow:0 5px 14px rgba(124,199,240,.28),inset 0 1px 0 rgba(255,255,255,.6);}
 
 /* 「MS」「LPIC」の2項目を1枚のカードに横並びで表示する行。
    外枠は.ms-cert-cardを流用し、中身だけ.launcher-item2個を等間隔で
@@ -1650,67 +1634,6 @@ body[data-theme="dark"] .menu-btn:active, body[data-theme="galaxy"] .menu-btn:ac
 .gemini-send{ flex:none; padding:11px 18px; border:none; border-radius:99px; font-size:14px; font-weight:700; color:#fff; background:linear-gradient(90deg,var(--accent),#0ea5e9); cursor:pointer; box-shadow:0 3px 10px rgba(2,132,199,.25); transition:transform .1s,opacity .15s; }
 .gemini-send:active{ transform:scale(.97); }
 .gemini-send:disabled{ opacity:.45; cursor:default; box-shadow:none; }
-
-/* =========================================================================
-   🔮 デジタル・デトックス・ペット（幾何学的クリスタル盆栽）カード
-   ホーム画面最下部（ログアウト行の上）。総合ランクLvに応じて進化し、
-   今日の活動が無い／久しく開いていないと輝きが鈍くなる
-   ========================================================================= */
-.pet-card{
-  position:relative; overflow:hidden; text-align:center; padding:18px 16px 16px;
-  background:linear-gradient(165deg,#0d1526 0%,#101c33 55%,#0b1120 100%);
-  border:1px solid rgba(56,189,248,.28);
-  box-shadow:0 10px 26px rgba(2,6,23,.45), inset 0 1px 0 rgba(255,255,255,.05);
-}
-.pet-card::before{
-  content:""; position:absolute; inset:-30% -10% auto auto; width:200px; height:200px;
-  background:radial-gradient(circle,rgba(56,189,248,.16),transparent 70%); pointer-events:none;
-}
-.pet-card-head{ position:relative; display:flex; align-items:center; justify-content:space-between; margin-bottom:2px; }
-.pet-card-ttl{ font-size:13px; font-weight:800; color:#e7ecf5; letter-spacing:.02em; }
-.pet-card-lv{ font-size:11px; font-weight:700; color:#93e2ff; background:rgba(56,189,248,.12); border:1px solid rgba(56,189,248,.28); border-radius:99px; padding:2px 9px; }
-.pet-stage-wrap{ position:relative; width:132px; height:150px; margin:2px auto 0; }
-.pet-svg{ width:100%; height:100%; overflow:visible; }
-.pet-pot{ fill:#0a1220; stroke:#2c3b5c; stroke-width:2; }
-.pet-trunk{ fill:#a9793f; }
-.pet-core{ fill:url(#petGradCore); filter:drop-shadow(0 0 6px rgba(147,226,255,.8)); }
-.pet-facet-blue{ fill:url(#petGradBlue); }
-.pet-facet-gold{ fill:url(#petGradGold); }
-.pet-facet{
-  transform-origin:center; filter:drop-shadow(0 0 4px rgba(56,189,248,.55));
-  animation:petFacetFloat 3.6s ease-in-out infinite; animation-delay:var(--pet-delay,0s);
-}
-.pet-facet-gold{ filter:drop-shadow(0 0 4px rgba(251,191,36,.6)); }
-@keyframes petFacetFloat{
-  0%,100%{ transform:translateY(0) scale(1); }
-  50%{ transform:translateY(-3px) scale(1.04); }
-}
-.pet-stage-name{ margin-top:2px; font-size:12.5px; font-weight:700; color:#c7d2e0; }
-.pet-status{ margin-top:6px; font-size:11.5px; font-weight:600; color:#7f8bab; transition:color .4s; }
-.pet-status.glow{ color:#7dd3fc; text-shadow:0 0 10px rgba(125,211,252,.5); }
-.pet-progress-track{ margin-top:12px; height:7px; border-radius:99px; background:rgba(255,255,255,.08); overflow:hidden; }
-.pet-progress-fill{ height:100%; border-radius:99px; background:linear-gradient(90deg,#38bdf8,#fbbf24); transition:width 1s cubic-bezier(.22,1,.36,1); box-shadow:0 0 8px rgba(56,189,248,.6); }
-.pet-progress-lab{ margin-top:6px; font-size:10.5px; color:#7f8bab; }
-
-/* 放置状態：彩度・明度を落として「元気がない」見た目に */
-.pet-card.pet-dim .pet-svg{ filter:grayscale(.55) brightness(.62) saturate(.55); opacity:.75; }
-.pet-card.pet-dim .pet-facet{ animation-duration:6s; }
-.pet-card.pet-dim .pet-core{ filter:none; }
-
-/* タスク完了などで放置状態から復帰した瞬間だけ再生するワンショット演出 */
-@keyframes petRevive{
-  0%{ box-shadow:0 10px 26px rgba(2,6,23,.45), inset 0 1px 0 rgba(255,255,255,.05); }
-  35%{ box-shadow:0 10px 40px rgba(56,189,248,.55), inset 0 1px 0 rgba(255,255,255,.2); }
-  100%{ box-shadow:0 10px 26px rgba(2,6,23,.45), inset 0 1px 0 rgba(255,255,255,.05); }
-}
-.pet-card.pet-revive{ animation:petRevive .9s ease-out; }
-.pet-card.pet-revive .pet-stage-wrap{ animation:petReviveScale .6s cubic-bezier(.34,1.56,.64,1); }
-@keyframes petReviveScale{
-  0%{ transform:scale(.85); }
-  55%{ transform:scale(1.12); }
-  100%{ transform:scale(1); }
-}
-
 /* =========================================================================
    💡 マインド・パレット画面（自由キャンバス）
    ========================================================================= */
