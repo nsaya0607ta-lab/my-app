@@ -25,6 +25,7 @@ import { evaluateGoal } from './goalCheckers.js';
 import { applyInitialEnv } from './initEnv.js';
 import { serializeSession, restoreSession } from './vfsSnapshot.js';
 import { isScenarioCleared, getScenarioInProgress, saveScenarioProgress, markScenarioCleared } from './progressStore.js';
+import { chappyOnScenarioCleared } from '../../chappy.js';
 import { renderTerminalBody, clearTerminal, wireTerminalTap, wireKeyboard, keyboardHTML, installScrollGuard, withScrollPreserved, pushSystemMessage, refreshLivePrompt } from './scenarioTerminal.js';
 
 const DIFF_CLASS = { "初級": "beginner", "初級〜中級": "lower-mid", "中級": "mid", "LPIC Level1": "lpic" };
@@ -96,6 +97,7 @@ function onExecuted(s){
   }
   if(nowComplete && !wasComplete){
     markScenarioCleared(s.scenarioId);
+    chappyOnScenarioCleared(s.scenarioId);   // 🏠 まるチャピにXP（同じシナリオは一度だけ）
     pushSystemMessage(s, "🎉 シナリオクリア！お疲れさまでした。「解説を見る」で振り返りができます。", "pg-mission-toast");
     if(s.scenario.clearComment){
       const req = s.scenario.requester;
