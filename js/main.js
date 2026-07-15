@@ -1,3 +1,4 @@
+import './learning-sync.js';
 import './db.js';
 import { loadCoins, loadTapSound, loadUiTheme, migrateOldData } from './core.js';
 import { go, openQuickMenuSheet, openStudyMenuSheet, render, renderSettings } from './render.js';
@@ -6,6 +7,9 @@ import { initStockDetailUI } from './stock-detail.js';
 import { playTapSound } from './audio.js';
 import { S, state } from './state.js';
 import { checkNewsQuizPopup } from './newsQuiz.js';
+
+// 全資格の経験値初期同期が完了した時点で、読み込み画面から正しい総合ランクへ切り替える。
+window.addEventListener("learning-data-ready", () => render());
 
 /* ===== タップ音（音声ファイル不要・Web Audio APIでその場合成／設定＞タップ音設定で切替） =====
    問題の選択肢（.opt）と設定モーダル内（.settings-modal。選択と同時に自前で
@@ -41,7 +45,8 @@ S.tapSound = loadTapSound();
 render();
 
 // 安全装置：8秒待ってもFirebaseの準備が終わらない（通信が遅い/失敗）場合は
-// 固まらないようログイン画面へ進める。ゲスト利用への導線もそこにあります。
+// 固まらないようログイン画面へ進める。ログイン済みの場合は learning-sync.js が
+// 全資格データの同期完了まで読み込み画面を維持する。
 setTimeout(function(){
   if(!state.authReady && !state.guestMode){ state.authReady = true; render(); }
 }, 8000);
