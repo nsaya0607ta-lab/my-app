@@ -1738,7 +1738,7 @@ function jstMinutesNow(){
   const m = Number(parts.find(p => p.type === "minute").value);
   return h * 60 + m;
 }
-function isUSMarketHoursJST(){
+export function isUSMarketHoursJST(){
   const mins = jstMinutesNow();
   return mins >= (22*60+30) || mins < (5*60+30); // 日をまたぐため両端で判定
 }
@@ -1789,11 +1789,14 @@ function watchRowHTML(ticker){
   const meta = WATCH_STOCKS.find(s => s.ticker === ticker);
   const name = meta ? meta.name : stockDisplayName(ticker);
   const live = ensureWatchLive(ticker);
-  const chg = ((live.price - live.prevClose)/live.prevClose) * 100;
-  const up = chg >= 0;
+  // Finnhubが前日終値を返さなかった銘柄ではprevCloseがnullになりうるため、
+  // その場合はNaN%を表示せず前日比自体を省略する（0%や推測値で埋めない）
+  const hasChg = live.loaded && typeof live.prevClose === "number" && live.prevClose > 0;
+  const chg = hasChg ? ((live.price - live.prevClose)/live.prevClose) * 100 : null;
+  const up = chg !== null && chg >= 0;
   const priceHTML = live.loaded
     ? `<span class="pf-watch-price">$${live.price.toFixed(2)}</span>
-       <span class="pf-watch-chg ${up?"up":"down"}">${up?"+":""}${chg.toFixed(2)}%</span>`
+       ${chg !== null ? `<span class="pf-watch-chg ${up?"up":"down"}">${up?"+":""}${chg.toFixed(2)}%</span>` : ""}`
     : `<span class="pf-watch-price pf-watch-loading">取得中…</span>`;
   return `<div class="pf-watch-row" data-ticker="${esc(ticker)}">
     <div class="pf-watch-left">
