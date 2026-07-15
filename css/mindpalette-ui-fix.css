@@ -1,0 +1,25 @@
+/* マインドパレット：タイトルを省いたコンパクトヘッダー */
+.mp-screen-clean-header .top{display:none!important}
+.mp-screen-clean-header .shell{padding-top:max(12px,env(safe-area-inset-top))}
+.mp-screen-mind-palette #app .q-head.mp-compact-head{display:flex;align-items:center;justify-content:space-between;gap:8px;min-height:44px;margin:0 0 10px}
+.mp-screen-mind-palette #app .q-head.mp-compact-head .q-count{display:none!important}
+.mp-icon-back{display:inline-flex!important;align-items:center;justify-content:center;width:44px;min-width:44px;height:44px;padding:0!important;border-radius:12px!important;font-size:23px!important;line-height:1!important}
+.mp-screen-mind-palette-folders #app .q-head{align-items:center}
+
+/* ファイルメニュー：背面が透けないiPhone向け高コントラストシート */
+.mpx-overlay.mpx-action-overlay{background:rgba(15,23,42,.62)!important;-webkit-backdrop-filter:blur(4px);backdrop-filter:blur(4px)}
+.mpx-action-sheet{position:relative;box-sizing:border-box;width:min(560px,100%)!important;max-height:calc(100dvh - max(18px,env(safe-area-inset-top)));overflow-y:auto;background:#fff!important;color:#0f172a!important;border:1px solid #d7e0ea!important;border-bottom:0!important;border-radius:22px 22px 0 0!important;padding:12px 12px calc(14px + env(safe-area-inset-bottom))!important;box-shadow:0 -22px 64px rgba(15,23,42,.34),0 -2px 10px rgba(15,23,42,.12)!important;opacity:1!important;-webkit-backdrop-filter:none!important;backdrop-filter:none!important}
+.mpx-action-sheet::before{content:"";display:block;width:38px;height:5px;margin:0 auto 8px;border-radius:999px;background:#cbd5e1}
+.mpx-action-title{margin:0 0 6px;padding:11px 12px 13px!important;border-radius:12px;background:#f8fafc;color:#334155!important;font-size:14px;font-weight:850!important;line-height:1.35;border:1px solid #e2e8f0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.mpx-action-sheet button{display:flex!important;align-items:center;gap:12px;width:100%;min-height:58px;margin:0;border:0!important;border-top:1px solid #dbe3ec!important;background:#fff!important;color:#0f172a!important;padding:15px 14px!important;text-align:left;font:inherit;font-size:16px!important;font-weight:800!important;line-height:1.35;cursor:pointer;opacity:1!important}
+.mpx-action-sheet button:active{background:#eef6ff!important}
+.mpx-action-sheet button.danger{color:#b42318!important;background:#fff8f7!important;border-top-color:#fecaca!important}
+.mpx-action-sheet button.danger:active{background:#feeceb!important}
+.mpx-action-sheet button.cancel{justify-content:center;min-height:52px;margin-top:10px!important;border:1px solid #cbd5e1!important;border-radius:13px!important;background:#f1f5f9!important;color:#334155!important;text-align:center!important}
+.mpx-action-sheet button.cancel:active{background:#e2e8f0!important}
+
+@media (max-width:640px){
+  .mpx-action-sheet{border-radius:20px 20px 0 0!important;padding-left:10px!important;padding-right:10px!important}
+  .mpx-action-sheet button{min-height:60px;padding-left:16px!important;padding-right:16px!important}
+  .mp-screen-clean-header .shell{padding-top:max(10px,env(safe-area-inset-top))}
+}
