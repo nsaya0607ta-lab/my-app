@@ -3,13 +3,10 @@
 .ap-type-badge{display:inline-flex;align-items:center;min-height:25px;padding:3px 9px;border:1px solid #cbd5e1;border-radius:999px;background:#f8fafc;color:#334155;font-size:11px;font-weight:900}
 .ap-type-badge.command{background:#ecfeff;border-color:#67e8f9;color:#155e75}
 .ap-type-badge.output{background:#f0fdf4;border-color:#86efac;color:#166534}
-.ap-quiz-tools{display:grid;grid-template-columns:1fr 1.35fr;gap:8px;margin:8px 0 10px}
+.ap-quiz-tools{display:grid;grid-template-columns:1fr;gap:8px;margin:8px 0 10px}
 .ap-tool-btn{min-height:45px;border:1px solid #cbd5e1;border-radius:12px;background:#fff;color:#334155;font:inherit;font-size:12px;font-weight:850;cursor:pointer}
 .ap-tool-btn.playground{background:#0f172a;border-color:#0f172a;color:#d1fae5}
 .ap-tool-btn:disabled{opacity:.62;cursor:default}
-.ap-hint-box{display:flex;flex-direction:column;gap:5px;margin:0 0 12px;padding:12px 13px;border:1px solid #facc15;border-radius:12px;background:#fffbeb;color:#713f12;line-height:1.55}
-.ap-hint-box[hidden]{display:none}
-.ap-hint-box strong{font-size:12px}.ap-hint-box span{font-size:13px}.ap-hint-box small{color:#92400e;font-size:10px}
 .ap-terminal-question{margin:10px 0 12px;border:1px solid #334155;border-radius:13px;overflow:hidden;background:#020617;color:#e2e8f0;box-shadow:0 8px 22px rgba(15,23,42,.16)}
 .ap-terminal-context{padding:10px 12px;border-bottom:1px solid #1e293b;color:#94a3b8;font:12px/1.55 ui-monospace,SFMono-Regular,Menlo,monospace;white-space:pre-wrap}
 .ap-terminal-command{padding:12px;font:700 13px/1.5 ui-monospace,SFMono-Regular,Menlo,monospace;white-space:pre-wrap}
@@ -36,9 +33,6 @@
 .ap-explain-section h4,.ap-explain-grid h4{margin:0 0 7px;color:#334155;font-size:12px}
 .ap-explain-section p,.ap-explain-grid p{margin:0;color:#475569;font-size:12px;line-height:1.65}
 .ap-user-answer{font-family:ui-monospace,SFMono-Regular,Menlo,monospace!important;color:#0f172a!important}
-.ap-choice-reasons{display:flex;flex-direction:column;gap:7px}
-.ap-choice-reasons>div{display:flex;flex-direction:column;gap:3px;padding:8px;border-radius:8px;background:#fff}
-.ap-choice-reasons b{font-size:11px}.ap-choice-reasons span{color:#64748b;font-size:10px;line-height:1.5}
 .ap-explain-grid{display:grid;grid-template-columns:1fr;gap:8px}
 .ap-related-chips{display:flex;flex-wrap:wrap;gap:6px}
 .ap-related-chips span{padding:4px 8px;border:1px solid #bae6fd;border-radius:999px;background:#ecfeff;color:#155e75;font:800 10px ui-monospace,SFMono-Regular,Menlo,monospace}
@@ -47,10 +41,9 @@
 .ap-review-actions button.primary{background:#0284c7;border-color:#0284c7;color:#fff}
 .ap-result-card{margin:14px 0;padding:14px;border:1px solid #cbd5e1;border-radius:15px;background:#fff;box-shadow:0 8px 22px rgba(15,23,42,.07)}
 .ap-result-card h3{margin:0 0 10px;font-size:15px;color:#0f172a}
-.ap-result-metrics{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px}
+.ap-result-metrics{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:6px}
 .ap-result-metrics span{display:flex;flex-direction:column;align-items:center;gap:3px;padding:8px 4px;border-radius:9px;background:#f8fafc;color:#475569;font-size:9px;text-align:center}
 .ap-result-metrics b{color:#0f172a;font-size:15px}
-.ap-penalty-note{margin-top:9px;padding:8px 10px;border-radius:9px;background:#fffbeb;color:#92400e;font-size:10px;font-weight:750;line-height:1.45}
 .ap-result-actions{display:grid;grid-template-columns:1fr 1fr;gap:7px;margin-top:10px}
 .ap-result-actions button:first-child{background:#0f172a;border-color:#0f172a;color:#d1fae5}
 .ap-result-actions button:disabled{opacity:.42}
@@ -100,9 +93,7 @@ body.ap-modal-open{overflow:hidden!important;touch-action:none}
   .ap-review-actions{grid-template-columns:repeat(3,minmax(0,1fr))}
 }
 @media(max-width:480px){
-  .ap-quiz-tools{grid-template-columns:1fr}
   .ap-tool-btn{min-height:48px}
-  .ap-result-metrics{grid-template-columns:repeat(3,minmax(0,1fr))}
   .ap-result-actions{grid-template-columns:1fr}
   .ap-mini-terminal-form{grid-template-columns:1fr auto}
   .ap-mini-terminal-form>span{grid-column:1/-1;overflow:hidden;text-overflow:ellipsis}
