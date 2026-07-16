@@ -5,6 +5,7 @@ export const S = {
   ownedSkins:["default"],      // 購入済みスキンのリスト
   uiTheme:"default",           // 設定＞スキン設定で切り替えるUIテーマ（default/dark/sakura/forest）
   tapSound:"wood",             // 設定＞タップ音設定で切り替える効果音（wood/drop/click/mute）
+  geminiPlainText:false,       // 設定＞Gemini回答形式で切り替え。trueでGeminiに*や#等のMarkdown記号を使わせず「・」の箇条書きに統一させる
   deck:[], idx:0, picks:[], sel:[], revealed:false, last:null,
   qTimes:[], qShownAt:0,       // 出題ごとの回答時間（秒）と現在の問題の表示時刻（AIおすすめ復習用）
   commandCmd:null,             // コマンド別演習中に選択中のコマンド（例："grep"）。通常演習/試験ではnull

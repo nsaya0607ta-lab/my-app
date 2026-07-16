@@ -291,6 +291,17 @@ export function saveTapSound(key){
   try{ localStorage.setItem(TAP_SOUND_STORE_KEY, key); }catch(e){}
 }
 
+// Gemini回答形式（*や#等のMarkdown記号を使わず「・」の箇条書きに統一させるか）の永続化。
+// 上記2つと同じく端末単位・アカウント非依存の単純な表示設定として1つのキーで保存する
+const GEMINI_PLAIN_TEXT_STORE_KEY = "gemini_plain_text_v1";
+
+export function loadGeminiPlainText(){
+  try{ return localStorage.getItem(GEMINI_PLAIN_TEXT_STORE_KEY) === "1"; }catch(e){ return false; }
+}
+export function saveGeminiPlainText(on){
+  try{ localStorage.setItem(GEMINI_PLAIN_TEXT_STORE_KEY, on ? "1" : "0"); }catch(e){}
+}
+
 // 獲得コイン：試験はスコア帯で固定、演習・復習は「正解数×3」
 
 export function coinReward(runMode, correct, score){

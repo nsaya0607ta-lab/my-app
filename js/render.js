@@ -1,6 +1,6 @@
 import { CERTS } from './data/certs.js';
 import { DC_PHASES, L, REGIONS } from './data/constants.js';
-import { CONCEPTS, DRAW, PASS, Q, TIERS, applySkin, certById, certStat, commit, correctSet, dcCount, dcPhase, dcTitle, esc, exportCode, fmt, getBP, getProfileName, grade, importCode, isAdminAccount, isMarked, isMulti, loadHist, loadMarked, loadReviewStats, loadTapSound, loadUiTheme, loadWrong, overallLevel, overallStat, pick, pts, publishLeaderboard, purchaseSkin, questionsForCommand, saveCoins, saveTapSound, saveToCloud, saveUiTheme, selectCert, setBP, setProfileName, skinHandleIdentityChange, stars, start, startCommandPractice, startMarkedPractice, startReview, toggleMarked, totalBP } from './core.js';
+import { CONCEPTS, DRAW, PASS, Q, TIERS, applySkin, certById, certStat, commit, correctSet, dcCount, dcPhase, dcTitle, esc, exportCode, fmt, getBP, getProfileName, grade, importCode, isAdminAccount, isMarked, isMulti, loadHist, loadMarked, loadReviewStats, loadTapSound, loadUiTheme, loadWrong, overallLevel, overallStat, pick, pts, publishLeaderboard, purchaseSkin, questionsForCommand, saveCoins, saveGeminiPlainText, saveTapSound, saveToCloud, saveUiTheme, selectCert, setBP, setProfileName, skinHandleIdentityChange, stars, start, startCommandPractice, startMarkedPractice, startReview, toggleMarked, totalBP } from './core.js';
 import { LPIC1_COMMANDS } from './data/lpic1-commands.js';
 import { aiDailyUpdateCheck, aiOverallComment, aiShortComment, getAiRecommendations } from './reviewAI.js';
 import { getWeather } from './weather.js';
@@ -6125,6 +6125,14 @@ function settingsMainHTML(){
         </span>
         <span class="settings-nav-arrow">›</span>
       </button>
+      <button type="button" class="settings-nav-btn" data-settings-toggle="geminiPlainText">
+        <span class="settings-nav-icon">📝</span>
+        <span class="settings-nav-info">
+          <span class="settings-nav-title">Geminiの回答形式</span>
+          <span class="settings-nav-sub">ONにすると*や#などの記号を使わず「・」の箇条書きで答えます</span>
+        </span>
+        <span class="settings-switch${S.geminiPlainText ? " on" : ""}"><span class="settings-switch-knob"></span></span>
+      </button>
     </div>`;
 }
 
@@ -6189,6 +6197,12 @@ function wireSettingsModal(ov){
     S.tapSound = b.dataset.soundPick;
     saveTapSound(S.tapSound);
     playTapSound(); // 選んだ音をその場で試聴
+    refresh();
+  });
+  ov.querySelectorAll("[data-settings-toggle='geminiPlainText']").forEach(b => b.onclick = () => {
+    playTapSound();
+    S.geminiPlainText = !S.geminiPlainText;
+    saveGeminiPlainText(S.geminiPlainText);
     refresh();
   });
   const closeBtn = ov.querySelector("#settings-modal-close");
