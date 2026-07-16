@@ -87,6 +87,7 @@ export function grade(q, sel){
 　
 export function start(mode, count){
   state.practicePick=false;
+  state.reviewPick=false;
   S.review=false;
   S.markedRun=false;
   S.commandCmd=null;
@@ -98,6 +99,7 @@ export function start(mode, count){
 
 export function startReview(){
   state.practicePick=false;
+  state.reviewPick=false;
   S.commandCmd=null;
   S.markedRun=false;
   const wrong=loadWrong();
@@ -112,6 +114,7 @@ export function startReview(){
 // （スコア・EXPの扱いは通常の演習と共通。マークは正解しても自動では外れない）
 export function startMarkedPractice(){
   state.practicePick=false;
+  state.reviewPick=false;
   S.review=false;
   S.commandCmd=null;
   const marked=loadMarked();
@@ -129,6 +132,7 @@ export function questionsForCommand(cmd){ return ExtraQ.filter(q=>q.cmd===cmd); 
 
 export function startCommandPractice(cmd){
   state.practicePick=false;
+  state.reviewPick=false;
   S.review=false;
   S.markedRun=false;
   S.mode="practice";

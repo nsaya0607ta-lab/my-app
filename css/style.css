@@ -388,8 +388,26 @@ h1.title.title--badge{margin:2px 0 0;}
 .menu-btn--exam .menu-btn-icon{background:linear-gradient(150deg,#ffdd85,#d97706 78%);box-shadow:0 6px 14px rgba(217,119,6,.32);}
 .menu-btn--review .menu-btn-icon{background:linear-gradient(150deg,#e9c79c,#a9754b 78%);box-shadow:0 6px 14px rgba(169,117,75,.3);}
 .menu-btn--dict .menu-btn-icon{background:linear-gradient(150deg,#f0f3f7,#cad3de 78%);box-shadow:0 4px 10px rgba(100,116,139,.2);color:#475569;}
-.menu-btn--marked .menu-btn-icon{background:linear-gradient(150deg,#c4b5fd,#7c3aed 78%);box-shadow:0 6px 14px rgba(124,58,237,.3);}
-.menu-btn--marked .menu-btn-badge{background:linear-gradient(150deg,#a78bfa,#7c3aed);box-shadow:0 2px 6px rgba(124,58,237,.4);}
+/* 復習モード：出題元（間違えた問題／後で見直す）の選択パネル */
+.rvpick-wrap{text-align:left;}
+.rvpick-wrap .pcount-lab{text-align:center;}
+.rvpick-wrap .link{display:block;margin:10px auto 0;}
+.rvpick{display:flex;flex-direction:column;gap:8px;}
+.rvpick-btn{
+  display:flex;align-items:center;gap:11px;width:100%;text-align:left;cursor:pointer;
+  background:linear-gradient(180deg,#f8fafc,#f1f5f9);border:1px solid var(--line);border-radius:12px;
+  padding:12px 14px;color:var(--text);
+}
+.rvpick-btn:active{transform:scale(.98);border-color:var(--accent);}
+.rvpick-btn:disabled{opacity:.45;cursor:default;}
+.rvpick-btn:disabled:active{transform:none;border-color:var(--line);}
+.rvpick-ico{flex:none;font-size:20px;}
+.rvpick-text{flex:1;min-width:0;}
+.rvpick-name{display:block;font-size:14px;font-weight:800;line-height:1.3;}
+.rvpick-sub{display:block;font-size:11px;color:var(--muted);margin-top:2px;}
+.rvpick-count{flex:none;font-size:13px;font-weight:800;color:var(--accent);font-variant-numeric:tabular-nums;}
+body[data-theme="dark"] .rvpick-btn{background:linear-gradient(180deg,#182642,#141d33);}
+body[data-theme="galaxy"] .rvpick-btn{background:linear-gradient(180deg,#242a63,#1b1f52);}
 .menu-btn-badge{
   position:absolute; top:-5px; right:-5px; min-width:18px; height:18px; padding:0 4px;
   border-radius:9px; background:linear-gradient(150deg,#f87171,var(--bad));

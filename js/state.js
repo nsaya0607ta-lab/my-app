@@ -14,6 +14,7 @@ export const S = {
 
 export const state = {
   practicePick:false,
+  reviewPick:false,       // 復習モードの出題元（間違えた問題／後で見直す）選択パネルの表示中フラグ
   historyTab:"all",       // 履歴タブ: all | practice | exam | review
   rankingTab:"overall",   // ランキングタブ: overall | 資格id（例：az900）
   db:null, currentUserId:null, currentUser:null,

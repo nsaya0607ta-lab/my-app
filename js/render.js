@@ -444,12 +444,12 @@ const MENU_ICON_PRACTICE = `<svg viewBox="0 0 24 24" fill="none" stroke="current
 const MENU_ICON_EXAM = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M9.5 2h5"></path><path d="M12 2v3"></path><circle cx="12" cy="13.5" r="8"></circle><circle cx="12" cy="13.5" r="4"></circle><circle cx="12" cy="13.5" r="1"></circle><path d="m18.2 7.3 1.4-1.4"></path></svg>`;
 const MENU_ICON_REVIEW = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path stroke-width="1.4" opacity=".55" d="M12 5.6C10.3 4.3 7.9 3.8 5.5 4.2a1 1 0 0 0-.8 1v13.2a1 1 0 0 0 1.2 1c2-.4 4-.1 5.5 1a.7.7 0 0 0 1.2 0c1.5-1.1 3.5-1.4 5.5-1a1 1 0 0 0 1.2-1V5.2a1 1 0 0 0-.8-1c-2.4-.4-4.8.1-6.5 1.4Z"></path><path stroke-width="1.4" opacity=".55" d="M12 5.6v14"></path><path stroke-width="2.1" d="M15.6 10.3a4 4 0 1 0 1 4.4"></path><path stroke-width="2.1" d="m16.3 8.7.3 2.2-2.2-.3"></path></svg>`;
 const MENU_ICON_DICT = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5.6C10.3 4.3 7.9 3.8 5.5 4.2a1 1 0 0 0-.8 1v13.2a1 1 0 0 0 1.2 1c2-.4 4-.1 5.5 1a.7.7 0 0 0 1.2 0c1.5-1.1 3.5-1.4 5.5-1a1 1 0 0 0 1.2-1V5.2a1 1 0 0 0-.8-1c-2.4-.4-4.8.1-6.5 1.4Z"></path><path d="M12 5.6v14"></path><text x="6.8" y="13.2" font-size="5.2" font-weight="800" stroke="none" fill="currentColor">A</text><text x="14" y="13.2" font-size="5.2" font-weight="800" stroke="none" fill="currentColor">Z</text></svg>`;
-const MENU_ICON_MARKED = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M7 3.5h10a1 1 0 0 1 1 1V20l-6-3.7L6 20V4.5a1 1 0 0 1 1-1Z"></path><path d="M9.3 9h5.4"></path><path d="M12 6.3v5.4"></path></svg>`;
 
 export function renderHome(){
   updateHeaderNav(true);
   const h=loadHist();
   const ov=overallStat();
+  const wrongN=loadWrong().length, markedN=loadMarked().length;   // 復習モードの出題元2種の問題数
 
   // 統計データの集計
   const examHistory = h.filter(x => x.mode === "exam");
@@ -568,25 +568,31 @@ export function renderHome(){
         <span class="menu-btn-chevron">›</span>
       </button>
 
-      ${(loadWrong().length)?`
+      ${(wrongN || markedN)?(state.reviewPick?`
+      <div class="pcount-wrap rvpick-wrap">
+        <div class="pcount-lab">🔁 復習モード・出題する問題を選択</div>
+        <div class="rvpick">
+          <button class="rvpick-btn" data-rv="wrong" ${wrongN?"":"disabled"}>
+            <span class="rvpick-ico">🔁</span>
+            <span class="rvpick-text"><span class="rvpick-name">間違えた問題</span><span class="rvpick-sub">${wrongN?"正解すると自動でリストから外れます":"間違えた問題はありません"}</span></span>
+            <span class="rvpick-count">${wrongN} 問</span>
+          </button>
+          <button class="rvpick-btn" data-rv="marked" ${markedN?"":"disabled"}>
+            <span class="rvpick-ico">🔖</span>
+            <span class="rvpick-text"><span class="rvpick-name">後で見直す登録した問題</span><span class="rvpick-sub">${markedN?"演習中に🔖を付けた問題です":"🔖を付けた問題はありません"}</span></span>
+            <span class="rvpick-count">${markedN} 問</span>
+          </button>
+        </div>
+        <button class="link" data-rvcancel>キャンセル</button>
+      </div>`:`
       <button class="menu-btn menu-btn--review" data-review>
         <span class="menu-btn-icon-wrap">
           <span class="menu-btn-icon">${MENU_ICON_REVIEW}</span>
-          <span class="menu-btn-badge">${loadWrong().length}</span>
+          <span class="menu-btn-badge">${wrongN + markedN}</span>
         </span>
-        <span class="menu-btn-text"><span class="menu-btn-label">復習モード（間違えた ${loadWrong().length} 問）</span></span>
+        <span class="menu-btn-text"><span class="menu-btn-label">復習モード（間違えた ${wrongN} 問 ・ 🔖 ${markedN} 問）</span></span>
         <span class="menu-btn-chevron">›</span>
-      </button>`:`<div class="x-hint" style="margin:0;text-align:center">復習モード：間違えた問題がここに溜まり、再挑戦できます</div>`}
-
-      ${(loadMarked().length)?`
-      <button class="menu-btn menu-btn--marked" data-marked>
-        <span class="menu-btn-icon-wrap">
-          <span class="menu-btn-icon">${MENU_ICON_MARKED}</span>
-          <span class="menu-btn-badge">${loadMarked().length}</span>
-        </span>
-        <span class="menu-btn-text"><span class="menu-btn-label">後で見直す（🔖 ${loadMarked().length} 問）</span></span>
-        <span class="menu-btn-chevron">›</span>
-      </button>`:``}
+      </button>`):`<div class="x-hint" style="margin:0;text-align:center">復習モード：間違えた問題や🔖後で見直す登録がここに溜まり、再挑戦できます</div>`}
 
       <button class="menu-btn menu-btn--dict" data-go="dict">
         <span class="menu-btn-icon">${MENU_ICON_DICT}</span>
@@ -606,12 +612,14 @@ export function renderHome(){
   });
   app.querySelectorAll("[data-mode]").forEach(b=>b.onclick=()=>start(b.dataset.mode));
   const prn=app.querySelector("[data-practice]"); if(prn)prn.onclick=()=>{
-    if(S.cert==="lpic1"){ go("lpic-commands"); } else { state.practicePick=true; render(); }
+    if(S.cert==="lpic1"){ go("lpic-commands"); } else { state.practicePick=true; state.reviewPick=false; render(); }
   };
   const pcn=app.querySelector("[data-pcancel]"); if(pcn)pcn.onclick=()=>{ state.practicePick=false; render(); };
   app.querySelectorAll("[data-pc]").forEach(b=>b.onclick=()=>start("practice", +b.dataset.pc));
-  const rv=app.querySelector("[data-review]"); if(rv)rv.onclick=()=>startReview();
-  const mkd=app.querySelector("[data-marked]"); if(mkd)mkd.onclick=()=>startMarkedPractice();
+  // 復習モード：出題元（間違えた問題／後で見直す）の選択パネルを開く
+  const rv=app.querySelector("[data-review]"); if(rv)rv.onclick=()=>{ state.reviewPick=true; state.practicePick=false; render(); };
+  app.querySelectorAll("[data-rv]").forEach(b=>b.onclick=()=>{ if(b.dataset.rv==="marked") startMarkedPractice(); else startReview(); });
+  const rvc=app.querySelector("[data-rvcancel]"); if(rvc)rvc.onclick=()=>{ state.reviewPick=false; render(); };
   app.querySelectorAll("[data-go]").forEach(b=>b.onclick=()=>go(b.dataset.go));
   const lo=app.querySelector("[data-logout]"); if(lo)lo.onclick=()=>logout();
   const li=app.querySelector("[data-login]"); if(li)li.onclick=()=>{ state.guestMode=false; state.authMode="login"; render(); };
