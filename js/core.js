@@ -4,6 +4,7 @@ import { SKIN_DATA } from './data/skins.js';
 import { gcalLoadAuthorName, go, loadGcalStore, loadGcalTodoStore, loadPortfolio, render } from './render.js';
 import { S, state } from './state.js';
 import { chappyOnLinuxCorrect } from './chappy.js';
+import { loadCmdStats, recordCmdResults, saveCmdStats, updateAiScores } from './reviewAI.js';
 import { mpExportRaw } from './mindpalette.js';
 import { scenarioModeExportRaw } from './playground/scenarios/progressStore.js';
 
@@ -84,7 +85,10 @@ export function grade(q, sel){
   const full = (cs===cor.length && ws===0);
   return {earned, full};
 }
-　
+
+// 出題ごとの回答時間（秒）を計測する（AIおすすめ復習の平均回答時間に使用）
+function resetQuizTimer(){ S.qTimes=[]; S.qShownAt=Date.now(); }
+
 export function start(mode, count){
   state.practicePick=false;
   S.review=false;
@@ -93,7 +97,7 @@ export function start(mode, count){
   S.mode = (mode==="practice") ? "practice" : "exam";
   const n = (S.mode==="practice") ? (count||10) : DRAW;   // 演習は選択数、試験は従来どおりDRAW
   S.deck = shuffle(Q).slice(0, Math.min(n, Q.length));
-  S.idx=0; S.picks=[]; S.sel=[]; S.screen="quiz"; render();
+  S.idx=0; S.picks=[]; S.sel=[]; S.screen="quiz"; resetQuizTimer(); render();
 }
 
 export function startReview(){
@@ -105,7 +109,7 @@ export function startReview(){
   if(!pool.length){ go("home"); return; }
   S.review=true;
   S.deck = shuffle(pool).slice(0, Math.min(DRAW, pool.length));
-  S.idx=0; S.picks=[]; S.sel=[]; S.screen="quiz"; render();
+  S.idx=0; S.picks=[]; S.sel=[]; S.screen="quiz"; resetQuizTimer(); render();
 }
 
 // 「後で見直す」演習：ブックマークした問題だけを出題する演習モード
@@ -120,7 +124,7 @@ export function startMarkedPractice(){
   S.mode="practice";
   S.markedRun=true;
   S.deck = shuffle(pool).slice(0, Math.min(DRAW, pool.length));
-  S.idx=0; S.picks=[]; S.sel=[]; S.screen="quiz"; render();
+  S.idx=0; S.picks=[]; S.sel=[]; S.screen="quiz"; resetQuizTimer(); render();
 }
 
 // コマンド別学習：指定コマンドにタグ付けされた問題だけを出題する演習モード
@@ -136,7 +140,7 @@ export function startCommandPractice(cmd){
   const pool = questionsForCommand(cmd);
   if(!pool.length){ return; }
   S.deck = shuffle(pool);
-  S.idx=0; S.picks=[]; S.sel=[]; S.screen="quiz"; render();
+  S.idx=0; S.picks=[]; S.sel=[]; S.screen="quiz"; resetQuizTimer(); render();
 }
 
 export function pick(i){
@@ -148,6 +152,9 @@ export function pick(i){
 
 export function commit(){            // 試験モード：正誤は出さず次へ進む
   if(!S.sel.length) return;
+  // この問題の回答時間を記録（「戻る」で解き直した場合は上書き）
+  if(S.qTimes) S.qTimes[S.idx] = Math.round((Date.now() - (S.qShownAt||Date.now())) / 100) / 10;
+  S.qShownAt = Date.now();
   S.picks.push(S.sel.slice());
   if(S.idx+1 < S.deck.length){ S.idx++; S.sel=[]; render(); }
   else finish();
@@ -158,7 +165,7 @@ export async function saveToCloud(bp, wrongList, historyList) {
   if (!state.db || !state.currentUserId || !S.cert) return;
   try {
     const patch = {};
-    patch[S.cert] = { bp: bp, wrong: wrongList, history: historyList, marked: loadMarked() };
+    patch[S.cert] = { bp: bp, wrong: wrongList, history: historyList, marked: loadMarked(), cmdStats: loadCmdStats(S.cert) };
     await window.FirebaseSync.setDoc(window.FirebaseSync.doc(state.db, "users", state.currentUserId), {
       certs: patch,
       coins: (S.coins || 0),   // アカウント共通のコイン残高（資格横断）
@@ -342,6 +349,17 @@ export function finish(){
     window.QStats.record(S.cert, results);
   }
 
+  // 🧠 AIおすすめ復習：コマンドにタグ付けされた問題の結果を記録し、AIスコアを自動更新
+  try{
+    const cmdResults = S.deck
+      .map((q,i)=>({ cmd:q.cmd, correct: grade(q,S.picks[i]).full, timeSec: S.qTimes ? S.qTimes[i] : undefined }))
+      .filter(r=>r.cmd);
+    if(cmdResults.length){
+      recordCmdResults(cmdResults, S.cert);
+      updateAiScores(S.cert);
+    }
+  }catch(e){ console.error("AI review record failed:", e); }
+
   S.last=entry; S.screen="result"; render();
 }
 
@@ -443,6 +461,7 @@ export function applyCloud(certId){
     if(d.wrong !== undefined) localStorage.setItem("cert_"+certId+"_wrong", JSON.stringify([...new Set(d.wrong||[])]));
     if(d.marked !== undefined) localStorage.setItem("cert_"+certId+"_marked", JSON.stringify([...new Set(d.marked||[])]));
     if(d.history !== undefined) localStorage.setItem("cert_"+certId+"_history", JSON.stringify(d.history));
+    if(d.cmdStats !== undefined) saveCmdStats(d.cmdStats||{}, certId);   // AIおすすめ復習の学習統計
   }catch(e){}
 }
 
@@ -609,6 +628,7 @@ export function publishLeaderboard(){
 export function prevQuestion() {
   if (S.idx > 0) {
     S.idx--;
+    S.qShownAt = Date.now();   // 戻った問題の回答時間を計り直す
     // 過去にこの問題で選んでいた選択肢を現在の選択状態（S.sel）に復元
     S.sel = S.picks[S.idx] || [];
     render();

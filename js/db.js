@@ -2,6 +2,7 @@
   import { getFirestore, doc, setDoc, getDoc, deleteDoc, onSnapshot, collection, query, where, orderBy, limit, getDocs, getCountFromServer, writeBatch, increment, runTransaction } from "https://www.gstatic.com/firebasejs/10.0.0/firebase-firestore.js";
   import { getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword, signOut, onAuthStateChanged, deleteUser, reauthenticateWithCredential, EmailAuthProvider } from "https://www.gstatic.com/firebasejs/10.0.0/firebase-auth.js";
 import { applyCloud, applyCloudSkins, commit, getProfileName, publishLeaderboard, saveCoins, seedCloudFromLocal, totalBP } from './core.js';
+import { updateAiScores } from './reviewAI.js';
 import { app, applyCloudGcal, applyCloudMindPalette, applyCloudPendingOrders, applyCloudPlayground, applyCloudPortfolio, applyCloudScenarioMode, applyCloudTradeLog, applyCloudVoiceprint, gcalStartNotifyListener, gcalStopNotifyListener, logout, render } from './render.js';
 import { S, state } from './state.js';
 
@@ -221,6 +222,7 @@ import { S, state } from './state.js';
         state.currentUser = user;
         state.currentUserId = user.uid;
         state.profileChecked = false;   // このアカウントのユーザー名を確認するまでゲート
+        try { updateAiScores("lpic1"); } catch (e) {}   // 🧠 AIおすすめ復習：ログイン時にこのユーザーのAIスコアを自動更新
         // 公開プロフィール（表示名）をこの端末へ取り込む（機種をまたいで名前が引き継がれる）
         if (window.LB) {
           window.LB.me().then(d => {
