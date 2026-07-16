@@ -2816,6 +2816,16 @@ function geminiScheduleEditFormHTML(m){
 const GEMINI_CONFIRM_TEXT_RE = /^(ok|okay|オーケー|おっけー|はい|うん|了解|りょうかい|お願いします?|よろしく(お願いします?)?|登録(して(ください)?|する)?|それで(お願いします?)?)[!!。、\s]*$/i;
 const GEMINI_CANCEL_TEXT_RE = /^(キャンセル(します?)?|やめ(る|て|ます)?|中止(します?)?|いいえ|いや|やっぱ(り)?(やめ(ます)?)?)[!!。、\s]*$/;
 
+// 入力欄（.gemini-input）はrows="1"のまま、内容に応じてscrollHeightから
+// 高さを算出して伸び縮みさせる（CSS側のmax-height:124pxで4行相当に頭打ち）。
+// 一度高さをautoに戻してから測るのは、縮んだ場合（改行削除等）に
+// scrollHeightが古い高さのまま縮まなくなるのを防ぐため
+function autoResizeGeminiInput(el){
+  if(!el) return;
+  el.style.height = "auto";
+  el.style.height = Math.min(el.scrollHeight, 124) + "px";
+}
+
 // ストリーミング中のテキスト断片が届くたび毎回render()すると無駄が多いため、
 // アニメーションフレームごとに最大1回だけrender()するよう間引く
 let geminiStreamRenderScheduled = false;
@@ -2912,6 +2922,9 @@ export function renderGeminiChat(){
 
   const inputEl = document.getElementById("gemini-input");
   const sendBtn = document.getElementById("gemini-send");
+  // 下書き復元時など初期表示の時点で複数行入っている場合にも、最初から
+  // 正しい高さで表示されるようにしておく
+  autoResizeGeminiInput(inputEl);
   const submit = () => {
     if(!inputEl || geminiChat.busy) return;
     const text = inputEl.value;
@@ -2955,6 +2968,9 @@ export function renderGeminiChat(){
   };
   if(sendBtn) sendBtn.onclick = submit;
   if(inputEl){
+    // 入力するたびに高さを再計算し、改行や折り返しで複数行になった分だけ
+    // 入力欄を（下部ナビに被らないよう上方向に）伸ばす
+    inputEl.addEventListener("input", () => autoResizeGeminiInput(inputEl));
     // 画面表示のたびに自動でフォーカスすると、Gemini相談ボタンを押した
     // だけでスマホの仮想キーボードが勝手に立ち上がってしまうため、
     // ユーザーが入力欄自体をタップするまでフォーカスは当てない

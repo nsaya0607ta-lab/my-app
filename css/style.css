@@ -1619,8 +1619,18 @@ body[data-theme="dark"] .menu-btn:active, body[data-theme="galaxy"] .menu-btn:ac
   .ring-mid{ font-size:15px; }
 }
 
-/* ===== Gemini AIチャット相談 ===== */
-.gemini-chat-wrap{ display:flex; flex-direction:column; height:calc(100vh - 190px); min-height:340px; }
+/* ===== Gemini AIチャット相談 =====
+   .gemini-chat-wrapの高さは「画面全体 - ヘッダー等の概算オフセット」で
+   固定する。100vhはモバイルSafari等でアドレスバーの伸縮に追従せず、
+   入力欄が下部ナビの下に隠れたり位置がずれたりする原因になるため、
+   ビジュアルビューポートに追従する100dvhを優先して使う（未対応ブラウザ
+   では直前のvh指定にフォールバックする）。
+   入力欄（.gemini-input-row）はflexの最後の子としてwrap内の最下部に
+   常駐し、flex:noneで自身のコンテンツぶんの高さしか取らない。複数行に
+   なって縦に伸びる際は、このwrap自体の高さは変わらないまま.gemini-chat-scroll
+   （flex:1）側が押し縮められる形になるので、入力欄は下端の位置を保った
+   まま上方向にだけ伸びる（下部ナビ側に被らない） */
+.gemini-chat-wrap{ display:flex; flex-direction:column; height:calc(100vh - 190px); height:calc(100dvh - 190px); min-height:340px; }
 .gemini-chat-scroll{ flex:1; overflow-y:auto; display:flex; flex-direction:column; gap:10px; padding:4px 2px 10px; }
 .gemini-empty{ margin:auto; text-align:center; color:var(--muted); font-size:13px; line-height:1.7; padding:0 12px; }
 .gemini-bubble{ max-width:82%; padding:11px 14px; border-radius:16px; font-size:14.5px; line-height:1.6; white-space:pre-wrap; word-break:break-word; box-shadow:0 1px 3px rgba(0,0,0,.04); }
@@ -1686,8 +1696,12 @@ body[data-theme="dark"] .menu-btn:active, body[data-theme="galaxy"] .menu-btn:ac
 }
 .gemini-schedule-form-error{ font-size:12.5px; color:var(--bad); background:rgba(220,38,38,.08); border-radius:10px; padding:6px 10px; }
 .gemini-error{ font-size:12.5px; color:var(--bad); margin:4px 2px 8px; }
-.gemini-input-row{ display:flex; align-items:flex-end; gap:8px; padding-top:8px; border-top:1px solid var(--line); }
-.gemini-input{ flex:1; resize:none; max-height:96px; background:var(--surface); border:1.5px solid var(--line); border-radius:14px; padding:11px 14px; color:var(--text); font-family:inherit; line-height:1.5; }
+.gemini-input-row{ display:flex; align-items:flex-end; gap:8px; padding-top:8px; border-top:1px solid var(--line); flex:none; }
+/* 高さはjs/render.jsのautoResizeGeminiInput()が入力のたびにscrollHeightから
+   算出して直接styleへ設定する（rows="1"のまま自動で複数行ぶん伸びる）。
+   max-heightは目安4行ぶん（line-height 24px×4 + 上下padding22px）で頭打ちに
+   し、それ以上はテキストエリア内部だけが縦スクロールする */
+.gemini-input{ flex:1; resize:none; max-height:124px; overflow-y:auto; background:var(--surface); border:1.5px solid var(--line); border-radius:14px; padding:11px 14px; color:var(--text); font-family:inherit; line-height:1.5; }
 .gemini-input:focus{ outline:none; border-color:var(--accent); }
 .gemini-input:disabled{ opacity:.6; }
 .gemini-send{ flex:none; padding:11px 18px; border:none; border-radius:99px; font-size:14px; font-weight:700; color:#fff; background:linear-gradient(90deg,var(--accent),#0ea5e9); cursor:pointer; box-shadow:0 3px 10px rgba(2,132,199,.25); transition:transform .1s,opacity .15s; }
