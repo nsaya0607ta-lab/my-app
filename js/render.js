@@ -50,6 +50,9 @@ document.addEventListener("click", (e)=>{
 // S.cert の値を見て個別資格行の要否を判断しているため）。
 export function go(s){
   if(s === "certs" || s === "lpic-certs" || s === "select") S.cert = null;
+  // ホームへ戻ったら、Gemini相談画面の「戻る」先の記憶もリセットする
+  // （次にGeminiへ入るのがFABなど別の入口であれば、通常どおりホームへ戻せるように）
+  if(s === "select") S.geminiReturnScreen = null;
   S.screen = s;
   render();
 }
@@ -2761,9 +2764,13 @@ export function renderGeminiChat(){
   // 一度読み取ったら使い切り、次回の再描画で二重に入らないようクリアする
   const draftText = geminiChat.draft || "";
   geminiChat.draft = "";
+  // 問題の解答・解説から「Geminiに質問する」で来た場合は、そのままチャットを
+  // 終えたときに元の解説画面へ戻れるようにする（通常はホームへ戻る）
+  const backTarget = S.geminiReturnScreen || "select";
+  const backLabel = backTarget === "review" ? "← 解説へ戻る" : "← ホーム";
 
   app.innerHTML = `
-    <div class="q-head"><button class="quit" data-go="select">← ホーム</button><span class="q-count">✨ Gemini相談</span></div>
+    <div class="q-head"><button class="quit" data-gemini-back>${backLabel}</button><span class="q-count">✨ Gemini相談</span></div>
     <div class="gemini-chat-wrap">
       <div class="gemini-chat-scroll" id="gemini-scroll">${msgsHTML}${busyHTML}</div>
       ${errorHTML}
@@ -2774,6 +2781,8 @@ export function renderGeminiChat(){
     </div>
   `;
   app.querySelectorAll("[data-go]").forEach(b => b.onclick = () => go(b.dataset.go));
+  const backBtn = app.querySelector("[data-gemini-back]");
+  if(backBtn) backBtn.onclick = () => { S.geminiReturnScreen = null; go(backTarget); };
 
   const scrollEl = document.getElementById("gemini-scroll");
   if(scrollEl) scrollEl.scrollTop = scrollEl.scrollHeight;

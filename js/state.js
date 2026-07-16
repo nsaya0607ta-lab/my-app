@@ -11,6 +11,7 @@ export const S = {
   markedRun:false,             // 「後で見直す」ブックマークの問題だけで演習中ならtrue
   newsDetail:null,             // ニュース詳細画面に表示中の項目（{title,content,dateKey,label,icon,returnScreen}）
   scenarioId:null,             // シナリオモードで選択中のシナリオID。nullなら一覧表示
+  geminiReturnScreen:null,     // Gemini相談画面の「戻る」先（例："review"）。nullなら通常どおりホームへ戻る
 };
 
 export const state = {

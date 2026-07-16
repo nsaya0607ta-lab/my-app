@@ -230,6 +230,7 @@ function geminiAskDraft(question, index){
 function askGeminiAbout(question, index){
   if(!question) return;
   geminiChat.draft = geminiAskDraft(question, index);
+  S.geminiReturnScreen = "review";
   go("gemini");
 }
 
