@@ -2658,9 +2658,90 @@ export function renderHoldings(){
 // 経由（APIキーはサーバーのみが保持）で行う。
 function geminiMessageBubbleHTML(m){
   if(m.type === "schedule_confirm") return geminiScheduleConfirmCardHTML(m);
-  const cls = "gemini-bubble " + (m.role === "user" ? "gemini-bubble-user" : "gemini-bubble-model");
-  const body = esc(m.text).replace(/\n/g, "<br>");
+  // Geminiの回答（role==="model"）だけ、```コマンド実行例```を黒いターミナル風
+  // カードに整形する。ユーザー発言はそのまま通常の吹き出し表示にする
+  const hasCode = m.role === "model" && GEMINI_CODE_FENCE_HAS_RE.test(m.text || "");
+  const cls = "gemini-bubble " + (m.role === "user" ? "gemini-bubble-user" : "gemini-bubble-model") + (hasCode ? " gemini-bubble-has-code" : "");
+  const body = m.role === "model" ? geminiFormatModelText(m.text) : esc(m.text).replace(/\n/g, "<br>");
   return `<div class="${cls}">${body}</div>`;
+}
+
+// LPICコマンドの実行例など、Geminiが```で囲んで返してきたコードブロックを
+// 検出し、通常のテキスト部分（エスケープ＋改行→<br>のまま）と、黒い
+// ターミナル風カード（コピー用ボタン付き）に振り分けて組み立てる
+const GEMINI_CODE_FENCE_RE = /```[a-zA-Z0-9]*\n?([\s\S]*?)```/g;
+// hasCode判定専用（gフラグ無し）。GEMINI_CODE_FENCE_REはexecループでlastIndexを
+// 使い回すため、同じ正規表現をtest()にも使うとlastIndexが混線して次のメッセージの
+// 判定を取りこぼす。判定用だけ別インスタンスに分けて事故を防ぐ
+const GEMINI_CODE_FENCE_HAS_RE = /```[a-zA-Z0-9]*\n?[\s\S]*?```/;
+
+function geminiFormatModelText(text){
+  const src = text || "";
+  let html = "";
+  let lastIndex = 0;
+  let match;
+  GEMINI_CODE_FENCE_RE.lastIndex = 0;
+  while((match = GEMINI_CODE_FENCE_RE.exec(src))){
+    const before = src.slice(lastIndex, match.index);
+    if(before) html += esc(before).replace(/\n/g, "<br>");
+    html += geminiTerminalCardHTML(match[1]);
+    lastIndex = GEMINI_CODE_FENCE_RE.lastIndex;
+  }
+  const rest = src.slice(lastIndex);
+  if(rest) html += esc(rest).replace(/\n/g, "<br>");
+  return html;
+}
+
+// コードブロックの中身を1行ずつ見て、「$ 」「# 」で始まる行はコマンド行
+// （緑のプロンプト記号＋コピー対象としてマークするgemini-term-cmdクラス）、
+// それ以外は結果の出力行として薄い色で表示する
+function geminiTerminalCardHTML(raw){
+  const body = (raw || "").replace(/^\n/, "").replace(/\n$/, "");
+  const lines = body.split("\n");
+  const rowsHTML = lines.map(line => {
+    const m = line.match(/^([$#])\s(.*)$/);
+    if(m){
+      return `<div class="gemini-term-line"><span class="gemini-term-prompt">${esc(m[1])}</span> <span class="gemini-term-cmd">${esc(m[2])}</span></div>`;
+    }
+    return `<div class="gemini-term-line gemini-term-out">${line ? esc(line) : "&nbsp;"}</div>`;
+  }).join("");
+  return `
+    <div class="gemini-code-card">
+      <div class="gemini-code-head">
+        <span class="gemini-code-dots"><span></span><span></span><span></span></span>
+        <span class="gemini-code-title">Terminal</span>
+        <button type="button" class="gemini-code-copy">📋 コピー</button>
+      </div>
+      <div class="gemini-code-body">${rowsHTML}</div>
+    </div>`;
+}
+
+// コピー対象は「$ 」「# 」で始まっていたコマンド行だけ（.gemini-term-cmd）。
+// 結果の出力例まで一緒にコピーしてしまうと、そのまま端末に貼り付けられない
+// ため、コマンド行が見つからない場合のみブロック全文にフォールバックする
+function geminiCopyCodeCard(card){
+  const cmdEls = card.querySelectorAll(".gemini-term-cmd");
+  const text = cmdEls.length
+    ? Array.from(cmdEls).map(el => el.textContent).join("\n")
+    : (card.querySelector(".gemini-code-body") || {}).textContent || "";
+  if(!text) return Promise.reject(new Error("no-text"));
+  if(navigator.clipboard && navigator.clipboard.writeText){
+    return navigator.clipboard.writeText(text);
+  }
+  return new Promise((resolve, reject) => {
+    try{
+      const ta = document.createElement("textarea");
+      ta.value = text;
+      ta.style.position = "fixed";
+      ta.style.opacity = "0";
+      document.body.appendChild(ta);
+      ta.focus();
+      ta.select();
+      document.execCommand("copy");
+      document.body.removeChild(ta);
+      resolve();
+    }catch(e){ reject(e); }
+  });
 }
 
 // register_scheduleの結果を出す確認カード。ステータスに応じて、ボタン付きの
@@ -2786,6 +2867,19 @@ export function renderGeminiChat(){
 
   const scrollEl = document.getElementById("gemini-scroll");
   if(scrollEl) scrollEl.scrollTop = scrollEl.scrollHeight;
+
+  app.querySelectorAll(".gemini-code-copy").forEach(btn => {
+    btn.onclick = () => {
+      const card = btn.closest(".gemini-code-card");
+      if(!card) return;
+      const original = btn.textContent;
+      geminiCopyCodeCard(card).then(() => {
+        btn.textContent = "✅ コピーしました";
+        btn.disabled = true;
+        setTimeout(() => { btn.textContent = original; btn.disabled = false; }, 1500);
+      }).catch(() => {});
+    };
+  });
 
   app.querySelectorAll("[data-schedule-confirm]").forEach(btn => {
     btn.onclick = () => {
