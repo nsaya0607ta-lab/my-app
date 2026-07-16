@@ -2,6 +2,7 @@ import { CERTS } from './data/certs.js';
 import { DC_PHASES, L, REGIONS } from './data/constants.js';
 import { CONCEPTS, DRAW, PASS, Q, TIERS, applySkin, certById, certStat, commit, correctSet, dcCount, dcPhase, dcTitle, esc, exportCode, fmt, getBP, getProfileName, grade, importCode, isAdminAccount, isMarked, isMulti, loadHist, loadMarked, loadReviewStats, loadTapSound, loadUiTheme, loadWrong, overallLevel, overallStat, pick, pts, publishLeaderboard, purchaseSkin, questionsForCommand, saveCoins, saveTapSound, saveToCloud, saveUiTheme, selectCert, setBP, setProfileName, skinHandleIdentityChange, stars, start, startCommandPractice, startMarkedPractice, startReview, toggleMarked, totalBP } from './core.js';
 import { LPIC1_COMMANDS } from './data/lpic1-commands.js';
+import { aiDailyUpdateCheck, aiOverallComment, getAiRecommendations } from './reviewAI.js';
 import { getWeather } from './weather.js';
 import { geminiChat, sendGeminiMessage, setGeminiScheduleHandler, setGeminiHomeContextProvider, setGeminiStockContextProvider, pushGeminiMessage } from './gemini.js';
 import { SKIN_DATA } from './data/skins.js';
@@ -446,6 +447,44 @@ const MENU_ICON_REVIEW = `<svg viewBox="0 0 24 24" fill="none" stroke="currentCo
 const MENU_ICON_DICT = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5.6C10.3 4.3 7.9 3.8 5.5 4.2a1 1 0 0 0-.8 1v13.2a1 1 0 0 0 1.2 1c2-.4 4-.1 5.5 1a.7.7 0 0 0 1.2 0c1.5-1.1 3.5-1.4 5.5-1a1 1 0 0 0 1.2-1V5.2a1 1 0 0 0-.8-1c-2.4-.4-4.8.1-6.5 1.4Z"></path><path d="M12 5.6v14"></path><text x="6.8" y="13.2" font-size="5.2" font-weight="800" stroke="none" fill="currentColor">A</text><text x="14" y="13.2" font-size="5.2" font-weight="800" stroke="none" fill="currentColor">Z</text></svg>`;
 const MENU_ICON_MARKED = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M7 3.5h10a1 1 0 0 1 1 1V20l-6-3.7L6 20V4.5a1 1 0 0 1 1-1Z"></path><path d="M9.3 9h5.4"></path><path d="M12 6.3v5.4"></path></svg>`;
 
+/* ===== 🧠 AIおすすめ復習：学習画面に表示するセクションのHTMLを組み立てる =====
+   スコア計算・データ保存は js/reviewAI.js（アプリ内計算。生成AIは使わない）。
+   コマンド別の問題プール（cmd付きExtraQ）がある資格＝LPIC-1でのみ表示する */
+function aiReviewSectionHTML(){
+  if(S.cert!=="lpic1") return "";
+  aiDailyUpdateCheck(S.cert);                    // 日付が変わっていたらスコアを自動再計算
+  const recs = getAiRecommendations(S.cert);     // 表示のたびに最新スコアへ自動更新
+  const comment = aiOverallComment(recs);
+  const showAll = state.aiReviewShowAll;
+  const rows = showAll ? recs : recs.slice(0,5);
+  const cards = rows.map(r=>`
+    <button class="airec-card" data-airec="${esc(r.cmd)}">
+      <div class="airec-card-head">
+        <span class="airec-stars">${"★".repeat(r.starsN)}</span>
+        <span class="airec-cmd">${esc(r.label)}</span>
+        <span class="airec-score">復習推奨度：<em>${r.score}%</em></span>
+      </div>
+      <div class="airec-reasons">
+        <span class="airec-reasons-lab">理由</span>
+        ${r.reasons.map(t=>`<span class="airec-reason">・${esc(t)}</span>`).join("")}
+      </div>
+      <span class="airec-go">このコマンドだけ復習する ›</span>
+    </button>`).join("");
+  return `
+    <div class="airec-wrap">
+      <div class="airec-head">
+        <span class="airec-head-ico">🧠</span>
+        <div>
+          <div class="airec-ttl">AIおすすめ復習</div>
+          <div class="airec-sub">忘却曲線と学習データから、今復習すべきコマンドを自動提案</div>
+        </div>
+      </div>
+      <div class="airec-comment">${esc(comment)}</div>
+      ${recs.length ? cards : `<div class="airec-empty">まだ学習データがありません。演習モードでコマンド問題を解くと、ここにAIの復習提案が表示されます。</div>`}
+      ${recs.length>5 ? `<button class="link" data-airec-more>${showAll?`閉じる（上位5件だけ表示）`:`もっと見る（全${recs.length}件）`}</button>` : ""}
+    </div>`;
+}
+
 export function renderHome(){
   updateHeaderNav(true);
   const h=loadHist();
@@ -543,6 +582,8 @@ export function renderHome(){
       </div>
     </div>
 
+    ${aiReviewSectionHTML()}
+
     ${state.practicePick ? `
     <div class="pcount-wrap" style="margin-top:16px">
       <div class="pcount-lab">📝 演習モード・問題数を選択</div>
@@ -612,6 +653,9 @@ export function renderHome(){
   app.querySelectorAll("[data-pc]").forEach(b=>b.onclick=()=>start("practice", +b.dataset.pc));
   const rv=app.querySelector("[data-review]"); if(rv)rv.onclick=()=>startReview();
   const mkd=app.querySelector("[data-marked]"); if(mkd)mkd.onclick=()=>startMarkedPractice();
+  // 🧠 AIおすすめ復習：カードタップでそのコマンドだけの復習演習を開始／もっと見る切替
+  app.querySelectorAll("[data-airec]").forEach(b=>b.onclick=()=>startCommandPractice(b.dataset.airec));
+  const am=app.querySelector("[data-airec-more]"); if(am)am.onclick=()=>{ state.aiReviewShowAll=!state.aiReviewShowAll; render(); };
   app.querySelectorAll("[data-go]").forEach(b=>b.onclick=()=>go(b.dataset.go));
   const lo=app.querySelector("[data-logout]"); if(lo)lo.onclick=()=>logout();
   const li=app.querySelector("[data-login]"); if(li)li.onclick=()=>{ state.guestMode=false; state.authMode="login"; render(); };
