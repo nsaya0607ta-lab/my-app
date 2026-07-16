@@ -7,6 +7,7 @@ export const S = {
   tapSound:"wood",             // 設定＞タップ音設定で切り替える効果音（wood/drop/click/mute）
   deck:[], idx:0, picks:[], sel:[], revealed:false, last:null,
   commandCmd:null,             // コマンド別演習中に選択中のコマンド（例："grep"）。通常演習/試験ではnull
+  markedRun:false,             // 「後で見直す」ブックマークの問題だけで演習中ならtrue
   newsDetail:null,             // ニュース詳細画面に表示中の項目（{title,content,dateKey,label,icon,returnScreen}）
   scenarioId:null,             // シナリオモードで選択中のシナリオID。nullなら一覧表示
 };
