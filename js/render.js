@@ -2,7 +2,7 @@ import { CERTS } from './data/certs.js';
 import { DC_PHASES, L, REGIONS } from './data/constants.js';
 import { CONCEPTS, DRAW, PASS, Q, TIERS, applySkin, certById, certStat, commit, correctSet, dcCount, dcPhase, dcTitle, esc, exportCode, fmt, getBP, getProfileName, grade, importCode, isAdminAccount, isMarked, isMulti, loadHist, loadMarked, loadReviewStats, loadTapSound, loadUiTheme, loadWrong, overallLevel, overallStat, pick, pts, publishLeaderboard, purchaseSkin, questionsForCommand, saveCoins, saveTapSound, saveToCloud, saveUiTheme, selectCert, setBP, setProfileName, skinHandleIdentityChange, stars, start, startCommandPractice, startMarkedPractice, startReview, toggleMarked, totalBP } from './core.js';
 import { LPIC1_COMMANDS } from './data/lpic1-commands.js';
-import { aiDailyUpdateCheck, aiOverallComment, getAiRecommendations } from './reviewAI.js';
+import { aiDailyUpdateCheck, aiOverallComment, aiShortComment, getAiRecommendations } from './reviewAI.js';
 import { getWeather } from './weather.js';
 import { geminiChat, sendGeminiMessage, setGeminiScheduleHandler, setGeminiHomeContextProvider, setGeminiStockContextProvider, pushGeminiMessage } from './gemini.js';
 import { SKIN_DATA } from './data/skins.js';
@@ -447,41 +447,31 @@ const MENU_ICON_REVIEW = `<svg viewBox="0 0 24 24" fill="none" stroke="currentCo
 const MENU_ICON_DICT = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5.6C10.3 4.3 7.9 3.8 5.5 4.2a1 1 0 0 0-.8 1v13.2a1 1 0 0 0 1.2 1c2-.4 4-.1 5.5 1a.7.7 0 0 0 1.2 0c1.5-1.1 3.5-1.4 5.5-1a1 1 0 0 0 1.2-1V5.2a1 1 0 0 0-.8-1c-2.4-.4-4.8.1-6.5 1.4Z"></path><path d="M12 5.6v14"></path><text x="6.8" y="13.2" font-size="5.2" font-weight="800" stroke="none" fill="currentColor">A</text><text x="14" y="13.2" font-size="5.2" font-weight="800" stroke="none" fill="currentColor">Z</text></svg>`;
 const MENU_ICON_MARKED = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M7 3.5h10a1 1 0 0 1 1 1V20l-6-3.7L6 20V4.5a1 1 0 0 1 1-1Z"></path><path d="M9.3 9h5.4"></path><path d="M12 6.3v5.4"></path></svg>`;
 
-/* ===== 🧠 AIおすすめ復習：学習画面に表示するセクションのHTMLを組み立てる =====
+/* ===== 🧠 AIおすすめ復習：ホーム画面に表示するコンパクトカード =====
    スコア計算・データ保存は js/reviewAI.js（アプリ内計算。生成AIは使わない）。
-   コマンド別の問題プール（cmd付きExtraQ）がある資格＝LPIC-1でのみ表示する */
+   コマンド別の問題プール（cmd付きExtraQ）がある資格＝LPIC-1でのみ表示する。
+   ホームには「短い一言＋星別の件数バッジ＋開くボタン」だけを置き、
+   コマンド一覧・理由などの詳細はボトムシート（openAiReviewSheet）で表示する */
 function aiReviewSectionHTML(){
   if(S.cert!=="lpic1") return "";
   aiDailyUpdateCheck(S.cert);                    // 日付が変わっていたらスコアを自動再計算
   const recs = getAiRecommendations(S.cert);     // 表示のたびに最新スコアへ自動更新
-  const comment = aiOverallComment(recs);
-  const showAll = state.aiReviewShowAll;
-  const rows = showAll ? recs : recs.slice(0,5);
-  const cards = rows.map(r=>`
-    <button class="airec-card" data-airec="${esc(r.cmd)}">
-      <div class="airec-card-head">
-        <span class="airec-stars">${"★".repeat(r.starsN)}</span>
-        <span class="airec-cmd">${esc(r.label)}</span>
-        <span class="airec-score">復習推奨度：<em>${r.score}%</em></span>
-      </div>
-      <div class="airec-reasons">
-        <span class="airec-reasons-lab">理由</span>
-        ${r.reasons.map(t=>`<span class="airec-reason">・${esc(t)}</span>`).join("")}
-      </div>
-      <span class="airec-go">このコマンドだけ復習する ›</span>
-    </button>`).join("");
+  const comment = aiShortComment(recs);
+  // 星別の件数バッジ（★5〜★3のみ。それ未満はまとめて「その他」）
+  const levels = [5,4,3].map(n=>({n, count:recs.filter(r=>r.starsN===n).length})).filter(x=>x.count>0);
+  const others = recs.length - levels.reduce((s,x)=>s+x.count,0);
+  const badges = levels.map(x=>`<span class="airec-badge"><span class="airec-badge-stars">${"★".repeat(x.n)}</span>${x.count}件</span>`).join("")
+    + (others>0 ? `<span class="airec-badge airec-badge--other">その他 ${others}件</span>` : "");
   return `
-    <div class="airec-wrap">
-      <div class="airec-head">
+    <div class="airec-wrap airec-wrap--compact">
+      <div class="airec-compact-head">
         <span class="airec-head-ico">🧠</span>
-        <div>
-          <div class="airec-ttl">AIおすすめ復習</div>
-          <div class="airec-sub">忘却曲線と学習データから、今復習すべきコマンドを自動提案</div>
-        </div>
+        <span class="airec-ttl">AIおすすめ復習</span>
       </div>
-      <div class="airec-comment">${esc(comment)}</div>
-      ${recs.length ? cards : `<div class="airec-empty">まだ学習データがありません。演習モードでコマンド問題を解くと、ここにAIの復習提案が表示されます。</div>`}
-      ${recs.length>5 ? `<button class="link" data-airec-more>${showAll?`閉じる（上位5件だけ表示）`:`もっと見る（全${recs.length}件）`}</button>` : ""}
+      <div class="airec-compact-comment">${esc(comment)}</div>
+      ${recs.length ? `
+      <div class="airec-badges">${badges}</div>
+      <button class="airec-open-btn" data-airec-open>おすすめ復習を見る <span class="airec-open-arw">▶</span></button>` : ``}
     </div>`;
 }
 
@@ -653,9 +643,8 @@ export function renderHome(){
   app.querySelectorAll("[data-pc]").forEach(b=>b.onclick=()=>start("practice", +b.dataset.pc));
   const rv=app.querySelector("[data-review]"); if(rv)rv.onclick=()=>startReview();
   const mkd=app.querySelector("[data-marked]"); if(mkd)mkd.onclick=()=>startMarkedPractice();
-  // 🧠 AIおすすめ復習：カードタップでそのコマンドだけの復習演習を開始／もっと見る切替
-  app.querySelectorAll("[data-airec]").forEach(b=>b.onclick=()=>startCommandPractice(b.dataset.airec));
-  const am=app.querySelector("[data-airec-more]"); if(am)am.onclick=()=>{ state.aiReviewShowAll=!state.aiReviewShowAll; render(); };
+  // 🧠 AIおすすめ復習：「おすすめ復習を見る」でボトムシートを開く
+  const ao=app.querySelector("[data-airec-open]"); if(ao)ao.onclick=()=>openAiReviewSheet();
   app.querySelectorAll("[data-go]").forEach(b=>b.onclick=()=>go(b.dataset.go));
   const lo=app.querySelector("[data-logout]"); if(lo)lo.onclick=()=>logout();
   const li=app.querySelector("[data-login]"); if(li)li.onclick=()=>{ state.guestMode=false; state.authMode="login"; render(); };
@@ -3207,6 +3196,164 @@ export function openStudyMenuSheet(){
     const key = b.dataset.sheetItem;
     closeSheet(ov);
     go(key);
+  });
+}
+
+/* ===== 🧠 AIおすすめ復習ボトムシート =====
+   ホームのコンパクトカードの「おすすめ復習を見る」から開く。
+   AIコメント・フィルター（星の数）・並び替え・コマンド一覧（推奨度・理由・
+   「このコマンドだけ復習する」）をすべてこのシート内に表示する。
+   既存の.sheet-ov/.bottom-sheet基盤（下スワイプで閉じる・背景暗転）を
+   使いつつ、上へドラッグするとシートが広がる（airec-sheet-tall） */
+const AIREC_FILTERS = [
+  { key:"all", label:"すべて" },
+  { key:"5",   label:"★★★★★" },
+  { key:"4",   label:"★★★★" },
+  { key:"3",   label:"★★★" },
+];
+const AIREC_SORTS = [
+  { key:"score",  label:"優先度順" },
+  { key:"forget", label:"最近忘れそう順" },
+  { key:"acc",    label:"正答率順" },
+];
+
+function airecCardHTML(r){
+  return `
+    <button class="airec-card" data-airec="${esc(r.cmd)}">
+      <div class="airec-card-head">
+        <span class="airec-stars">${"★".repeat(r.starsN)}</span>
+        <span class="airec-cmd">${esc(r.label)}</span>
+        <span class="airec-score">復習推奨度：<em>${r.score}%</em></span>
+      </div>
+      <div class="airec-reasons">
+        <span class="airec-reasons-lab">理由</span>
+        ${r.reasons.map(t=>`<span class="airec-reason">・${esc(t)}</span>`).join("")}
+      </div>
+      <span class="airec-go">このコマンドだけ復習する ›</span>
+    </button>`;
+}
+
+// 通常のattachSheetDragHandlers（下スワイプで閉じるだけ）に加えて、
+// 上方向へのドラッグ（またはフリック）でシートを拡大表示に切り替える。
+// 上方向は軽い抵抗をつけて指に少しだけ追従させ、iOSのシート操作感に寄せる
+function attachAirecSheetDragHandlers(ov, sheet){
+  const dragHandle = sheet.querySelector(".bottom-sheet-drag-handle");
+  if(!dragHandle) return;
+
+  let dragging = false;
+  let startY = 0;
+  let lastY = 0;
+  let lastT = 0;
+  let velocity = 0;
+  let sheetHeight = 0;
+
+  function onTouchStart(e){
+    if(e.touches.length !== 1) return;
+    dragging = true;
+    startY = lastY = e.touches[0].clientY;
+    lastT = e.timeStamp;
+    velocity = 0;
+    sheetHeight = sheet.getBoundingClientRect().height;
+    sheet.style.transition = "none";
+  }
+
+  function onTouchMove(e){
+    if(!dragging) return;
+    const y = e.touches[0].clientY;
+    const dt = e.timeStamp - lastT || 1;
+    velocity = (y - lastY) / dt;
+    lastY = y;
+    lastT = e.timeStamp;
+    const dy = y - startY;
+    // 下方向は指にそのまま追従、上方向は1/3の抵抗つき（最大-48px）
+    sheet.style.transform = `translateY(${dy >= 0 ? dy : Math.max(dy/3, -48)}px)`;
+    e.preventDefault();
+  }
+
+  function onTouchEnd(){
+    if(!dragging) return;
+    dragging = false;
+    const dy = lastY - startY;
+    sheet.style.transition = "";
+    sheet.style.transform = "";
+    if(dy > sheetHeight * SHEET_CLOSE_DISTANCE_RATIO || velocity > SHEET_CLOSE_VELOCITY){
+      closeSheet(ov);                                   // 下へスワイプ → 閉じる
+    }else if(dy < -30 || velocity < -SHEET_CLOSE_VELOCITY){
+      sheet.classList.add("airec-sheet-tall");          // 上へドラッグ → 広げる
+    }
+  }
+
+  dragHandle.addEventListener("touchstart", onTouchStart, { passive: true });
+  dragHandle.addEventListener("touchmove", onTouchMove, { passive: false });
+  dragHandle.addEventListener("touchend", onTouchEnd, { passive: true });
+  dragHandle.addEventListener("touchcancel", onTouchEnd, { passive: true });
+}
+
+export function openAiReviewSheet(){
+  aiDailyUpdateCheck(S.cert);
+  const recs = getAiRecommendations(S.cert);
+  let filter = "all";     // すべて / 星5 / 星4 / 星3
+  let sortKey = "score";  // score:優先度順 / forget:最近忘れそう順 / acc:正答率順
+
+  lockBodyScrollForSheet();
+  const ov = document.createElement("div");
+  ov.className = "sheet-ov";
+  ov.innerHTML = `
+    <div class="bottom-sheet airec-sheet">
+      <div class="bottom-sheet-drag-handle">
+        <div class="bottom-sheet-handle"></div>
+        <div class="bottom-sheet-title">🧠 AIおすすめ復習</div>
+      </div>
+      <div class="airec-sheet-tools">
+        <div class="airec-sheet-comment">${esc(aiOverallComment(recs))}</div>
+        <div class="airec-chip-row">
+          ${AIREC_FILTERS.map(f=>`<button class="airec-chip${f.key==="all"?" on":""}" data-airec-filter="${f.key}">${f.label}</button>`).join("")}
+        </div>
+        <div class="airec-chip-row airec-chip-row--sort">
+          ${AIREC_SORTS.map(s=>`<button class="airec-chip airec-chip--sort${s.key==="score"?" on":""}" data-airec-sort="${s.key}">${s.label}</button>`).join("")}
+        </div>
+      </div>
+      <div class="bottom-sheet-list airec-sheet-list"></div>
+    </div>`;
+  document.body.appendChild(ov);
+  ov.addEventListener("click", (e) => { if(e.target === ov) closeSheet(ov); });
+  const touchGuard = createSheetTouchGuard(ov);
+  ov.addEventListener("touchstart", touchGuard.onTouchStart, { passive: true });
+  ov.addEventListener("touchmove", touchGuard.onTouchMove, { passive: false });
+  const sheet = ov.querySelector(".bottom-sheet");
+  attachAirecSheetDragHandlers(ov, sheet);
+
+  const listEl = ov.querySelector(".airec-sheet-list");
+  function renderList(){
+    let rows = recs.slice();
+    if(filter !== "all") rows = rows.filter(r=>r.starsN === +filter);
+    if(sortKey === "forget")   rows.sort((a,b)=>a.retention-b.retention || b.score-a.score);
+    else if(sortKey === "acc") rows.sort((a,b)=>a.accPct-b.accPct || b.score-a.score);
+    else                       rows.sort((a,b)=>b.score-a.score);
+    listEl.innerHTML = rows.length
+      ? rows.map(airecCardHTML).join("")
+      : `<div class="airec-empty">${recs.length ? "この条件に当てはまるコマンドはありません。" : "まだ学習データがありません。演習モードでコマンド問題を解くと、ここにAIの復習提案が表示されます。"}</div>`;
+    listEl.querySelectorAll("[data-airec]").forEach(b=>b.onclick=()=>{
+      closeSheet(ov);
+      startCommandPractice(b.dataset.airec);
+    });
+    listEl.scrollTop = 0;
+  }
+  ov.querySelectorAll("[data-airec-filter]").forEach(b=>b.onclick=()=>{
+    filter = b.dataset.airecFilter;
+    ov.querySelectorAll("[data-airec-filter]").forEach(x=>x.classList.toggle("on", x===b));
+    renderList();
+  });
+  ov.querySelectorAll("[data-airec-sort]").forEach(b=>b.onclick=()=>{
+    sortKey = b.dataset.airecSort;
+    ov.querySelectorAll("[data-airec-sort]").forEach(x=>x.classList.toggle("on", x===b));
+    renderList();
+  });
+  renderList();
+
+  requestAnimationFrame(() => {
+    ov.classList.add("sheet-ov-show");
+    sheet.classList.add("bottom-sheet-show");
   });
 }
 
