@@ -1620,6 +1620,32 @@ body[data-theme="dark"] .menu-btn:active, body[data-theme="galaxy"] .menu-btn:ac
 .gemini-bubble-user{ align-self:flex-end; background:linear-gradient(90deg,var(--accent),#0ea5e9); color:#fff; border-bottom-right-radius:5px; }
 .gemini-bubble-model{ align-self:flex-start; background:var(--surface); border:1px solid var(--line); color:var(--text); border-bottom-left-radius:5px; }
 .gemini-bubble-busy{ color:var(--muted); font-style:italic; }
+/* コマンド実行例（```コードブロック）を含む回答は、黒いターミナルカードが
+   窮屈にならないよう吹き出し自体の最大幅を広げる */
+.gemini-bubble-has-code{ max-width:94%; }
+
+/* ---- Gemini回答内のコマンド実行例（黒いターミナル風カード＋コピーボタン） ----
+   js/playground（Linux仮想端末）の.pg-terminal-*と同じ配色に揃えることで、
+   アプリ内の「黒い画面」の見た目を統一している */
+.gemini-code-card{ margin:8px 0 2px; border-radius:14px; overflow:hidden;
+  background:#0b1220; border:1px solid #1e293b; box-shadow:0 6px 16px rgba(15,23,42,.22); }
+.gemini-code-head{ display:flex; align-items:center; gap:8px; padding:8px 10px;
+  background:#111a2e; border-bottom:1px solid #1e293b; }
+.gemini-code-dots{ display:flex; gap:5px; flex:none; }
+.gemini-code-dots span{ width:8px; height:8px; border-radius:50%; background:#334155; display:block; }
+.gemini-code-title{ flex:1; font-size:10.5px; font-weight:700; color:#94a3b8;
+  font-family:ui-monospace,"SFMono-Regular",Menlo,Consolas,monospace; }
+.gemini-code-copy{ flex:none; background:none; border:1px solid #334155; color:#94a3b8;
+  font-size:11px; font-weight:700; border-radius:99px; padding:5px 10px; cursor:pointer;
+  font-family:inherit; transition:transform .1s,background-color .1s; }
+.gemini-code-copy:active{ transform:scale(.94); background:#1e293b; }
+.gemini-code-body{ padding:11px 12px; font-family:ui-monospace,"SFMono-Regular",Menlo,Consolas,monospace;
+  font-size:12px; line-height:1.75; max-height:260px; overflow:auto;
+  -webkit-user-select:text; user-select:text; }
+.gemini-term-line{ white-space:pre-wrap; word-break:break-word; color:#e2e8f0; }
+.gemini-term-prompt{ color:#4ade80; font-weight:700; }
+.gemini-term-cmd{ color:#f8fafc; font-weight:700; }
+.gemini-term-out{ color:#94a3b8; }
 .gemini-schedule-card{ max-width:88%; display:flex; flex-direction:column; gap:6px; }
 .gemini-schedule-card-done{ opacity:.75; }
 .gemini-schedule-title{ font-weight:700; font-size:14.5px; }
