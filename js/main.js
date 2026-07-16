@@ -1,6 +1,6 @@
 import './learning-sync.js';
 import './db.js';
-import { loadCoins, loadTapSound, loadUiTheme, migrateOldData } from './core.js';
+import { loadCoins, loadGeminiPlainText, loadTapSound, loadUiTheme, migrateOldData } from './core.js';
 import { go, openQuickMenuSheet, openStudyMenuSheet, render, renderSettings } from './render.js';
 import './home-news-date-sync.js';
 import { initStockDetailUI } from './stock-detail.js';
@@ -44,6 +44,7 @@ updateAiScores("lpic1");   // 🧠 AIおすすめ復習：アプリ起動時にA
 S.coins = loadCoins();
 S.uiTheme = loadUiTheme();
 S.tapSound = loadTapSound();
+S.geminiPlainText = loadGeminiPlainText();
 render();
 
 // 安全装置：8秒待ってもFirebaseの準備が終わらない（通信が遅い/失敗）場合は

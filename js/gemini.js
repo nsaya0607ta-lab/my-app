@@ -6,6 +6,7 @@
    ========================================================================= */
 
 import { getWeather } from './weather.js';
+import { S } from './state.js';
 
 const MAX_HISTORY_TURNS = 20;
 const WEEKDAY_JA = ["日","月","火","水","木","金","土"];
@@ -139,7 +140,7 @@ export async function sendGeminiMessage(text, onChunk){
     .map(m => ({ role: m.role, text: m.text }));
 
   const appContext = await buildAppContext();
-  const payload = JSON.stringify({ message: trimmed, history, today: currentDateContext(), appContext });
+  const payload = JSON.stringify({ message: trimmed, history, today: currentDateContext(), appContext, plainText: !!S.geminiPlainText });
   const doFetch = () => fetch("/api/gemini/chat", {
     method: "POST",
     headers: { "Content-Type": "application/json" },

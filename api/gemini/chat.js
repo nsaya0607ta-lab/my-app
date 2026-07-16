@@ -222,10 +222,13 @@ function scheduleTaskSummaryLines(todos, events){
   return lines;
 }
 
-function buildSystemInstruction(today, appContext){
+function buildSystemInstruction(today, appContext, plainText){
   const lines = [
     "あなたは、このIT資格対策アプリ（Microsoft Azure/SC-300、LPICなど）専用のAIアシスタント「Gemini」です。",
     "アプリのスタイリッシュな世界観に合わせて、長すぎずスッキリとした、絵文字や箇条書きを交えた見やすい文章で、ユーザーに寄り添うポジティブなトーンで答えてください。",
+    ...(plainText ? [
+      "【表示形式（最優先で厳守）】回答には*（強調・箇条書き記号）や#（見出し記号）などのMarkdown記号を一切使わないでください。強調したい語も** **のような記号で囲まず、そのまま文章中に書いてください。見出しが欲しくなる場面でも#は使わず、代わりに「◆」等の記号か、行を分けた通常の文章で表現してください。箇条書きが必要な場合は必ず「・」を行頭に使ってください。",
+    ] : []),
     "Azure・LPIC・ITインフラ全般や資格試験の学習に関する質問に、初学者にも分かりやすい日本語で簡潔に答えてください。",
     "雑談程度の話題には常識の範囲で軽く答えて構いませんが、医療・法律・金融など専門外の断定的なアドバイスは避けてください。",
     ...weatherContextLines(appContext && appContext.weather),
@@ -319,6 +322,8 @@ module.exports = async (req, res) => {
     stocks: buildStockAppContext(rawAppContext && rawAppContext.stocks),
   };
 
+  const plainText = body.plainText === true;
+
   // streamGenerateContent（SSE）を使い、Geminiが生成したテキストを受信次第
   // 逐次クライアントへ転送する。これによりVercelの応答タイムアウト対策になる
   // （最初の1バイトが速く返る）だけでなく、ユーザーにも「考え中」のまま長時間
@@ -337,7 +342,7 @@ module.exports = async (req, res) => {
       body: JSON.stringify({
         contents,
         tools: SCHEDULE_TOOLS,
-        systemInstruction: { role: "system", parts: [{ text: buildSystemInstruction(today, appContext) }] },
+        systemInstruction: { role: "system", parts: [{ text: buildSystemInstruction(today, appContext, plainText) }] },
         generationConfig: { temperature: 0.7, maxOutputTokens: 1024 },
       }),
     });
