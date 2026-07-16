@@ -103,7 +103,7 @@ const clamp01 = v => Math.max(0, Math.min(1, v));
 
 /* ===== AIスコアの計算（0〜100） =====
    各評価項目を0〜1に正規化し、AI_REVIEW_WEIGHTSで重み付けして合計する。
-   戻り値：{score, reasons:[...], days} */
+   戻り値：{score, reasons:[...], days, retention, accuracy} */
 export function calcAiScore(st, cmd, now){
   now = now || Date.now();
   const W = AI_REVIEW_WEIGHTS;
@@ -147,7 +147,7 @@ export function calcAiScore(st, cmd, now){
   if(fFreq>=0.8) reasons.push("LPIC頻出コマンドです");
   if(fDiff>=0.8) reasons.push("忘れやすい難関コマンドです");
 
-  return { score: Math.max(0, Math.min(100, score)), reasons, days };
+  return { score: Math.max(0, Math.min(100, score)), reasons, days, retention, accuracy };
 }
 
 /* ===== 全コマンドのAIスコアを再計算して保存 =====
@@ -164,7 +164,9 @@ export function updateAiScores(certId){
 
 /* ===== おすすめ一覧の取得 =====
    学習済み（attempts>0）のコマンドをスコア降順で返す。
-   [{cmd,label,desc,score,starsN,reasons,stat}] */
+   retention（記憶保持率：低いほど忘れかけ）とaccPct（正答率%）は
+   ボトムシートの「最近忘れそう順」「正答率順」の並び替えに使う。
+   [{cmd,label,desc,score,starsN,reasons,retention,accPct,stat}] */
 export function getAiRecommendations(certId){
   const stats = updateAiScores(certId);   // 表示のたびに最新スコアへ自動更新
   const now = Date.now();
@@ -174,7 +176,8 @@ export function getAiRecommendations(certId){
     if(!st || !st.attempts) return;
     const r = calcAiScore(st, c.key, now);
     rows.push({ cmd:c.key, label:c.label, desc:c.desc, score:r.score,
-                starsN:aiScoreStars(r.score), reasons:r.reasons, stat:st });
+                starsN:aiScoreStars(r.score), reasons:r.reasons,
+                retention:r.retention, accPct:Math.round(r.accuracy*100), stat:st });
   });
   rows.sort((a,b)=>b.score-a.score || a.label.localeCompare(b.label));
   return rows;
@@ -191,6 +194,19 @@ export function aiOverallComment(recs){
   if(top.score>=60) return `${top.label}はあと1回復習すると長期記憶に入りそうです。`;
   if(top.score>=40) return `${top.label}を軽くおさらいしておくと安心です。`;
   return "どのコマンドも十分定着しています。新しいコマンドに挑戦するのに良いタイミングです。";
+}
+
+/* ===== AIコメント（短縮版）：ホーム画面のコンパクトカードに出す一言 =====
+   詳しい理由やコメントはボトムシート側（aiOverallComment）だけで表示する */
+export function aiShortComment(recs){
+  if(!recs || !recs.length){
+    return "演習を始めると、AIがあなた専用の復習プランを提案します。";
+  }
+  const high = recs.filter(r=>r.starsN>=4).length;
+  if(high>=2) return `今日は復習優先度の高いコマンドが${high}件あります。`;
+  const top = recs[0];
+  if(top.score>=40) return `今日は${top.label}を復習するのがおすすめです。`;
+  return "どのコマンドも十分定着しています。";
 }
 
 /* ===== 日付が変わった時の自動更新チェック =====
