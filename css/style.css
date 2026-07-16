@@ -72,6 +72,13 @@ body{
   padding:8px 6px calc(8px + env(safe-area-inset-bottom));
   background:rgba(255,255,255,.85); -webkit-backdrop-filter:blur(14px); backdrop-filter:blur(14px);
   border-top:1px solid var(--line); box-shadow:0 -6px 20px rgba(15,23,42,.06);
+  /* ホーム画面に追加したPWA（apple-mobile-web-app-capable）のWKWebViewには、
+     長いページをスクロールした際にposition:fixed要素が追従しきれず、
+     一瞬本文と一緒に流れて見えてしまう既知の不具合がある。専用の合成レイヤーに
+     昇格させることでスクロール中も確実に画面下へ張り付いたままにする */
+  transform:translateZ(0); -webkit-transform:translateZ(0);
+  -webkit-backface-visibility:hidden; backface-visibility:hidden;
+  will-change:transform;
 }
 .bottom-nav.show{display:flex;}
 .bnav-btn{
