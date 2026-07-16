@@ -96,7 +96,12 @@ export function start(mode, count){
   S.commandCmd=null;
   S.mode = (mode==="practice") ? "practice" : "exam";
   const n = (S.mode==="practice") ? (count||10) : DRAW;   // 演習は選択数、試験は従来どおりDRAW
-  S.deck = shuffle(Q).slice(0, Math.min(n, Q.length));
+  // 演習（ランダム演習）は、コマンド別問題（ExtraQ）も出題プールに含める。
+  // これに答えた分もAIおすすめ復習の学習データとして記録されるようにするため
+  // （コマンドを選んで演習する場合しかAIおすすめ復習にデータが貯まらないと、
+  // AIが提案する意味が薄れてしまう）。試験は従来どおりQのみで出題する
+  const pool = (S.mode==="practice") ? [...Q, ...ExtraQ] : Q;
+  S.deck = shuffle(pool).slice(0, Math.min(n, pool.length));
   S.idx=0; S.picks=[]; S.sel=[]; S.screen="quiz"; resetQuizTimer(); render();
 }
 
