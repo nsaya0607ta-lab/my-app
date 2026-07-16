@@ -341,15 +341,10 @@ export function finish(){
                  mode:runMode, mult, correct, total:S.deck.length, score, scoreMax, earned:Math.ceil(earned), totalPts:total,
                  bpGain:exp, bpTotal:newBp, coinGain, coinTotal:S.coins, unlocked, review:!!S.review};
   const h=[entry,...loadHist()].slice(0,50); saveHist(h);
-  saveToCloud(newBp, wrongList, h);
-  publishLeaderboard();   // ランキング（総合レベル・合計BP）も更新
-  // 問題ごとの正答率を集計（出題+1・全問正解なら正答+1）
-  if(window.QStats){
-    const results = S.deck.map((q,i)=>({ qid:q.id, correct: grade(q,S.picks[i]).full }));
-    window.QStats.record(S.cert, results);
-  }
-
-  // 🧠 AIおすすめ復習：コマンドにタグ付けされた問題の結果を記録し、AIスコアを自動更新
+  // 🧠 AIおすすめ復習：コマンドにタグ付けされた問題の結果を記録し、AIスコアを自動更新。
+  // 必ず saveToCloud より先に行う。後だと今回の結果を含まない古いcmdStatsが
+  // クラウドへ送られ、そのsnapshotエコー（db.js→applyCloud→saveCmdStats）が
+  // 記録したばかりのローカル統計を古い内容で上書きしてしまう
   try{
     const cmdResults = S.deck
       .map((q,i)=>({ cmd:q.cmd, correct: grade(q,S.picks[i]).full, timeSec: S.qTimes ? S.qTimes[i] : undefined }))
@@ -359,6 +354,13 @@ export function finish(){
       updateAiScores(S.cert);
     }
   }catch(e){ console.error("AI review record failed:", e); }
+  saveToCloud(newBp, wrongList, h);
+  publishLeaderboard();   // ランキング（総合レベル・合計BP）も更新
+  // 問題ごとの正答率を集計（出題+1・全問正解なら正答+1）
+  if(window.QStats){
+    const results = S.deck.map((q,i)=>({ qid:q.id, correct: grade(q,S.picks[i]).full }));
+    window.QStats.record(S.cert, results);
+  }
 
   S.last=entry; S.screen="result"; render();
 }
