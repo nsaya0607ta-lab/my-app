@@ -1,27 +1,17 @@
 /* =========================================================================
-   AdvancedPractice — 既存の演習画面へ新しい問題形式・ヒント・詳説・
+   AdvancedPractice — 既存の演習画面へ新しい問題形式・詳説・
    Linuxプレイグラウンド・コマンド比較を追加する非破壊拡張
    ========================================================================= */
 
 import { S } from "./state.js";
-import { app, render } from "./render.js";
+import { app, render, go } from "./render.js";
 import {
   commit,
-  correctSet,
-  getBP,
   grade,
-  loadHist,
-  loadWrong,
-  publishLeaderboard,
-  saveHist,
-  saveToCloud,
-  setBP,
 } from "./core.js";
 import {
-  HINT_REWARD_RATE,
   commandForPlayground,
   displayCorrectAnswer,
-  hintForQuestion,
   isCommandInputQuestion,
   isOutputPredictionQuestion,
   questionTypeOf,
@@ -32,13 +22,12 @@ import { parseCommand } from "./playground/commandParser.js";
 import { executeCommand } from "./playground/commandExecutor.js";
 import { history, session, shellState, vfs } from "./playground/playgroundState.js";
 import { pgScheduleSave } from "./playground/cloudSync.js";
+import { geminiChat } from "./gemini.js";
 
-const HINT_PENALTY_RATE = 1 - HINT_REWARD_RATE;
 const L = ["A","B","C","D","E","F"];
 let deckRef = null;
 let runState = null;
 let patchQueued = false;
-const penalizedRuns = new Set();
 let modalLockDepth = 0;
 let modalScrollY = 0;
 
@@ -79,7 +68,6 @@ function ensureRunState(){
       id:`run-${Date.now()}-${Math.random().toString(36).slice(2,8)}`,
       commandAnswers:new Map(),
       validation:new Map(),
-      hints:new Set(),
     };
   }
   if(!runState){
@@ -87,7 +75,6 @@ function ensureRunState(){
       id:`run-${Date.now()}-${Math.random().toString(36).slice(2,8)}`,
       commandAnswers:new Map(),
       validation:new Map(),
-      hints:new Set(),
     };
   }
   return runState;
@@ -133,30 +120,10 @@ function injectQuizTools(question){
   badgeRow.insertAdjacentHTML("afterend", `
     <div class="ap-question-type-row">${typeBadge(question)}</div>
     <div class="ap-quiz-tools">
-      <button type="button" class="ap-tool-btn" data-ap-hint>🧠 AIヒントを見る</button>
       <button type="button" class="ap-tool-btn playground" data-ap-playground>🐧 Linuxプレイグラウンド</button>
-    </div>
-    <div class="ap-hint-box" data-ap-hint-box hidden></div>`);
+    </div>`);
 
-  const state = ensureRunState();
-  const key = questionKey(question);
-  const hintBtn = app.querySelector("[data-ap-hint]");
-  const hintBox = app.querySelector("[data-ap-hint-box]");
-  const already = state.hints.has(key);
-  if(already){
-    hintBox.hidden = false;
-    hintBox.innerHTML = `<strong>AIヒント</strong><span>${esc(hintForQuestion(question))}</span><small>この問題で正解した場合、獲得EXPが20%減ります。</small>`;
-    hintBtn.disabled = true;
-    hintBtn.textContent = "🧠 AIヒント表示済み";
-  }
-
-  hintBtn.onclick = () => {
-    state.hints.add(key);
-    hintBox.hidden = false;
-    hintBox.innerHTML = `<strong>AIヒント</strong><span>${esc(hintForQuestion(question))}</span><small>答えは表示していません。この問題で正解した場合、獲得EXPが20%減ります。</small>`;
-    hintBtn.disabled = true;
-    hintBtn.textContent = "🧠 AIヒント表示済み";
-  };
+  ensureRunState();
   app.querySelector("[data-ap-playground]").onclick = () => openPlaygroundModal(question);
 
   if(isOutputPredictionQuestion(question)){
@@ -245,37 +212,25 @@ function chosenAnswerText(question, index){
 function wrongReasonHTML(question, index){
   const result = grade(question, (S.picks && S.picks[index]) || []);
   if(result.full) return `<p>正しい考え方で解答できています。</p>`;
-
-  if(isCommandInputQuestion(question)){
-    const validation = ensureRunState().validation.get(questionKey(question,index));
-    return `<p>${esc(validation && validation.reason ? validation.reason : "コマンド名・オプション・対象ファイルを順に確認してください。")}</p>`;
-  }
-
-  const picks = (S.picks && S.picks[index]) || [];
-  const reasons = picks.map(choiceIndex => {
-    if(question.wrongReasons && question.wrongReasons[choiceIndex]) return question.wrongReasons[choiceIndex];
-    if(question.choiceExplanations && question.choiceExplanations[choiceIndex]) return question.choiceExplanations[choiceIndex];
-    const label = (question.o || [])[choiceIndex] || "選択した回答";
-    return `「${label}」は、この問題で求められている操作・出力とは一致しません。`;
-  });
-  return `<p>${esc(reasons.join(" "))}</p>`;
+  const validation = ensureRunState().validation.get(questionKey(question,index));
+  return `<p>${esc(validation && validation.reason ? validation.reason : "コマンド名・オプション・対象ファイルを順に確認してください。")}</p>`;
 }
 
-function choiceExplanationsHTML(question){
-  if(!Array.isArray(question.o) || isCommandInputQuestion(question)) return "";
-  const correct = new Set(correctSet(question));
-  return `
-    <div class="ap-explain-section">
-      <h4>ほかの選択肢は何を意味するか</h4>
-      <div class="ap-choice-reasons">
-        ${question.o.map((choice,index)=>{
-          const detail = question.choiceExplanations && question.choiceExplanations[index]
-            ? question.choiceExplanations[index]
-            : (correct.has(index) ? "正解となる選択肢です。" : "この問題の条件とは異なる操作・結果です。");
-          return `<div><b>${L[index] || index+1}. ${esc(choice)}</b><span>${esc(detail)}</span></div>`;
-        }).join("")}
-      </div>
-    </div>`;
+function geminiAskDraft(question, index){
+  const parts = ["次のLPIC-1の問題について教えてください。", `問題: ${question.q || ""}`];
+  if(Array.isArray(question.o) && !isCommandInputQuestion(question)){
+    parts.push(`選択肢:\n${question.o.map((choice,i)=>`${L[i] || i+1}. ${choice}`).join("\n")}`);
+  }
+  parts.push(`自分の回答: ${chosenAnswerText(question,index)}`);
+  parts.push(`正解: ${displayCorrectAnswer(question)}`);
+  parts.push("なぜ正解になるのか、ほかの選択肢がなぜ違うのかも含めて教えてください。");
+  return parts.join("\n");
+}
+
+function askGeminiAbout(question, index){
+  if(!question) return;
+  geminiChat.draft = geminiAskDraft(question, index);
+  go("gemini");
 }
 
 function detailedExplanationHTML(question, index){
@@ -295,9 +250,8 @@ function detailedExplanationHTML(question, index){
       <div class="ap-explain-section">
         <h4>自分の回答</h4>
         <p class="ap-user-answer">${esc(chosenAnswerText(question,index))}</p>
-        ${!result.full ? `<h4>なぜ違うのか</h4>${wrongReasonHTML(question,index)}` : ""}
+        ${!result.full && isCommandInputQuestion(question) ? `<h4>なぜ違うのか</h4>${wrongReasonHTML(question,index)}` : ""}
       </div>
-      ${choiceExplanationsHTML(question)}
       <div class="ap-explain-grid">
         <section><h4>実際の使用例</h4><code>${esc(question.usageExample || commandForPlayground(question) || "関連コマンドをプレイグラウンドで試してください。")}</code></section>
         <section><h4>実務で使う場面</h4><p>${esc(question.realWorldExample || "運用作業で、対象と結果を確認しながら安全に実行します。")}</p></section>
@@ -309,6 +263,7 @@ function detailedExplanationHTML(question, index){
           <div class="ap-related-chips">${question.relatedCommands.map(cmd=>`<span>${esc(cmd)}</span>`).join("")}</div>
         </div>` : ""}
       <div class="ap-review-actions">
+        <button type="button" data-ap-gemini-ask="${index}">✨ Geminiに質問する</button>
         <button type="button" data-ap-review-play="${index}">🐧 Linuxプレイグラウンドで試す</button>
         ${comparison ? `<button type="button" data-ap-review-compare="${esc(comparison.key)}">↔ 関連コマンドを比較</button>` : ""}
         <button type="button" class="primary" data-ap-review-retry="${index}">↻ もう一度この問題を解く</button>
@@ -347,6 +302,9 @@ function enhanceReview(){
     if(old) old.outerHTML = detailedExplanationHTML(question,index);
   });
 
+  app.querySelectorAll("[data-ap-gemini-ask]").forEach(button => {
+    button.onclick = () => askGeminiAbout(S.deck[+button.dataset.apGeminiAsk], +button.dataset.apGeminiAsk);
+  });
   app.querySelectorAll("[data-ap-review-play]").forEach(button => {
     button.onclick = () => openPlaygroundModal(S.deck[+button.dataset.apReviewPlay]);
   });
@@ -358,45 +316,9 @@ function enhanceReview(){
   });
 }
 
-function applyHintPenalty(){
-  const state = ensureRunState();
-  const entry = S.last;
-  if(!entry || penalizedRuns.has(entry.id)) return 0;
-  penalizedRuns.add(entry.id);
-
-  let penalty = 0;
-  (S.deck || []).forEach((question,index) => {
-    if(!state.hints.has(questionKey(question,index))) return;
-    const result = grade(question, (S.picks && S.picks[index]) || []);
-    if(result.earned > 0) penalty += Math.max(1, Math.round(result.earned * HINT_PENALTY_RATE));
-  });
-  if(!penalty) return 0;
-
-  const before = getBP();
-  const after = Math.max(0, before - penalty);
-  setBP(after);
-  entry.hintPenalty = penalty;
-  entry.bpGain = Math.max(0, (entry.bpGain || 0) - penalty);
-  entry.bpTotal = after;
-
-  const historyList = loadHist();
-  const target = historyList.find(item => item.id === entry.id);
-  if(target){
-    target.hintPenalty = penalty;
-    target.bpGain = entry.bpGain;
-    target.bpTotal = after;
-    saveHist(historyList);
-  }
-  try{ saveToCloud(after, loadWrong(), historyList); }catch(e){}
-  try{ publishLeaderboard(); }catch(e){}
-  return penalty;
-}
-
 function enhanceResult(){
   const entry = S.last;
   if(!entry || app.querySelector(".ap-result-card")) return;
-  const penalty = applyHintPenalty();
-  const state = ensureRunState();
   const commandCount = (S.deck || []).filter(isCommandInputQuestion).length;
   const outputCount = (S.deck || []).filter(isOutputPredictionQuestion).length;
   const comparisons = [...new Set((S.deck || []).map(q => {
@@ -412,21 +334,13 @@ function enhanceResult(){
       <div class="ap-result-metrics">
         <span>⌨ コマンド入力 <b>${commandCount}</b>問</span>
         <span>▤ 出力予想 <b>${outputCount}</b>問</span>
-        <span>🧠 ヒント利用 <b>${state.hints.size}</b>問</span>
       </div>
-      ${penalty ? `<div class="ap-penalty-note">ヒント利用による獲得EXP調整：-${penalty} EXP（正解問題の配点から20%）</div>` : ""}
       <div class="ap-result-actions">
         <button type="button" data-ap-result-play>🐧 Linuxプレイグラウンド</button>
         <button type="button" data-ap-result-compare ${comparisons.length ? "" : "disabled"}>↔ 関連コマンド比較</button>
       </div>
     </div>`);
 
-  if(penalty){
-    const gain = app.querySelector(".bp-gain");
-    if(gain) gain.textContent = `+${entry.bpGain || 0} EXP`;
-    const total = app.querySelector(".bp-total");
-    if(total) total.textContent = `資格内＆全体レベルに加算 ・ 累計 ${(entry.bpTotal || getBP()).toLocaleString()} BP`;
-  }
   app.querySelector("[data-ap-result-play]").onclick = () => openPlaygroundModal(currentQuestion() || (S.deck && S.deck[0]));
   const compareButton = app.querySelector("[data-ap-result-compare]");
   if(compareButton && !compareButton.disabled) compareButton.onclick = () => openComparisonHub(comparisons[0]);

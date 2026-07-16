@@ -2757,6 +2757,10 @@ export function renderGeminiChat(){
         : `<div class="gemini-bubble gemini-bubble-model gemini-bubble-busy">…考え中</div>`)
     : "";
   const errorHTML = geminiChat.error ? `<div class="gemini-error">${esc(geminiChat.error)}</div>` : "";
+  // 他画面から「Geminiに質問する」で遷移してきた場合の下書きテキスト。
+  // 一度読み取ったら使い切り、次回の再描画で二重に入らないようクリアする
+  const draftText = geminiChat.draft || "";
+  geminiChat.draft = "";
 
   app.innerHTML = `
     <div class="q-head"><button class="quit" data-go="select">← ホーム</button><span class="q-count">✨ Gemini相談</span></div>
@@ -2764,7 +2768,7 @@ export function renderGeminiChat(){
       <div class="gemini-chat-scroll" id="gemini-scroll">${msgsHTML}${busyHTML}</div>
       ${errorHTML}
       <div class="gemini-input-row">
-        <textarea id="gemini-input" class="gemini-input" rows="1" placeholder="Azureやこのアプリについて質問できます…" ${geminiChat.busy ? "disabled" : ""}></textarea>
+        <textarea id="gemini-input" class="gemini-input" rows="1" placeholder="Azureやこのアプリについて質問できます…" ${geminiChat.busy ? "disabled" : ""}>${esc(draftText)}</textarea>
         <button type="button" class="gemini-send" id="gemini-send" ${geminiChat.busy ? "disabled" : ""}>送信</button>
       </div>
     </div>
