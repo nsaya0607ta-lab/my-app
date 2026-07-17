@@ -209,13 +209,6 @@ function chosenAnswerText(question, index){
   return picks.map(i => `${L[i] || i+1}. ${(question.o || [])[i] || ""}`).join(" / ");
 }
 
-function wrongReasonHTML(question, index){
-  const result = grade(question, (S.picks && S.picks[index]) || []);
-  if(result.full) return `<p>正しい考え方で解答できています。</p>`;
-  const validation = ensureRunState().validation.get(questionKey(question,index));
-  return `<p>${esc(validation && validation.reason ? validation.reason : "コマンド名・オプション・対象ファイルを順に確認してください。")}</p>`;
-}
-
 function geminiAskDraft(question, index){
   const parts = ["次のLPIC-1の問題について教えてください。", `問題: ${question.q || ""}`];
   if(Array.isArray(question.o) && !isCommandInputQuestion(question)){
@@ -247,16 +240,6 @@ function detailedExplanationHTML(question, index){
       <div class="ap-explain-section">
         <h4>なぜ正しいのか</h4>
         <p>${esc(question.explanationDetailed || question.e || "問題の条件を満たす操作・結果だからです。")}</p>
-      </div>
-      <div class="ap-explain-section">
-        <h4>自分の回答</h4>
-        <p class="ap-user-answer">${esc(chosenAnswerText(question,index))}</p>
-        ${!result.full && isCommandInputQuestion(question) ? `<h4>なぜ違うのか</h4>${wrongReasonHTML(question,index)}` : ""}
-      </div>
-      <div class="ap-explain-grid">
-        <section><h4>実際の使用例</h4><code>${esc(question.usageExample || commandForPlayground(question) || "関連コマンドをプレイグラウンドで試してください。")}</code></section>
-        <section><h4>実務で使う場面</h4><p>${esc(question.realWorldExample || "運用作業で、対象と結果を確認しながら安全に実行します。")}</p></section>
-        <section><h4>LPIC試験ポイント</h4><p>${esc(question.lpicPoint || "コマンドの用途だけでなく、主要オプションと出力の読み方を整理してください。")}</p></section>
       </div>
       ${(question.relatedCommands || []).length ? `
         <div class="ap-explain-section">
