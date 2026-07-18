@@ -16,8 +16,8 @@ export const CHAPPY_XP = {
   dailyLogin: 5,       // 1日1回の利用
   streak7: 50,         // 7日連続利用（7日ごと）
   certPass: 500,       // 資格合格記録（連携元イベント未実装：chappyOnCertPassed）
-  lineboundFirstClear: 15, // ラインバウンド：ステージ初回クリア（ステージごとに一度だけ）
-  lineboundStar3: 20,      // ラインバウンド：星3達成（ステージごとに一度だけ）
+  lightpuzzleFirstClear: 15, // ライト消しパズル：ステージ初回クリア（ステージごとに一度だけ）
+  lightpuzzleStar3: 20,      // ライト消しパズル：星3達成（ステージごとに一度だけ）
 };
 
 // コインの付与量
@@ -27,8 +27,8 @@ export const CHAPPY_COIN = {
   allSchedulesDone: 20,// その日の予定をすべて完了（連携元イベント未実装）
   streak7: 100,        // 7日連続利用（7日ごと）
   monthlyGoal: 300,    // 月間目標達成（連携元イベント未実装：chappyOnMonthlyGoalAchieved）
-  lineboundFirstClear: 2,  // ラインバウンド：ステージ初回クリア（ステージごとに一度だけ）
-  lineboundStar3: 1,       // ラインバウンド：星3達成（ステージごとに一度だけ）
+  lightpuzzleFirstClear: 20, // ライト消しパズル：ステージ初回クリア（ステージごとに一度だけ）
+  lightpuzzleStar3: 15,      // ライト消しパズル：星3達成（ステージごとに一度だけ）
 };
 
 // 連打・不正加算対策の1日上限（回数ベース）

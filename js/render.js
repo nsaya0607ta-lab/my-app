@@ -39,8 +39,8 @@ import { renderScenarioScreen } from './playground/scenarios/scenarioScreen.js';
 import { scenarioModeApplyCloud, scenarioModeHandleIdentityChange } from './playground/scenarios/progressStore.js';
 import { applyCustomButtonColors, isLongPressSuppressed, wireButtonColorLongPress } from './buttonColors.js';
 import { fetchNewsCategory, getNewsCategoryState, todaysNewsForCategory } from './news.js';
-import { renderLineBoundScreen } from './linebound/screen.js';
-import { lineboundHandleIdentityChange } from './linebound/store.js';
+import { renderLightPuzzleScreen } from './lightpuzzle/screen.js';
+import { lightPuzzleHandleIdentityChange } from './lightpuzzle/store.js';
 
 export const app = document.getElementById("app");
 
@@ -220,7 +220,7 @@ const BNAV_TAB_BY_SCREEN = {
   home:"select", "lpic-commands":"select", quiz:"select", result:"select", review:"select", dict:"select", transfer:"select", history:"select", "lpic-dir-explorer":"select", "review-list":"select",
   "lpic-dirx-missions":"select", "lpic-dirx-incidents":"select", "lpic-dirx-events":"select",
   certs:"study-menu", "lpic-certs":"study-menu", playground:"study-menu", scenario:"study-menu",
-  "news-japan":"quick-menu", "news-world":"quick-menu", "news-detail":"quick-menu", portfolio:"quick-menu", holdings:"quick-menu", introquiz:"quick-menu", linebound:"quick-menu",
+  "news-japan":"quick-menu", "news-world":"quick-menu", "news-detail":"quick-menu", portfolio:"quick-menu", holdings:"quick-menu", introquiz:"quick-menu", lightpuzzle:"quick-menu",
   chappy:"select",
   calendar:"calendar",
 };
@@ -251,7 +251,7 @@ export function render(){
   scenarioModeHandleIdentityChange(); // ログインユーザーの切替を検知し、シナリオモードの進捗を読み直す
   pgHandleIdentityChange();   // ログインユーザーの切替を検知し、Linuxプレイグラウンドの状態を読み直す
   dirxHandleIdentityChange(); // ログインユーザーの切替を検知し、探索ミッション/障害対応の進捗を読み直す
-  lineboundHandleIdentityChange(); // ログインユーザーの切替を検知し、ラインバウンドの進捗を読み直す
+  lightPuzzleHandleIdentityChange(); // ログインユーザーの切替を検知し、ライト消しパズルの進捗を読み直す
   renderStatusBar();   // 画面が変わっても常に最新の Lv/BP/AC を反映
   updateHeaderNav(false); // デフォルトは非表示。表示すべき画面側で個別に true にする
   updateHeaderTitle();
@@ -291,7 +291,7 @@ export function render(){
   if(S.screen==="playground") return renderPlaygroundScreen();
   if(S.screen==="scenario") return renderScenarioScreen();
   if(S.screen==="chappy") return renderChappyScreen();
-  if(S.screen==="linebound") return renderLineBoundScreen();
+  if(S.screen==="lightpuzzle") return renderLightPuzzleScreen();
   // 大元：資格選択画面
   if(S.screen==="select" || !S.cert) return renderSelect();
   if(S.screen==="home") return renderHome();
@@ -4602,7 +4602,7 @@ function sheetItemHTML({ icon, label, key, variant }){
     </button>`;
 }
 
-const LINEBOUND_LAUNCHER_ICON_SVG = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="6" cy="7" r="2.1"></circle><path d="M7.5 10.5 17 15"></path><circle cx="18.2" cy="16.6" r="3.2"></circle><circle cx="18.2" cy="16.6" r="1" fill="currentColor" stroke="none"></circle></svg>`;
+const LIGHTPUZZLE_LAUNCHER_ICON_SVG = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="3.5" y="3.5" width="6" height="6" rx="1.2"></rect><rect x="14.5" y="3.5" width="6" height="6" rx="1.2"></rect><rect x="3.5" y="14.5" width="6" height="6" rx="1.2"></rect><rect x="14.5" y="14.5" width="6" height="6" rx="1.2" fill="currentColor"></rect></svg>`;
 
 const QUICK_MENU_ITEMS = [
   { key: "news-japan", icon: `<span class="launcher-emoji" aria-hidden="true">🇯🇵</span>`, label: "J-NEWS", variant: "news-jp" },
@@ -4610,7 +4610,7 @@ const QUICK_MENU_ITEMS = [
   { key: "portfolio", icon: STOCK_LAUNCHER_ICON_SVG, label: "株価", variant: "stock" },
   { key: "calendar", icon: CALENDAR_APP_LAUNCHER_ICON_SVG, label: "カレンダー", variant: "calendar" },
   { key: "introquiz", icon: INTROQUIZ_LAUNCHER_ICON_SVG, label: "イントロドン", variant: "introquiz" },
-  { key: "linebound", icon: LINEBOUND_LAUNCHER_ICON_SVG, label: "ラインバウンド", variant: "linebound" },
+  { key: "lightpuzzle", icon: LIGHTPUZZLE_LAUNCHER_ICON_SVG, label: "ライト消しパズル", variant: "lightpuzzle" },
   { key: "chappy", icon: `<span class="launcher-emoji" aria-hidden="true">🏠</span>`, label: "チャッピーハウス", variant: "chappy" },
   { key: "settings", icon: SETTINGS_GEAR_ICON_SVG, label: "設定", variant: "settings" },
   { key: "rules", icon: RULES_LIST_ICON_SVG, label: "ルール", variant: "rules" },
