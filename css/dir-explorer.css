@@ -1,0 +1,202 @@
+/* =========================================================================
+   🗂 ディレクトリを触って学ぶ（LPIC-1 FHS探検）
+   js/render.js の renderDirExplorer() が使うスタイル一式。
+   外側の見出し・ヒント文などは既存の.sel-head/.x-hint等を流用し、ここでは
+   「実際のパソコンのフォルダ管理画面」を模した操作エリア（.dirx-shell以下）
+   だけを定義する。色は既存のCSS変数（--surface/--line/--text/--accent等）に
+   乗せることで、ダークモードやスキン切り替えにもそのまま追従する。
+   ========================================================================= */
+
+.dirx-shell{
+  display:flex; flex-direction:column; gap:10px;
+  background:var(--bg2); border:1px solid var(--line); border-radius:18px;
+  padding:12px; box-sizing:border-box;
+}
+
+/* ----- ツールバー（戻る／進む／上の階層／ルート／ツリー開閉） ----- */
+.dirx-toolbar{ display:flex; gap:7px; overflow-x:auto; -webkit-overflow-scrolling:touch; scrollbar-width:none; }
+.dirx-toolbar::-webkit-scrollbar{ display:none; }
+.dirx-tbtn{
+  flex:none; display:inline-flex; align-items:center; gap:5px;
+  background:var(--surface); border:1px solid var(--line); color:var(--text);
+  font-size:14px; font-weight:700; line-height:1; cursor:pointer;
+  padding:9px 13px; border-radius:12px; box-shadow:0 2px 5px rgba(15,23,42,.05);
+  transition:background .12s, opacity .12s;
+}
+.dirx-tbtn:active{ background:var(--surface2, var(--bg2)); }
+.dirx-tbtn[disabled]{ opacity:.35; cursor:default; }
+.dirx-tbtn--tree{ margin-left:auto; color:var(--accent); border-color:var(--accent); font-size:12.5px; }
+
+/* ----- パンくずリスト ----- */
+.dirx-breadcrumb{
+  display:flex; align-items:center; flex-wrap:nowrap; overflow-x:auto; -webkit-overflow-scrolling:touch;
+  gap:2px; font-family:ui-monospace,"SFMono-Regular",Menlo,Consolas,monospace; font-size:13px;
+  padding:8px 10px; background:var(--surface); border:1px solid var(--line); border-radius:12px;
+  scrollbar-width:none;
+}
+.dirx-breadcrumb::-webkit-scrollbar{ display:none; }
+.dirx-crumb{
+  flex:none; background:none; border:none; color:var(--accent); font-weight:700; font-size:13px;
+  padding:3px 4px; cursor:pointer; font-family:inherit; border-radius:6px;
+}
+.dirx-crumb:active{ background:var(--bg2); }
+.dirx-crumb--current{ color:var(--text); font-weight:800; }
+.dirx-crumb-sep{ flex:none; color:var(--muted); opacity:.6; padding:0 1px; }
+
+/* ----- 本体（ツリー＋一覧） ----- */
+.dirx-body{ position:relative; display:flex; flex-direction:column; gap:10px; min-height:0; }
+
+/* ツリー：狭い画面ではオーバーレイのドロワーとして表示する */
+.dirx-tree-panel{ display:none; }
+.dirx-tree-panel--open{ display:block; }
+.dirx-tree-backdrop{
+  position:fixed; inset:0; background:rgba(15,23,42,.4); z-index:400;
+  animation:dirxFadeIn .15s ease;
+}
+@keyframes dirxFadeIn{ from{opacity:0;} to{opacity:1;} }
+.dirx-tree-card{
+  position:fixed; top:0; left:0; bottom:0; width:min(78vw,300px); z-index:401;
+  background:var(--surface); box-shadow:8px 0 24px rgba(15,23,42,.22);
+  display:flex; flex-direction:column;
+  padding:max(14px, env(safe-area-inset-top)) 0 14px;
+  animation:dirxSlideIn .18s cubic-bezier(.22,1,.36,1);
+}
+@keyframes dirxSlideIn{ from{ transform:translateX(-12px); opacity:.4; } to{ transform:translateX(0); opacity:1; } }
+.dirx-tree-card-head{
+  flex:none; display:flex; align-items:center; justify-content:space-between;
+  font-size:14px; font-weight:800; color:var(--text); padding:0 14px 12px; border-bottom:1px solid var(--line); margin-bottom:6px;
+}
+.dirx-tree-close{
+  flex:none; width:28px; height:28px; border-radius:50%; border:1px solid var(--line);
+  background:var(--bg2); color:var(--muted); font-size:13px; cursor:pointer;
+  display:flex; align-items:center; justify-content:center;
+}
+.dirx-tree-scroll{ flex:1; overflow-y:auto; -webkit-overflow-scrolling:touch; padding:0 6px 10px; }
+
+.dirx-tree-item{ display:block; }
+.dirx-tree-row{
+  display:flex; align-items:center; gap:5px; padding:7px 8px; border-radius:9px; cursor:pointer;
+  font-size:13.5px; color:var(--text); user-select:none;
+}
+.dirx-tree-row:active{ background:var(--bg2); }
+.dirx-tree-row--active{ background:rgba(2,132,199,.12); color:var(--accent); font-weight:800; }
+.dirx-tree-caret{
+  flex:none; width:18px; height:18px; display:flex; align-items:center; justify-content:center;
+  background:none; border:none; color:var(--muted); font-size:12px; cursor:pointer;
+  transform:rotate(0deg); transition:transform .15s;
+}
+.dirx-tree-caret--open{ transform:rotate(90deg); }
+.dirx-tree-caret--empty{ visibility:hidden; }
+.dirx-tree-ico{ flex:none; font-size:14px; }
+.dirx-tree-name{ flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.dirx-tree-star{ flex:none; color:#d97706; font-size:11px; }
+
+/* ----- 中央：現在フォルダの一覧 ----- */
+.dirx-main-panel{ min-width:0; }
+.dirx-main-head{
+  display:flex; align-items:baseline; justify-content:space-between; gap:8px;
+  padding:2px 4px 8px;
+}
+.dirx-main-path{
+  font-family:ui-monospace,"SFMono-Regular",Menlo,Consolas,monospace; font-size:13px; font-weight:700; color:var(--text);
+  overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
+}
+.dirx-main-count{ flex:none; font-size:11.5px; color:var(--muted); }
+
+.dirx-list{ display:flex; flex-direction:column; gap:8px; }
+.dirx-row{
+  display:flex; align-items:flex-start; gap:10px; width:100%; text-align:left;
+  background:var(--surface); border:1px solid var(--line); border-radius:14px;
+  padding:11px 12px; cursor:pointer; font-family:inherit; color:var(--text);
+  box-shadow:0 2px 6px rgba(15,23,42,.04); transition:background .1s, border-color .12s;
+}
+.dirx-row:active{ background:var(--bg2); }
+.dirx-row--selected{ border-color:var(--accent); box-shadow:0 0 0 1.5px var(--accent) inset; }
+.dirx-row-icon{ flex:none; font-size:21px; line-height:1; margin-top:1px; }
+.dirx-row-main{ flex:1; min-width:0; display:flex; flex-direction:column; gap:2px; }
+.dirx-row-top{ display:flex; align-items:center; flex-wrap:wrap; gap:6px; }
+.dirx-row-name{ font-size:14.5px; font-weight:800; color:var(--text); }
+.dirx-row-kind{ font-size:11px; font-weight:700; color:var(--accent); opacity:.85; }
+.dirx-row-desc{ font-size:12px; color:var(--muted); line-height:1.5; overflow:hidden; text-overflow:ellipsis; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; }
+.dirx-row-chevron{
+  flex:none; align-self:center; width:30px; height:30px; border-radius:50%;
+  display:flex; align-items:center; justify-content:center;
+  color:var(--accent); font-size:19px; opacity:.7;
+}
+
+.dirx-badge{
+  flex:none; font-size:10px; font-weight:800; letter-spacing:.02em; color:var(--accent);
+  background:rgba(2,132,199,.12); border-radius:99px; padding:2px 8px;
+}
+.dirx-badge--hot{ color:#92400e; background:rgba(217,119,6,.16); }
+.dirx-badge--muted{ color:var(--muted); background:var(--bg2); }
+.dirx-badge--virtual{ color:#6d28d9; background:rgba(124,58,237,.14); }
+
+.dirx-empty{
+  text-align:center; color:var(--muted); font-size:13px; line-height:1.7;
+  padding:28px 14px; border:1.5px dashed var(--line); border-radius:14px; background:var(--surface);
+}
+.dirx-empty-sub{ font-size:11.5px; opacity:.8; }
+
+/* ----- 詳細ボトムシート（既存の.sheet-ov/.bottom-sheetを土台に使う） ----- */
+.dirx-detail-sheet{ position:relative; }
+.dirx-detail-close{
+  position:absolute; top:10px; right:14px; z-index:2;
+  width:30px; height:30px; border-radius:50%; border:1px solid var(--line);
+  background:var(--bg2); color:var(--muted); font-size:13px; cursor:pointer;
+  display:flex; align-items:center; justify-content:center;
+}
+.dirx-detail-scroll{ overflow-y:auto; -webkit-overflow-scrolling:touch; overscroll-behavior:contain; padding:0 18px; min-height:0; }
+.dirx-detail-head{ display:flex; align-items:center; gap:11px; margin-bottom:10px; }
+.dirx-detail-ico{ flex:none; font-size:26px; }
+.dirx-detail-path{
+  font-family:ui-monospace,"SFMono-Regular",Menlo,Consolas,monospace; font-size:15px; font-weight:800; color:var(--text);
+}
+.dirx-detail-kind{ font-size:12px; color:var(--accent); font-weight:700; margin-top:1px; }
+.dirx-detail-badges{ display:flex; flex-wrap:wrap; gap:6px; margin-bottom:10px; }
+.dirx-detail-virtual-note{
+  font-size:12.5px; line-height:1.6; color:#5b21b6; background:rgba(124,58,237,.1);
+  border:1px solid rgba(124,58,237,.25); border-radius:10px; padding:9px 11px; margin-bottom:10px;
+}
+.dirx-detail-tip{
+  font-size:12.5px; line-height:1.6; color:var(--text); background:rgba(2,132,199,.08);
+  border:1px solid rgba(2,132,199,.2); border-radius:10px; padding:9px 11px; margin-bottom:12px;
+}
+.dirx-detail-section{ margin-bottom:12px; }
+.dirx-detail-section--exam{
+  background:rgba(217,119,6,.08); border:1px solid rgba(217,119,6,.25); border-radius:10px; padding:9px 11px;
+}
+.dirx-detail-lab{ font-size:11px; font-weight:800; letter-spacing:.04em; color:var(--muted); text-transform:uppercase; margin-bottom:4px; }
+.dirx-detail-body{ font-size:13.5px; line-height:1.7; color:var(--text); }
+.dirx-chip-row{ display:flex; flex-wrap:wrap; gap:6px; }
+.dirx-chip{
+  font-family:ui-monospace,"SFMono-Regular",Menlo,Consolas,monospace; font-size:12px; color:var(--text);
+  background:var(--bg2); border:1px solid var(--line); border-radius:7px; padding:3px 8px;
+}
+.dirx-chip--cmd{ color:#0f172a; background:#111a2e; color:#4ade80; border-color:#26314f; }
+
+/* ----- ホーム画面のメニューボタン用アイコン配色 ----- */
+.menu-btn--dirx .menu-btn-icon{ background:linear-gradient(150deg,#bfe0fb,#5fa8dd 78%); box-shadow:0 6px 14px rgba(95,168,221,.32); }
+
+/* ----- レスポンシブ：幅に余裕がある場合は本物のExplorerのような2カラムに ----- */
+@media (min-width:720px){
+  .dirx-body{ flex-direction:row; align-items:flex-start; }
+  .dirx-tree-panel{ display:block; flex:none; width:220px; }
+  .dirx-tree-backdrop{ display:none; }
+  .dirx-tree-card{
+    position:static; width:auto; height:auto; box-shadow:none; border:1px solid var(--line); border-radius:14px;
+    padding:10px 0; animation:none; max-height:520px;
+  }
+  .dirx-tree-close{ display:none; }
+  .dirx-toolbar .dirx-tbtn--tree{ display:none; }
+  .dirx-main-panel{ flex:1; }
+}
+
+@media (max-width:360px){
+  .dirx-row-desc{ -webkit-line-clamp:1; }
+  .dirx-tbtn{ padding:8px 10px; }
+}
+
+body[data-theme="dark"] .dirx-shell, body[data-theme="galaxy"] .dirx-shell{ background:var(--bg2); border-color:rgba(255,255,255,.12); }
+body[data-theme="dark"] .dirx-row, body[data-theme="galaxy"] .dirx-row{ border-color:rgba(255,255,255,.12); }
+body[data-theme="dark"] .dirx-chip--cmd, body[data-theme="galaxy"] .dirx-chip--cmd{ color:#4ade80; }

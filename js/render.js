@@ -2,6 +2,7 @@ import { CERTS } from './data/certs.js';
 import { DC_PHASES, L, REGIONS } from './data/constants.js';
 import { CONCEPTS, DRAW, PASS, Q, TIERS, applySkin, certById, certStat, commit, correctSet, dcCount, dcPhase, dcTitle, esc, exportCode, fmt, getBP, getProfileName, grade, importCode, isAdminAccount, isMarked, isMulti, loadHist, loadMarked, loadReviewStats, loadTapSound, loadUiTheme, loadWrong, overallLevel, overallStat, pick, pts, publishLeaderboard, purchaseSkin, questionsForCommand, saveCoins, saveGeminiPlainText, saveTapSound, saveToCloud, saveUiTheme, selectCert, setBP, setProfileName, skinHandleIdentityChange, stars, start, startCommandPractice, startMarkedPractice, startReview, toggleMarked, totalBP } from './core.js';
 import { LPIC1_COMMANDS } from './data/lpic1-commands.js';
+import { LPIC1_DIR_FS } from './data/lpic1-directory-explorer.js';
 import { aiDailyUpdateCheck, aiOverallComment, aiShortComment, getAiRecommendations } from './reviewAI.js';
 import { getWeather } from './weather.js';
 import { geminiChat, sendGeminiMessage, setGeminiScheduleHandler, setGeminiHomeContextProvider, setGeminiStockContextProvider, pushGeminiMessage } from './gemini.js';
@@ -192,7 +193,7 @@ function updateHeaderTitle(){
 // カレンダータブのどちらから開いても同じ「カレンダー」タブをアクティブにする。
 const BNAV_TAB_BY_SCREEN = {
   select:"select",
-  home:"select", "lpic-commands":"select", quiz:"select", result:"select", review:"select", dict:"select", transfer:"select", history:"select",
+  home:"select", "lpic-commands":"select", quiz:"select", result:"select", review:"select", dict:"select", transfer:"select", history:"select", "lpic-dir-explorer":"select",
   certs:"study-menu", "lpic-certs":"study-menu", playground:"study-menu", scenario:"study-menu",
   "news-japan":"quick-menu", "news-world":"quick-menu", "news-detail":"quick-menu", portfolio:"quick-menu", holdings:"quick-menu", introquiz:"quick-menu",
   chappy:"select",
@@ -267,6 +268,7 @@ export function render(){
   if(S.screen==="select" || !S.cert) return renderSelect();
   if(S.screen==="home") return renderHome();
   if(S.screen==="lpic-commands") return renderLpicCommands();
+  if(S.screen==="lpic-dir-explorer") return renderDirExplorer();
   if(S.screen==="quiz") return renderQuiz();
   if(S.screen==="result") return renderResult();
   if(S.screen==="review") return renderReview();
@@ -449,6 +451,8 @@ const MENU_ICON_EXAM = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColo
 const MENU_ICON_REVIEW = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path stroke-width="1.4" opacity=".55" d="M12 5.6C10.3 4.3 7.9 3.8 5.5 4.2a1 1 0 0 0-.8 1v13.2a1 1 0 0 0 1.2 1c2-.4 4-.1 5.5 1a.7.7 0 0 0 1.2 0c1.5-1.1 3.5-1.4 5.5-1a1 1 0 0 0 1.2-1V5.2a1 1 0 0 0-.8-1c-2.4-.4-4.8.1-6.5 1.4Z"></path><path stroke-width="1.4" opacity=".55" d="M12 5.6v14"></path><path stroke-width="2.1" d="M15.6 10.3a4 4 0 1 0 1 4.4"></path><path stroke-width="2.1" d="m16.3 8.7.3 2.2-2.2-.3"></path></svg>`;
 const MENU_ICON_DICT = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5.6C10.3 4.3 7.9 3.8 5.5 4.2a1 1 0 0 0-.8 1v13.2a1 1 0 0 0 1.2 1c2-.4 4-.1 5.5 1a.7.7 0 0 0 1.2 0c1.5-1.1 3.5-1.4 5.5-1a1 1 0 0 0 1.2-1V5.2a1 1 0 0 0-.8-1c-2.4-.4-4.8.1-6.5 1.4Z"></path><path d="M12 5.6v14"></path><text x="6.8" y="13.2" font-size="5.2" font-weight="800" stroke="none" fill="currentColor">A</text><text x="14" y="13.2" font-size="5.2" font-weight="800" stroke="none" fill="currentColor">Z</text></svg>`;
 const MENU_ICON_MARKED = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M7 3.5h10a1 1 0 0 1 1 1V20l-6-3.7L6 20V4.5a1 1 0 0 1 1-1Z"></path><path d="M9.3 9h5.4"></path><path d="M12 6.3v5.4"></path></svg>`;
+// 「ディレクトリを触って学ぶ」ボタン用アイコン（フォルダ＋展開の階層を表現）
+const MENU_ICON_DIRX = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M3.5 6.2a1 1 0 0 1 1-1h4.4l1.6 1.9h8a1 1 0 0 1 1 1V17a1 1 0 0 1-1 1h-14a1 1 0 0 1-1-1V6.2Z"></path><path d="M7.5 12.3h4.4M7.5 15h6.6" opacity=".7"></path></svg>`;
 
 /* ===== 🧠 AIおすすめ復習：ホーム画面に表示するコンパクトカード =====
    スコア計算・データ保存は js/reviewAI.js（アプリ内計算。生成AIは使わない）。
@@ -627,6 +631,13 @@ export function renderHome(){
         <span class="menu-btn-text"><span class="menu-btn-label">用語辞典</span></span>
         <span class="menu-btn-chevron">›</span>
       </button>
+
+      ${S.cert==="lpic1" ? `
+      <button class="menu-btn menu-btn--dirx" data-go="lpic-dir-explorer">
+        <span class="menu-btn-icon">${MENU_ICON_DIRX}</span>
+        <span class="menu-btn-text"><span class="menu-btn-label">ディレクトリを触って学ぶ</span></span>
+        <span class="menu-btn-chevron">›</span>
+      </button>` : ``}
     </div>
     ${h.length?`<button class="link" data-go="history">スコア履歴を見る（${h.length}件）</button>`:
       `<div class="install">ヒント：ブラウザの共有メニューから「ホーム画面に追加」すると、アプリのように起動できます。</div>`}
@@ -701,6 +712,312 @@ export function renderLpicCommands(){
   `;
   app.querySelectorAll("[data-cmd]").forEach(b=>b.onclick=()=>startCommandPractice(b.dataset.cmd));
   app.querySelectorAll("[data-pc]").forEach(b=>b.onclick=()=>start("practice", +b.dataset.pc));
+  app.querySelectorAll("[data-go]").forEach(b=>b.onclick=()=>go(b.dataset.go));
+  window.scrollTo(0,0);
+}
+
+/* ======================= 🗂 ディレクトリを触って学ぶ（LPIC-1 FHS探検） =======================
+   実際のパソコンのフォルダ画面のような操作感で、Linuxのディレクトリ構造
+   （FHS）を学べる学習用サンドボックス画面。データはすべて
+   data/lpic1-directory-explorer.js の疑似ファイルシステム（LPIC1_DIR_FS）
+   から読み取るだけで、実OSのファイルには一切アクセスしない。
+
+   状態はプレイグラウンド（playgroundState.js）と同様にモジュールスコープで
+   保持し、他の画面へ移動して戻ってきても続きから再開できるようにする。 */
+let dirxPath = [];                 // 現在地（ルートからのセグメント配列。例：["etc","ssh"]）
+let dirxBackStack = [];            // 戻る履歴
+let dirxForwardStack = [];         // 進む履歴
+let dirxSelected = null;           // 中央一覧で選択中の子要素名
+let dirxExpanded = new Set([""]);  // ツリーで展開中のパス（""はルート直下）
+let dirxTreeOpen = false;          // 狭い画面でのツリー（左ペイン）ドロワー開閉
+let dirxSheetEl = null;            // 現在開いている詳細ボトムシートのDOM
+let dirxSelectTimer = null;        // デスクトップ：クリック直後に詳細シートを開くまでの遅延タイマー（dblclickとの衝突回避用）
+
+function dirxNodeAt(segs){
+  let node = LPIC1_DIR_FS;
+  for(const seg of segs){
+    if(!node || node.type !== "dir" || !node.children[seg]) return null;
+    node = node.children[seg];
+  }
+  return node;
+}
+function dirxPathStr(segs){ return segs.length ? "/"+segs.join("/") : "/"; }
+function dirxIsCoarsePointer(){
+  try{ return !!(window.matchMedia && window.matchMedia("(pointer: coarse)").matches); }
+  catch(e){ return false; }
+}
+function dirxEnsureExpanded(segs){
+  let cur = [];
+  dirxExpanded.add("");
+  segs.forEach(seg => { cur = cur.concat(seg); dirxExpanded.add(cur.join("/")); });
+}
+function dirxNavigateTo(segs){
+  const key = segs.join("/");
+  if(key !== dirxPath.join("/")){
+    dirxBackStack.push(dirxPath.slice());
+    dirxForwardStack = [];
+    dirxPath = segs.slice();
+  }
+  dirxSelected = null;
+  dirxEnsureExpanded(dirxPath);
+  renderDirExplorer();
+}
+function dirxBackNav(){
+  if(!dirxBackStack.length) return;
+  dirxForwardStack.push(dirxPath.slice());
+  dirxPath = dirxBackStack.pop();
+  dirxSelected = null;
+  dirxEnsureExpanded(dirxPath);
+  renderDirExplorer();
+}
+function dirxForwardNav(){
+  if(!dirxForwardStack.length) return;
+  dirxBackStack.push(dirxPath.slice());
+  dirxPath = dirxForwardStack.pop();
+  dirxSelected = null;
+  dirxEnsureExpanded(dirxPath);
+  renderDirExplorer();
+}
+function dirxUpNav(){ if(dirxPath.length) dirxNavigateTo(dirxPath.slice(0,-1)); }
+function dirxRootNav(){ dirxNavigateTo([]); }
+
+function dirxBreadcrumbHTML(){
+  const crumbs = [{ label:"/", segs:[] }];
+  let cur = [];
+  dirxPath.forEach(seg => { cur = cur.concat(seg); crumbs.push({ label:seg, segs:cur.slice() }); });
+  return crumbs.map((c,i)=>`<button type="button" class="dirx-crumb${i===crumbs.length-1?" dirx-crumb--current":""}" data-dirx-crumb="${esc(c.segs.join("/"))}">${esc(c.label)}</button>`)
+    .join(`<span class="dirx-crumb-sep">›</span>`);
+}
+
+function dirxTreeRowHTML(name, node, segs, depth){
+  const key = segs.join("/");
+  const isDir = node.type === "dir";
+  const hasChildren = isDir && Object.keys(node.children).length>0;
+  const expanded = dirxExpanded.has(key);
+  const isCurrent = key === dirxPath.join("/");
+  const childrenHTML = (isDir && expanded)
+    ? Object.keys(node.children).sort().map(cn=>dirxTreeRowHTML(cn, node.children[cn], segs.concat(cn), depth+1)).join("")
+    : "";
+  return `
+    <div class="dirx-tree-item">
+      <div class="dirx-tree-row${isCurrent?" dirx-tree-row--active":""}" style="padding-left:${10+depth*16}px" data-dirx-tree="${esc(key)}">
+        ${hasChildren
+          ? `<button type="button" class="dirx-tree-caret${expanded?" dirx-tree-caret--open":""}" data-dirx-caret="${esc(key)}" aria-label="${expanded?"折りたたむ":"展開する"}">›</button>`
+          : `<span class="dirx-tree-caret dirx-tree-caret--empty"></span>`}
+        <span class="dirx-tree-ico">${isDir?"📁":"📄"}</span>
+        <span class="dirx-tree-name">${esc(name)}</span>
+        ${node.examHot?`<span class="dirx-tree-star" title="試験で特に重要">★</span>`:""}
+      </div>
+      ${childrenHTML}
+    </div>`;
+}
+function dirxTreeHTML(){
+  const rootExpanded = dirxExpanded.has("");
+  const rootCurrent = dirxPath.length===0;
+  const childrenHTML = rootExpanded
+    ? Object.keys(LPIC1_DIR_FS.children).sort().map(n=>dirxTreeRowHTML(n, LPIC1_DIR_FS.children[n], [n], 1)).join("")
+    : "";
+  return `
+    <div class="dirx-tree-item">
+      <div class="dirx-tree-row${rootCurrent?" dirx-tree-row--active":""}" style="padding-left:10px" data-dirx-tree="">
+        <button type="button" class="dirx-tree-caret${rootExpanded?" dirx-tree-caret--open":""}" data-dirx-caret="" aria-label="${rootExpanded?"折りたたむ":"展開する"}">›</button>
+        <span class="dirx-tree-ico">🐧</span>
+        <span class="dirx-tree-name">/（ルート）</span>
+      </div>
+      ${childrenHTML}
+    </div>`;
+}
+
+function dirxListHTML(node){
+  if(!node || node.type !== "dir") return `<div class="dirx-empty">このパスは学習データに存在しません。</div>`;
+  const names = Object.keys(node.children).sort();
+  if(!names.length) return `<div class="dirx-empty">📭 このフォルダの中身は学習データに含まれていません。<br><span class="dirx-empty-sub">（実際のLinuxにはさらに多くのファイルがあります）</span></div>`;
+  return names.map(name=>{
+    const child = node.children[name];
+    const isDir = child.type === "dir";
+    const selected = dirxSelected === name;
+    return `
+      <button type="button" class="dirx-row${selected?" dirx-row--selected":""}" data-dirx-row="${esc(name)}">
+        <span class="dirx-row-icon">${isDir?"📁":"📄"}</span>
+        <span class="dirx-row-main">
+          <span class="dirx-row-top">
+            <span class="dirx-row-name">${esc(name)}</span>
+            ${child.examHot?`<span class="dirx-badge dirx-badge--hot">★試験頻出</span>`:(child.lpicImportant?`<span class="dirx-badge">重要</span>`:"")}
+          </span>
+          <span class="dirx-row-kind">${esc(child.kind||"")}</span>
+          <span class="dirx-row-desc">${esc(child.desc||"")}</span>
+        </span>
+        ${isDir?`<span class="dirx-row-chevron" data-dirx-open="${esc(name)}" aria-label="開く">›</span>`:""}
+      </button>`;
+  }).join("");
+}
+
+function dirxDetailBodyHTML(name, node, segs){
+  const d = node.detail || {};
+  const isDir = node.type === "dir";
+  return `
+    <div class="dirx-detail-head">
+      <span class="dirx-detail-ico">${isDir?"📁":"📄"}</span>
+      <div>
+        <div class="dirx-detail-path">${esc(dirxPathStr(segs))}</div>
+        <div class="dirx-detail-kind">${esc(node.kind||"")}</div>
+      </div>
+    </div>
+    <div class="dirx-detail-badges">
+      ${node.examHot?`<span class="dirx-badge dirx-badge--hot">★ 試験で特に重要</span>`:""}
+      ${node.lpicImportant?`<span class="dirx-badge">LPIC-1で重要</span>`:`<span class="dirx-badge dirx-badge--muted">参考程度</span>`}
+      ${node.isVirtual?`<span class="dirx-badge dirx-badge--virtual">⚙ 仮想ファイルシステム</span>`:""}
+    </div>
+    ${node.isVirtual?`<div class="dirx-detail-virtual-note">💡 ここはディスク上に実体を持たず、カーネルが情報をその場で生成して見せている「仮想ファイルシステム」の一部です。</div>`:""}
+    ${d.beginnerNote?`<div class="dirx-detail-tip">🔰 <b>初学者向け一言：</b>${esc(d.beginnerNote)}</div>`:""}
+    ${d.role?`<div class="dirx-detail-section"><div class="dirx-detail-lab">役割</div><div class="dirx-detail-body">${esc(d.role)}</div></div>`:""}
+    ${d.stores?`<div class="dirx-detail-section"><div class="dirx-detail-lab">何を保存する場所か</div><div class="dirx-detail-body">${esc(d.stores)}</div></div>`:""}
+    ${(d.examples&&d.examples.length)?`<div class="dirx-detail-section"><div class="dirx-detail-lab">代表例</div><div class="dirx-chip-row">${d.examples.map(x=>`<code class="dirx-chip">${esc(x)}</code>`).join("")}</div></div>`:""}
+    ${(d.commands&&d.commands.length)?`<div class="dirx-detail-section"><div class="dirx-detail-lab">関連コマンド</div><div class="dirx-chip-row">${d.commands.map(x=>`<code class="dirx-chip dirx-chip--cmd">${esc(x)}</code>`).join("")}</div></div>`:""}
+    ${d.examPoint?`<div class="dirx-detail-section dirx-detail-section--exam"><div class="dirx-detail-lab">🏆 試験でのポイント</div><div class="dirx-detail-body">${esc(d.examPoint)}</div></div>`:""}
+  `;
+}
+
+function dirxOpenDetailSheet(name, node, segs){
+  if(dirxSheetEl){ closeSheet(dirxSheetEl); dirxSheetEl = null; }
+  lockBodyScrollForSheet();
+  const ov = document.createElement("div");
+  ov.className = "sheet-ov";
+  ov.innerHTML = `
+    <div class="bottom-sheet dirx-detail-sheet">
+      <button type="button" class="dirx-detail-close" data-dirx-sheet-close aria-label="閉じる">✕</button>
+      <div class="bottom-sheet-drag-handle">
+        <div class="bottom-sheet-handle"></div>
+        <div class="bottom-sheet-title">${esc(name===""?"/（ルート）":name)}</div>
+      </div>
+      <div class="dirx-detail-scroll">${dirxDetailBodyHTML(name, node, segs)}</div>
+    </div>`;
+  document.body.appendChild(ov);
+  dirxSheetEl = ov;
+  ov.addEventListener("click", (e)=>{ if(e.target===ov){ closeSheet(ov); if(dirxSheetEl===ov) dirxSheetEl=null; } });
+  const closeBtn = ov.querySelector("[data-dirx-sheet-close]");
+  if(closeBtn) closeBtn.onclick = () => { closeSheet(ov); if(dirxSheetEl===ov) dirxSheetEl=null; };
+  const touchGuard = createSheetTouchGuard(ov);
+  ov.addEventListener("touchstart", touchGuard.onTouchStart, { passive:true });
+  ov.addEventListener("touchmove", touchGuard.onTouchMove, { passive:false });
+  const sheet = ov.querySelector(".bottom-sheet");
+  attachSheetDragHandlers(ov, sheet);
+  requestAnimationFrame(()=>{ ov.classList.add("sheet-ov-show"); sheet.classList.add("bottom-sheet-show"); });
+}
+
+export function renderDirExplorer(){
+  updateHeaderNav(true);
+  const node = dirxNodeAt(dirxPath) || LPIC1_DIR_FS;
+  app.innerHTML = `
+    <div class="q-head" style="margin-bottom:14px">
+      <button class="quit" data-go="home">← ホームへ戻る</button>
+    </div>
+    <div class="sel-head">
+      <span class="eyebrow">LPIC-1 ・ FHS学習</span>
+      <h2 class="sel-title">ディレクトリを触って学ぶ</h2>
+    </div>
+    <div class="x-hint" style="margin:10px 0 14px">実際のパソコンのフォルダ画面のように、クリック（タップ）しながらLinuxのディレクトリ構造を確認できます。実際のOSには一切アクセスしない、学習用の疑似ファイルシステムです。</div>
+
+    <div class="dirx-shell">
+      <div class="dirx-toolbar">
+        <button type="button" class="dirx-tbtn" data-dirx-back aria-label="戻る" title="戻る" ${dirxBackStack.length?"":"disabled"}>‹</button>
+        <button type="button" class="dirx-tbtn" data-dirx-forward aria-label="進む" title="進む" ${dirxForwardStack.length?"":"disabled"}>›</button>
+        <button type="button" class="dirx-tbtn" data-dirx-up aria-label="上の階層へ" title="上の階層へ" ${dirxPath.length?"":"disabled"}>⬆</button>
+        <button type="button" class="dirx-tbtn" data-dirx-root aria-label="ルートへ戻る" title="ルートへ戻る">🏠</button>
+        <button type="button" class="dirx-tbtn dirx-tbtn--tree" data-dirx-tree-toggle aria-label="ディレクトリツリーを開く" title="ディレクトリツリー">🗂 ツリー</button>
+      </div>
+      <div class="dirx-breadcrumb">${dirxBreadcrumbHTML()}</div>
+
+      <div class="dirx-body">
+        <div class="dirx-tree-panel${dirxTreeOpen?" dirx-tree-panel--open":""}">
+          <div class="dirx-tree-backdrop" data-dirx-tree-toggle></div>
+          <div class="dirx-tree-card">
+            <div class="dirx-tree-card-head">
+              <span>📁 ディレクトリツリー</span>
+              <button type="button" class="dirx-tree-close" data-dirx-tree-toggle aria-label="閉じる">✕</button>
+            </div>
+            <div class="dirx-tree-scroll">${dirxTreeHTML()}</div>
+          </div>
+        </div>
+
+        <div class="dirx-main-panel">
+          <div class="dirx-main-head">
+            <span class="dirx-main-path">${esc(dirxPathStr(dirxPath))}</span>
+            <span class="dirx-main-count">${node.type==="dir" ? Object.keys(node.children).length+" 件" : ""}</span>
+          </div>
+          <div class="dirx-list">${dirxListHTML(node)}</div>
+        </div>
+      </div>
+    </div>
+  `;
+
+  const backBtn = app.querySelector("[data-dirx-back]"); if(backBtn) backBtn.onclick = dirxBackNav;
+  const fwdBtn = app.querySelector("[data-dirx-forward]"); if(fwdBtn) fwdBtn.onclick = dirxForwardNav;
+  const upBtn = app.querySelector("[data-dirx-up]"); if(upBtn) upBtn.onclick = dirxUpNav;
+  const rootBtn = app.querySelector("[data-dirx-root]"); if(rootBtn) rootBtn.onclick = dirxRootNav;
+  app.querySelectorAll("[data-dirx-tree-toggle]").forEach(b=>b.onclick=()=>{ dirxTreeOpen = !dirxTreeOpen; renderDirExplorer(); });
+
+  app.querySelectorAll("[data-dirx-crumb]").forEach(b=>b.onclick=()=>{
+    const v = b.dataset.dirxCrumb;
+    dirxNavigateTo(v ? v.split("/") : []);
+  });
+
+  app.querySelectorAll("[data-dirx-caret]").forEach(b=>b.onclick=(e)=>{
+    e.stopPropagation();
+    const key = b.dataset.dirxCaret;
+    if(dirxExpanded.has(key)) dirxExpanded.delete(key); else dirxExpanded.add(key);
+    renderDirExplorer();
+  });
+  app.querySelectorAll("[data-dirx-tree]").forEach(row=>row.addEventListener("click", (e)=>{
+    if(e.target.closest("[data-dirx-caret]")) return;
+    const key = row.dataset.dirxTree;
+    dirxTreeOpen = false;
+    dirxNavigateTo(key ? key.split("/") : []);
+  }));
+
+  // 選択状態の見た目は（renderDirExplorer()を丸ごと呼び直すと、直後のクリックが
+  // 別のDOM要素に当たってしまいネイティブのdblclickが発火しなくなるため）
+  // classListの付け替えだけで反映し、行要素自体は再生成しない
+  const selectRowEl = (row) => {
+    app.querySelectorAll(".dirx-row--selected").forEach(r=>r.classList.remove("dirx-row--selected"));
+    row.classList.add("dirx-row--selected");
+  };
+  app.querySelectorAll("[data-dirx-row]").forEach(row=>{
+    const name = row.dataset.dirxRow;
+    const child = node.children[name];
+    if(!child) return;
+    const openNow = () => {
+      dirxSelected = name;
+      dirxOpenDetailSheet(name, child, dirxPath.concat(name));
+      if(child.type === "dir") dirxNavigateTo(dirxPath.concat(name));
+      else selectRowEl(row);
+    };
+    row.addEventListener("click", (e)=>{
+      if(e.target.closest("[data-dirx-open]")) return;
+      if(child.type === "dir" && !dirxIsCoarsePointer()){
+        // デスクトップ（マウス）のフォルダ行は「クリック＝選択」「ダブルクリック＝開く」
+        // という感覚に近づけたいが、選択直後に詳細シート（画面全体を覆う
+        // オーバーレイ）をその場で開いてしまうと、2回目のクリックがオーバーレイに
+        // 当たってしまいネイティブのdblclickイベントが発火しなくなる。そのため
+        // シートを開く処理だけを少し遅らせ、その間にdblclickが来たらキャンセルする
+        dirxSelected = name;
+        selectRowEl(row);
+        clearTimeout(dirxSelectTimer);
+        dirxSelectTimer = setTimeout(()=>{ dirxOpenDetailSheet(name, child, dirxPath.concat(name)); }, 260);
+        return;
+      }
+      openNow();
+    });
+    row.addEventListener("dblclick", ()=>{
+      clearTimeout(dirxSelectTimer);
+      if(child.type === "dir") dirxNavigateTo(dirxPath.concat(name));
+    });
+  });
+  app.querySelectorAll("[data-dirx-open]").forEach(btn=>btn.addEventListener("click", (e)=>{
+    e.stopPropagation();
+    dirxNavigateTo(dirxPath.concat(btn.dataset.dirxOpen));
+  }));
+
   app.querySelectorAll("[data-go]").forEach(b=>b.onclick=()=>go(b.dataset.go));
   window.scrollTo(0,0);
 }
