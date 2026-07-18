@@ -3,6 +3,20 @@ import { DC_PHASES, L, REGIONS } from './data/constants.js';
 import { CONCEPTS, DRAW, PASS, Q, TIERS, applySkin, certById, certStat, commit, correctSet, dcCount, dcPhase, dcTitle, esc, exportCode, fmt, getBP, getProfileName, grade, importCode, isAdminAccount, isMarked, isMulti, loadHist, loadMarked, loadReviewStats, loadTapSound, loadUiTheme, loadWrong, overallLevel, overallStat, pick, pts, publishLeaderboard, purchaseSkin, questionsForCommand, saveCoins, saveGeminiPlainText, saveTapSound, saveToCloud, saveUiTheme, selectCert, setBP, setProfileName, skinHandleIdentityChange, stars, start, startCommandPractice, startMarkedPractice, startReview, toggleMarked, totalBP } from './core.js';
 import { LPIC1_COMMANDS } from './data/lpic1-commands.js';
 import { LPIC1_DIR_FS } from './data/lpic1-directory-explorer.js';
+import { DIRX_SEVERITY_META } from './data/dirx-events.js';
+import { DIRX_SCENARIOS } from './data/dirx-scenarios.js';
+import {
+  dirxActiveIncident, dirxActiveMission,
+  dirxAdvanceTime, dirxChooseCause, dirxChooseFix, dirxEndIncident,
+  dirxEndMission, dirxEventHistory, dirxExplorationExp, dirxFindTargetForPath,
+  dirxGetClock, dirxGetSettings, dirxGetSystemStatus, dirxHandleIdentityChange,
+  dirxIncidentElapsedMinutes, dirxIncidentSummary, dirxIncidentTerminalLog, dirxIsInvestigated,
+  dirxListMissions, dirxListScenarios,
+  dirxMarkAllEventsRead, dirxMarkEventRead, dirxMarkEventResolved, dirxMarkInvestigated,
+  dirxOnEvent, dirxRevealIncidentHint, dirxRevealMissionHint, dirxRunIncidentCommand,
+  dirxSetSettings, dirxStartIncident, dirxStartMission, dirxSubmitMissionAnswer,
+  dirxUnreadCount, startAutoTimerIfNeeded, stopAutoTimer,
+} from './dirxStore.js';
 import { aiDailyUpdateCheck, aiOverallComment, aiShortComment, getAiRecommendations } from './reviewAI.js';
 import { getWeather } from './weather.js';
 import { geminiChat, sendGeminiMessage, setGeminiScheduleHandler, setGeminiHomeContextProvider, setGeminiStockContextProvider, pushGeminiMessage } from './gemini.js';
@@ -10,7 +24,7 @@ import { SKIN_DATA } from './data/skins.js';
 import { UI_THEME_DATA } from './data/uithemes.js';
 import { TAP_SOUND_DATA } from './data/tapsounds.js';
 import { playTapSound } from './audio.js';
-import { notifyDailySummary, notifyReminder, notifyScheduleCreated, notifyScheduleDeleted } from './notifications.js';
+import { notifyDailySummary, notifyDirxEvent, notifyReminder, notifyScheduleCreated, notifyScheduleDeleted } from './notifications.js';
 import { S, state } from './state.js';
 import { chappyHandleIdentityChange, chappyOnNewsOpened, chappyOnStocksViewed, chappyOnTaskCompleted, isChappyHomeWidgetVisible } from './chappy.js';
 import { chappyMiniWidgetHTML, chappyMiniWeatherHint, renderChappyScreen } from './chappyScreen.js';
@@ -49,12 +63,19 @@ document.addEventListener("click", (e)=>{
 // 個別資格の画面（AZ-900など）から資格一覧へ「戻る」際に、前の資格の
 // ランク表示が残ってしまうバグを防ぐ（ステータスバーの再描画は
 // S.cert の値を見て個別資格行の要否を判断しているため）。
+// 探索ミッション／時間経過・イベント／障害対応モードの画面一覧。
+// この一覧に含まれる画面を表示している間だけ、疑似Linuxの時間の自動進行
+// タイマーを動かす（無関係な資格の画面を見ている間はイベント通知を出さない）。
+const DIRX_SCREENS = ["lpic-dir-explorer", "lpic-dirx-missions", "lpic-dirx-incidents", "lpic-dirx-events"];
+const DIRX_SCENARIOS_ORDER = DIRX_SCENARIOS.map(s=>s.id);
+
 export function go(s){
   if(s === "certs" || s === "lpic-certs" || s === "select") S.cert = null;
   // ホームへ戻ったら、Gemini相談画面の「戻る」先の記憶もリセットする
   // （次にGeminiへ入るのがFABなど別の入口であれば、通常どおりホームへ戻せるように）
   if(s === "select") S.geminiReturnScreen = null;
   S.screen = s;
+  if(DIRX_SCREENS.includes(s)) startAutoTimerIfNeeded(); else stopAutoTimer();
   render();
 }
 
@@ -194,6 +215,7 @@ function updateHeaderTitle(){
 const BNAV_TAB_BY_SCREEN = {
   select:"select",
   home:"select", "lpic-commands":"select", quiz:"select", result:"select", review:"select", dict:"select", transfer:"select", history:"select", "lpic-dir-explorer":"select",
+  "lpic-dirx-missions":"select", "lpic-dirx-incidents":"select", "lpic-dirx-events":"select",
   certs:"study-menu", "lpic-certs":"study-menu", playground:"study-menu", scenario:"study-menu",
   "news-japan":"quick-menu", "news-world":"quick-menu", "news-detail":"quick-menu", portfolio:"quick-menu", holdings:"quick-menu", introquiz:"quick-menu",
   chappy:"select",
@@ -225,6 +247,7 @@ export function render(){
   mpHandleIdentityChange();   // ログインユーザーの切替を検知し、マインド・パレットのキャンバスを読み直す
   scenarioModeHandleIdentityChange(); // ログインユーザーの切替を検知し、シナリオモードの進捗を読み直す
   pgHandleIdentityChange();   // ログインユーザーの切替を検知し、Linuxプレイグラウンドの状態を読み直す
+  dirxHandleIdentityChange(); // ログインユーザーの切替を検知し、探索ミッション/障害対応の進捗を読み直す
   renderStatusBar();   // 画面が変わっても常に最新の Lv/BP/AC を反映
   updateHeaderNav(false); // デフォルトは非表示。表示すべき画面側で個別に true にする
   updateHeaderTitle();
@@ -269,6 +292,9 @@ export function render(){
   if(S.screen==="home") return renderHome();
   if(S.screen==="lpic-commands") return renderLpicCommands();
   if(S.screen==="lpic-dir-explorer") return renderDirExplorer();
+  if(S.screen==="lpic-dirx-missions") return renderDirxMissions();
+  if(S.screen==="lpic-dirx-incidents") return renderDirxIncidents();
+  if(S.screen==="lpic-dirx-events") return renderDirxEvents();
   if(S.screen==="quiz") return renderQuiz();
   if(S.screen==="result") return renderResult();
   if(S.screen==="review") return renderReview();
@@ -453,6 +479,10 @@ const MENU_ICON_DICT = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColo
 const MENU_ICON_MARKED = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M7 3.5h10a1 1 0 0 1 1 1V20l-6-3.7L6 20V4.5a1 1 0 0 1 1-1Z"></path><path d="M9.3 9h5.4"></path><path d="M12 6.3v5.4"></path></svg>`;
 // 「ディレクトリを触って学ぶ」ボタン用アイコン（フォルダ＋展開の階層を表現）
 const MENU_ICON_DIRX = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M3.5 6.2a1 1 0 0 1 1-1h4.4l1.6 1.9h8a1 1 0 0 1 1 1V17a1 1 0 0 1-1 1h-14a1 1 0 0 1-1-1V6.2Z"></path><path d="M7.5 12.3h4.4M7.5 15h6.6" opacity=".7"></path></svg>`;
+// 「探索ミッション」ボタン用アイコン（コンパス）
+const MENU_ICON_MISSION = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="8.3"></circle><path d="m14.6 9.4-1.7 4.8-4.8 1.7 1.7-4.8Z"></path></svg>`;
+// 「障害対応」ボタン用アイコン（レンチ）
+const MENU_ICON_INCIDENT = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M15.3 4.5a4 4 0 0 0-5.2 4.9L4.6 14.9a1.7 1.7 0 0 0 2.4 2.4l5.5-5.5a4 4 0 0 0 4.9-5.2l-2.6 2.6-2-.6-.6-2Z"></path></svg>`;
 
 /* ===== 🧠 AIおすすめ復習：ホーム画面に表示するコンパクトカード =====
    スコア計算・データ保存は js/reviewAI.js（アプリ内計算。生成AIは使わない）。
@@ -637,6 +667,16 @@ export function renderHome(){
         <span class="menu-btn-icon">${MENU_ICON_DIRX}</span>
         <span class="menu-btn-text"><span class="menu-btn-label">ディレクトリを触って学ぶ</span></span>
         <span class="menu-btn-chevron">›</span>
+      </button>
+      <button class="menu-btn menu-btn--mission" data-go="lpic-dirx-missions">
+        <span class="menu-btn-icon">${MENU_ICON_MISSION}</span>
+        <span class="menu-btn-text"><span class="menu-btn-label">探索ミッション</span><span class="menu-btn-sub">${dirxListMissions().filter(x=>x.completed).length} / ${dirxListMissions().length} クリア</span></span>
+        <span class="menu-btn-chevron">›</span>
+      </button>
+      <button class="menu-btn menu-btn--incident" data-go="lpic-dirx-incidents">
+        <span class="menu-btn-icon">${MENU_ICON_INCIDENT}</span>
+        <span class="menu-btn-text"><span class="menu-btn-label">障害対応</span><span class="menu-btn-sub">${dirxListScenarios().filter(x=>x.completed).length} / ${dirxListScenarios().length} クリア</span></span>
+        <span class="menu-btn-chevron">›</span>
       </button>` : ``}
     </div>
     ${h.length?`<button class="link" data-go="history">スコア履歴を見る（${h.length}件）</button>`:
@@ -732,6 +772,38 @@ let dirxExpanded = new Set([""]);  // ツリーで展開中のパス（""はル�
 let dirxTreeOpen = false;          // 狭い画面でのツリー（左ペイン）ドロワー開閉
 let dirxSheetEl = null;            // 現在開いている詳細ボトムシートのDOM
 let dirxSelectTimer = null;        // デスクトップ：クリック直後に詳細シートを開くまでの遅延タイマー（dblclickとの衝突回避用）
+let dirxMissionCardCollapsed = false;   // 「探索中」固定カードの折りたたみ状態
+let dirxIncidentCardCollapsed = false;  // 「障害対応中」固定カードの折りたたみ状態
+
+/* ---- ⏱ 疑似Linux内時間・イベント：バックグラウンドで発生した通知をトーストで表示する ----
+   dirxStore.js側は状態管理のみでDOMに一切触れないため、通知の見た目（トースト）と
+   「調査する」タップ時の画面遷移はここ（render.js）で購読して行う。 */
+dirxOnEvent((ev) => {
+  notifyDirxEvent(ev.message, ev.severity, ev.relatedPath ? () => {
+    dirxMarkEventRead(ev.id);
+    go("lpic-dir-explorer");
+    dirxNavigateTo(ev.relatedPath);
+  } : () => { dirxMarkEventRead(ev.id); });
+  dirxPatchTimebar();
+});
+
+// 現在画面に表示中のコンパクト時計/状態バーだけを、画面全体を再描画せずに更新する
+// （バックグラウンドの自動イベントで、探索中の画面がいきなり作り直されて操作の
+// 邪魔にならないようにするため）
+function dirxPatchTimebar(){
+  const clockEl = document.getElementById("dirx-clock-label");
+  if(!clockEl) return; // 現在dirx系の画面が表示されていない
+  clockEl.textContent = dirxGetClock().label;
+  const status = dirxGetSystemStatus();
+  const statusEl = document.getElementById("dirx-status-pill");
+  if(statusEl){
+    statusEl.textContent = status.label;
+    statusEl.className = `dirx-timebar-status dirx-sev-${status.key}`;
+  }
+  const unread = dirxUnreadCount();
+  const badgeWrap = document.getElementById("dirx-bell-badge-wrap");
+  if(badgeWrap) badgeWrap.innerHTML = unread>0 ? `<span class="dirx-timebar-badge">${unread>99?"99+":unread}</span>` : "";
+}
 
 function dirxNodeAt(segs){
   let node = LPIC1_DIR_FS;
@@ -878,6 +950,37 @@ function dirxDetailBodyHTML(name, node, segs){
   `;
 }
 
+// 探索ミッション／障害対応モードが進行中のときだけ、詳細シートの下部に追加操作
+// ボタンを表示する。通常のディレクトリ学習中（何も進行中でない）は何も表示しない
+function dirxDetailActionsHTML(segs, node){
+  const parts = [];
+  const am = dirxActiveMission();
+  if(am){
+    parts.push(`
+      <div class="dirx-detail-action-block dirx-detail-action-block--mission">
+        <div class="dirx-detail-action-lab">🧭 探索中：${esc(am.mission.title)}</div>
+        <button type="button" class="cta" data-dirx-mission-answer style="margin-top:8px">この場所をミッションの回答にする</button>
+      </div>`);
+  }
+  const ai = dirxActiveIncident();
+  if(ai){
+    const target = dirxFindTargetForPath(segs);
+    if(target){
+      const investigated = dirxIsInvestigated(target.id);
+      parts.push(`
+        <div class="dirx-detail-action-block dirx-detail-action-block--incident">
+          <div class="dirx-detail-action-lab">🛠 対応中：${esc(ai.scenario.title)}</div>
+          ${investigated
+            ? `<div class="dirx-detail-action-done">✓ 調査済みです</div>`
+            : `<button type="button" class="cta" data-dirx-mark-investigated="${esc(target.id)}" style="margin-top:8px">調査済みに追加する</button>`}
+          ${target.command ? `<button type="button" class="ghost" data-dirx-run-target-cmd="${esc(target.command)}" style="margin-top:8px">関連する疑似コマンドを実行する（${esc(target.command)}）</button>` : ""}
+        </div>`);
+    }
+  }
+  if(!parts.length) return "";
+  return `<div class="dirx-detail-actions">${parts.join("")}</div>`;
+}
+
 function dirxOpenDetailSheet(name, node, segs){
   if(dirxSheetEl){ closeSheet(dirxSheetEl); dirxSheetEl = null; }
   lockBodyScrollForSheet();
@@ -890,13 +993,29 @@ function dirxOpenDetailSheet(name, node, segs){
         <div class="bottom-sheet-handle"></div>
         <div class="bottom-sheet-title">${esc(name===""?"/（ルート）":name)}</div>
       </div>
-      <div class="dirx-detail-scroll">${dirxDetailBodyHTML(name, node, segs)}</div>
+      <div class="dirx-detail-scroll bottom-sheet-list">${dirxDetailBodyHTML(name, node, segs)}</div>
+      ${dirxDetailActionsHTML(segs, node)}
     </div>`;
   document.body.appendChild(ov);
   dirxSheetEl = ov;
   ov.addEventListener("click", (e)=>{ if(e.target===ov){ closeSheet(ov); if(dirxSheetEl===ov) dirxSheetEl=null; } });
   const closeBtn = ov.querySelector("[data-dirx-sheet-close]");
   if(closeBtn) closeBtn.onclick = () => { closeSheet(ov); if(dirxSheetEl===ov) dirxSheetEl=null; };
+  const ansBtn = ov.querySelector("[data-dirx-mission-answer]");
+  if(ansBtn) ansBtn.onclick = () => { dirxCloseSheetImmediate(); dirxSubmitAsMissionAnswer(segs); };
+  const invBtn = ov.querySelector("[data-dirx-mark-investigated]");
+  if(invBtn) invBtn.onclick = () => {
+    dirxMarkInvestigated(invBtn.dataset.dirxMarkInvestigated);
+    closeSheet(ov); if(dirxSheetEl===ov) dirxSheetEl=null;
+    render();
+  };
+  const cmdBtn = ov.querySelector("[data-dirx-run-target-cmd]");
+  if(cmdBtn) cmdBtn.onclick = () => {
+    dirxRunIncidentCommand(cmdBtn.dataset.dirxRunTargetCmd);
+    dirxCloseSheetImmediate();
+    render();
+    dirxOpenTerminalSheet();
+  };
   const touchGuard = createSheetTouchGuard(ov);
   ov.addEventListener("touchstart", touchGuard.onTouchStart, { passive:true });
   ov.addEventListener("touchmove", touchGuard.onTouchMove, { passive:false });
@@ -917,6 +1036,10 @@ export function renderDirExplorer(){
       <h2 class="sel-title">ディレクトリを触って学ぶ</h2>
     </div>
     <div class="x-hint" style="margin:10px 0 14px">実際のパソコンのフォルダ画面のように、クリック（タップ）しながらLinuxのディレクトリ構造を確認できます。実際のOSには一切アクセスしない、学習用の疑似ファイルシステムです。</div>
+
+    ${dirxTimebarHTML()}
+    ${dirxMissionCardHTML()}
+    ${dirxIncidentCardHTML()}
 
     <div class="dirx-shell">
       <div class="dirx-toolbar">
@@ -1018,8 +1141,539 @@ export function renderDirExplorer(){
     dirxNavigateTo(dirxPath.concat(btn.dataset.dirxOpen));
   }));
 
+  wireDirxTimebar();
+  wireDirxMissionCard();
+  wireDirxIncidentCard();
   app.querySelectorAll("[data-go]").forEach(b=>b.onclick=()=>go(b.dataset.go));
   window.scrollTo(0,0);
+}
+
+/* =========================================================================
+   🧭 探索ミッション／⏱ 時間経過・イベント／🛠 障害対応モード
+   共通UI部品：js/dirxStore.js の状態を読み、renderDirExplorer()・
+   renderDirxMissions()・renderDirxIncidents()・renderDirxEvents() の
+   4画面から使い回す。実際のOS・実際のコマンドには一切アクセスしない。
+   ========================================================================= */
+
+function fmtDirxMinutes(mins){
+  const m = Math.max(0, Math.round(mins||0));
+  if(m < 60) return `${m}分`;
+  const h = Math.floor(m/60), r = m%60;
+  return r ? `${h}時間${r}分` : `${h}時間`;
+}
+function dirxDifficultyClass(diff){
+  if(diff==="初級") return "dirx-diff--basic";
+  if(diff==="中級") return "dirx-diff--mid";
+  return "dirx-diff--lpic1";
+}
+
+/* ---- コンパクト時計/状態バー（4画面共通のヘッダー） ---- */
+function dirxTimebarHTML(){
+  const clock = dirxGetClock();
+  const status = dirxGetSystemStatus();
+  const unread = dirxUnreadCount();
+  return `
+    <div class="dirx-timebar" id="dirx-timebar">
+      <div class="dirx-timebar-row">
+        <span class="dirx-timebar-clock">🕒 <b id="dirx-clock-label">${esc(clock.label)}</b><span class="dirx-timebar-day">${clock.day}日目</span></span>
+        <span class="dirx-timebar-status dirx-sev-${status.key}" id="dirx-status-pill">${esc(status.label)}</span>
+        <button type="button" class="dirx-timebar-iconbtn" data-dirx-open-events aria-label="通知一覧を開く">🔔<span id="dirx-bell-badge-wrap">${unread>0?`<span class="dirx-timebar-badge">${unread>99?"99+":unread}</span>`:""}</span></button>
+        <button type="button" class="dirx-timebar-iconbtn" data-dirx-open-settings aria-label="時間の進み方の設定">⚙️</button>
+      </div>
+      <button type="button" class="dirx-tbtn dirx-timebar-advance" data-dirx-advance-time>⏩ 時間を進める（+30分）</button>
+    </div>`;
+}
+function wireDirxTimebar(){
+  app.querySelectorAll("[data-dirx-open-events]").forEach(b=>b.onclick=()=>go("lpic-dirx-events"));
+  app.querySelectorAll("[data-dirx-open-settings]").forEach(b=>b.onclick=()=>dirxOpenTimeSettingsSheet());
+  app.querySelectorAll("[data-dirx-advance-time]").forEach(b=>b.onclick=()=>{ dirxAdvanceTime(); render(); });
+}
+
+function dirxTimeSettingsBodyHTML(cur){
+  return `
+    <div class="dirx-settings-block">
+      <div class="dirx-settings-lab">自動進行</div>
+      <div class="dirx-settings-row">
+        <button type="button" class="dirx-toggle-btn${cur.autoAdvance?" dirx-toggle-btn--on":""}" data-dirx-set-auto="true">自動進行 ON</button>
+        <button type="button" class="dirx-toggle-btn${!cur.autoAdvance?" dirx-toggle-btn--on":""}" data-dirx-set-auto="false">自動進行 OFF</button>
+      </div>
+      <div class="dirx-settings-hint">ONの間、この画面を開いている間だけ疑似Linuxの時間が少しずつ自動で進みます。</div>
+    </div>
+    <div class="dirx-settings-block">
+      <div class="dirx-settings-lab">イベント頻度</div>
+      <div class="dirx-settings-row">
+        <button type="button" class="dirx-toggle-btn${cur.frequency==='low'?" dirx-toggle-btn--on":""}" data-dirx-set-freq="low">少ない</button>
+        <button type="button" class="dirx-toggle-btn${cur.frequency==='normal'?" dirx-toggle-btn--on":""}" data-dirx-set-freq="normal">普通</button>
+        <button type="button" class="dirx-toggle-btn${cur.frequency==='high'?" dirx-toggle-btn--on":""}" data-dirx-set-freq="high">多い</button>
+      </div>
+    </div>`;
+}
+function dirxOpenTimeSettingsSheet(){
+  const ov = dirxOpenSheet("⏱ 時間の進み方の設定", dirxTimeSettingsBodyHTML(dirxGetSettings()));
+  const rewire = () => {
+    ov.querySelectorAll("[data-dirx-set-auto]").forEach(b=>b.onclick=()=>{ dirxSetSettings({ autoAdvance: b.dataset.dirxSetAuto==="true" }); refresh(); });
+    ov.querySelectorAll("[data-dirx-set-freq]").forEach(b=>b.onclick=()=>{ dirxSetSettings({ frequency: b.dataset.dirxSetFreq }); refresh(); });
+  };
+  const refresh = () => {
+    ov.querySelector(".dirx-generic-sheet-body").innerHTML = dirxTimeSettingsBodyHTML(dirxGetSettings());
+    rewire();
+  };
+  rewire();
+}
+
+/* ---- 探索ミッション：挑戦中カード ---- */
+function dirxMissionCardHTML(){
+  const am = dirxActiveMission();
+  if(!am) return "";
+  const { mission, hintsRevealed } = am;
+  const hintsHTML = mission.hints.slice(0, hintsRevealed).map((h,i)=>`<div class="dirx-hint-line">💡 ヒント${i+1}：${esc(h)}</div>`).join("");
+  const canMoreHints = hintsRevealed < mission.hints.length;
+  return `
+    <div class="dirx-active-card dirx-active-card--mission${dirxMissionCardCollapsed?" dirx-active-card--collapsed":""}">
+      <button type="button" class="dirx-active-card-head" data-dirx-toggle-mission-card>
+        <span class="dirx-active-card-tag">🧭 探索中</span>
+        <span class="dirx-active-card-title">${esc(mission.title)}</span>
+        <span class="dirx-active-card-caret">${dirxMissionCardCollapsed?"▾":"▴"}</span>
+      </button>
+      <div class="dirx-active-card-body">
+        <div class="dirx-active-card-prompt">${esc(mission.prompt)}</div>
+        ${hintsHTML}
+        <div class="dirx-active-card-actions">
+          <button type="button" class="dirx-tbtn" data-dirx-mission-hint ${canMoreHints?"":"disabled"}>💡 ヒント（${hintsRevealed}/${mission.hints.length}）</button>
+          <button type="button" class="dirx-tbtn dirx-tbtn--end" data-dirx-mission-end>ミッションを終了</button>
+        </div>
+      </div>
+    </div>`;
+}
+function wireDirxMissionCard(){
+  app.querySelectorAll("[data-dirx-toggle-mission-card]").forEach(b=>b.onclick=()=>{ dirxMissionCardCollapsed = !dirxMissionCardCollapsed; render(); });
+  app.querySelectorAll("[data-dirx-mission-hint]").forEach(b=>b.onclick=()=>{ dirxRevealMissionHint(); render(); });
+  app.querySelectorAll("[data-dirx-mission-end]").forEach(b=>b.onclick=()=>{ dirxEndMission(); go("lpic-dirx-missions"); });
+}
+
+/* ---- 障害対応モード：対応中カード ---- */
+function dirxIncidentCardHTML(){
+  const ai = dirxActiveIncident();
+  if(!ai) return "";
+  const { scenario, runtime } = ai;
+  const total = scenario.investigateTargets.length;
+  const doneCount = scenario.investigateTargets.filter(t=>dirxIsInvestigated(t.id)).length;
+  const elapsed = dirxIncidentElapsedMinutes();
+  const canChooseCause = doneCount >= total;
+  const cause = scenario.causeOptions.find(o=>o.id===runtime.causeId) || null;
+  return `
+    <div class="dirx-active-card dirx-active-card--incident${dirxIncidentCardCollapsed?" dirx-active-card--collapsed":""}">
+      <button type="button" class="dirx-active-card-head" data-dirx-toggle-incident-card>
+        <span class="dirx-active-card-tag">🛠 障害対応中</span>
+        <span class="dirx-active-card-title">${esc(scenario.title)}</span>
+        <span class="dirx-active-card-caret">${dirxIncidentCardCollapsed?"▾":"▴"}</span>
+      </button>
+      <div class="dirx-active-card-body">
+        <div class="dirx-active-card-prompt">${esc(scenario.symptom)}</div>
+        <div class="dirx-active-card-meta">経過時間：${fmtDirxMinutes(elapsed)}　調査済み：${doneCount}/${total}</div>
+        ${cause ? `<div class="dirx-cause-note ${cause.correct?'dirx-cause-note--ok':'dirx-cause-note--ng'}">原因候補：${esc(cause.label)}</div>` : ""}
+        ${(!canChooseCause && !runtime.completed) ? `<div class="dirx-active-card-hintline">あと${total-doneCount}件、調査対象を確認すると原因を回答できます。</div>` : ""}
+        <div class="dirx-active-card-actions">
+          <button type="button" class="dirx-tbtn" data-dirx-open-terminal>💻 疑似ターミナル</button>
+          <button type="button" class="dirx-tbtn" data-dirx-incident-hint>💡 ヒント</button>
+          ${runtime.completed
+            ? `<button type="button" class="dirx-tbtn dirx-tbtn--accent" data-dirx-incident-summary>結果を見る</button>`
+            : `<button type="button" class="dirx-tbtn dirx-tbtn--accent" data-dirx-choose-cause ${canChooseCause?"":"disabled"}>${cause?"原因を選び直す":"原因を回答する"}</button>
+               ${cause ? `<button type="button" class="dirx-tbtn dirx-tbtn--accent" data-dirx-choose-fix>対応方法を選ぶ</button>` : ""}`}
+          <button type="button" class="dirx-tbtn dirx-tbtn--end" data-dirx-incident-end>対応を終了する</button>
+        </div>
+      </div>
+    </div>`;
+}
+function wireDirxIncidentCard(){
+  app.querySelectorAll("[data-dirx-toggle-incident-card]").forEach(b=>b.onclick=()=>{ dirxIncidentCardCollapsed = !dirxIncidentCardCollapsed; render(); });
+  app.querySelectorAll("[data-dirx-open-terminal]").forEach(b=>b.onclick=()=>dirxOpenTerminalSheet());
+  app.querySelectorAll("[data-dirx-incident-hint]").forEach(b=>b.onclick=()=>dirxOpenIncidentHintSheet());
+  app.querySelectorAll("[data-dirx-choose-cause]").forEach(b=>{ if(!b.disabled) b.onclick=()=>dirxOpenCauseSheet(); });
+  app.querySelectorAll("[data-dirx-choose-fix]").forEach(b=>b.onclick=()=>dirxOpenFixSheet());
+  app.querySelectorAll("[data-dirx-incident-summary]").forEach(b=>b.onclick=()=>dirxOpenIncidentClearSheet());
+  app.querySelectorAll("[data-dirx-incident-end]").forEach(b=>b.onclick=()=>{ dirxEndIncident(); go("lpic-dirx-incidents"); });
+}
+
+/* ---- 汎用ボトムシート（ミッション回答結果／原因・対応の選択／疑似ターミナル／
+   通知詳細／設定など、dirx系のあらゆる補助画面をこの1つで組み立てる） ---- */
+function dirxOpenSheet(title, bodyHTML){
+  if(dirxSheetEl){ closeSheet(dirxSheetEl); dirxSheetEl = null; }
+  lockBodyScrollForSheet();
+  const ov = document.createElement("div");
+  ov.className = "sheet-ov";
+  ov.innerHTML = `
+    <div class="bottom-sheet dirx-generic-sheet">
+      <div class="bottom-sheet-drag-handle">
+        <div class="bottom-sheet-handle"></div>
+        <div class="bottom-sheet-title">${esc(title)}</div>
+      </div>
+      <div class="bottom-sheet-list dirx-generic-sheet-body">${bodyHTML}</div>
+    </div>`;
+  document.body.appendChild(ov);
+  dirxSheetEl = ov;
+  ov.addEventListener("click", (e)=>{ if(e.target===ov){ closeSheet(ov); if(dirxSheetEl===ov) dirxSheetEl=null; } });
+  const touchGuard = createSheetTouchGuard(ov);
+  ov.addEventListener("touchstart", touchGuard.onTouchStart, { passive:true });
+  ov.addEventListener("touchmove", touchGuard.onTouchMove, { passive:false });
+  const sheet = ov.querySelector(".bottom-sheet");
+  attachSheetDragHandlers(ov, sheet);
+  requestAnimationFrame(()=>{ ov.classList.add("sheet-ov-show"); sheet.classList.add("bottom-sheet-show"); });
+  return ov;
+}
+function dirxCloseSheet(){ if(dirxSheetEl){ closeSheet(dirxSheetEl); dirxSheetEl = null; } }
+// アニメーション付きのcloseSheet()はunlockBodyScrollForSheet()の呼び出しが220ms遅延するため、
+// 「閉じてすぐ別のシートを開く」場面でそのまま使うと、後から開いた新しいシートの背景ロックまで
+// 巻き込んで解除してしまう（＝背景が意図せずスクロールできてしまう）。次のシートへ即座に
+// つなげる場合は、アニメーションなしでDOMだけ取り除くこちらを使う（背景ロックは新しいシート側の
+// lockBodyScrollForSheet()にそのまま引き継がれるので解除しない）
+function dirxCloseSheetImmediate(){
+  if(dirxSheetEl){ try{ dirxSheetEl.remove(); }catch(e){} dirxSheetEl = null; }
+}
+
+/* ---- 探索ミッション：回答の正誤結果 ---- */
+function dirxShowMissionResult(res){
+  const { mission, correct, node, path, alreadyCompleted, rewardAC, rewardExp, hintsUsed } = res;
+  let body;
+  if(correct){
+    const rewardLine = alreadyCompleted
+      ? `<div class="dirx-result-note">このミッションはクリア済みです（報酬はすでに受け取っています）。</div>`
+      : `<div class="dirx-reward-row"><span class="dirx-reward-pop">+${rewardAC} AC</span><span class="dirx-reward-pop dirx-reward-pop--exp">+${rewardExp} EXP</span></div>${hintsUsed>0?`<div class="dirx-result-note">ヒントを${hintsUsed}回使用したため、獲得ACは満額より少なめです。</div>`:""}`;
+    body = `
+      <div class="dirx-confetti" aria-hidden="true">${"🎉🎊✨🎉🎊".split("").map((c,i)=>`<span style="--i:${i}">${c}</span>`).join("")}</div>
+      <div class="dirx-result-title dirx-result-title--ok">正解！</div>
+      <div class="dirx-result-path">${esc(dirxPathStr(path))}</div>
+      ${rewardLine}
+      <div class="dirx-result-section"><div class="dirx-detail-lab">この場所について</div><div class="dirx-detail-body">${esc(mission.correctNote)}</div></div>
+      <div class="dirx-result-section"><div class="dirx-detail-lab">関連コマンド</div><div class="dirx-chip-row">${mission.relatedCommands.map(c=>`<code class="dirx-chip dirx-chip--cmd">${esc(c)}</code>`).join("")}</div></div>
+      <button type="button" class="cta" data-dirx-result-close style="margin-top:16px">探索を続ける</button>`;
+  } else {
+    const role = (node && node.detail && node.detail.role) ? node.detail.role : "この学習データには詳しい説明が登録されていません。";
+    body = `
+      <div class="dirx-result-title dirx-result-title--ng">不正解</div>
+      <div class="dirx-result-note">選択した場所：</div>
+      <div class="dirx-result-path">${esc(dirxPathStr(path))}</div>
+      <div class="dirx-result-section"><div class="dirx-detail-body">${esc(role)}<br>「${esc(mission.title)}」の答えではありません。</div></div>
+      <div class="dirx-result-note">ACや経験値は減りません。もう一度探してみましょう。</div>
+      <button type="button" class="ghost" data-dirx-result-hint style="margin-top:10px">💡 ヒントを見る</button>
+      <button type="button" class="cta" data-dirx-result-close style="margin-top:10px">探索を続ける</button>`;
+  }
+  const ov = dirxOpenSheet(correct ? "🎉 正解" : "🤔 不正解", body);
+  ov.querySelectorAll("[data-dirx-result-close]").forEach(b=>b.onclick=()=>{ dirxCloseSheet(); render(); });
+  const hintBtn = ov.querySelector("[data-dirx-result-hint]");
+  if(hintBtn) hintBtn.onclick = () => { dirxRevealMissionHint(); dirxCloseSheet(); render(); };
+}
+
+// 探索ミッション中に、選ばれたファイル／ディレクトリをミッションの回答として判定する
+function dirxSubmitAsMissionAnswer(segs){
+  const res = dirxSubmitMissionAnswer(segs);
+  if(!res.ok) return;
+  if(res.correct && !res.alreadyCompleted) renderStatusBar(); // AC/経験値をヘッダーへ即時反映
+  dirxShowMissionResult(res);
+}
+
+/* ---- 障害対応モード：疑似ターミナル ---- */
+function dirxTerminalLogHTML(){
+  const log = dirxIncidentTerminalLog();
+  if(!log.length) return `<div class="dirx-term-empty">まだコマンドを実行していません。下の入力欄から実行してみましょう。</div>`;
+  return log.map(l=>`<div class="dirx-term-line"><span class="dirx-term-prompt">$</span> ${esc(l.cmd)}<pre class="dirx-term-output">${esc(l.output)}</pre></div>`).join("");
+}
+function dirxOpenTerminalSheet(){
+  const ai = dirxActiveIncident();
+  if(!ai) return;
+  const chips = ai.scenario.relatedCommands.map(c=>`<button type="button" class="dirx-chip dirx-chip--cmd dirx-chip--btn" data-dirx-term-chip="${esc(c)}">${esc(c)}</button>`).join("");
+  const body = `
+    <div class="dirx-term-hint">この学習環境専用の疑似ターミナルです。実際のOSやサーバーには一切アクセスしません。</div>
+    <div class="dirx-chip-row" style="margin-bottom:10px">${chips}</div>
+    <div class="dirx-term-log" id="dirx-term-log">${dirxTerminalLogHTML()}</div>
+    <form id="dirx-term-form" class="dirx-term-form">
+      <input type="text" id="dirx-term-input" class="dirx-term-input" placeholder="例：systemctl status sshd" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false">
+      <button type="submit" class="dirx-term-run">実行</button>
+    </form>`;
+  const ov = dirxOpenSheet("💻 疑似ターミナル", body);
+  const scrollLogToEnd = () => { const log = ov.querySelector("#dirx-term-log"); if(log) log.scrollTop = log.scrollHeight; };
+  scrollLogToEnd();
+  const runCmd = (cmd) => {
+    if(!cmd) return;
+    dirxRunIncidentCommand(cmd);
+    const log = ov.querySelector("#dirx-term-log");
+    if(log) log.innerHTML = dirxTerminalLogHTML();
+    scrollLogToEnd();
+    // app.innerHTMLを丸ごと作り直しても、このシートはdocument.body直下にあるため残る。
+    // 対応中カードの調査済み件数などは裏側で最新化しておく
+    render();
+  };
+  const form = ov.querySelector("#dirx-term-form");
+  const input = ov.querySelector("#dirx-term-input");
+  form.addEventListener("submit", (e)=>{ e.preventDefault(); const v = input.value; input.value = ""; runCmd(v); });
+  ov.querySelectorAll("[data-dirx-term-chip]").forEach(b=>b.onclick=()=>runCmd(b.dataset.dirxTermChip));
+}
+
+/* ---- 障害対応モード：ヒント（調査状況から動的に生成） ---- */
+function dirxOpenIncidentHintSheet(){
+  const ai = dirxActiveIncident();
+  if(!ai) return;
+  const { scenario, runtime } = ai;
+  const pending = scenario.investigateTargets.filter(t=>!dirxIsInvestigated(t.id));
+  let lines = [];
+  if(pending.length){
+    lines.push(`まずは「${pending[0].label}」を確認してみましょう。`);
+    if(pending[0].command) lines.push(`疑似ターミナルで「${pending[0].command}」を実行すると手がかりが得られます。`);
+  } else if(!runtime.causeId){
+    lines.push("調査対象はすべて確認済みです。「原因を回答する」から怪しいものを選んでみましょう。");
+  } else if(!runtime.causeCorrect){
+    lines.push("選んだ原因は少し違うようです。調査結果を見直して、もう一度「原因を選び直す」から選んでみましょう。");
+  } else if(!runtime.completed){
+    lines.push("原因の見立ては良さそうです。「対応方法を選ぶ」から適切な対応を選びましょう。");
+  } else {
+    lines.push("このシナリオはすでにクリアしています。");
+  }
+  dirxRevealIncidentHint();
+  const body = lines.map(l=>`<div class="dirx-hint-line">💡 ${esc(l)}</div>`).join("") +
+    `<button type="button" class="cta" data-dirx-hint-close style="margin-top:14px">閉じる</button>`;
+  const ov = dirxOpenSheet("💡 ヒント", body);
+  ov.querySelector("[data-dirx-hint-close]").onclick = () => dirxCloseSheet();
+}
+
+/* ---- 障害対応モード：原因の選択 ---- */
+function dirxCauseSheetBody(){
+  const ai = dirxActiveIncident();
+  const { scenario, runtime } = ai;
+  return scenario.causeOptions.map(o=>{
+    const chosen = runtime.causeId === o.id;
+    return `
+      <button type="button" class="dirx-choice-btn${chosen?(o.correct?" dirx-choice-btn--ok":" dirx-choice-btn--ng"):""}" data-dirx-cause-opt="${esc(o.id)}">
+        <span class="dirx-choice-label">${esc(o.label)}</span>
+        ${chosen?`<span class="dirx-choice-explain">${esc(o.explain)}</span>`:""}
+      </button>`;
+  }).join("");
+}
+function dirxCauseSheetHTML(title){
+  return `<div class="dirx-choice-q">${esc(title)}の原因はどれですか？</div>` + dirxCauseSheetBody() +
+    `<button type="button" class="ghost" data-dirx-cause-close style="margin-top:14px">閉じる</button>`;
+}
+function dirxOpenCauseSheet(){
+  const ai = dirxActiveIncident();
+  if(!ai) return;
+  const title = ai.scenario.title;
+  const ov = dirxOpenSheet("🔍 原因を回答する", dirxCauseSheetHTML(title));
+  const wire = () => {
+    const bodyEl = ov.querySelector(".dirx-generic-sheet-body");
+    bodyEl.querySelectorAll("[data-dirx-cause-opt]").forEach(b=>b.onclick=()=>{
+      dirxChooseCause(b.dataset.dirxCauseOpt);
+      bodyEl.innerHTML = dirxCauseSheetHTML(title);
+      wire();
+      render();
+    });
+    const c = bodyEl.querySelector("[data-dirx-cause-close]");
+    if(c) c.onclick = () => { dirxCloseSheet(); render(); };
+  };
+  wire();
+}
+
+/* ---- 障害対応モード：対応（修正操作）の選択 ---- */
+function dirxFixSheetBody(){
+  const ai = dirxActiveIncident();
+  const { scenario, runtime } = ai;
+  return scenario.fixOptions.map(o=>{
+    const chosen = runtime.fixId === o.id;
+    return `
+      <button type="button" class="dirx-choice-btn${chosen?(o.correct?" dirx-choice-btn--ok":" dirx-choice-btn--ng"):""}" data-dirx-fix-opt="${esc(o.id)}">
+        <span class="dirx-choice-label">${esc(o.label)}</span>
+        ${chosen?`<span class="dirx-choice-explain">${esc(o.explain)}</span>`:""}
+      </button>`;
+  }).join("");
+}
+function dirxFixSheetHTML(){
+  return `<div class="dirx-choice-q">どの対応を行いますか？</div>` + dirxFixSheetBody() +
+    `<button type="button" class="ghost" data-dirx-fix-close style="margin-top:14px">閉じる</button>`;
+}
+function dirxOpenFixSheet(){
+  const ai = dirxActiveIncident();
+  if(!ai) return;
+  if(!ai.runtime.causeId){ dirxOpenCauseSheet(); return; }
+  const ov = dirxOpenSheet("🔧 対応方法を選ぶ", dirxFixSheetHTML());
+  const wire = () => {
+    const bodyEl = ov.querySelector(".dirx-generic-sheet-body");
+    bodyEl.querySelectorAll("[data-dirx-fix-opt]").forEach(b=>b.onclick=onPick);
+    const c = bodyEl.querySelector("[data-dirx-fix-close]"); if(c) c.onclick = () => { dirxCloseSheet(); render(); };
+  };
+  function onPick(e){
+    const id = e.currentTarget.dataset.dirxFixOpt;
+    const result = dirxChooseFix(id);
+    ov.querySelector(".dirx-generic-sheet-body").innerHTML = dirxFixSheetHTML();
+    wire();
+    render();
+    if(result && result.cleared){
+      setTimeout(()=>{ dirxCloseSheetImmediate(); dirxOpenIncidentClearSheet(); }, 700);
+    }
+  }
+  wire();
+}
+
+/* ---- 障害対応モード：クリア画面 ---- */
+function dirxOpenIncidentClearSheet(){
+  const summary = dirxIncidentSummary();
+  if(!summary) return;
+  const { scenario, cause, fix, elapsedMinutes, hintsUsed, usedCommands, rewardAC, rewardExp } = summary;
+  const idx = DIRX_SCENARIOS_ORDER.indexOf(scenario.id);
+  const next = idx>=0 ? DIRX_SCENARIOS_ORDER[idx+1] : null;
+  const body = `
+    <div class="dirx-confetti" aria-hidden="true">${"🎉🎊✨🎉🎊".split("").map((c,i)=>`<span style="--i:${i}">${c}</span>`).join("")}</div>
+    <div class="dirx-result-title dirx-result-title--ok">クリア！</div>
+    <div class="dirx-result-path">${esc(scenario.title)}</div>
+    <div class="dirx-reward-row"><span class="dirx-reward-pop">+${rewardAC} AC</span><span class="dirx-reward-pop dirx-reward-pop--exp">+${rewardExp} EXP</span></div>
+    <div class="dirx-result-section"><div class="dirx-detail-lab">原因</div><div class="dirx-detail-body">${cause?esc(cause.label):"-"}</div></div>
+    <div class="dirx-result-section"><div class="dirx-detail-lab">実施した対応</div><div class="dirx-detail-body">${fix?esc(fix.label):"-"}</div></div>
+    <div class="dirx-result-section"><div class="dirx-detail-lab">調査にかかった時間</div><div class="dirx-detail-body">${fmtDirxMinutes(elapsedMinutes)}（使用したヒント：${hintsUsed}回）</div></div>
+    ${usedCommands.length?`<div class="dirx-result-section"><div class="dirx-detail-lab">使用したコマンド</div><div class="dirx-chip-row">${usedCommands.map(c=>`<code class="dirx-chip dirx-chip--cmd">${esc(c)}</code>`).join("")}</div></div>`:""}
+    <div class="dirx-result-section dirx-detail-section--exam"><div class="dirx-detail-lab">🏆 LPIC-1で覚えるポイント</div><div class="dirx-detail-body">${esc(scenario.lpicPoint)}</div></div>
+    <div class="dirx-active-card-actions" style="margin-top:14px">
+      <button type="button" class="dirx-tbtn" data-dirx-retry>もう一度挑戦</button>
+      ${next?`<button type="button" class="dirx-tbtn dirx-tbtn--accent" data-dirx-next-scenario="${esc(next)}">次のシナリオへ</button>`:""}
+      <button type="button" class="dirx-tbtn dirx-tbtn--end" data-dirx-finish>一覧へ戻る</button>
+    </div>`;
+  const ov = dirxOpenSheet("🎉 障害対応クリア", body);
+  ov.querySelectorAll("[data-dirx-retry]").forEach(b=>b.onclick=()=>{ dirxCloseSheet(); dirxStartIncident(scenario.id); render(); });
+  ov.querySelectorAll("[data-dirx-next-scenario]").forEach(b=>b.onclick=()=>{ dirxCloseSheet(); dirxStartIncident(b.dataset.dirxNextScenario); go("lpic-dir-explorer"); });
+  ov.querySelectorAll("[data-dirx-finish]").forEach(b=>b.onclick=()=>{ dirxCloseSheet(); dirxEndIncident(); go("lpic-dirx-incidents"); });
+}
+
+/* ======================= 🧭 探索ミッション：一覧画面 ======================= */
+export function renderDirxMissions(){
+  updateHeaderNav(true);
+  const list = dirxListMissions();
+  const cards = list.map(({ mission, completed, active })=>`
+    <div class="dirx-card dirx-card--mission${completed?" dirx-card--cleared":""}${active?" dirx-card--active":""}">
+      <div class="dirx-card-top">
+        <span class="dirx-diff-badge ${dirxDifficultyClass(mission.difficulty)}">${esc(mission.difficulty)}</span>
+        ${completed?`<span class="dirx-cleared-badge">✓ クリア済み</span>`:(active?`<span class="dirx-active-badge">挑戦中</span>`:"")}
+      </div>
+      <div class="dirx-card-title">${esc(mission.title)}</div>
+      <div class="dirx-card-prompt">${esc(mission.prompt)}</div>
+      <div class="dirx-card-reward">獲得AC：<b>${mission.rewardAC}</b>　獲得経験値：<b>${mission.rewardExp}</b></div>
+      <button type="button" class="cta dirx-card-btn" data-dirx-mission-start="${esc(mission.id)}">${active?"再開する":(completed?"もう一度挑戦する":"挑戦する")}</button>
+    </div>`).join("");
+  app.innerHTML = `
+    <div class="q-head" style="margin-bottom:14px">
+      <button class="quit" data-go="home">← ホームへ戻る</button>
+    </div>
+    <div class="sel-head">
+      <span class="eyebrow">LPIC-1 ・ 探索ミッション</span>
+      <h2 class="sel-title">探索ミッション</h2>
+    </div>
+    <div class="x-hint" style="margin:10px 0 14px">お題に合うファイルやディレクトリを、実際に触って探し出そう。獲得した探索EXP：<b>${dirxExplorationExp()}</b></div>
+    ${dirxTimebarHTML()}
+    <div class="dirx-card-list">${cards}</div>
+  `;
+  wireDirxTimebar();
+  app.querySelectorAll("[data-dirx-mission-start]").forEach(b=>b.onclick=()=>{
+    dirxStartMission(b.dataset.dirxMissionStart);
+    go("lpic-dir-explorer");
+  });
+  app.querySelectorAll("[data-go]").forEach(b=>b.onclick=()=>go(b.dataset.go));
+  window.scrollTo(0,0);
+}
+
+/* ======================= 🛠 障害対応モード：一覧画面 ======================= */
+export function renderDirxIncidents(){
+  updateHeaderNav(true);
+  const list = dirxListScenarios();
+  const cards = list.map(({ scenario, completed, active })=>`
+    <div class="dirx-card dirx-card--incident${completed?" dirx-card--cleared":""}${active?" dirx-card--active":""}">
+      <div class="dirx-card-top">
+        <span class="dirx-diff-badge ${dirxDifficultyClass(scenario.difficulty)}">${esc(scenario.difficulty)}</span>
+        ${completed?`<span class="dirx-cleared-badge">✓ クリア済み</span>`:(active?`<span class="dirx-active-badge">対応中</span>`:"")}
+      </div>
+      <div class="dirx-card-title">${esc(scenario.title)}</div>
+      <div class="dirx-card-prompt">${esc(scenario.symptom)}</div>
+      <div class="dirx-card-reward">想定調査時間：約${scenario.estMinutes}分　獲得AC：<b>${scenario.rewardAC}</b>　獲得経験値：<b>${scenario.rewardExp}</b></div>
+      <button type="button" class="cta dirx-card-btn" data-dirx-incident-start="${esc(scenario.id)}">${active?"再開する":(completed?"もう一度挑戦する":"挑戦する")}</button>
+    </div>`).join("");
+  app.innerHTML = `
+    <div class="q-head" style="margin-bottom:14px">
+      <button class="quit" data-go="home">← ホームへ戻る</button>
+    </div>
+    <div class="sel-head">
+      <span class="eyebrow">LPIC-1 ・ 障害対応モード</span>
+      <h2 class="sel-title">障害対応</h2>
+    </div>
+    <div class="x-hint" style="margin:10px 0 14px">発生した障害の原因をディレクトリ探索と疑似コマンドで調べ、適切な対応を選んで解決しよう。獲得した対応EXP：<b>${dirxExplorationExp()}</b></div>
+    ${dirxTimebarHTML()}
+    <div class="dirx-card-list">${cards}</div>
+  `;
+  wireDirxTimebar();
+  app.querySelectorAll("[data-dirx-incident-start]").forEach(b=>b.onclick=()=>{
+    dirxStartIncident(b.dataset.dirxIncidentStart);
+    go("lpic-dir-explorer");
+  });
+  app.querySelectorAll("[data-go]").forEach(b=>b.onclick=()=>go(b.dataset.go));
+  window.scrollTo(0,0);
+}
+
+/* ======================= 🔔 疑似Linuxイベント：通知一覧画面 ======================= */
+export function renderDirxEvents(){
+  updateHeaderNav(true);
+  const history = dirxEventHistory();
+  const rows = history.length ? history.map(ev=>{
+    const meta = DIRX_SEVERITY_META[ev.severity] || { label: ev.severity, cssClass: "dirx-sev-info" };
+    return `
+      <button type="button" class="dirx-event-row ${meta.cssClass}${ev.read?"":" dirx-event-row--unread"}" data-dirx-event-open="${esc(ev.id)}">
+        <div class="dirx-event-row-top">
+          <span class="dirx-event-sev">${esc(meta.label)}</span>
+          <span class="dirx-event-time">${esc(ev.atLabel)}</span>
+          ${!ev.read?`<span class="dirx-event-dot" aria-label="未読"></span>`:""}
+        </div>
+        <div class="dirx-event-msg">${esc(ev.message)}</div>
+        <div class="dirx-event-state">${ev.resolved?"解決済み":"未解決"}</div>
+      </button>`;
+  }).join("") : `<div class="dirx-empty">まだイベントは発生していません。時間を進めると、疑似Linux内で何かが起こるかもしれません。</div>`;
+  app.innerHTML = `
+    <div class="q-head" style="margin-bottom:14px">
+      <button class="quit" data-go="lpic-dir-explorer">← ディレクトリ探索へ戻る</button>
+    </div>
+    <div class="sel-head">
+      <span class="eyebrow">LPIC-1 ・ 疑似Linuxイベント</span>
+      <h2 class="sel-title">通知一覧</h2>
+    </div>
+    ${dirxTimebarHTML()}
+    ${history.length ? `<button type="button" class="ghost" data-dirx-mark-all-read style="margin:10px 0">すべて既読にする</button>` : ""}
+    <div class="dirx-event-list">${rows}</div>
+  `;
+  wireDirxTimebar();
+  app.querySelectorAll("[data-dirx-mark-all-read]").forEach(b=>b.onclick=()=>{ dirxMarkAllEventsRead(); renderDirxEvents(); });
+  app.querySelectorAll("[data-dirx-event-open]").forEach(b=>b.onclick=()=>dirxOpenEventDetailSheet(b.dataset.dirxEventOpen));
+  app.querySelectorAll("[data-go]").forEach(b=>b.onclick=()=>go(b.dataset.go));
+  window.scrollTo(0,0);
+}
+
+function dirxOpenEventDetailSheet(id){
+  const ev = dirxEventHistory().find(e=>e.id===id);
+  if(!ev) return;
+  const meta = DIRX_SEVERITY_META[ev.severity] || { label: ev.severity, cssClass: "dirx-sev-info" };
+  const body = `
+    <div class="dirx-event-detail-row"><div class="dirx-detail-lab">発生時刻</div><div class="dirx-detail-body">${esc(ev.atLabel)}（${ev.atTotalMinutes>=1440?Math.floor(ev.atTotalMinutes/1440)+1:1}日目）</div></div>
+    <div class="dirx-event-detail-row"><div class="dirx-detail-lab">イベント内容</div><div class="dirx-detail-body">${esc(ev.message)}</div></div>
+    <div class="dirx-event-detail-row"><div class="dirx-detail-lab">重要度</div><div class="dirx-detail-body"><span class="dirx-timebar-status ${meta.cssClass}">${esc(meta.label)}</span></div></div>
+    ${ev.relatedPath?`<div class="dirx-event-detail-row"><div class="dirx-detail-lab">関連するディレクトリ</div><div class="dirx-detail-body"><code class="dirx-chip">${esc(dirxPathStr(ev.relatedPath))}</code></div></div>`:""}
+    <div class="dirx-event-detail-row"><div class="dirx-detail-lab">状態</div><div class="dirx-detail-body">${ev.resolved?"解決済み":"未解決"}</div></div>
+    <div class="dirx-active-card-actions" style="margin-top:14px">
+      ${ev.relatedPath?`<button type="button" class="dirx-tbtn dirx-tbtn--accent" data-dirx-event-investigate>調査する</button>`:""}
+      ${!ev.read?`<button type="button" class="dirx-tbtn" data-dirx-event-read>既読にする</button>`:""}
+      ${!ev.resolved?`<button type="button" class="dirx-tbtn" data-dirx-event-resolve>解決済みにする</button>`:""}
+    </div>`;
+  const ov = dirxOpenSheet("🔔 イベント詳細", body);
+  const investBtn = ov.querySelector("[data-dirx-event-investigate]");
+  if(investBtn) investBtn.onclick = () => {
+    dirxMarkEventRead(ev.id);
+    dirxCloseSheet();
+    go("lpic-dir-explorer");
+    dirxNavigateTo(ev.relatedPath);
+  };
+  const readBtn = ov.querySelector("[data-dirx-event-read]");
+  if(readBtn) readBtn.onclick = () => { dirxMarkEventRead(ev.id); dirxCloseSheet(); renderDirxEvents(); };
+  const resolveBtn = ov.querySelector("[data-dirx-event-resolve]");
+  if(resolveBtn) resolveBtn.onclick = () => { dirxMarkEventResolved(ev.id); dirxCloseSheet(); renderDirxEvents(); };
 }
 
 export function renderQuiz(){

@@ -26,11 +26,13 @@ function ensureToastRoot(){
   return root;
 }
 
-// kind: "create" | "delete" | "reminder" | "summary"（トーストの帯色に反映）
-function showToast(kind, message, opts){
+// kind: "create" | "delete" | "reminder" | "summary" | "dirx-*"（トーストの帯色に反映）
+// opts.onClick を渡すと、トースト本文タップで実行するアクション付きの通知にできる
+// （閉じるボタン自体は独立して機能する。押しても閉じるだけでonClickは走らない）
+export function showToast(kind, message, opts){
   const root = ensureToastRoot();
   const el = document.createElement("div");
-  el.className = `app-toast app-toast-${kind}`;
+  el.className = `app-toast app-toast-${kind}${opts && opts.onClick ? " app-toast-clickable" : ""}`;
   el.innerHTML = `
     <div class="app-toast-msg">${esc(message)}</div>
     <button type="button" class="app-toast-close" aria-label="閉じる">×</button>`;
@@ -45,7 +47,10 @@ function showToast(kind, message, opts){
     setTimeout(() => { try{ el.remove(); }catch(e){} }, 260);
   };
   timer = setTimeout(remove, (opts && opts.duration) || TOAST_DURATION_MS);
-  el.querySelector(".app-toast-close").onclick = remove;
+  el.querySelector(".app-toast-close").onclick = (e) => { e.stopPropagation(); remove(); };
+  if(opts && opts.onClick){
+    el.querySelector(".app-toast-msg").onclick = () => { remove(); opts.onClick(); };
+  }
   // ホバー中は自動で消えないよう一時停止し、離れたら短い猶予の後に消す
   el.addEventListener("mouseenter", () => clearTimeout(timer));
   el.addEventListener("mouseleave", () => { timer = setTimeout(remove, 2000); });
@@ -69,6 +74,12 @@ export function notifyScheduleDeleted(author, title){
 export function notifyReminder(title, startLabel){
   const t = (title || "").trim() || "予定";
   showToast("reminder", `⏰ まもなく5分後に『${t}』が始まります！`, { duration: 8000 });
+}
+
+/* ---- 5) 疑似Linux内イベント（探索ミッション／時間経過機能）の通知 ----
+   severity: "info"|"notice"|"warning"|"critical" をそのままCSSクラスの帯色に使う */
+export function notifyDirxEvent(message, severity, onClick){
+  showToast(`dirx-${severity || "info"}`, `🐧 ${message}`, { duration: 7000, onClick });
 }
 
 /* ---- 4) 朝7時の「今日の予定」一括通知（デイリーサマリー） ----
