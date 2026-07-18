@@ -18,7 +18,7 @@ import {
   dirxUnreadCount, startAutoTimerIfNeeded, stopAutoTimer,
 } from './dirxStore.js';
 import { aiDailyUpdateCheck, aiOverallComment, aiShortComment, getAiRecommendations } from './reviewAI.js';
-import { addReviewAnswers, addReviewQuestions, answersAsBulletText, applyReviewAnswersEdit, applyReviewQuestionsEdit, clearAllReviewItems, deleteReviewAnswer, deleteReviewQuestion, findReviewAnswer, loadReviewQuestions, onReviewBoardChange, questionsAsBulletText } from './reviewBoard.js';
+import { addReviewAnswers, addReviewQuestions, answersAsBulletText, applyReviewAnswersEdit, applyReviewQuestionsEdit, clearAllReviewItems, deleteReviewAnswer, deleteReviewQuestion, findReviewAnswer, loadActiveReviewQuestions, loadMasteredReviewQuestions, onReviewBoardChange, questionsAsBulletText, setReviewQuestionMastered } from './reviewBoard.js';
 import { getWeather } from './weather.js';
 import { geminiChat, sendGeminiMessage, setGeminiScheduleHandler, setGeminiHomeContextProvider, setGeminiStockContextProvider, pushGeminiMessage } from './gemini.js';
 import { SKIN_DATA } from './data/skins.js';
@@ -522,12 +522,12 @@ function aiReviewSectionHTML(){
    1件ずつ表示するカード。文章の内容による判定やアプリ内Geminiによる
    回答生成は一切行わない。登録内容はjs/reviewBoard.js経由でログイン
    ユーザーごとにlocalStorageへ保存されるので再読み込みしても消えない。
-   ・rb：現在の表示位置（idx）・一時停止中か・回答表示中かを保持するモジュール
-     変数。renderHome()が何度呼ばれてもこの状態自体はリセットされない
-   ・10秒ごとの自動切り替えはsetIntervalの二重生成を避けるため
-     ensureReviewBoardTimer()で1本だけ維持し、カードのDOMが無くなったら
-     （画面遷移などで）タイマー自身が検知して自動的に停止する */
-const rb = { idx: 0, paused: false, answerShown: false, timer: null };
+   ・自動切り替え（自動スクロール）は行わない。前へ／次への手動操作のみ
+   ・rb：現在の表示位置（idx）・回答表示中かを保持するモジュール変数。
+     renderHome()が何度呼ばれてもこの状態自体はリセットされない
+   ・問題にチェックを付けると「覚えた」扱いとなり、掲示板の出題対象から
+     外れて下の復習リストカードに移る（js/reviewBoard.jsのmasteredフラグ） */
+const rb = { idx: 0, answerShown: false };
 
 function rbClampIdx(items){
   if(!items.length){ rb.idx = 0; return; }
@@ -572,7 +572,7 @@ function rbManageControlsHTML(hasCurrent){
 }
 
 function rbCardInnerHTML(){
-  const items = loadReviewQuestions();
+  const items = loadActiveReviewQuestions();
   rbClampIdx(items);
 
   if(!items.length){
@@ -597,6 +597,10 @@ function rbCardInnerHTML(){
     ${rbToolbarHTML()}
     <div class="revboard-counter">${rb.idx+1} / ${items.length}</div>
     <div class="revboard-qnum">問題番号：${it.number}</div>
+    <label class="revboard-check-row">
+      <input type="checkbox" data-rb-mastered>
+      <span>覚えたのでチェック（復習リストへ移動）</span>
+    </label>
     <div class="revboard-slide-outer">
       <div class="revboard-slide-inner">
         <div class="revboard-q-text">${esc(it.text)}</div>
@@ -605,7 +609,6 @@ function rbCardInnerHTML(){
     </div>
     <div class="revboard-controls">
       <button type="button" class="revboard-ctrl-btn" data-rb-prev>‹ 前へ</button>
-      <button type="button" class="revboard-ctrl-btn revboard-ctrl-btn--pause" data-rb-pause>${rb.paused ? "再開" : "一時停止"}</button>
       <button type="button" class="revboard-ctrl-btn" data-rb-next>次へ ›</button>
     </div>
     ${rbManageControlsHTML(true)}`;
@@ -626,26 +629,11 @@ function refreshReviewBoardCard(){
 }
 
 function rbNavigate(delta){
-  const items = loadReviewQuestions();
+  const items = loadActiveReviewQuestions();
   if(!items.length) return;
   rb.idx = (rb.idx + delta + items.length) % items.length;
   rb.answerShown = false;
   refreshReviewBoardCard();
-}
-
-// 10秒ごとに次の項目へ。一時停止中・回答表示中は進めない。
-// 対象のカードDOMが無くなっていたら（画面遷移など）タイマー自体を止める
-function ensureReviewBoardTimer(){
-  if(rb.timer) return;
-  rb.timer = setInterval(() => {
-    const root = document.getElementById("revboard-card");
-    if(!root){ clearInterval(rb.timer); rb.timer = null; return; }
-    if(rb.paused || rb.answerShown) return;
-    const items = loadReviewQuestions();
-    if(items.length <= 1) return;
-    rb.idx = (rb.idx + 1) % items.length;
-    refreshReviewBoardCard();
-  }, 10000);
 }
 
 function wireReviewBoardCard(){
@@ -665,8 +653,15 @@ function wireReviewBoardCard(){
   if(prevBtn) prevBtn.onclick = () => rbNavigate(-1);
   const nextBtn = root.querySelector("[data-rb-next]");
   if(nextBtn) nextBtn.onclick = () => rbNavigate(1);
-  const pauseBtn = root.querySelector("[data-rb-pause]");
-  if(pauseBtn) pauseBtn.onclick = () => { rb.paused = !rb.paused; refreshReviewBoardCard(); };
+
+  const masteredChk = root.querySelector("[data-rb-mastered]");
+  if(masteredChk) masteredChk.onchange = () => {
+    const items = loadActiveReviewQuestions();
+    const it = items[rb.idx];
+    if(!it) return;
+    setReviewQuestionMastered(it.number, true);
+    rb.answerShown = false;
+  };
 
   const revealBtn = root.querySelector("[data-rb-reveal]");
   if(revealBtn) revealBtn.onclick = () => { rb.answerShown = true; refreshReviewBoardCard(); };
@@ -675,7 +670,7 @@ function wireReviewBoardCard(){
 
   const delQBtn = root.querySelector("[data-rb-delete-q]");
   if(delQBtn) delQBtn.onclick = () => {
-    const items = loadReviewQuestions();
+    const items = loadActiveReviewQuestions();
     const it = items[rb.idx];
     if(!it) return;
     if(!confirm(`問題番号${it.number}を削除しますか？`)) return;
@@ -685,7 +680,7 @@ function wireReviewBoardCard(){
 
   const delABtn = root.querySelector("[data-rb-delete-a]");
   if(delABtn) delABtn.onclick = () => {
-    const items = loadReviewQuestions();
+    const items = loadActiveReviewQuestions();
     const it = items[rb.idx];
     if(!it) return;
     if(!findReviewAnswer(it.number)){ alert("この問題の解答はまだ登録されていません"); return; }
@@ -699,14 +694,62 @@ function wireReviewBoardCard(){
     clearAllReviewItems();
     rb.idx = 0; rb.answerShown = false;
   };
-
-  ensureReviewBoardTimer();
 }
 
-// js/reviewBoard.js側での追加/削除/編集のたびに呼ばれ、表示中であれば
-// カードだけを再描画する（他画面表示中は#revboard-cardが存在しないため
-// 何もしない）
+/* ============ ✅ 復習リスト ============
+   復習掲示板でチェックを付けた（覚えた）問題の一覧。掲示板の出題対象
+   からは外れるが、ここでチェックを外せばまた掲示板に出るようになる */
+function revListCardInnerHTML(){
+  const items = loadMasteredReviewQuestions();
+  if(!items.length){
+    return `
+      <div class="revlist-head">
+        <span class="revlist-ttl">復習リスト</span>
+      </div>
+      <div class="revlist-empty">チェック済みの問題はまだありません</div>`;
+  }
+  return `
+    <div class="revlist-head">
+      <span class="revlist-ttl">復習リスト</span>
+    </div>
+    <div class="revlist-items">
+      ${items.map(it => `
+        <label class="revlist-item">
+          <input type="checkbox" checked data-rl-uncheck="${it.number}">
+          <span class="revlist-item-num">${it.number}</span>
+          <span class="revlist-item-text">${esc(it.text)}</span>
+        </label>`).join("")}
+    </div>`;
+}
+
+function reviewListSectionHTML(){
+  if(S.cert !== "lpic1") return "";
+  return `<div class="revlist-wrap" id="revlist-card">${revListCardInnerHTML()}</div>`;
+}
+
+function refreshReviewListCard(){
+  const root = document.getElementById("revlist-card");
+  if(!root) return;
+  root.innerHTML = revListCardInnerHTML();
+  wireReviewListCard();
+}
+
+function wireReviewListCard(){
+  const root = document.getElementById("revlist-card");
+  if(!root) return;
+  root.querySelectorAll("[data-rl-uncheck]").forEach(chk => {
+    chk.onchange = () => {
+      const number = parseInt(chk.getAttribute("data-rl-uncheck"), 10);
+      setReviewQuestionMastered(number, false);
+    };
+  });
+}
+
+// js/reviewBoard.js側での追加/削除/編集/チェックのたびに呼ばれ、表示中で
+// あればカードだけを再描画する（他画面表示中は#revboard-card等が存在
+// しないため何もしない）
 onReviewBoardChange(refreshReviewBoardCard);
+onReviewBoardChange(refreshReviewListCard);
 
 // 問題・解答それぞれの登録／一括編集用の設定。既存のairec/各種メニューと
 // 同じ.sheet-ov/.bottom-sheet基盤（下スワイプで閉じる・背景タップで閉じる）
@@ -839,6 +882,7 @@ export function renderHome(){
     </div>
 
     ${reviewBoardSectionHTML()}
+    ${reviewListSectionHTML()}
 
     <div class="stats-dash">
       <div class="stats-dash-head">
@@ -988,8 +1032,8 @@ export function renderHome(){
   const mkd=app.querySelector("[data-marked]"); if(mkd)mkd.onclick=()=>startMarkedPractice();
   // 🧠 AIおすすめ復習：「おすすめ復習を見る」でボトムシートを開く
   const ao=app.querySelector("[data-airec-open]"); if(ao)ao.onclick=()=>openAiReviewSheet();
-  // 📋 復習掲示板：ホームカードのボタン配線・10秒ごとの自動切り替えタイマー起動
-  if(S.cert==="lpic1") wireReviewBoardCard();
+  // 📋 復習掲示板・✅ 復習リスト：ホームカードのボタン配線
+  if(S.cert==="lpic1"){ wireReviewBoardCard(); wireReviewListCard(); }
   app.querySelectorAll("[data-go]").forEach(b=>b.onclick=()=>go(b.dataset.go));
   const lo=app.querySelector("[data-logout]"); if(lo)lo.onclick=()=>logout();
   const li=app.querySelector("[data-login]"); if(li)li.onclick=()=>{ state.guestMode=false; state.authMode="login"; render(); };

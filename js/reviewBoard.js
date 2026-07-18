@@ -7,8 +7,8 @@
      guest）にlocalStorageへ保存する。js/render.jsのgcalStorageKeyなどと
      同じ「uidをキーに連結する」方式で、アカウントを跨いで他人のデータが
      混ざらないようにしている。
-   ・実際の描画・自動切り替えUIはjs/render.js側が担当し、このファイルは
-     データの読み書きと番号の解析・対応付けのみを受け持つ。
+   ・実際の描画UIはjs/render.js側が担当し、このファイルはデータの読み書き
+     と番号の解析・対応付けのみを受け持つ。
    ========================================================================= */
 
 import { state } from './state.js';
@@ -49,6 +49,27 @@ export function loadReviewAnswers(){
 }
 export function findReviewAnswer(number){
   return loadRaw(answersKey()).find(a => a.number === number) || null;
+}
+
+// チェックを付けていない（＝まだ復習が必要な）問題だけを掲示板に出す
+export function loadActiveReviewQuestions(){
+  return loadReviewQuestions().filter(it => !it.mastered);
+}
+// チェック済み（復習リストに移した）問題
+export function loadMasteredReviewQuestions(){
+  return loadReviewQuestions().filter(it => it.mastered);
+}
+
+// 問題にチェックを付ける／外す。付けると復習掲示板の出題対象から外れ、
+// 復習リストに表示されるようになる
+export function setReviewQuestionMastered(number, mastered){
+  const key = questionsKey();
+  const arr = loadRaw(key);
+  const it = arr.find(q => q.number === number);
+  if(!it) return;
+  it.mastered = !!mastered;
+  saveRaw(key, arr);
+  notify();
 }
 
 // 変更を購読するリスナー一覧。登録・削除・編集のたびに呼ばれ、
@@ -100,7 +121,10 @@ function upsertItems(key, rawText){
   const existing = loadRaw(key);
   const map = new Map(existing.map(it => [it.number, it]));
   const now = new Date().toISOString();
-  parsed.forEach(p => map.set(p.number, { number: p.number, text: p.text, updatedAt: now }));
+  parsed.forEach(p => {
+    const prev = map.get(p.number);
+    map.set(p.number, { number: p.number, text: p.text, updatedAt: now, mastered: prev ? !!prev.mastered : false });
+  });
   const next = [...map.values()].slice(0, MAX_ITEMS);
   saveRaw(key, next);
   notify();
@@ -112,8 +136,9 @@ function replaceItems(key, rawText){
   const duplicates = findDuplicateNumbers(parsed);
   if(duplicates.length) return { ok: false, duplicates };
 
+  const masteredByNumber = new Map(loadRaw(key).map(it => [it.number, !!it.mastered]));
   const now = new Date().toISOString();
-  saveRaw(key, parsed.map(p => ({ number: p.number, text: p.text, updatedAt: now })));
+  saveRaw(key, parsed.map(p => ({ number: p.number, text: p.text, updatedAt: now, mastered: masteredByNumber.get(p.number) || false })));
   notify();
   return { ok: true, duplicates: [] };
 }
