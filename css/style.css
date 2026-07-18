@@ -514,6 +514,11 @@ h1.title.title--badge{margin:2px 0 0;}
 .app-toast-reminder{border-left-color:var(--gold);}
 .app-toast-summary{border-left-color:var(--good);}
 .app-toast-mindpalette{border-left-color:var(--gold);}
+.app-toast-clickable .app-toast-msg{cursor:pointer;}
+.app-toast-dirx-info{border-left-color:#38bdf8;}
+.app-toast-dirx-notice{border-left-color:var(--gold);}
+.app-toast-dirx-warning{border-left-color:#ea580c;}
+.app-toast-dirx-critical{border-left-color:var(--bad);}
 .bp-link{margin-top:12px;width:100%;background:none;border:1px solid var(--line);border-radius:10px;padding:10px;color:var(--accent);font-size:13px;font-weight:600;cursor:pointer;}
 .dc-hero{background:linear-gradient(160deg,#e0f2fe,#f0f9ff);border:1px solid var(--line);border-radius:18px;padding:20px;margin-bottom:16px;box-shadow:0 4px 12px rgba(15,23,42,.02);}
 .dc-lvl{font-size:11px;letter-spacing:.14em;color:var(--accent);font-weight:700;}

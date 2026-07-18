@@ -1,0 +1,209 @@
+/* =========================================================================
+   🧭 探索ミッション／⏱ 時間経過・イベント／🛠 障害対応モード
+   js/render.js の dirx* 系関数が使うスタイル一式。既存の .dirx-shell や
+   .bottom-sheet / .modal などの土台・配色変数（--surface/--line/--text/
+   --accent 等）にそのまま乗せることで、既存のベージュ／カード／角丸の
+   雰囲気とダークモード・スキン切り替えに自動で追従する。
+   ========================================================================= */
+
+/* ----- 重要度カラー（情報＝薄い青／注意＝薄い黄／警告＝薄いオレンジ／重大＝薄い赤） -----
+   背景色は薄く、文字色は十分にコントラストを確保した濃い色にする */
+.dirx-sev-info{ color:#075985; background:#e0f2fe; border:1px solid #bae6fd; }
+.dirx-sev-notice{ color:#854d0e; background:#fef9c3; border:1px solid #fde68a; }
+.dirx-sev-warning{ color:#9a3412; background:#ffedd5; border:1px solid #fed7aa; }
+.dirx-sev-critical{ color:#991b1b; background:#fee2e2; border:1px solid #fecaca; }
+.dirx-sev-normal{ color:var(--muted); background:var(--bg2); border:1px solid var(--line); }
+body[data-theme="dark"] .dirx-sev-info, body[data-theme="galaxy"] .dirx-sev-info{ color:#7dd3fc; background:rgba(56,189,248,.14); border-color:rgba(56,189,248,.3); }
+body[data-theme="dark"] .dirx-sev-notice, body[data-theme="galaxy"] .dirx-sev-notice{ color:#fde68a; background:rgba(217,119,6,.16); border-color:rgba(217,119,6,.32); }
+body[data-theme="dark"] .dirx-sev-warning, body[data-theme="galaxy"] .dirx-sev-warning{ color:#fdba74; background:rgba(234,88,12,.18); border-color:rgba(234,88,12,.34); }
+body[data-theme="dark"] .dirx-sev-critical, body[data-theme="galaxy"] .dirx-sev-critical{ color:#fca5a5; background:rgba(220,38,38,.18); border-color:rgba(220,38,38,.34); }
+
+/* ----- コンパクト時計/状態バー ----- */
+.dirx-timebar{
+  display:flex; flex-direction:column; gap:8px;
+  background:var(--surface); border:1px solid var(--line); border-radius:16px;
+  padding:10px 12px; margin-bottom:10px; box-shadow:0 2px 6px rgba(15,23,42,.04);
+}
+.dirx-timebar-row{ display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
+.dirx-timebar-clock{ font-size:13.5px; font-weight:700; color:var(--text); display:flex; align-items:baseline; gap:5px; }
+.dirx-timebar-clock b{ font-size:15px; }
+.dirx-timebar-day{ font-size:11px; color:var(--muted); font-weight:600; }
+.dirx-timebar-status{ display:inline-flex; align-items:center; font-size:11px; font-weight:800; border-radius:99px; padding:3px 10px; white-space:nowrap; }
+.dirx-timebar-iconbtn{
+  margin-left:auto; position:relative; flex:none; width:38px; height:38px; min-width:38px;
+  border-radius:50%; background:var(--bg2); border:1px solid var(--line); color:var(--text);
+  font-size:16px; display:flex; align-items:center; justify-content:center; cursor:pointer;
+}
+.dirx-timebar-iconbtn + .dirx-timebar-iconbtn{ margin-left:6px; }
+.dirx-timebar-badge{
+  position:absolute; top:-4px; right:-4px; min-width:16px; height:16px; padding:0 4px;
+  border-radius:99px; background:var(--bad); color:#fff; font-size:10px; font-weight:800;
+  display:flex; align-items:center; justify-content:center; line-height:1; box-shadow:0 0 0 2px var(--surface);
+}
+.dirx-timebar-advance{ align-self:flex-start; }
+
+/* ----- 「探索中」「障害対応中」固定カード（折りたたみ対応） ----- */
+.dirx-active-card{
+  background:var(--surface); border:1.5px solid var(--accent); border-radius:16px;
+  margin-bottom:10px; overflow:hidden; box-shadow:0 3px 10px rgba(2,132,199,.08);
+}
+.dirx-active-card--incident{ border-color:#ea580c; box-shadow:0 3px 10px rgba(234,88,12,.1); }
+.dirx-active-card-head{
+  width:100%; display:flex; align-items:center; gap:8px; text-align:left;
+  background:none; border:none; padding:11px 12px; cursor:pointer; font-family:inherit;
+  min-height:44px;
+}
+.dirx-active-card-tag{ flex:none; font-size:11px; font-weight:800; color:var(--accent); background:rgba(2,132,199,.1); border-radius:99px; padding:3px 9px; }
+.dirx-active-card--incident .dirx-active-card-tag{ color:#ea580c; background:rgba(234,88,12,.12); }
+.dirx-active-card-title{ flex:1; min-width:0; font-size:13.5px; font-weight:800; color:var(--text); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.dirx-active-card-caret{ flex:none; color:var(--muted); font-size:13px; }
+.dirx-active-card-body{ padding:0 14px 14px; }
+.dirx-active-card--collapsed .dirx-active-card-body{ display:none; }
+.dirx-active-card-prompt{ font-size:13.5px; line-height:1.6; color:var(--text); margin-bottom:8px; }
+.dirx-active-card-meta{ font-size:12px; color:var(--muted); margin-bottom:6px; }
+.dirx-active-card-hintline{ font-size:12px; color:var(--muted); margin-bottom:8px; }
+.dirx-hint-line{ font-size:12.5px; line-height:1.6; color:var(--text); background:rgba(2,132,199,.08); border:1px solid rgba(2,132,199,.18); border-radius:9px; padding:7px 10px; margin-bottom:6px; }
+.dirx-cause-note{ font-size:12.5px; line-height:1.6; border-radius:9px; padding:7px 10px; margin-bottom:8px; }
+.dirx-cause-note--ok{ color:#166534; background:#dcfce7; border:1px solid #bbf7d0; }
+.dirx-cause-note--ng{ color:#9a3412; background:#ffedd5; border:1px solid #fed7aa; }
+body[data-theme="dark"] .dirx-cause-note--ok, body[data-theme="galaxy"] .dirx-cause-note--ok{ color:#86efac; background:rgba(22,163,74,.16); border-color:rgba(22,163,74,.3); }
+body[data-theme="dark"] .dirx-cause-note--ng, body[data-theme="galaxy"] .dirx-cause-note--ng{ color:#fdba74; background:rgba(234,88,12,.16); border-color:rgba(234,88,12,.3); }
+
+.dirx-active-card-actions{ display:flex; flex-wrap:wrap; gap:8px; }
+.dirx-active-card-actions .dirx-tbtn{ flex:1 1 auto; min-width:120px; justify-content:center; min-height:40px; }
+.dirx-tbtn--accent{ background:var(--accent); color:#fff; border-color:var(--accent); }
+.dirx-tbtn--end{ color:var(--bad); border-color:rgba(220,38,38,.35); }
+.dirx-tbtn[disabled]{ opacity:.4; cursor:default; }
+
+/* ----- ホーム画面メニューボタンの追加バリエーション ----- */
+.menu-btn-sub{ display:block; font-size:11.5px; color:var(--muted); margin-top:1px; }
+.menu-btn--mission .menu-btn-icon{ background:linear-gradient(150deg,#bafcd0,#16a34a 78%); box-shadow:0 6px 14px rgba(22,163,74,.3); }
+.menu-btn--incident .menu-btn-icon{ background:linear-gradient(150deg,#ffd1a8,#ea580c 78%); box-shadow:0 6px 14px rgba(234,88,12,.3); }
+
+/* ----- 汎用ボトムシート（設定／原因・対応選択／ターミナル／結果表示 共通） ----- */
+.dirx-generic-sheet .bottom-sheet-list{ padding:0 20px 22px; }
+.dirx-generic-sheet-body{ display:flex; flex-direction:column; }
+
+.dirx-settings-block{ margin-bottom:16px; }
+.dirx-settings-lab{ font-size:12px; font-weight:800; color:var(--muted); letter-spacing:.03em; margin-bottom:8px; }
+.dirx-settings-row{ display:flex; gap:8px; flex-wrap:wrap; }
+.dirx-toggle-btn{
+  flex:1 1 auto; min-width:88px; min-height:42px; padding:9px 10px; border-radius:11px;
+  border:1.5px solid var(--line); background:var(--surface); color:var(--text);
+  font-size:13px; font-weight:700; cursor:pointer;
+}
+.dirx-toggle-btn--on{ border-color:var(--accent); background:rgba(2,132,199,.1); color:var(--accent); }
+.dirx-settings-hint{ font-size:11.5px; color:var(--muted); line-height:1.6; margin-top:8px; }
+
+/* ----- 正解／クリア結果表示（紙吹雪は控えめに） ----- */
+.dirx-confetti{ position:relative; height:0; }
+.dirx-confetti span{
+  position:absolute; top:-6px; left:calc(50% + (var(--i) - 2) * 26px); font-size:20px;
+  animation:dirxConfettiPop .7s ease-out forwards; animation-delay:calc(var(--i) * 0.05s); opacity:0;
+}
+@keyframes dirxConfettiPop{
+  0%{ opacity:0; transform:translateY(0) scale(.6); }
+  35%{ opacity:1; transform:translateY(-14px) scale(1.05); }
+  100%{ opacity:0; transform:translateY(10px) scale(.9); }
+}
+.dirx-result-title{ font-size:21px; font-weight:800; text-align:center; margin:10px 0 6px; }
+.dirx-result-title--ok{ color:var(--good); }
+.dirx-result-title--ng{ color:var(--bad); }
+.dirx-result-path{ font-family:ui-monospace,"SFMono-Regular",Menlo,Consolas,monospace; font-size:16px; font-weight:800; color:var(--text); text-align:center; margin-bottom:10px; }
+.dirx-reward-row{ display:flex; justify-content:center; gap:10px; margin-bottom:12px; }
+.dirx-reward-pop{
+  font-size:15px; font-weight:800; color:var(--gold); background:rgba(217,119,6,.12);
+  border-radius:99px; padding:5px 14px; animation:dirxRewardPop .35s cubic-bezier(.22,1,.36,1);
+}
+.dirx-reward-pop--exp{ color:var(--accent); background:rgba(2,132,199,.1); }
+@keyframes dirxRewardPop{ from{ transform:scale(.7); opacity:0; } to{ transform:scale(1); opacity:1; } }
+.dirx-result-note{ font-size:12.5px; color:var(--muted); text-align:center; margin-bottom:8px; line-height:1.6; }
+.dirx-result-section{ margin-bottom:12px; }
+
+/* ----- 疑似ターミナル ----- */
+.dirx-term-hint{ font-size:11.5px; color:var(--muted); line-height:1.6; margin-bottom:10px; }
+.dirx-chip--btn{ cursor:pointer; }
+.dirx-term-log{
+  max-height:44vh; overflow-y:auto; -webkit-overflow-scrolling:touch; overscroll-behavior:contain;
+  background:#0b1220; border:1px solid #1f2a44; border-radius:10px; padding:10px 12px; margin-bottom:10px;
+}
+.dirx-term-empty{ color:#94a3b8; font-size:12.5px; }
+.dirx-term-line{ margin-bottom:8px; }
+.dirx-term-line:last-child{ margin-bottom:0; }
+.dirx-term-prompt{ color:#4ade80; font-weight:800; margin-right:4px; }
+.dirx-term-line{ color:#e2e8f0; font-family:ui-monospace,"SFMono-Regular",Menlo,Consolas,monospace; font-size:12.5px; }
+.dirx-term-output{ margin:4px 0 0; color:#a5b4cf; font-family:inherit; font-size:12px; white-space:pre-wrap; word-break:break-word; }
+.dirx-term-form{ display:flex; gap:8px; }
+.dirx-term-input{
+  flex:1; min-width:0; min-height:42px; border-radius:10px; border:1px solid var(--line);
+  background:var(--bg2); color:var(--text); padding:0 12px; font-size:14px;
+  font-family:ui-monospace,"SFMono-Regular",Menlo,Consolas,monospace;
+}
+.dirx-term-run{
+  flex:none; min-height:42px; padding:0 16px; border-radius:10px; border:none;
+  background:var(--accent); color:#fff; font-weight:700; font-size:13.5px; cursor:pointer;
+}
+
+/* ----- 原因／対応の選択肢 ----- */
+.dirx-choice-q{ font-size:14px; font-weight:800; color:var(--text); margin-bottom:12px; line-height:1.6; }
+.dirx-choice-btn{
+  display:flex; flex-direction:column; gap:6px; width:100%; text-align:left;
+  background:var(--surface); border:1.5px solid var(--line); border-radius:12px;
+  padding:12px 13px; margin-bottom:9px; cursor:pointer; font-family:inherit; color:var(--text);
+}
+.dirx-choice-label{ font-size:13.5px; font-weight:700; }
+.dirx-choice-explain{ font-size:12.5px; line-height:1.6; color:var(--muted); }
+.dirx-choice-btn--ok{ border-color:var(--good); background:rgba(22,163,74,.07); }
+.dirx-choice-btn--ok .dirx-choice-explain{ color:#166534; }
+.dirx-choice-btn--ng{ border-color:var(--bad); background:rgba(220,38,38,.06); }
+.dirx-choice-btn--ng .dirx-choice-explain{ color:#9a3412; }
+body[data-theme="dark"] .dirx-choice-btn--ok .dirx-choice-explain, body[data-theme="galaxy"] .dirx-choice-btn--ok .dirx-choice-explain{ color:#86efac; }
+body[data-theme="dark"] .dirx-choice-btn--ng .dirx-choice-explain, body[data-theme="galaxy"] .dirx-choice-btn--ng .dirx-choice-explain{ color:#fdba74; }
+
+/* ----- 詳細シート下部：ミッション回答／調査済みボタン ----- */
+.dirx-detail-actions{ flex:none; padding:12px 18px max(14px, env(safe-area-inset-bottom)); border-top:1px solid var(--line); background:var(--surface); }
+.dirx-detail-action-block + .dirx-detail-action-block{ margin-top:10px; }
+.dirx-detail-action-lab{ font-size:11.5px; font-weight:800; color:var(--muted); }
+.dirx-detail-action-done{ font-size:12.5px; font-weight:700; color:var(--good); margin-top:6px; }
+
+/* ----- ミッション／シナリオ一覧カード ----- */
+.dirx-card-list{ display:flex; flex-direction:column; gap:12px; }
+.dirx-card{
+  background:var(--surface); border:1px solid var(--line); border-radius:16px; padding:14px;
+  box-shadow:0 2px 8px rgba(15,23,42,.03);
+}
+.dirx-card--cleared{ border-color:#86efac; background:linear-gradient(180deg,rgba(22,163,74,.06),var(--surface) 40%); }
+.dirx-card--active{ border-color:var(--accent); }
+.dirx-card-top{ display:flex; align-items:center; gap:8px; margin-bottom:8px; flex-wrap:wrap; }
+.dirx-diff-badge{ font-size:10.5px; font-weight:800; border-radius:99px; padding:3px 10px; }
+.dirx-diff--basic{ color:#075985; background:#e0f2fe; }
+.dirx-diff--mid{ color:#854d0e; background:#fef3c7; }
+.dirx-diff--lpic1{ color:#7c2d12; background:#ffe4d5; }
+.dirx-cleared-badge{ font-size:10.5px; font-weight:800; color:#166534; background:#dcfce7; border-radius:99px; padding:3px 10px; }
+.dirx-active-badge{ font-size:10.5px; font-weight:800; color:var(--accent); background:rgba(2,132,199,.1); border-radius:99px; padding:3px 10px; }
+.dirx-card-title{ font-size:15.5px; font-weight:800; color:var(--text); margin-bottom:4px; }
+.dirx-card-prompt{ font-size:13px; line-height:1.6; color:var(--text); margin-bottom:8px; }
+.dirx-card-reward{ font-size:12px; color:var(--muted); margin-bottom:10px; }
+.dirx-card-reward b{ color:var(--gold); }
+.dirx-card-btn{ margin-top:0; min-height:44px; }
+
+/* ----- 通知一覧（イベント履歴） ----- */
+.dirx-event-list{ display:flex; flex-direction:column; gap:9px; }
+.dirx-event-row{
+  display:block; width:100%; text-align:left; border-radius:14px; padding:11px 13px; cursor:pointer;
+  font-family:inherit; border-width:1px; border-style:solid;
+}
+.dirx-event-row--unread{ box-shadow:0 0 0 1.5px var(--accent) inset; }
+.dirx-event-row-top{ display:flex; align-items:center; gap:8px; margin-bottom:4px; }
+.dirx-event-sev{ font-size:10.5px; font-weight:800; }
+.dirx-event-time{ font-size:11px; opacity:.8; }
+.dirx-event-dot{ margin-left:auto; width:7px; height:7px; border-radius:50%; background:var(--accent); flex:none; }
+.dirx-event-msg{ font-size:13.5px; font-weight:700; line-height:1.5; margin-bottom:3px; }
+.dirx-event-state{ font-size:11px; opacity:.75; }
+.dirx-event-detail-row{ margin-bottom:12px; }
+
+/* ----- レスポンシブ：小さめのiPhone幅でもはみ出さない ----- */
+@media (max-width:360px){
+  .dirx-active-card-actions .dirx-tbtn{ min-width:100%; }
+  .dirx-timebar-row{ gap:6px; }
+}
