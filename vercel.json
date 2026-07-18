@@ -3,6 +3,9 @@
     "api/gemini/chat.js": {
       "maxDuration": 60
     },
+    "api/gemini/review-answer.js": {
+      "maxDuration": 30
+    },
     "api/news-quiz/today.js": {
       "maxDuration": 30
     }
