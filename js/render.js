@@ -18,7 +18,7 @@ import {
   dirxUnreadCount, startAutoTimerIfNeeded, stopAutoTimer,
 } from './dirxStore.js';
 import { aiDailyUpdateCheck, aiOverallComment, aiShortComment, getAiRecommendations } from './reviewAI.js';
-import { addReviewItems, applyReviewBoardEdit, clearAllReviewItems, deleteReviewItem, loadReviewItems, onReviewBoardChange, regenerateReviewAnswer, resumeReviewBoardQueue, reviewItemsAsBulletText } from './reviewBoard.js';
+import { addReviewAnswers, addReviewQuestions, answersAsBulletText, applyReviewAnswersEdit, applyReviewQuestionsEdit, clearAllReviewItems, deleteReviewAnswer, deleteReviewQuestion, findReviewAnswer, loadReviewQuestions, onReviewBoardChange, questionsAsBulletText } from './reviewBoard.js';
 import { getWeather } from './weather.js';
 import { geminiChat, sendGeminiMessage, setGeminiScheduleHandler, setGeminiHomeContextProvider, setGeminiStockContextProvider, pushGeminiMessage } from './gemini.js';
 import { SKIN_DATA } from './data/skins.js';
@@ -517,11 +517,11 @@ function aiReviewSectionHTML(){
 }
 
 /* ============ 📋 復習掲示板 ============
-   LPIC-1ホーム画面（学習メニューより上）に置く、ユーザー自身が箇条書きで
-   登録した「今日の復習項目」を1件ずつ表示するカード。各項目への回答は
-   js/reviewBoard.js経由でアプリ内のGemini（/api/gemini/review-answer、
-   APIキーはサーバー側のみ）が自動生成し、生成結果はログインユーザーごとに
-   localStorageへ保存されるので再読み込みしても消えない。
+   LPIC-1ホーム画面（学習メニューより上）に置く、ユーザー自身が番号付き
+   箇条書きで登録した「問題」と「解答」を、先頭の番号だけで対応付けて
+   1件ずつ表示するカード。文章の内容による判定やアプリ内Geminiによる
+   回答生成は一切行わない。登録内容はjs/reviewBoard.js経由でログイン
+   ユーザーごとにlocalStorageへ保存されるので再読み込みしても消えない。
    ・rb：現在の表示位置（idx）・一時停止中か・回答表示中かを保持するモジュール
      変数。renderHome()が何度呼ばれてもこの状態自体はリセットされない
    ・10秒ごとの自動切り替えはsetIntervalの二重生成を避けるため
@@ -535,91 +535,71 @@ function rbClampIdx(items){
   if(rb.idx < 0) rb.idx = 0;
 }
 
-// Geminiの回答テキストを整形する。js/render.jsのgeminiFormatModelText/
-// geminiTerminalCardHTMLとほぼ同じ処理だが、コピー用ボタンの文言に絵文字を
-// 使わない点だけが異なる（復習掲示板のUIは絵文字を使わない方針のため）ので
-// あえて別関数として持つ
-function rbFormatAnswerText(text){
-  const src = text || "";
-  let html = "";
-  let lastIndex = 0;
-  let match;
-  GEMINI_CODE_FENCE_RE.lastIndex = 0;
-  while((match = GEMINI_CODE_FENCE_RE.exec(src))){
-    const before = src.slice(lastIndex, match.index);
-    if(before) html += esc(before).replace(/\n/g, "<br>");
-    html += rbTerminalCardHTML(match[1]);
-    lastIndex = GEMINI_CODE_FENCE_RE.lastIndex;
+function rbAnswerAreaHTML(question){
+  if(!rb.answerShown){
+    return `<button type="button" class="revboard-reveal-btn" data-rb-reveal>回答を見る</button>`;
   }
-  const rest = src.slice(lastIndex);
-  if(rest) html += esc(rest).replace(/\n/g, "<br>");
-  return html;
+  const ans = findReviewAnswer(question.number);
+  if(ans && ans.text){
+    return `
+      <div class="revboard-a-lab">回答：</div>
+      <div class="revboard-a-text">${esc(ans.text)}</div>
+      <button type="button" class="revboard-reveal-btn revboard-hide-btn" data-rb-hide>回答を隠す</button>`;
+  }
+  return `
+    <div class="revboard-a-missing">この問題の解答はまだ登録されていません</div>
+    <button type="button" class="revboard-reveal-btn revboard-hide-btn" data-rb-hide>回答を隠す</button>`;
 }
 
-function rbTerminalCardHTML(raw){
-  const body = (raw || "").replace(/^\n/, "").replace(/\n$/, "");
-  const lines = body.split("\n");
-  const rowsHTML = lines.map(line => {
-    const m = line.match(/^([$#])\s(.*)$/);
-    if(m){
-      return `<div class="gemini-term-line"><span class="gemini-term-prompt">${esc(m[1])}</span> <span class="gemini-term-cmd">${esc(m[2])}</span></div>`;
-    }
-    return `<div class="gemini-term-line gemini-term-out">${line ? esc(line) : "&nbsp;"}</div>`;
-  }).join("");
+function rbToolbarHTML(){
   return `
-    <div class="gemini-code-card">
-      <div class="gemini-code-head">
-        <span class="gemini-code-dots"><span></span><span></span><span></span></span>
-        <span class="gemini-code-title">Terminal</span>
-        <button type="button" class="gemini-code-copy">コピー</button>
-      </div>
-      <div class="gemini-code-body">${rowsHTML}</div>
+    <div class="revboard-toolbar">
+      <button type="button" class="revboard-reg-btn" data-rb-add-q>問題を登録</button>
+      <button type="button" class="revboard-reg-btn revboard-reg-btn--a" data-rb-add-a>解答を登録</button>
     </div>`;
 }
 
-function rbAnswerAreaHTML(it){
-  if(it.status === "ready" && it.answer){
-    if(rb.answerShown){
-      return `
-        <div class="revboard-a-lab">回答：</div>
-        <div class="revboard-a-text">${rbFormatAnswerText(it.answer)}</div>
-        <button type="button" class="revboard-reveal-btn revboard-hide-btn" data-rb-hide>回答を隠す</button>`;
-    }
-    return `<button type="button" class="revboard-reveal-btn" data-rb-reveal>回答を見る</button>`;
-  }
-  if(it.status === "error"){
-    return `
-      <div class="revboard-error">回答の生成に失敗しました。</div>
-      <button type="button" class="revboard-reveal-btn revboard-regen-btn" data-rb-regen>回答を再生成</button>`;
-  }
-  return `<div class="revboard-generating"><span class="revboard-generating-dot"></span>回答を作成中</div>`;
+function rbManageControlsHTML(hasCurrent){
+  return `
+    <div class="revboard-controls2">
+      <button type="button" class="revboard-link-btn" data-rb-edit-q>問題を編集</button>
+      <button type="button" class="revboard-link-btn" data-rb-edit-a>解答を編集</button>
+      ${hasCurrent ? `
+      <button type="button" class="revboard-link-btn" data-rb-delete-q>この問題を削除</button>
+      <button type="button" class="revboard-link-btn" data-rb-delete-a>この解答を削除</button>` : ``}
+      <button type="button" class="revboard-link-btn revboard-link-btn--danger" data-rb-clear-all>すべて削除</button>
+    </div>`;
 }
 
 function rbCardInnerHTML(){
-  const items = loadReviewItems();
+  const items = loadReviewQuestions();
   rbClampIdx(items);
+
   if(!items.length){
     return `
       <div class="revboard-head">
         <span class="revboard-head-ico">${REVBOARD_ICON}</span>
         <span class="revboard-ttl">復習掲示板</span>
       </div>
+      ${rbToolbarHTML()}
       <div class="revboard-empty">
-        <div class="revboard-empty-msg">今日の復習項目はまだ登録されていません</div>
-        <button type="button" class="revboard-add-btn" data-rb-add>復習項目を登録</button>
-      </div>`;
+        <div class="revboard-empty-msg">まだ問題が登録されていません</div>
+      </div>
+      ${rbManageControlsHTML(false)}`;
   }
+
   const it = items[rb.idx];
   return `
     <div class="revboard-head">
       <span class="revboard-head-ico">${REVBOARD_ICON}</span>
       <span class="revboard-ttl">復習掲示板</span>
     </div>
+    ${rbToolbarHTML()}
     <div class="revboard-counter">${rb.idx+1} / ${items.length}</div>
+    <div class="revboard-qnum">問題番号：${it.number}</div>
     <div class="revboard-slide-outer">
       <div class="revboard-slide-inner">
-        <div class="revboard-q-lab">質問：</div>
-        <div class="revboard-q-text">${esc(it.question)}</div>
+        <div class="revboard-q-text">${esc(it.text)}</div>
         <div class="revboard-answer-area">${rbAnswerAreaHTML(it)}</div>
       </div>
     </div>
@@ -628,11 +608,7 @@ function rbCardInnerHTML(){
       <button type="button" class="revboard-ctrl-btn revboard-ctrl-btn--pause" data-rb-pause>${rb.paused ? "再開" : "一時停止"}</button>
       <button type="button" class="revboard-ctrl-btn" data-rb-next>次へ ›</button>
     </div>
-    <div class="revboard-controls2">
-      <button type="button" class="revboard-link-btn" data-rb-edit>登録内容を編集</button>
-      <button type="button" class="revboard-link-btn" data-rb-delete-one>登録内容を削除</button>
-      <button type="button" class="revboard-link-btn revboard-link-btn--danger" data-rb-clear-all>すべて削除</button>
-    </div>`;
+    ${rbManageControlsHTML(true)}`;
 }
 
 function reviewBoardSectionHTML(){
@@ -650,7 +626,7 @@ function refreshReviewBoardCard(){
 }
 
 function rbNavigate(delta){
-  const items = loadReviewItems();
+  const items = loadReviewQuestions();
   if(!items.length) return;
   rb.idx = (rb.idx + delta + items.length) % items.length;
   rb.answerShown = false;
@@ -665,7 +641,7 @@ function ensureReviewBoardTimer(){
     const root = document.getElementById("revboard-card");
     if(!root){ clearInterval(rb.timer); rb.timer = null; return; }
     if(rb.paused || rb.answerShown) return;
-    const items = loadReviewItems();
+    const items = loadReviewQuestions();
     if(items.length <= 1) return;
     rb.idx = (rb.idx + 1) % items.length;
     refreshReviewBoardCard();
@@ -676,14 +652,14 @@ function wireReviewBoardCard(){
   const root = document.getElementById("revboard-card");
   if(!root) return;
 
-  // ページ再読み込みなどで生成が中断されたまま残っている項目があれば再開する
-  // （processQueue側で多重起動は防いでいるので、ここで呼んでも安全）
-  resumeReviewBoardQueue();
-
-  const addBtn = root.querySelector("[data-rb-add]");
-  if(addBtn) addBtn.onclick = () => openReviewBoardSheet("add");
-  const editBtn = root.querySelector("[data-rb-edit]");
-  if(editBtn) editBtn.onclick = () => openReviewBoardSheet("edit");
+  const addQBtn = root.querySelector("[data-rb-add-q]");
+  if(addQBtn) addQBtn.onclick = () => openReviewBoardSheet("add-question");
+  const addABtn = root.querySelector("[data-rb-add-a]");
+  if(addABtn) addABtn.onclick = () => openReviewBoardSheet("add-answer");
+  const editQBtn = root.querySelector("[data-rb-edit-q]");
+  if(editQBtn) editQBtn.onclick = () => openReviewBoardSheet("edit-question");
+  const editABtn = root.querySelector("[data-rb-edit-a]");
+  if(editABtn) editABtn.onclick = () => openReviewBoardSheet("edit-answer");
 
   const prevBtn = root.querySelector("[data-rb-prev]");
   if(prevBtn) prevBtn.onclick = () => rbNavigate(-1);
@@ -697,56 +673,82 @@ function wireReviewBoardCard(){
   const hideBtn = root.querySelector("[data-rb-hide]");
   if(hideBtn) hideBtn.onclick = () => { rb.answerShown = false; refreshReviewBoardCard(); };
 
-  const regenBtn = root.querySelector("[data-rb-regen]");
-  if(regenBtn) regenBtn.onclick = () => {
-    const items = loadReviewItems();
-    const it = items[rb.idx];
-    if(it) regenerateReviewAnswer(it.id);
-  };
-
-  const delOneBtn = root.querySelector("[data-rb-delete-one]");
-  if(delOneBtn) delOneBtn.onclick = () => {
-    const items = loadReviewItems();
+  const delQBtn = root.querySelector("[data-rb-delete-q]");
+  if(delQBtn) delQBtn.onclick = () => {
+    const items = loadReviewQuestions();
     const it = items[rb.idx];
     if(!it) return;
-    if(!confirm("この復習項目を削除しますか？")) return;
-    deleteReviewItem(it.id);
+    if(!confirm(`問題番号${it.number}を削除しますか？`)) return;
+    deleteReviewQuestion(it.number);
     rb.answerShown = false;
+  };
+
+  const delABtn = root.querySelector("[data-rb-delete-a]");
+  if(delABtn) delABtn.onclick = () => {
+    const items = loadReviewQuestions();
+    const it = items[rb.idx];
+    if(!it) return;
+    if(!findReviewAnswer(it.number)){ alert("この問題の解答はまだ登録されていません"); return; }
+    if(!confirm(`問題番号${it.number}の解答を削除しますか？`)) return;
+    deleteReviewAnswer(it.number);
   };
 
   const clearBtn = root.querySelector("[data-rb-clear-all]");
   if(clearBtn) clearBtn.onclick = () => {
-    if(!confirm("復習掲示板の項目をすべて削除しますか？この操作は取り消せません。")) return;
+    if(!confirm("復習掲示板の問題と解答をすべて削除しますか？この操作は取り消せません。")) return;
     clearAllReviewItems();
     rb.idx = 0; rb.answerShown = false;
   };
 
-  root.querySelectorAll(".gemini-code-copy").forEach(btn => {
-    btn.onclick = () => {
-      const card = btn.closest(".gemini-code-card");
-      if(!card) return;
-      const original = btn.textContent;
-      geminiCopyCodeCard(card).then(() => {
-        btn.textContent = "コピーしました";
-        btn.disabled = true;
-        setTimeout(() => { btn.textContent = original; btn.disabled = false; }, 1500);
-      }).catch(() => {});
-    };
-  });
-
   ensureReviewBoardTimer();
 }
 
-// js/reviewBoard.js側でのGemini生成完了/失敗・追加/削除/編集のたびに呼ばれ、
-// 表示中であればカードだけを再描画する（他画面表示中は#revboard-cardが
-// 存在しないため何もしない）
+// js/reviewBoard.js側での追加/削除/編集のたびに呼ばれ、表示中であれば
+// カードだけを再描画する（他画面表示中は#revboard-cardが存在しないため
+// 何もしない）
 onReviewBoardChange(refreshReviewBoardCard);
 
-// 復習項目の登録・一括編集用のボトムシート。既存のairec/各種メニューと同じ
-// .sheet-ov/.bottom-sheet基盤（下スワイプで閉じる・背景タップで閉じる）を使う
+// 問題・解答それぞれの登録／一括編集用の設定。既存のairec/各種メニューと
+// 同じ.sheet-ov/.bottom-sheet基盤（下スワイプで閉じる・背景タップで閉じる）
+// を使い、登録は追加（既存の番号は上書き）・編集は全件差し替えとして扱う
+const RB_SHEET_CONFIG = {
+  "add-question": {
+    title: "問題を登録",
+    hint: "1行につき1問です。先頭に番号を付けてください（例：「1.」「1」「1:」「1：」）。空行は無視されます。",
+    placeholder: "例：\n1. Ctrl＋Zは何をする操作か\n2. bgコマンドは何をするか\n3. dfとduの違いは何か\n4. rpm -qlは何を表示するか",
+    getInitial: () => "",
+    save: addReviewQuestions,
+    saveLabel: "登録",
+  },
+  "add-answer": {
+    title: "解答を登録",
+    hint: "1行につき1つの解答です。対応する問題と同じ番号を先頭に付けてください。空行は無視されます。",
+    placeholder: "例：\n1. Ctrl＋Zは、実行中のジョブを一時停止します。\n2. bgは、停止中のジョブをバックグラウンドで再開します。\n3. dfはファイルシステム全体、duはファイルやディレクトリ単位の使用量を確認します。\n4. rpm -qlは、パッケージに含まれるファイル一覧を表示します。",
+    getInitial: () => "",
+    save: addReviewAnswers,
+    saveLabel: "登録",
+  },
+  "edit-question": {
+    title: "問題を編集",
+    hint: "登録済みの問題です。番号や内容を書き換えて保存してください。番号を変更すると、変更後の番号で解答と対応付けられます。",
+    placeholder: "",
+    getInitial: questionsAsBulletText,
+    save: applyReviewQuestionsEdit,
+    saveLabel: "保存",
+  },
+  "edit-answer": {
+    title: "解答を編集",
+    hint: "登録済みの解答です。番号や内容を書き換えて保存してください。番号を変更すると、変更後の番号で問題と対応付けられます。",
+    placeholder: "",
+    getInitial: answersAsBulletText,
+    save: applyReviewAnswersEdit,
+    saveLabel: "保存",
+  },
+};
+
 function openReviewBoardSheet(mode){
-  const isEdit = mode === "edit";
-  const initialText = isEdit ? reviewItemsAsBulletText() : "";
+  const cfg = RB_SHEET_CONFIG[mode];
+  const initialText = cfg.getInitial();
 
   lockBodyScrollForSheet();
   const ov = document.createElement("div");
@@ -755,14 +757,15 @@ function openReviewBoardSheet(mode){
     <div class="bottom-sheet revboard-sheet">
       <div class="bottom-sheet-drag-handle">
         <div class="bottom-sheet-handle"></div>
-        <div class="bottom-sheet-title">${isEdit ? "登録内容を編集" : "復習項目を登録"}</div>
+        <div class="bottom-sheet-title">${cfg.title}</div>
       </div>
       <div class="bottom-sheet-list revboard-sheet-body">
-        <div class="revboard-sheet-hint">1行につき1項目です。「-」「・」「*」などの箇条書き記号は自動で取り除かれ、空の行は登録されません。</div>
-        <textarea class="revboard-textarea" id="revboard-textarea" placeholder="例：\n- Ctrl＋Zは何をする操作か\n- bgコマンドは何をするか\n- rpm -qlは何を表示するか\n- dfとduの違い">${esc(initialText)}</textarea>
+        <div class="revboard-sheet-hint">${cfg.hint}</div>
+        <div class="revboard-sheet-error" id="revboard-sheet-error" hidden></div>
+        <textarea class="revboard-textarea" id="revboard-textarea" placeholder="${cfg.placeholder}">${esc(initialText)}</textarea>
         <div class="revboard-sheet-actions">
           <button type="button" class="revboard-sheet-cancel" data-rb-sheet-cancel>キャンセル</button>
-          <button type="button" class="revboard-sheet-save" data-rb-sheet-save>${isEdit ? "保存" : "登録"}</button>
+          <button type="button" class="revboard-sheet-save" data-rb-sheet-save>${cfg.saveLabel}</button>
         </div>
       </div>
     </div>`;
@@ -781,8 +784,13 @@ function openReviewBoardSheet(mode){
   ov.querySelector("[data-rb-sheet-cancel]").onclick = () => closeSheet(ov);
   ov.querySelector("[data-rb-sheet-save]").onclick = () => {
     const text = ov.querySelector("#revboard-textarea").value;
-    if(isEdit) applyReviewBoardEdit(text);
-    else addReviewItems(text);
+    const result = cfg.save(text);
+    if(result && result.ok === false && result.duplicates && result.duplicates.length){
+      const errBox = ov.querySelector("#revboard-sheet-error");
+      errBox.textContent = `番号が重複しています（${result.duplicates.join("、")}）。番号を修正してから保存してください。`;
+      errBox.hidden = false;
+      return;
+    }
     rb.answerShown = false;
     closeSheet(ov);
     render();
