@@ -18,6 +18,7 @@ import {
   dirxUnreadCount, startAutoTimerIfNeeded, stopAutoTimer,
 } from './dirxStore.js';
 import { aiDailyUpdateCheck, aiOverallComment, aiShortComment, getAiRecommendations } from './reviewAI.js';
+import { addReviewItems, applyReviewBoardEdit, clearAllReviewItems, deleteReviewItem, loadReviewItems, onReviewBoardChange, regenerateReviewAnswer, resumeReviewBoardQueue, reviewItemsAsBulletText } from './reviewBoard.js';
 import { getWeather } from './weather.js';
 import { geminiChat, sendGeminiMessage, setGeminiScheduleHandler, setGeminiHomeContextProvider, setGeminiStockContextProvider, pushGeminiMessage } from './gemini.js';
 import { SKIN_DATA } from './data/skins.js';
@@ -481,6 +482,9 @@ const MENU_ICON_MARKED = `<svg viewBox="0 0 24 24" fill="none" stroke="currentCo
 const MENU_ICON_DIRX = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M3.5 6.2a1 1 0 0 1 1-1h4.4l1.6 1.9h8a1 1 0 0 1 1 1V17a1 1 0 0 1-1 1h-14a1 1 0 0 1-1-1V6.2Z"></path><path d="M7.5 12.3h4.4M7.5 15h6.6" opacity=".7"></path></svg>`;
 // 「探索ミッション」ボタン用アイコン（コンパス）
 const MENU_ICON_MISSION = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="8.3"></circle><path d="m14.6 9.4-1.7 4.8-4.8 1.7 1.7-4.8Z"></path></svg>`;
+// 「復習掲示板」見出し用アイコン（ピン留めされた掲示板）。絵文字を使わない
+// 指定のため、他の見出しアイコンと同じ線画SVGで統一する
+const REVBOARD_ICON = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="5.5" width="16" height="14" rx="2"></rect><path d="M8 9.3h8M8 12.6h8M8 15.9h5"></path><circle cx="17.3" cy="6.7" r="1.6" fill="currentColor" stroke="none"></circle></svg>`;
 // 「障害対応」ボタン用アイコン（レンチ）
 const MENU_ICON_INCIDENT = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M15.3 4.5a4 4 0 0 0-5.2 4.9L4.6 14.9a1.7 1.7 0 0 0 2.4 2.4l5.5-5.5a4 4 0 0 0 4.9-5.2l-2.6 2.6-2-.6-.6-2Z"></path></svg>`;
 
@@ -510,6 +514,281 @@ function aiReviewSectionHTML(){
       <div class="airec-badges">${badges}</div>
       <button class="airec-open-btn" data-airec-open>おすすめ復習を見る <span class="airec-open-arw">▶</span></button>` : ``}
     </div>`;
+}
+
+/* ============ 📋 復習掲示板 ============
+   LPIC-1ホーム画面（学習メニューより上）に置く、ユーザー自身が箇条書きで
+   登録した「今日の復習項目」を1件ずつ表示するカード。各項目への回答は
+   js/reviewBoard.js経由でアプリ内のGemini（/api/gemini/review-answer、
+   APIキーはサーバー側のみ）が自動生成し、生成結果はログインユーザーごとに
+   localStorageへ保存されるので再読み込みしても消えない。
+   ・rb：現在の表示位置（idx）・一時停止中か・回答表示中かを保持するモジュール
+     変数。renderHome()が何度呼ばれてもこの状態自体はリセットされない
+   ・10秒ごとの自動切り替えはsetIntervalの二重生成を避けるため
+     ensureReviewBoardTimer()で1本だけ維持し、カードのDOMが無くなったら
+     （画面遷移などで）タイマー自身が検知して自動的に停止する */
+const rb = { idx: 0, paused: false, answerShown: false, timer: null };
+
+function rbClampIdx(items){
+  if(!items.length){ rb.idx = 0; return; }
+  if(rb.idx > items.length - 1) rb.idx = items.length - 1;
+  if(rb.idx < 0) rb.idx = 0;
+}
+
+// Geminiの回答テキストを整形する。js/render.jsのgeminiFormatModelText/
+// geminiTerminalCardHTMLとほぼ同じ処理だが、コピー用ボタンの文言に絵文字を
+// 使わない点だけが異なる（復習掲示板のUIは絵文字を使わない方針のため）ので
+// あえて別関数として持つ
+function rbFormatAnswerText(text){
+  const src = text || "";
+  let html = "";
+  let lastIndex = 0;
+  let match;
+  GEMINI_CODE_FENCE_RE.lastIndex = 0;
+  while((match = GEMINI_CODE_FENCE_RE.exec(src))){
+    const before = src.slice(lastIndex, match.index);
+    if(before) html += esc(before).replace(/\n/g, "<br>");
+    html += rbTerminalCardHTML(match[1]);
+    lastIndex = GEMINI_CODE_FENCE_RE.lastIndex;
+  }
+  const rest = src.slice(lastIndex);
+  if(rest) html += esc(rest).replace(/\n/g, "<br>");
+  return html;
+}
+
+function rbTerminalCardHTML(raw){
+  const body = (raw || "").replace(/^\n/, "").replace(/\n$/, "");
+  const lines = body.split("\n");
+  const rowsHTML = lines.map(line => {
+    const m = line.match(/^([$#])\s(.*)$/);
+    if(m){
+      return `<div class="gemini-term-line"><span class="gemini-term-prompt">${esc(m[1])}</span> <span class="gemini-term-cmd">${esc(m[2])}</span></div>`;
+    }
+    return `<div class="gemini-term-line gemini-term-out">${line ? esc(line) : "&nbsp;"}</div>`;
+  }).join("");
+  return `
+    <div class="gemini-code-card">
+      <div class="gemini-code-head">
+        <span class="gemini-code-dots"><span></span><span></span><span></span></span>
+        <span class="gemini-code-title">Terminal</span>
+        <button type="button" class="gemini-code-copy">コピー</button>
+      </div>
+      <div class="gemini-code-body">${rowsHTML}</div>
+    </div>`;
+}
+
+function rbAnswerAreaHTML(it){
+  if(it.status === "ready" && it.answer){
+    if(rb.answerShown){
+      return `
+        <div class="revboard-a-lab">回答：</div>
+        <div class="revboard-a-text">${rbFormatAnswerText(it.answer)}</div>
+        <button type="button" class="revboard-reveal-btn revboard-hide-btn" data-rb-hide>回答を隠す</button>`;
+    }
+    return `<button type="button" class="revboard-reveal-btn" data-rb-reveal>回答を見る</button>`;
+  }
+  if(it.status === "error"){
+    return `
+      <div class="revboard-error">回答の生成に失敗しました。</div>
+      <button type="button" class="revboard-reveal-btn revboard-regen-btn" data-rb-regen>回答を再生成</button>`;
+  }
+  return `<div class="revboard-generating"><span class="revboard-generating-dot"></span>回答を作成中</div>`;
+}
+
+function rbCardInnerHTML(){
+  const items = loadReviewItems();
+  rbClampIdx(items);
+  if(!items.length){
+    return `
+      <div class="revboard-head">
+        <span class="revboard-head-ico">${REVBOARD_ICON}</span>
+        <span class="revboard-ttl">復習掲示板</span>
+      </div>
+      <div class="revboard-empty">
+        <div class="revboard-empty-msg">今日の復習項目はまだ登録されていません</div>
+        <button type="button" class="revboard-add-btn" data-rb-add>復習項目を登録</button>
+      </div>`;
+  }
+  const it = items[rb.idx];
+  return `
+    <div class="revboard-head">
+      <span class="revboard-head-ico">${REVBOARD_ICON}</span>
+      <span class="revboard-ttl">復習掲示板</span>
+    </div>
+    <div class="revboard-counter">${rb.idx+1} / ${items.length}</div>
+    <div class="revboard-slide-outer">
+      <div class="revboard-slide-inner">
+        <div class="revboard-q-lab">質問：</div>
+        <div class="revboard-q-text">${esc(it.question)}</div>
+        <div class="revboard-answer-area">${rbAnswerAreaHTML(it)}</div>
+      </div>
+    </div>
+    <div class="revboard-controls">
+      <button type="button" class="revboard-ctrl-btn" data-rb-prev>‹ 前へ</button>
+      <button type="button" class="revboard-ctrl-btn revboard-ctrl-btn--pause" data-rb-pause>${rb.paused ? "再開" : "一時停止"}</button>
+      <button type="button" class="revboard-ctrl-btn" data-rb-next>次へ ›</button>
+    </div>
+    <div class="revboard-controls2">
+      <button type="button" class="revboard-link-btn" data-rb-edit>登録内容を編集</button>
+      <button type="button" class="revboard-link-btn" data-rb-delete-one>登録内容を削除</button>
+      <button type="button" class="revboard-link-btn revboard-link-btn--danger" data-rb-clear-all>すべて削除</button>
+    </div>`;
+}
+
+function reviewBoardSectionHTML(){
+  if(S.cert !== "lpic1") return "";
+  return `<div class="revboard-wrap" id="revboard-card">${rbCardInnerHTML()}</div>`;
+}
+
+// カード部分だけを再描画する（ホーム画面全体は作り直さない）。
+// data-rb-*の配線もこの中でやり直す
+function refreshReviewBoardCard(){
+  const root = document.getElementById("revboard-card");
+  if(!root) return;
+  root.innerHTML = rbCardInnerHTML();
+  wireReviewBoardCard();
+}
+
+function rbNavigate(delta){
+  const items = loadReviewItems();
+  if(!items.length) return;
+  rb.idx = (rb.idx + delta + items.length) % items.length;
+  rb.answerShown = false;
+  refreshReviewBoardCard();
+}
+
+// 10秒ごとに次の項目へ。一時停止中・回答表示中は進めない。
+// 対象のカードDOMが無くなっていたら（画面遷移など）タイマー自体を止める
+function ensureReviewBoardTimer(){
+  if(rb.timer) return;
+  rb.timer = setInterval(() => {
+    const root = document.getElementById("revboard-card");
+    if(!root){ clearInterval(rb.timer); rb.timer = null; return; }
+    if(rb.paused || rb.answerShown) return;
+    const items = loadReviewItems();
+    if(items.length <= 1) return;
+    rb.idx = (rb.idx + 1) % items.length;
+    refreshReviewBoardCard();
+  }, 10000);
+}
+
+function wireReviewBoardCard(){
+  const root = document.getElementById("revboard-card");
+  if(!root) return;
+
+  // ページ再読み込みなどで生成が中断されたまま残っている項目があれば再開する
+  // （processQueue側で多重起動は防いでいるので、ここで呼んでも安全）
+  resumeReviewBoardQueue();
+
+  const addBtn = root.querySelector("[data-rb-add]");
+  if(addBtn) addBtn.onclick = () => openReviewBoardSheet("add");
+  const editBtn = root.querySelector("[data-rb-edit]");
+  if(editBtn) editBtn.onclick = () => openReviewBoardSheet("edit");
+
+  const prevBtn = root.querySelector("[data-rb-prev]");
+  if(prevBtn) prevBtn.onclick = () => rbNavigate(-1);
+  const nextBtn = root.querySelector("[data-rb-next]");
+  if(nextBtn) nextBtn.onclick = () => rbNavigate(1);
+  const pauseBtn = root.querySelector("[data-rb-pause]");
+  if(pauseBtn) pauseBtn.onclick = () => { rb.paused = !rb.paused; refreshReviewBoardCard(); };
+
+  const revealBtn = root.querySelector("[data-rb-reveal]");
+  if(revealBtn) revealBtn.onclick = () => { rb.answerShown = true; refreshReviewBoardCard(); };
+  const hideBtn = root.querySelector("[data-rb-hide]");
+  if(hideBtn) hideBtn.onclick = () => { rb.answerShown = false; refreshReviewBoardCard(); };
+
+  const regenBtn = root.querySelector("[data-rb-regen]");
+  if(regenBtn) regenBtn.onclick = () => {
+    const items = loadReviewItems();
+    const it = items[rb.idx];
+    if(it) regenerateReviewAnswer(it.id);
+  };
+
+  const delOneBtn = root.querySelector("[data-rb-delete-one]");
+  if(delOneBtn) delOneBtn.onclick = () => {
+    const items = loadReviewItems();
+    const it = items[rb.idx];
+    if(!it) return;
+    if(!confirm("この復習項目を削除しますか？")) return;
+    deleteReviewItem(it.id);
+    rb.answerShown = false;
+  };
+
+  const clearBtn = root.querySelector("[data-rb-clear-all]");
+  if(clearBtn) clearBtn.onclick = () => {
+    if(!confirm("復習掲示板の項目をすべて削除しますか？この操作は取り消せません。")) return;
+    clearAllReviewItems();
+    rb.idx = 0; rb.answerShown = false;
+  };
+
+  root.querySelectorAll(".gemini-code-copy").forEach(btn => {
+    btn.onclick = () => {
+      const card = btn.closest(".gemini-code-card");
+      if(!card) return;
+      const original = btn.textContent;
+      geminiCopyCodeCard(card).then(() => {
+        btn.textContent = "コピーしました";
+        btn.disabled = true;
+        setTimeout(() => { btn.textContent = original; btn.disabled = false; }, 1500);
+      }).catch(() => {});
+    };
+  });
+
+  ensureReviewBoardTimer();
+}
+
+// js/reviewBoard.js側でのGemini生成完了/失敗・追加/削除/編集のたびに呼ばれ、
+// 表示中であればカードだけを再描画する（他画面表示中は#revboard-cardが
+// 存在しないため何もしない）
+onReviewBoardChange(refreshReviewBoardCard);
+
+// 復習項目の登録・一括編集用のボトムシート。既存のairec/各種メニューと同じ
+// .sheet-ov/.bottom-sheet基盤（下スワイプで閉じる・背景タップで閉じる）を使う
+function openReviewBoardSheet(mode){
+  const isEdit = mode === "edit";
+  const initialText = isEdit ? reviewItemsAsBulletText() : "";
+
+  lockBodyScrollForSheet();
+  const ov = document.createElement("div");
+  ov.className = "sheet-ov";
+  ov.innerHTML = `
+    <div class="bottom-sheet revboard-sheet">
+      <div class="bottom-sheet-drag-handle">
+        <div class="bottom-sheet-handle"></div>
+        <div class="bottom-sheet-title">${isEdit ? "登録内容を編集" : "復習項目を登録"}</div>
+      </div>
+      <div class="bottom-sheet-list revboard-sheet-body">
+        <div class="revboard-sheet-hint">1行につき1項目です。「-」「・」「*」などの箇条書き記号は自動で取り除かれ、空の行は登録されません。</div>
+        <textarea class="revboard-textarea" id="revboard-textarea" placeholder="例：\n- Ctrl＋Zは何をする操作か\n- bgコマンドは何をするか\n- rpm -qlは何を表示するか\n- dfとduの違い">${esc(initialText)}</textarea>
+        <div class="revboard-sheet-actions">
+          <button type="button" class="revboard-sheet-cancel" data-rb-sheet-cancel>キャンセル</button>
+          <button type="button" class="revboard-sheet-save" data-rb-sheet-save>${isEdit ? "保存" : "登録"}</button>
+        </div>
+      </div>
+    </div>`;
+  document.body.appendChild(ov);
+  ov.addEventListener("click", (e) => { if(e.target === ov) closeSheet(ov); });
+  const touchGuard = createSheetTouchGuard(ov);
+  ov.addEventListener("touchstart", touchGuard.onTouchStart, { passive: true });
+  ov.addEventListener("touchmove", touchGuard.onTouchMove, { passive: false });
+  const sheet = ov.querySelector(".bottom-sheet");
+  attachSheetDragHandlers(ov, sheet);
+  requestAnimationFrame(() => {
+    ov.classList.add("sheet-ov-show");
+    sheet.classList.add("bottom-sheet-show");
+  });
+
+  ov.querySelector("[data-rb-sheet-cancel]").onclick = () => closeSheet(ov);
+  ov.querySelector("[data-rb-sheet-save]").onclick = () => {
+    const text = ov.querySelector("#revboard-textarea").value;
+    if(isEdit) applyReviewBoardEdit(text);
+    else addReviewItems(text);
+    rb.answerShown = false;
+    closeSheet(ov);
+    render();
+  };
+
+  setTimeout(() => { const ta = ov.querySelector("#revboard-textarea"); if(ta) ta.focus(); }, 60);
 }
 
 export function renderHome(){
@@ -550,6 +829,8 @@ export function renderHome(){
     <div class="q-head" style="margin-bottom:10px">
       <button class="quit" data-go="${certsBackTarget()}">← 資格選択</button>
     </div>
+
+    ${reviewBoardSectionHTML()}
 
     <div class="stats-dash">
       <div class="stats-dash-head">
@@ -699,6 +980,8 @@ export function renderHome(){
   const mkd=app.querySelector("[data-marked]"); if(mkd)mkd.onclick=()=>startMarkedPractice();
   // 🧠 AIおすすめ復習：「おすすめ復習を見る」でボトムシートを開く
   const ao=app.querySelector("[data-airec-open]"); if(ao)ao.onclick=()=>openAiReviewSheet();
+  // 📋 復習掲示板：ホームカードのボタン配線・10秒ごとの自動切り替えタイマー起動
+  if(S.cert==="lpic1") wireReviewBoardCard();
   app.querySelectorAll("[data-go]").forEach(b=>b.onclick=()=>go(b.dataset.go));
   const lo=app.querySelector("[data-logout]"); if(lo)lo.onclick=()=>logout();
   const li=app.querySelector("[data-login]"); if(li)li.onclick=()=>{ state.guestMode=false; state.authMode="login"; render(); };
@@ -4135,6 +4418,11 @@ function createSheetTouchGuard(ov){
       if(e.touches.length === 1) lastY = e.touches[0].clientY;
     },
     onTouchMove(e){
+      // textarea内（復習掲示板の登録・編集シートなど）で入力文字が多く、
+      // textarea自身が内部スクロール可能な場合は、この関数のpreventDefaultで
+      // ブロックせずネイティブのスクロールに任せる
+      const ta = e.target.closest && e.target.closest("textarea");
+      if(ta && ta.scrollHeight > ta.clientHeight) return;
       const list = ov.querySelector(".bottom-sheet-list");
       if(!list || !list.contains(e.target) || list.scrollHeight <= list.clientHeight){
         e.preventDefault();
