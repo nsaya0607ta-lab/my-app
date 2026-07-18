@@ -1,5 +1,5 @@
 /* =========================================================================
-   🎯 ラインバウンド：効果音（Web Audio APIでその場合成、音声ファイル不要）
+   💡 ライト消しパズル：効果音（Web Audio APIでその場合成、音声ファイル不要）
    既存のタップ音設定（S.tapSound）に従い、"mute" のときは一切再生しない。
    ========================================================================= */
 import { S } from '../state.js';
@@ -32,41 +32,30 @@ function tone(c, { freq, from, to, dur, type = "sine", gain = 0.12, delay = 0 })
   o.start(t); o.stop(t + dur + 0.02);
 }
 
-export function sfxDraw(){
+// ライト切り替え音：マスをタップして反転させたとき
+export function sfxToggle(){
   if(muted()) return;
   const c = ctx(); if(!c) return;
-  try{ tone(c, { freq: 900, dur: 0.03, type: "triangle", gain: 0.05 }); }catch(e){}
+  try{ tone(c, { freq: 720, from: 640, to: 860, dur: 0.07, type: "triangle", gain: 0.1 }); }catch(e){}
 }
 
-export function sfxLaunch(){
+// 操作を戻す音：1手戻す
+export function sfxUndo(){
   if(muted()) return;
   const c = ctx(); if(!c) return;
-  try{ tone(c, { freq: 300, from: 260, to: 640, dur: 0.16, type: "sawtooth", gain: 0.11 }); }catch(e){}
+  try{ tone(c, { freq: 420, from: 460, to: 300, dur: 0.09, type: "sine", gain: 0.09 }); }catch(e){}
 }
 
-export function sfxHit(kind){
-  if(muted()) return;
-  const c = ctx(); if(!c) return;
-  try{
-    if(kind === "rubber") tone(c, { freq: 700, from: 500, to: 900, dur: 0.09, type: "sine", gain: 0.12 });
-    else tone(c, { freq: 260, from: 320, to: 180, dur: 0.06, type: "square", gain: 0.08 });
-  }catch(e){}
-}
-
-export function sfxGoal(){
+// ステージクリア音
+export function sfxClear(){
   if(muted()) return;
   const c = ctx(); if(!c) return;
   try{
-    [[0, 880], [0.08, 1108], [0.16, 1318]].forEach(([delay, freq]) => tone(c, { freq, dur: 0.22, type: "sine", gain: 0.14, delay }));
+    [[0, 880], [0.09, 1108], [0.18, 1318], [0.27, 1568]].forEach(([delay, freq]) => tone(c, { freq, dur: 0.22, type: "sine", gain: 0.13, delay }));
   }catch(e){}
 }
 
-export function sfxFail(){
-  if(muted()) return;
-  const c = ctx(); if(!c) return;
-  try{ tone(c, { freq: 220, from: 220, to: 90, dur: 0.32, type: "sawtooth", gain: 0.1 }); }catch(e){}
-}
-
+// コイン獲得音
 export function sfxCoin(){
   if(muted()) return;
   const c = ctx(); if(!c) return;
