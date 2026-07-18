@@ -215,7 +215,7 @@ function updateHeaderTitle(){
 // カレンダータブのどちらから開いても同じ「カレンダー」タブをアクティブにする。
 const BNAV_TAB_BY_SCREEN = {
   select:"select",
-  home:"select", "lpic-commands":"select", quiz:"select", result:"select", review:"select", dict:"select", transfer:"select", history:"select", "lpic-dir-explorer":"select",
+  home:"select", "lpic-commands":"select", quiz:"select", result:"select", review:"select", dict:"select", transfer:"select", history:"select", "lpic-dir-explorer":"select", "review-list":"select",
   "lpic-dirx-missions":"select", "lpic-dirx-incidents":"select", "lpic-dirx-events":"select",
   certs:"study-menu", "lpic-certs":"study-menu", playground:"study-menu", scenario:"study-menu",
   "news-japan":"quick-menu", "news-world":"quick-menu", "news-detail":"quick-menu", portfolio:"quick-menu", holdings:"quick-menu", introquiz:"quick-menu",
@@ -291,6 +291,7 @@ export function render(){
   // 大元：資格選択画面
   if(S.screen==="select" || !S.cert) return renderSelect();
   if(S.screen==="home") return renderHome();
+  if(S.screen==="review-list") return renderReviewList();
   if(S.screen==="lpic-commands") return renderLpicCommands();
   if(S.screen==="lpic-dir-explorer") return renderDirExplorer();
   if(S.screen==="lpic-dirx-missions") return renderDirxMissions();
@@ -597,13 +598,12 @@ function rbCardInnerHTML(){
     ${rbToolbarHTML()}
     <div class="revboard-counter">${rb.idx+1} / ${items.length}</div>
     <div class="revboard-qnum">問題番号：${it.number}</div>
-    <label class="revboard-check-row">
-      <input type="checkbox" data-rb-mastered>
-      <span>覚えたのでチェック（復習リストへ移動）</span>
-    </label>
     <div class="revboard-slide-outer">
       <div class="revboard-slide-inner">
-        <div class="revboard-q-text">${esc(it.text)}</div>
+        <label class="revboard-q-row">
+          <input type="checkbox" data-rb-mastered>
+          <span class="revboard-q-text">${esc(it.text)}</span>
+        </label>
         <div class="revboard-answer-area">${rbAnswerAreaHTML(it)}</div>
       </div>
     </div>
@@ -698,49 +698,52 @@ function wireReviewBoardCard(){
 
 /* ============ ✅ 復習リスト ============
    復習掲示板でチェックを付けた（覚えた）問題の一覧。掲示板の出題対象
-   からは外れるが、ここでチェックを外せばまた掲示板に出るようになる */
+   からは外れるが、専用画面（review-list）でここのチェックを外せば
+   また掲示板に出るようになる。ホーム画面には遷移用ボタンのみを置く */
 function revListCardInnerHTML(){
   const items = loadMasteredReviewQuestions();
-  if(!items.length){
-    return `
-      <div class="revlist-head">
-        <span class="revlist-ttl">復習リスト</span>
-      </div>
-      <div class="revlist-empty">チェック済みの問題はまだありません</div>`;
-  }
   return `
     <div class="revlist-head">
       <span class="revlist-ttl">復習リスト</span>
+      ${items.length ? `<span class="revlist-badge">${items.length}</span>` : ``}
     </div>
-    <div class="revlist-items">
-      ${items.map(it => `
-        <label class="revlist-item">
-          <input type="checkbox" checked data-rl-uncheck="${it.number}">
-          <span class="revlist-item-num">${it.number}</span>
-          <span class="revlist-item-text">${esc(it.text)}</span>
-        </label>`).join("")}
-    </div>`;
+    <div class="revlist-sub">${items.length ? `チェック済み ${items.length} 問` : "チェック済みの問題はまだありません"}</div>
+    <span class="revlist-chevron">›</span>`;
 }
 
 function reviewListSectionHTML(){
   if(S.cert !== "lpic1") return "";
-  return `<div class="revlist-wrap" id="revlist-card">${revListCardInnerHTML()}</div>`;
+  return `<button type="button" class="revlist-wrap" id="revlist-card" data-go="review-list">${revListCardInnerHTML()}</button>`;
 }
 
 function refreshReviewListCard(){
   const root = document.getElementById("revlist-card");
   if(!root) return;
   root.innerHTML = revListCardInnerHTML();
-  wireReviewListCard();
 }
 
-function wireReviewListCard(){
-  const root = document.getElementById("revlist-card");
-  if(!root) return;
-  root.querySelectorAll("[data-rl-uncheck]").forEach(chk => {
+// 「復習リスト」ボタンから遷移する専用画面：チェック済み（覚えた）問題の一覧
+export function renderReviewList(){
+  updateHeaderNav(false);
+  const items = loadMasteredReviewQuestions();
+  app.innerHTML = `
+    <div class="q-head"><button class="quit" data-go="home">← ホームへ戻る</button><span class="q-count">復習リスト</span></div>
+    ${items.length ? `
+      <div class="revlist-items">
+        ${items.map(it => `
+          <label class="revlist-item">
+            <input type="checkbox" checked data-rl-uncheck="${it.number}">
+            <span class="revlist-item-num">${it.number}</span>
+            <span class="revlist-item-text">${esc(it.text)}</span>
+          </label>`).join("")}
+      </div>` : `<div class="revlist-empty">チェック済みの問題はまだありません</div>`}
+  `;
+  app.querySelectorAll("[data-go]").forEach(b=>b.onclick=()=>go(b.dataset.go));
+  app.querySelectorAll("[data-rl-uncheck]").forEach(chk => {
     chk.onchange = () => {
       const number = parseInt(chk.getAttribute("data-rl-uncheck"), 10);
       setReviewQuestionMastered(number, false);
+      renderReviewList();
     };
   });
 }
@@ -1032,8 +1035,8 @@ export function renderHome(){
   const mkd=app.querySelector("[data-marked]"); if(mkd)mkd.onclick=()=>startMarkedPractice();
   // 🧠 AIおすすめ復習：「おすすめ復習を見る」でボトムシートを開く
   const ao=app.querySelector("[data-airec-open]"); if(ao)ao.onclick=()=>openAiReviewSheet();
-  // 📋 復習掲示板・✅ 復習リスト：ホームカードのボタン配線
-  if(S.cert==="lpic1"){ wireReviewBoardCard(); wireReviewListCard(); }
+  // 📋 復習掲示板：ホームカードのボタン配線（✅ 復習リストは専用画面へのボタンのみ）
+  if(S.cert==="lpic1"){ wireReviewBoardCard(); }
   app.querySelectorAll("[data-go]").forEach(b=>b.onclick=()=>go(b.dataset.go));
   const lo=app.querySelector("[data-logout]"); if(lo)lo.onclick=()=>logout();
   const li=app.querySelector("[data-login]"); if(li)li.onclick=()=>{ state.guestMode=false; state.authMode="login"; render(); };
