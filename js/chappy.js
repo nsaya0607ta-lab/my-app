@@ -316,6 +316,32 @@ export function chappyOnStocksViewed(){
    将来、該当機能が実装されたらそこから呼び出すだけで動く（重複防止込み）。
    架空の呼び出しやダミーデータでの付与は行わない ---- */
 
+// ✅ ラインバウンド：ステージクリア（初回クリア／星3はステージごとに生涯一度だけ付与）
+export function chappyOnLineBoundCleared(stageId, { firstClear, star3 } = {}){
+  const st = touch();
+  let coinsGained = 0;
+  if(firstClear){
+    const key = `linebound:first:${stageId}`;
+    if(!onceKeyUsed(st, key)){
+      markOnceKey(st, key);
+      grantXp(st, CHAPPY_XP.lineboundFirstClear, "lineboundFirstClear");
+      st.coins += CHAPPY_COIN.lineboundFirstClear;
+      coinsGained += CHAPPY_COIN.lineboundFirstClear;
+    }
+  }
+  if(star3){
+    const key = `linebound:star3:${stageId}`;
+    if(!onceKeyUsed(st, key)){
+      markOnceKey(st, key);
+      grantXp(st, CHAPPY_XP.lineboundStar3, "lineboundStar3");
+      st.coins += CHAPPY_COIN.lineboundStar3;
+      coinsGained += CHAPPY_COIN.lineboundStar3;
+    }
+  }
+  persist();
+  return { coinsGained };
+}
+
 // 🔌 予定を1件完了（予定完了の概念が未実装のため未接続）
 export function chappyOnScheduleCompleted(dateKey, scheduleId){
   const st = touch();

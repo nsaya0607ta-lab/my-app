@@ -1,0 +1,126 @@
+/* =========================================================================
+   🎯 ラインバウンド：線を引いてボールをゴールへ導く物理パズルゲーム
+   既存のデザイントークン（--bg/--surface/--line/--accent/--good/--gold/
+   --bad/--text/--muted）を使い、UIテーマ切替（body[data-theme]）にも
+   自動で追従する。絵文字は使用しない。
+   ========================================================================= */
+
+.launcher-icon-linebound{ background:linear-gradient(150deg,#e0f2fe,#7dd3fc); box-shadow:0 5px 14px rgba(2,132,199,.22), inset 0 1px 0 rgba(255,255,255,.6); }
+
+.lb-root{ display:flex; flex-direction:column; }
+
+/* ---- ステージ選択 ---- */
+.lb-select-head{ display:flex; align-items:center; gap:10px; margin-bottom:4px; }
+.lb-title{ font-size:19px; font-weight:800; color:var(--text); margin:0; }
+.lb-select-sub{ font-size:12.5px; color:var(--muted); margin:2px 0 14px; }
+.lb-back{
+  border:1px solid var(--line); background:var(--surface); color:var(--text);
+  font-size:12.5px; font-weight:600; padding:7px 12px; border-radius:10px; cursor:pointer;
+}
+.lb-stage-grid{
+  display:grid; grid-template-columns:repeat(2, 1fr); gap:12px;
+}
+@media (min-width:520px){ .lb-stage-grid{ grid-template-columns:repeat(3, 1fr); } }
+
+.lb-stage-card{
+  position:relative; display:flex; flex-direction:column; align-items:flex-start; gap:4px;
+  border:1px solid var(--line); background:var(--surface); border-radius:14px; padding:12px 12px 14px;
+  text-align:left; cursor:pointer; min-height:96px;
+}
+.lb-stage-card--cleared{ border-color:rgba(22,163,74,.4); }
+.lb-stage-card--locked{ opacity:.55; }
+.lb-stage-num{ font-size:11px; font-weight:800; color:var(--muted); }
+.lb-stage-title{ font-size:13.5px; font-weight:700; color:var(--text); line-height:1.3; }
+.lb-stage-stars{ margin-top:auto; }
+.lb-star{ font-size:14px; color:var(--line); }
+.lb-star--on{ color:var(--gold); }
+.lb-stage-lock{ color:var(--muted); align-self:center; margin:6px 0; }
+.lb-stage-badge{
+  position:absolute; top:8px; right:8px; font-size:9.5px; font-weight:700; color:var(--good);
+  background:rgba(22,163,74,.12); border-radius:6px; padding:2px 6px;
+}
+
+/* ---- ゲーム画面 ---- */
+.lb-game{
+  display:flex; flex-direction:column;
+  height:calc(100dvh - 176px - var(--bnav-h) - env(safe-area-inset-bottom));
+  min-height:420px;
+}
+.lb-game-head{ display:flex; align-items:center; gap:10px; margin-bottom:8px; }
+.lb-stage-name{ font-size:13.5px; font-weight:700; color:var(--text); flex:1; }
+
+.lb-ink-wrap{ display:flex; align-items:center; gap:8px; margin-bottom:8px; }
+.lb-ink-label{ font-size:11.5px; font-weight:700; color:var(--muted); flex-shrink:0; }
+.lb-ink-bar{
+  flex:1; height:10px; border-radius:6px; background:var(--line); overflow:hidden;
+  border:1px solid var(--line);
+}
+.lb-ink-fill{
+  height:100%; width:100%; border-radius:6px;
+  background:linear-gradient(90deg, var(--accent), #38bdf8);
+  transition:width .12s linear;
+}
+.lb-ink-fill--low{ background:linear-gradient(90deg, var(--bad), #f87171); }
+.lb-ink-num{ font-size:11px; font-weight:700; color:var(--muted); flex-shrink:0; min-width:64px; text-align:right; }
+
+.lb-canvas-wrap{
+  position:relative; flex:1; min-height:220px; border-radius:16px; overflow:hidden;
+  background:var(--surface); border:1px solid var(--line);
+  touch-action:none; -webkit-user-select:none; user-select:none;
+}
+.lb-canvas-wrap canvas{ display:block; width:100%; height:100%; touch-action:none; }
+
+.lb-hint-banner{
+  position:absolute; left:10px; right:10px; top:10px; z-index:5;
+  background:rgba(217,119,6,.94); color:#fff; font-size:12.5px; font-weight:600;
+  padding:9px 12px; border-radius:10px; box-shadow:0 4px 10px rgba(0,0,0,.15);
+  pointer-events:none;
+}
+
+.lb-result-overlay{
+  position:absolute; inset:0; z-index:10; display:flex; align-items:center; justify-content:center;
+  background:rgba(15,23,42,.45); backdrop-filter:blur(3px); padding:16px;
+}
+.lb-result-overlay[hidden]{ display:none; }
+.lb-result-card{
+  width:100%; max-width:300px; background:var(--surface); border:1px solid var(--line);
+  border-radius:16px; padding:20px 18px; text-align:center; box-shadow:0 16px 32px rgba(15,23,42,.2);
+}
+.lb-result-title{ font-size:19px; font-weight:800; color:var(--text); margin-bottom:4px; }
+.lb-result-card--fail .lb-result-title{ color:var(--bad); }
+.lb-result-card--goal .lb-result-title{ color:var(--good); }
+.lb-result-msg{ font-size:13px; color:var(--muted); margin-bottom:14px; }
+.lb-result-stars{ font-size:26px; margin:6px 0 12px; }
+.lb-result-stars .lb-star{ font-size:26px; }
+.lb-result-stats{ text-align:left; margin-bottom:14px; }
+.lb-result-row{ font-size:12.5px; color:var(--text); padding:3px 0; }
+.lb-result-row--done{ text-align:center; color:var(--good); font-weight:700; }
+.lb-result-btn{
+  width:100%; margin-top:8px; padding:12px; border-radius:11px; border:1px solid var(--line);
+  background:none; color:var(--text); font-size:14px; font-weight:700; cursor:pointer;
+}
+.lb-result-btn--primary{
+  border:none; color:#fff; background:linear-gradient(90deg,var(--accent),#0ea5e9);
+  box-shadow:0 4px 12px rgba(2,132,199,.25);
+}
+
+.lb-controls{
+  display:grid; grid-template-columns:1fr 1fr 1fr; gap:8px; margin-top:10px;
+  padding-bottom:env(safe-area-inset-bottom);
+}
+.lb-ctl-btn{
+  padding:11px 6px; border-radius:11px; border:1px solid var(--line); background:var(--surface);
+  color:var(--text); font-size:12px; font-weight:700; cursor:pointer;
+}
+.lb-ctl-btn:disabled{ opacity:.4; }
+.lb-ctl-btn--primary{
+  grid-column:span 3; border:none; color:#fff; padding:13px;
+  background:linear-gradient(90deg,var(--accent),#0ea5e9); box-shadow:0 4px 12px rgba(2,132,199,.25);
+}
+.lb-ctl-btn--del{ grid-column:span 3; border-color:rgba(217,119,6,.5); color:var(--gold); }
+
+@media (orientation:landscape) and (max-height:480px){
+  .lb-game{ height:calc(100dvh - 60px); min-height:280px; }
+  .lb-controls{ grid-template-columns:repeat(5, 1fr); }
+  .lb-ctl-btn--primary, .lb-ctl-btn--del{ grid-column:span 1; }
+}
