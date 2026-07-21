@@ -557,6 +557,54 @@ input[type='color'].fc-input { height: 46px; padding: 4px; }
 .fc-simhero-split { display: flex; gap: 14px; margin-top: 8px; font-size: 12px; opacity: 0.9; }
 .fc-simhero-split span { white-space: nowrap; }
 
+/* 管理期間ピル / 設定サブ */
+.fc-spend-period { display: inline-flex; align-items: center; gap: 5px; margin-top: 12px; font-size: 11.5px; color: var(--fc-muted); cursor: pointer; }
+.fc-spend-period svg { display: block; }
+.fc-set-sub { font-size: 11px; color: var(--fc-muted); margin-top: 2px; }
+
+/* カード未引落残高 */
+.fc-card-unpaid { display: flex; justify-content: space-between; align-items: center; font-size: 12.5px; color: var(--fc-text-2); background: var(--fc-surface-2); border-radius: 10px; padding: 8px 12px; margin-bottom: 10px; }
+.fc-card-unpaid b { font-size: 14px; font-weight: 800; }
+
+/* 将来入出金の日付グループ（展開可能） */
+.fc-daygroups { display: flex; flex-direction: column; gap: 8px; }
+.fc-dg { border: 1px solid var(--fc-line); border-radius: 14px; overflow: hidden; background: var(--fc-surface); }
+.fc-dg.open { border-color: var(--fc-line-2); }
+.fc-dg-head { display: flex; align-items: center; gap: 11px; padding: 11px 12px; cursor: pointer; transition: background 0.15s; }
+.fc-dg-head:active { background: var(--fc-surface-2); }
+.fc-dg-date { display: flex; flex-direction: column; align-items: center; width: 40px; flex: none; }
+.fc-dg-date b { font-size: 14px; }
+.fc-dg-date span { font-size: 10px; color: var(--fc-muted); }
+.fc-dg-mid { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 3px; }
+.fc-dg-count { font-size: 13px; font-weight: 600; }
+.fc-dg-dots { display: flex; gap: 3px; }
+.fc-dg-dots .dot { width: 6px; height: 6px; border-radius: 50%; }
+.dot.tr { background: var(--fc-accent); }
+.fc-dg-net { font-size: 14px; font-weight: 700; white-space: nowrap; }
+.fc-dg-net.pos { color: var(--fc-pos); }
+.fc-dg-net.neg { color: var(--fc-neg); }
+.fc-dg-chev { display: flex; color: var(--fc-muted); transition: transform 0.2s; }
+.fc-dg-chev.open { transform: rotate(180deg); }
+.fc-dg-detail { padding: 4px 12px 12px; border-top: 1px dashed var(--fc-line); animation: fcRise 0.24s ease; }
+.fc-dg-ev { display: flex; align-items: center; gap: 10px; padding: 8px 0; }
+.fc-dg-ev-ic { width: 26px; height: 26px; flex: none; border-radius: 8px; display: flex; align-items: center; justify-content: center; }
+.fc-dg-ev-ic.income { background: rgba(18, 161, 80, 0.12); color: var(--fc-pos); }
+.fc-dg-ev-ic.expense { background: rgba(229, 72, 77, 0.12); color: var(--fc-neg); }
+.fc-dg-ev-ic.transfer { background: var(--fc-accent-soft); color: var(--fc-accent); }
+.fc-dg-ev-main { flex: 1; min-width: 0; }
+.fc-dg-ev-title { font-size: 13.5px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.fc-dg-ev-badge { font-size: 11px; color: var(--fc-muted); }
+.fc-dg-ev-amt { font-size: 13.5px; font-weight: 700; white-space: nowrap; }
+.fc-dg-ev-amt.income { color: var(--fc-pos); }
+.fc-dg-ev-amt.expense { color: var(--fc-neg); }
+.fc-dg-ev-amt.transfer { color: var(--fc-accent); }
+.fc-dg-foot { display: flex; gap: 10px; margin-top: 8px; padding-top: 10px; border-top: 1px solid var(--fc-line); }
+.fc-dg-foot > div { flex: 1; display: flex; flex-direction: column; gap: 2px; background: var(--fc-surface-2); border-radius: 10px; padding: 8px 10px; }
+.fc-dg-foot span { font-size: 10.5px; color: var(--fc-muted); }
+.fc-dg-foot b { font-size: 14px; font-weight: 800; }
+.fc-dg-foot b.pos { color: var(--fc-pos); }
+.fc-dg-foot b.neg { color: var(--fc-neg); }
+
 @media (max-width: 360px) {
   .fc-hero-amount { font-size: 33px; }
   .fc-page-title { font-size: 22px; }

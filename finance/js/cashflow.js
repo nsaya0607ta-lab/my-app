@@ -9,16 +9,17 @@
 // これにより 投資・配当・積立NISA・ローン返済・住宅/車購入 などは
 // 新しい kind のイベント生成器を足すだけで追加できる。
 
-import { pad, toISO, parseISO, addMonths, resolveDay, daysInMonth, ym } from './utils.js?v=20260722c';
-import { settlements, settlementDate, totalAssets } from './calc.js?v=20260722c';
-import { version as storeVersion } from './store.js?v=20260722c';
+import { pad, toISO, parseISO, addMonths, resolveDay, daysInMonth, ym } from './utils.js?v=20260723a';
+import { settlements, settlementDate, totalAssets } from './calc.js?v=20260723a';
+import { version as storeVersion } from './store.js?v=20260723a';
 
-// 日次処理順（⑫）: 収入→固定収入→固定支出→カード引落→その他支出
-export const PRIORITY = { income: 1, 'fixed-income': 2, 'fixed-expense': 3, card: 4, expense: 5 };
+// 日次処理順（⑫）: 収入→固定収入→固定支出→カード引落→振替→その他支出
+export const PRIORITY = { income: 1, 'fixed-income': 2, 'fixed-expense': 3, card: 4, transfer: 5, expense: 6 };
 export const eventIcon = (kind) =>
-  ({ income: 'up', 'fixed-income': 'coins', 'fixed-expense': 'file', card: 'card', expense: 'down' }[kind] || 'file');
+  ({ income: 'up', 'fixed-income': 'coins', 'fixed-expense': 'file', card: 'card', transfer: 'swap', expense: 'down' }[kind] || 'file');
 export const eventLabel = (kind) =>
-  ({ income: '臨時収入', 'fixed-income': '固定収入', 'fixed-expense': '固定支出', card: 'カード引落', expense: '支出' }[kind] || 'イベント');
+  ({ income: '臨時収入', 'fixed-income': '固定収入', 'fixed-expense': '固定支出', card: 'カード引落', transfer: '固定振替', expense: '支出' }[kind] || 'イベント');
+export const eventGroup = (kind) => (kind === 'income' || kind === 'fixed-income' ? 'income' : kind === 'transfer' ? 'transfer' : 'expense');
 
 const monthEndISO = (y, m /*0-11*/) => toISO(new Date(y, m, daysInMonth(y, m)));
 const todayISO = () => toISO(new Date());
@@ -61,6 +62,29 @@ export function buildEvents(state, fromISO, toISO_) {
     }
   }
 
+  // 固定振替（毎月の定期的な資産移動）。総資産は変えないので amount:0、移動額は meta.moved。
+  for (const rt of state.recurringTransfers || []) {
+    let c2 = new Date(start.getFullYear(), start.getMonth(), 1);
+    while (c2 <= endMonth) {
+      const y = c2.getFullYear(), m = c2.getMonth();
+      const day = resolveDay(y, m, rt.day);
+      const date = `${y}-${pad(m + 1)}-${pad(day)}`;
+      const okStart = !rt.startDate || date >= rt.startDate;
+      const okEnd = !rt.endDate || date <= rt.endDate;
+      if (okStart && okEnd) {
+        const fromA = state.accounts.find((a) => a.id === rt.fromAccountId);
+        const toA = state.accounts.find((a) => a.id === rt.toAccountId);
+        push({
+          date, amount: 0, kind: 'transfer',
+          category: null, accountId: rt.fromAccountId, recurrence: 'monthly',
+          description: rt.memo || `${fromA?.name || '?'} → ${toA?.name || '?'}`, priority: 5,
+          meta: { moved: Number(rt.amount) || 0, fromAccountId: rt.fromAccountId, toAccountId: rt.toAccountId, fromName: fromA?.name, toName: toA?.name },
+        });
+      }
+      c2 = new Date(y, m + 1, 1);
+    }
+  }
+
   // ④ 将来日付で登録された臨時の収支（過去分は現在残高に含まれるため対象外）
   for (const t of state.transactions) {
     const income = t.type === 'income';
@@ -68,12 +92,23 @@ export function buildEvents(state, fromISO, toISO_) {
       date: t.date, amount: income ? +t.amount : -t.amount,
       kind: income ? 'income' : 'expense',
       category: t.categoryId, accountId: t.accountId || null,
-      recurrence: 'none', description: t.memo || '', priority: income ? 1 : 5,
+      recurrence: 'none', description: t.memo || '', priority: income ? 1 : 6,
     });
   }
 
   events.sort((a, b) => a.date.localeCompare(b.date) || a.priority - b.priority);
   return events;
+}
+
+// イベント1件の「可処分資金への影響額」（口座の可処分フラグを考慮）
+export function disposableDelta(state, e) {
+  const isDisp = (id) => { if (!id) return true; const a = state.accounts.find((x) => x.id === id); return !a || a.includeInDisposable !== false; };
+  if (e.kind === 'card') return 0; // カードは利用時に可処分から控除済み
+  if (e.kind === 'transfer') {
+    const moved = e.meta?.moved || 0;
+    return (isDisp(e.meta?.toAccountId) ? moved : 0) - (isDisp(e.meta?.fromAccountId) ? moved : 0);
+  }
+  return isDisp(e.accountId) ? e.amount : 0; // 収入(+)/支出(−)
 }
 
 // ---- 日次シミュレーション本体 ----
@@ -164,18 +199,45 @@ export function forecasts(state) {
 }
 
 // ---- ⑦ 未払いカード残高（まだ銀行から引き落とされていないカード利用） ----
-export function unpaidCards(state, fromISO) {
-  const from = fromISO || todayISO();
+export function unpaidCards(state) {
   const items = [];
   for (const card of state.cards) {
     for (const t of state.cardTransactions) {
-      if (t.cardId !== card.id) continue;
+      if (t.cardId !== card.id || t.settled) continue; // 引落済みは未払いから除外
       const payISO = settlementDate(card, t.date);
-      if (payISO >= from) items.push({ card, txDate: t.date, payISO, amount: t.amount, memo: t.memo || '' });
+      items.push({ card, txDate: t.date, payISO, amount: t.amount, memo: t.memo || '' });
     }
   }
   items.sort((a, b) => a.payISO.localeCompare(b.payISO) || a.txDate.localeCompare(b.txDate));
   return { total: items.reduce((s, i) => s + i.amount, 0), items };
+}
+
+// ---- 将来の入出金を日付単位でグループ化（展開可能なUI用） ----
+export function dailyGroups(state, { days = 200, max = 40 } = {}) {
+  const sim = simulate(state, Math.max(3, Math.ceil(days / 30)));
+  const from = parseISO(sim.from);
+  const until = toISO(new Date(from.getFullYear(), from.getMonth(), from.getDate() + days));
+  const byDate = new Map();
+  for (const e of sim.events) {
+    if (e.date > until) break;
+    if (!byDate.has(e.date)) byDate.set(e.date, []);
+    byDate.get(e.date).push(e);
+  }
+  const groups = [];
+  for (const [date, events] of byDate) {
+    let net = 0, dispImpact = 0, incomeSum = 0, expenseSum = 0, transferSum = 0;
+    for (const e of events) {
+      if (e.kind === 'transfer') transferSum += e.meta?.moved || 0;
+      else { net += e.amount; if (e.amount >= 0) incomeSum += e.amount; else expenseSum += -e.amount; }
+      dispImpact += disposableDelta(state, e);
+    }
+    groups.push({
+      date, events: events.map((e) => ({ ...e, icon: eventIcon(e.kind), kindLabel: eventLabel(e.kind), group: eventGroup(e.kind), disp: disposableDelta(state, e) })),
+      net, dispImpact, incomeSum, expenseSum, transferSum,
+    });
+    if (groups.length >= max) break;
+  }
+  return groups;
 }
 
 // ---- ⑩ タイムライン用イベント（直近の将来イベント） ----

@@ -2,17 +2,50 @@
 // 最重要3機能: ①クレジットカード引落管理 ②将来資産シミュレーション ③可処分資金の自動計算
 // 純粋関数の集合として実装し、UIから独立させることでテスト・拡張を容易にする。
 
-import { ym, pad, resolveDay, addMonths, toISO, parseISO, daysInMonth } from './utils.js?v=20260722c';
+import { ym, pad, resolveDay, addMonths, toISO, parseISO, daysInMonth } from './utils.js?v=20260723a';
 
 // ===== 総資産 =====
 export const totalAssets = (state) =>
   state.accounts.reduce((s, a) => s + (Number(a.balance) || 0), 0);
 
-// ===== 可処分資金 = 「今すぐ自由に使える口座」の残高合計 =====
-// 収入−支出の月次フローではなく、可処分対象口座（includeInDisposable=true）の
-// 残高合計から算出する。銀行→NISA の振替をすると銀行残高が減るため自動的に減少する。
-export const disposableAssets = (state) =>
+// 可処分対象口座の残高合計（未引落カードを引く前）
+const disposableBalances = (state) =>
   state.accounts.reduce((s, a) => s + (a.includeInDisposable !== false ? (Number(a.balance) || 0) : 0), 0);
+
+const isDisposableAccount = (state, id) => {
+  if (!id) return true;
+  const a = state.accounts.find((x) => x.id === id);
+  return !a || a.includeInDisposable !== false;
+};
+
+// 未引落（settled でない）カード利用のうち、引落口座が可処分対象のものの合計。
+// カードで使った金額は将来必ず銀行から引かれるため、可処分資金からは先に差し引く。
+export const unpaidCardTotal = (state) => {
+  let total = 0;
+  for (const t of state.cardTransactions) {
+    if (t.settled) continue;
+    const card = state.cards.find((c) => c.id === t.cardId);
+    if (card && !isDisposableAccount(state, card.payAccountId)) continue;
+    total += Number(t.amount) || 0;
+  }
+  return total;
+};
+
+// カードごとの未引落残高（カードごとに管理できる設計）
+export const unpaidByCard = (state) => {
+  const m = {};
+  for (const card of state.cards) m[card.id] = 0;
+  for (const t of state.cardTransactions) {
+    if (t.settled) continue;
+    m[t.cardId] = (m[t.cardId] || 0) + (Number(t.amount) || 0);
+  }
+  return m;
+};
+
+// ===== 可処分資金 = 「今すぐ自由に使える口座」の残高合計 − 未引落カード利用額 =====
+// 収入−支出の月次フローではなく、可処分対象口座の残高合計から、将来支払い確定の
+// 未引落カード利用額を差し引いて算出する。引落時は残高が減り未引落も消えるため不変。
+export const disposableAssets = (state) => disposableBalances(state) - unpaidCardTotal(state);
 // 可処分対象外（投資・NISA・iDeCo など）の残高合計
 export const reservedAssets = (state) =>
   state.accounts.reduce((s, a) => s + (a.includeInDisposable === false ? (Number(a.balance) || 0) : 0), 0);
@@ -181,11 +214,21 @@ export function simulate(state, months) {
 }
 
 // ===== 分析：カテゴリー別支出・収支推移 =====
+// 固定費も含む全支出（分析画面用）
 export function expenseByCategory(state, ymStr) {
   const inMonth = (iso) => ym(parseISO(iso)) === ymStr;
   const txExpense = state.transactions.filter((t) => t.type === 'expense' && inMonth(t.date));
   const recExpense = recurringForMonth(state, ymStr).filter((r) => r.type === 'expense');
   const groups = groupByCategory(state, [...txExpense, ...recExpense]);
+  return groups.sort((a, b) => b.amount - a.amount);
+}
+
+// 変動支出のみのカテゴリー別集計（固定支出・固定カード引落・固定振替・振替・収入は除外）。
+// 「今月、自分が何にお金を使ったか」の把握が目的。固定⇔通常の変更は即時反映。
+export function variableExpenseByCategory(state, ymStr) {
+  const inMonth = (iso) => ym(parseISO(iso)) === ymStr;
+  const txExpense = state.transactions.filter((t) => t.type === 'expense' && inMonth(t.date));
+  const groups = groupByCategory(state, txExpense);
   return groups.sort((a, b) => b.amount - a.amount);
 }
 
@@ -283,24 +326,45 @@ export function savingsRate(state, ymStr) {
   return Math.round(((pl.incomeTotal - pl.expenseTotal) / pl.incomeTotal) * 100);
 }
 
-// 今月あと使える金額（予算ベース）: 月予算 − 今月の変動支出。残り日数と1日あたり目安も返す。
-export function spendableStatus(state, ymStr, refISO) {
+// 管理期間: 開始日（periodStartDay）を基準にした「今の期間」の開始日・終了日。
+// 例: 開始日25 なら 7/25〜8/24。29〜31開始は各月末にクランプ。
+export function currentPeriod(state, refISO) {
+  const ref = refISO || toISO(new Date());
+  const d = parseISO(ref);
+  const startDay = Math.min(31, Math.max(1, Number(state.settings.periodStartDay) || 1));
+  const y = d.getFullYear(), m = d.getMonth();
+  const thisStart = Math.min(startDay, daysInMonth(y, m));
+  // 今日が今月の開始日以降なら今月開始、そうでなければ前月開始
+  let sy = y, sm = m;
+  if (d.getDate() < thisStart) { const p = new Date(y, m - 1, 1); sy = p.getFullYear(); sm = p.getMonth(); }
+  const sDay = Math.min(startDay, daysInMonth(sy, sm));
+  const startISO = `${sy}-${pad(sm + 1)}-${pad(sDay)}`;
+  // 終了日 = 翌月の開始日の前日
+  const nm = new Date(sy, sm + 1, 1);
+  const nDay = Math.min(startDay, daysInMonth(nm.getFullYear(), nm.getMonth()));
+  const endD = new Date(nm.getFullYear(), nm.getMonth(), nDay);
+  endD.setDate(endD.getDate() - 1);
+  return { startISO, endISO: toISO(endD), startDay };
+}
+
+// 今月あと使える金額（予算ベース・管理期間で計算）: 予算 − 期間内の変動支出。
+export function spendableStatus(state, refISO) {
   const ref = refISO || toISO(new Date());
   const refD = parseISO(ref);
-  const [y, m] = ymStr.split('-').map(Number);
-  const isCurrentMonth = y === refD.getFullYear() && m === refD.getMonth() + 1;
-  const lastDay = daysInMonth(y, m - 1);
-  const daysLeft = isCurrentMonth ? Math.max(1, lastDay - refD.getDate() + 1) : lastDay;
+  const per = currentPeriod(state, ref);
+  const endD = parseISO(per.endISO);
+  const daysLeft = Math.max(1, Math.round((endD - refD) / 86400000) + 1);
 
-  // 変動支出＝実績の支出取引（固定費・カードは別勘定）
+  // 変動支出＝管理期間内の実績支出（固定費・カード・振替は別勘定）
   const variableSpent = state.transactions
-    .filter((t) => t.type === 'expense' && ym(parseISO(t.date)) === ymStr)
+    .filter((t) => t.type === 'expense' && t.date >= per.startISO && t.date <= per.endISO)
     .reduce((s, t) => s + (Number(t.amount) || 0), 0);
   const budget = Number(state.settings.monthlyBudget) || 0;
   const remaining = budget - variableSpent;
   return {
     hasBudget: budget > 0,
     budget, variableSpent, remaining, daysLeft,
+    period: per,
     perDay: remaining > 0 ? Math.floor(remaining / daysLeft) : 0,
     ratio: budget > 0 ? Math.min(1, variableSpent / budget) : 0,
   };
@@ -318,9 +382,9 @@ export function fixedRemaining(state, ymStr, refISO) {
   return { count: rec.length, total: rec.reduce((s, r) => s + (Number(r.amount) || 0), 0), items: rec };
 }
 
-// 今月の支出ランキング TOP n
+// 今月の支出ランキング TOP n（固定費を除いた変動支出のみ）
 export function expenseRankTop(state, ymStr, n = 3) {
-  return expenseByCategory(state, ymStr).slice(0, n);
+  return variableExpenseByCategory(state, ymStr).slice(0, n);
 }
 
 // 今後 days 日以内の引落予定

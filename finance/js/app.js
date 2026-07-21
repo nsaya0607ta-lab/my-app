@@ -1,13 +1,13 @@
 // app.js — ルーティング・画面描画・フォーム・操作の統合レイヤー
-import * as S from './store.js?v=20260722c';
-import * as C from './calc.js?v=20260722c';
-import * as CF from './cashflow.js?v=20260722c';
-import { lineChart, barChart, groupedBarChart, donutChart } from './charts.js?v=20260722c';
-import { iconHtml, icon } from './icons.js?v=20260722c';
+import * as S from './store.js?v=20260723a';
+import * as C from './calc.js?v=20260723a';
+import * as CF from './cashflow.js?v=20260723a';
+import { lineChart, barChart, groupedBarChart, donutChart } from './charts.js?v=20260723a';
+import { iconHtml, icon } from './icons.js?v=20260723a';
 import {
   el, qs, yen, yenMasked, num, today, toISO, parseISO, ym, fmtDate, fmtDateLong,
   fmtMonth, addMonths, resolveDay, pad, weekdayName, haptic, escapeHtml, uid,
-} from './utils.js?v=20260722c';
+} from './utils.js?v=20260723a';
 
 // ---- 画面ローカル状態（データではないUI状態） ----
 const ui = {
@@ -17,6 +17,7 @@ const ui = {
   plYm: ym(new Date()),
   anaYm: ym(new Date()),
   filter: { q: '', type: 'all', cat: 'all', min: '', max: '', from: '', to: '' },
+  simOpen: new Set(), // 将来入出金で展開中の日付
 };
 
 const app = () => qs('#view');
@@ -222,8 +223,9 @@ function renderDashboard() {
     ),
   ));
 
-  // --- 今月あと使える金額（予算ベース） ---
-  const sp = C.spendableStatus(st, cur);
+  // --- 今月あと使える金額（予算ベース・管理期間で計算） ---
+  const sp = C.spendableStatus(st);
+  const periodLabel = `${fmtDate(sp.period.startISO).replace(/\(.\)/, '')}〜${fmtDate(sp.period.endISO).replace(/\(.\)/, '')}`;
   if (sp.hasBudget) {
     wrap.append(card(
       el('div', { class: 'fc-spend-head' },
@@ -234,6 +236,7 @@ function renderDashboard() {
       el('div', { class: 'fc-spend-foot' },
         el('span', { text: secret ? '予算 ＊＊＊' : `予算 ${yen(sp.budget)}` }),
         sp.remaining > 0 ? el('span', { text: secret ? '' : `1日あたり約 ${yen(sp.perDay)}` }) : el('span', { class: 'neg', text: '予算オーバー' })),
+      el('div', { class: 'fc-spend-period', onclick: () => periodForm() }, el('span', { html: iconHtml('calendar', { size: 12 }) }), el('span', { text: `管理期間 ${periodLabel}` })),
     ));
   } else {
     wrap.append(card(
@@ -242,34 +245,7 @@ function renderDashboard() {
     ));
   }
 
-  // --- スマート指標タイル（固定費・今後7日引落） ---
-  const fixed = C.fixedRemaining(st, cur);
-  const within7 = C.settlementsWithinDays(st, 7);
-  const within7Total = within7.reduce((s, u) => s + u.amount, 0);
-  wrap.append(el('div', { class: 'fc-tile-row' },
-    statTile('repeat', '固定費 残り', fixed.count > 0 ? `${fixed.count}件` : 'なし', fixed.count > 0 && !secret ? yen(fixed.total) : '', () => go('recurring')),
-    statTile('card', '7日内の引落', within7.length > 0 ? `${within7.length}件` : 'なし', within7.length > 0 && !secret ? yen(within7Total) : '', () => go('cards')),
-  ));
-
-  // --- カード請求額との差額 ---
-  const billDiffs = C.cardBillDiff(st).filter((b) => b.payISO);
-  if (billDiffs.length) {
-    wrap.append(card(
-      sectionTitle('カード請求額との差額'),
-      el('div', { class: 'fc-list' }, ...billDiffs.map((b) =>
-        el('div', { class: 'fc-billdiff' },
-          el('div', { class: 'fc-billdiff-head' },
-            el('span', { class: 'fc-row-ic sm', style: `background:${b.card.color}22;color:${b.card.color}`, html: iconHtml('card', { size: 16 }) }),
-            el('b', { text: b.card.name })),
-          el('div', { class: 'fc-billdiff-grid' },
-            billCol('請求予定', b.estimated, secret),
-            billCol('登録済', b.recorded, secret),
-            billCol(b.diff >= 0 ? '未登録' : '超過', Math.abs(b.diff), secret, b.diff >= 0 ? '' : 'neg'),
-          )))),
-    ));
-  }
-
-  // --- 今後7日以内の引落予定（詳細） ---
+  // --- 次回引落予定 ---
   const upcoming = C.upcomingSettlements(st);
   wrap.append(card(
     sectionTitle('次回引落予定', el('button', { class: 'fc-link', type: 'button', onclick: () => go('cards') }, 'カード', linkArrow())),
@@ -654,23 +630,81 @@ function txForm(tx, initialType) {
 function renderTransfers() {
   const st = S.getState();
   const wrap = el('div', { class: 'fc-view' });
-  wrap.append(pageHead('振替履歴', '振替', () => txForm(null, 'transfer')));
+  wrap.append(pageHead('振替', '振替', () => txForm(null, 'transfer')));
+
+  const routeRow = (from, to) => el('div', { class: 'fc-row-title fc-tr-route' },
+    el('span', { text: from || '削除済み口座' }), el('span', { class: 'fc-tr-arrow', html: iconHtml('arrowRight', { size: 14 }) }), el('span', { text: to || '削除済み口座' }));
+
+  // 固定振替
+  const rts = (st.recurringTransfers || []).slice();
+  wrap.append(card(
+    sectionTitle('固定振替', el('button', { class: 'fc-link', type: 'button', onclick: () => recurringTransferForm() }, el('span', { class: 'fc-add-ic sm', html: iconHtml('plus', { size: 14 }) }), el('span', { text: '追加' }))),
+    rts.length ? el('div', { class: 'fc-list' }, ...rts.map((rt) => {
+      const f = S.findAccount(rt.fromAccountId), t = S.findAccount(rt.toAccountId);
+      return el('div', { class: 'fc-row tap', onclick: () => recurringTransferForm(rt) },
+        el('div', { class: 'fc-row-ic', html: iconHtml('repeat', { size: 18 }) }),
+        el('div', { class: 'fc-row-main' },
+          routeRow(f?.name, t?.name),
+          el('div', { class: 'fc-row-sub', text: `毎月${rt.day === 'end' ? '末' : rt.day + '日'}${rt.memo ? '・' + rt.memo : ''}` })),
+        el('div', { class: 'fc-row-amt', text: M(rt.amount) }));
+    })) : el('p', { class: 'fc-empty', text: '毎月の積立（銀行→NISA など）を登録すると、将来シミュレーションに自動反映されます。' })));
+
+  // 振替履歴
   const list = st.transfers.slice().sort((a, b) => b.date.localeCompare(a.date));
-  if (!list.length) {
-    wrap.append(card(el('p', { class: 'fc-empty', text: 'まだ振替がありません。銀行→NISA・現金→PayPay などの資産移動を記録できます。' })));
-    return wrap;
-  }
-  wrap.append(card(sectionTitle('振替'), el('div', { class: 'fc-list' }, ...list.map((tr) => {
-    const f = S.findAccount(tr.fromAccountId), t = S.findAccount(tr.toAccountId);
-    return el('div', { class: 'fc-row tap', onclick: () => transferForm(tr) },
-      el('div', { class: 'fc-row-ic', html: iconHtml('swap', { size: 18 }) }),
-      el('div', { class: 'fc-row-main' },
-        el('div', { class: 'fc-row-title fc-tr-route' }, el('span', { text: f?.name || '削除済み口座' }), el('span', { class: 'fc-tr-arrow', html: iconHtml('arrowRight', { size: 14 }) }), el('span', { text: t?.name || '削除済み口座' })),
-        el('div', { class: 'fc-row-sub', text: `${fmtDate(tr.date)}${tr.memo ? '・' + tr.memo : ''}` })),
-      el('div', { class: 'fc-row-amt', text: M(tr.amount) }));
-  }))));
-  wrap.append(el('p', { class: 'fc-note', text: '振替は資産総額を変えず、口座残高のみを移動します。可処分資金は可処分対象口座の残高合計から自動算出されます。' }));
+  wrap.append(card(sectionTitle('振替履歴'),
+    list.length ? el('div', { class: 'fc-list' }, ...list.map((tr) => {
+      const f = S.findAccount(tr.fromAccountId), t = S.findAccount(tr.toAccountId);
+      return el('div', { class: 'fc-row tap', onclick: () => transferForm(tr) },
+        el('div', { class: 'fc-row-ic', html: iconHtml('swap', { size: 18 }) }),
+        el('div', { class: 'fc-row-main' },
+          routeRow(f?.name, t?.name),
+          el('div', { class: 'fc-row-sub', text: `${fmtDate(tr.date)}${tr.memo ? '・' + tr.memo : ''}` })),
+        el('div', { class: 'fc-row-amt', text: M(tr.amount) }));
+    })) : el('p', { class: 'fc-empty', text: 'まだ振替がありません。銀行→NISA・現金→PayPay などの資産移動を記録できます。' })));
+
+  wrap.append(el('p', { class: 'fc-note', text: '振替は資産総額を変えず、口座残高のみを移動します。可処分資金は可処分対象口座の残高合計から自動算出されます。固定振替は将来シミュレーションに反映されます。' }));
   return wrap;
+}
+
+// 固定振替フォーム（通常振替と同じデータ構造＋繰り返し/開始日/終了日）
+function recurringTransferForm(rt) {
+  const isNew = !rt;
+  const st = S.getState();
+  if (st.accounts.length < 2) {
+    modal('固定振替', el('p', { class: 'fc-empty', text: '固定振替には2つ以上の口座が必要です。先に口座を追加してください。' }), {});
+    return;
+  }
+  const fromSel = selectEl(accountOptions(), rt?.fromAccountId || st.accounts[0]?.id);
+  const toSel = selectEl(accountOptions(), rt?.toAccountId || st.accounts[1]?.id || st.accounts[0]?.id);
+  const amount = inputEl({ type: 'number', inputmode: 'numeric', placeholder: '0', value: rt?.amount ?? '' });
+  const day = selectEl([{ value: 'end', label: '毎月末' }, ...Array.from({ length: 31 }, (_, i) => ({ value: i + 1, label: `毎月${i + 1}日` }))], rt?.day ?? 15);
+  const startDate = inputEl({ type: 'date', value: rt?.startDate || '' });
+  const endDate = inputEl({ type: 'date', value: rt?.endDate || '' });
+  const memo = inputEl({ placeholder: '例）積立NISA', value: rt?.memo || '' });
+  const body = el('div', {},
+    field('振替元口座', fromSel), field('振替先口座', toSel), field('金額（円）', amount), field('実行日', day),
+    field('開始日（任意）', startDate), field('終了日（任意）', endDate), field('メモ', memo),
+    !isNew && el('button', {
+      class: 'fc-btn danger block', type: 'button', text: 'この固定振替を削除',
+      onclick: () => confirmDialog('固定振替を削除', '削除しますか？', () => {
+        S.update((s) => { s.recurringTransfers = s.recurringTransfers.filter((x) => x.id !== rt.id); });
+        render(); toast('削除しました', 'trash'); qs('.fc-modal-back')?.classList.remove('show'); setTimeout(() => qs('.fc-modal-back')?.remove(), 260);
+      }),
+    }),
+  );
+  modal(isNew ? '固定振替を追加' : '固定振替を編集', body, {
+    onSave: (close) => {
+      const amt = Number(amount.value);
+      if (!amt || amt <= 0) return toast('金額を入力してください', 'alert');
+      if (fromSel.value === toSel.value) return toast('振替元と振替先を別々に選んでください', 'alert');
+      S.update((s) => {
+        const rec = { fromAccountId: fromSel.value, toAccountId: toSel.value, amount: amt, day: day.value === 'end' ? 'end' : Number(day.value), startDate: startDate.value || null, endDate: endDate.value || null, memo: memo.value.trim() };
+        if (isNew) s.recurringTransfers.push({ id: uid('rtr'), ...rec });
+        else Object.assign(s.recurringTransfers.find((x) => x.id === rt.id), rec);
+      });
+      render(); toast('保存しました'); close();
+    },
+  });
 }
 
 function transferForm(tr) {
@@ -726,6 +760,7 @@ function renderCards() {
   ));
 
   const settle = C.settlements(st);
+  const unpaidBy = C.unpaidByCard(st);
   for (const c of st.cards) {
     const acc = S.findAccount(c.payAccountId);
     const byDate = settle[c.id] || {};
@@ -751,6 +786,9 @@ function renderCards() {
           el('div', { class: 'fc-card-meta', text: `締め:${closeLabel(c.closingDay)}／引落:${payLabel(c)}／${acc?.name || '口座未設定'}` })),
         el('button', { class: 'fc-icobtn', type: 'button', 'aria-label': '設定', html: iconHtml('settings', { size: 18 }), onclick: () => cardForm(c) }),
       ),
+      el('div', { class: 'fc-card-unpaid' },
+        el('span', { text: '未引落残高' }),
+        el('b', { class: (unpaidBy[c.id] || 0) > 0 ? 'neg' : 'muted', text: M(unpaidBy[c.id] || 0) })),
       el('div', { class: 'fc-card-actions' }, btnIcon('primary block', 'plus', '利用を登録', () => cardTxForm(c))),
       dates.length ? detail : el('p', { class: 'fc-empty', text: 'まだ利用登録がありません' }),
     ));
@@ -954,26 +992,49 @@ function renderSimulate() {
         el('span', { class: 'fc-fc-delta ' + (f.delta >= 0 ? 'pos' : 'neg'), text: secret ? '' : yen(f.delta, { sign: f.delta > 0 }) }))),
   )));
 
-  // 将来のイベント タイムライン（⑩）
-  const events = CF.timeline(st, { days: ui.simMonths <= 6 ? 120 : 200, max: 24 });
+  // 将来のイベント: 同じ日付を1つのカードにまとめ、タップで展開（⑩・2）
+  const groups = CF.dailyGroups(st, { days: ui.simMonths <= 6 ? 150 : 240, max: 60 });
   wrap.append(card(sectionTitle('これからの入出金'),
-    events.length ? el('div', { class: 'fc-timeline' }, ...events.map((e) => timelineItem(e, sim, secret)))
-      : el('p', { class: 'fc-empty', text: '固定収支やカード利用を登録すると、ここに将来の入出金が表示されます' })));
+    groups.length ? el('div', { class: 'fc-daygroups' }, ...groups.map((g) => dayGroupItem(g, secret)))
+      : el('p', { class: 'fc-empty', text: '固定収支・カード利用・固定振替を登録すると、ここに将来の入出金が表示されます' })));
 
-  wrap.append(el('p', { class: 'fc-note', text: '※ 登録済みの口座残高・固定収支・カード利用・将来日付の取引だけから、カードは実際の引落日に銀行から差し引いて計算しています。編集すると即座に再計算されます。' }));
+  wrap.append(el('p', { class: 'fc-note', text: '※ 登録済みの口座残高・固定収支・固定振替・カード利用・将来日付の取引だけから、カードは実際の引落日に銀行から差し引いて計算しています。編集すると即座に再計算されます。' }));
   return wrap;
 }
 
-function timelineItem(e, sim, secret) {
-  const income = e.amount >= 0;
-  return el('div', { class: 'fc-tl-item tap', role: 'button', onclick: () => eventDetailModal(e, sim) },
-    el('div', { class: 'fc-tl-date' }, el('b', { text: `${parseISO(e.date).getMonth() + 1}/${parseISO(e.date).getDate()}` }), el('span', { text: `${weekdayName(parseISO(e.date).getDay())}` })),
-    el('div', { class: 'fc-tl-ic ' + (income ? 'pos' : 'neg'), html: iconHtml(e.icon, { size: 16 }) }),
-    el('div', { class: 'fc-tl-main' },
-      el('div', { class: 'fc-tl-title', text: e.description || e.kindLabel }),
-      el('div', { class: 'fc-tl-sub', text: e.kindLabel })),
-    el('div', { class: 'fc-tl-amt ' + (income ? 'pos' : 'neg'), text: secret ? '＊＊＊' : yen(e.amount, { sign: income }) }),
+// 日付グループ（概要 + タップで詳細展開）
+function dayGroupItem(g, secret) {
+  const d = parseISO(g.date);
+  const open = ui.simOpen.has(g.date);
+  const kinds = new Set(g.events.map((e) => e.group));
+  const summaryDots = el('div', { class: 'fc-dg-dots' },
+    ...(kinds.has('income') ? [el('i', { class: 'dot inc' })] : []),
+    ...(kinds.has('expense') ? [el('i', { class: 'dot exp' })] : []),
+    ...(kinds.has('transfer') ? [el('i', { class: 'dot tr' })] : []));
+  const head = el('div', { class: 'fc-dg-head', role: 'button', onclick: () => { open ? ui.simOpen.delete(g.date) : ui.simOpen.add(g.date); render(); } },
+    el('div', { class: 'fc-dg-date' }, el('b', { text: `${d.getMonth() + 1}/${d.getDate()}` }), el('span', { text: weekdayName(d.getDay()) })),
+    el('div', { class: 'fc-dg-mid' },
+      el('div', { class: 'fc-dg-count', text: `${g.events.length}件の予定` }),
+      summaryDots),
+    el('div', { class: 'fc-dg-net ' + (g.net >= 0 ? 'pos' : 'neg'), text: g.net === 0 ? (g.transferSum > 0 ? '振替' : '±0') : (secret ? '＊＊＊' : yen(g.net, { sign: g.net > 0 })) }),
+    el('span', { class: 'fc-dg-chev' + (open ? ' open' : ''), html: iconHtml('chevronDown', { size: 16 }) }),
   );
+  const children = [head];
+  if (open) {
+    const detail = el('div', { class: 'fc-dg-detail' },
+      ...g.events.map((e) => el('div', { class: 'fc-dg-ev' },
+        el('span', { class: 'fc-dg-ev-ic ' + e.group, html: iconHtml(e.icon, { size: 14 }) }),
+        el('div', { class: 'fc-dg-ev-main' },
+          el('div', { class: 'fc-dg-ev-title', text: e.description || e.kindLabel }),
+          el('div', { class: 'fc-dg-ev-badge', text: e.kindLabel })),
+        el('div', { class: 'fc-dg-ev-amt ' + e.group, text: e.kind === 'transfer' ? (secret ? '＊＊＊' : yen(e.meta?.moved || 0)) : (secret ? '＊＊＊' : yen(e.amount, { sign: e.amount > 0 })) }))),
+      el('div', { class: 'fc-dg-foot' },
+        el('div', {}, el('span', { text: '当日の収支' }), el('b', { class: g.net >= 0 ? 'pos' : 'neg', text: secret ? '＊＊＊' : yen(g.net, { sign: g.net > 0 }) })),
+        el('div', {}, el('span', { text: '可処分資金への影響' }), el('b', { class: g.dispImpact >= 0 ? 'pos' : 'neg', text: secret ? '＊＊＊' : yen(g.dispImpact, { sign: g.dispImpact > 0 }) }))),
+    );
+    children.push(detail);
+  }
+  return el('div', { class: 'fc-dg' + (open ? ' open' : '') }, ...children);
 }
 
 function unpaidModal(unpaid) {
@@ -1114,9 +1175,12 @@ function renderMenu() {
 
   // 設定
   const st = S.getState();
+  const per = C.currentPeriod(st);
   wrap.append(card(sectionTitle('設定'),
     el('div', { class: 'fc-set-row' }, el('span', { text: '月の予算' }),
       el('button', { class: 'fc-link', type: 'button', text: yen(st.settings.monthlyBudget), onclick: () => budgetForm() })),
+    el('div', { class: 'fc-set-row' }, el('span', {}, el('div', { text: '管理期間の開始日' }), el('div', { class: 'fc-set-sub', text: `${per.startDay}日始まり（${fmtDate(per.startISO).replace(/\(.\)/, '')}〜${fmtDate(per.endISO).replace(/\(.\)/, '')}）` })),
+      el('button', { class: 'fc-link', type: 'button', text: `${st.settings.periodStartDay}日`, onclick: () => periodForm() })),
     el('div', { class: 'fc-set-row' }, el('span', { text: 'テーマ' }), themeSeg()),
     el('div', { class: 'fc-set-row' }, el('span', { text: 'シークレットモード' }),
       toggle(st.settings.secret, () => { S.update((s) => { s.settings.secret = !s.settings.secret; }); render(); })),
@@ -1137,6 +1201,23 @@ function toggle(on, onClick) {
 function budgetForm() {
   const b = inputEl({ type: 'number', value: S.getState().settings.monthlyBudget });
   modal('月の予算', field('予算（円）', b), { onSave: (close) => { S.update((s) => { s.settings.monthlyBudget = Number(b.value) || 0; }); render(); toast('保存しました'); close(); } });
+}
+function periodForm() {
+  const st = S.getState();
+  const day = selectEl(Array.from({ length: 31 }, (_, i) => ({ value: i + 1, label: `${i + 1}日` })), st.settings.periodStartDay || 1);
+  const preview = el('p', { class: 'fc-field-hint' });
+  const upd = () => {
+    const tmp = { settings: { periodStartDay: Number(day.value) } };
+    const p = C.currentPeriod(tmp);
+    preview.textContent = `今の管理期間: ${fmtDateLong(p.startISO)} 〜 ${fmtDateLong(p.endISO)}`;
+  };
+  day.addEventListener('change', upd); upd();
+  const body = el('div', {},
+    field('管理期間の開始日', day), preview,
+    el('p', { class: 'fc-note', text: '例）25日にすると「7/25〜8/24」を1期間として、今月あと使える金額を計算します。29〜31日は各月末に合わせて調整されます。' }));
+  modal('管理期間の開始日', body, {
+    onSave: (close) => { S.update((s) => { s.settings.periodStartDay = Number(day.value) || 1; }); render(); toast('保存しました'); close(); },
+  });
 }
 
 // ============ 固定収支 ============
@@ -1363,6 +1444,8 @@ function buildNav() {
 
 export function init() {
   applyTheme();
+  // 起動時: 引落日を過ぎた未引落カードを確定（銀行残高を減額）。二重減算しない。
+  S.update((s) => { const changed = S.settleDueCards(s); if (changed) S.recordAssetSnapshot(s); }, { silent: true });
   // 起動時に資産スナップショットのベースラインを記録（口座があり履歴が無い場合）
   const st0 = S.getState();
   if ((st0.assetHistory || []).length === 0 && st0.accounts.length > 0) {
