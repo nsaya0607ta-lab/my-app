@@ -15,7 +15,8 @@ const fmtShort = (n) => {
 export function lineChart(data, opts = {}) {
   const w = opts.width || 640;
   const h = opts.height || 220;
-  const pad = { t: 16, r: 14, b: 26, l: 46 };
+  const spark = opts.spark; // 軸・グリッド・目盛りを省いたミニ折れ線
+  const pad = spark ? { t: 8, r: 6, b: 8, l: 6 } : { t: 16, r: 14, b: 26, l: 46 };
   const iw = w - pad.l - pad.r;
   const ih = h - pad.t - pad.b;
   if (!data.length) return `<svg viewBox="0 0 ${w} ${h}"></svg>`;
@@ -34,26 +35,24 @@ export function lineChart(data, opts = {}) {
   const areaPath = `M ${x(0)},${y(data[0].value)} ` + data.map((d, i) => `L ${x(i)},${y(d.value)}`).join(' ') +
     ` L ${x(data.length - 1)},${pad.t + ih} L ${x(0)},${pad.t + ih} Z`;
 
-  // Y軸グリッド（4分割）
-  let grid = '';
   const gid = 'g' + Math.random().toString(36).slice(2, 6);
-  for (let k = 0; k <= 4; k++) {
-    const v = min + ((max - min) * k) / 4;
-    const yy = y(v);
-    grid += `<line x1="${pad.l}" y1="${yy}" x2="${w - pad.r}" y2="${yy}" class="fc-grid"/>`;
-    grid += `<text x="${pad.l - 6}" y="${yy + 3}" class="fc-axis" text-anchor="end">${fmtShort(v)}</text>`;
+  // Y軸グリッド・軸ラベル・X軸ラベル・データ点（spark時は省略）
+  let grid = '', xl = '', dots = '';
+  if (!spark) {
+    for (let k = 0; k <= 4; k++) {
+      const v = min + ((max - min) * k) / 4;
+      const yy = y(v);
+      grid += `<line x1="${pad.l}" y1="${yy}" x2="${w - pad.r}" y2="${yy}" class="fc-grid"/>`;
+      grid += `<text x="${pad.l - 6}" y="${yy + 3}" class="fc-axis" text-anchor="end">${fmtShort(v)}</text>`;
+    }
+    const step = Math.ceil(data.length / 6);
+    data.forEach((d, i) => {
+      if (i % step === 0 || i === data.length - 1)
+        xl += `<text x="${x(i)}" y="${h - 8}" class="fc-axis" text-anchor="middle">${d.label}</text>`;
+    });
+    if (data.length <= 14)
+      dots = data.map((d, i) => `<circle cx="${x(i)}" cy="${y(d.value)}" r="3" fill="${color}"/>`).join('');
   }
-  // X軸ラベル（間引き）
-  let xl = '';
-  const step = Math.ceil(data.length / 6);
-  data.forEach((d, i) => {
-    if (i % step === 0 || i === data.length - 1)
-      xl += `<text x="${x(i)}" y="${h - 8}" class="fc-axis" text-anchor="middle">${d.label}</text>`;
-  });
-  // データ点（少数時のみ強調）
-  let dots = '';
-  if (data.length <= 14)
-    dots = data.map((d, i) => `<circle cx="${x(i)}" cy="${y(d.value)}" r="3" fill="${color}"/>`).join('');
 
   return `<svg viewBox="0 0 ${w} ${h}" class="fc-svg" preserveAspectRatio="none">
     <defs><linearGradient id="${gid}" x1="0" y1="0" x2="0" y2="1">

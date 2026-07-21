@@ -2,7 +2,7 @@
 // 最重要3機能: ①クレジットカード引落管理 ②将来資産シミュレーション ③可処分資金の自動計算
 // 純粋関数の集合として実装し、UIから独立させることでテスト・拡張を容易にする。
 
-import { ym, pad, resolveDay, addMonths, toISO, parseISO, daysInMonth } from './utils.js?v=20260721b';
+import { ym, pad, resolveDay, addMonths, toISO, parseISO, daysInMonth } from './utils.js?v=20260722a';
 
 // ===== 総資産 =====
 export const totalAssets = (state) =>
@@ -231,20 +231,148 @@ export function buildNotifications(state, refISO) {
 
   // 明日のカード引落
   for (const u of upcomingSettlements(state, ref)) {
-    if (u.payISO === tomorrow) out.push({ id: 'card-' + u.card.id + tomorrow, icon: '💳', text: `明日 ${u.card.name} の引落があります（${u.amount.toLocaleString()}円）` });
-    if (u.payISO === ref) out.push({ id: 'cardtoday-' + u.card.id + ref, icon: '💳', text: `今日は ${u.card.name} の引落日です` });
+    if (u.payISO === tomorrow) out.push({ id: 'card-' + u.card.id + tomorrow, icon: 'card', text: `明日 ${u.card.name} の引落があります（${u.amount.toLocaleString()}円）` });
+    if (u.payISO === ref) out.push({ id: 'cardtoday-' + u.card.id + ref, icon: 'card', text: `今日は ${u.card.name} の引落日です` });
   }
   // 給料日など固定収入
   const ymStr = ym(refD);
   for (const r of recurringForMonth(state, ymStr)) {
-    if (r.date === ref && r.type === 'income') out.push({ id: 'inc-' + r.id + ref, icon: '💰', text: `今日は${r.name}日です（+${r.amount.toLocaleString()}円）` });
-    if (r.date === ref && r.type === 'expense') out.push({ id: 'exp-' + r.id + ref, icon: '📄', text: `今日は${r.name}の支払日です` });
+    if (r.date === ref && r.type === 'income') out.push({ id: 'inc-' + r.id + ref, icon: 'coins', text: `今日は${r.name}日です（+${r.amount.toLocaleString()}円）` });
+    if (r.date === ref && r.type === 'expense') out.push({ id: 'exp-' + r.id + ref, icon: 'file', text: `今日は${r.name}の支払日です` });
   }
   // 予算超過
   const pl = monthlyPL(state, ymStr);
   const budget = state.settings.monthlyBudget;
   if (budget && pl.expenseTotal > budget)
-    out.push({ id: 'budget-' + ymStr, icon: '⚠️', text: `今月の支出が予算（${budget.toLocaleString()}円）を超えました` });
+    out.push({ id: 'budget-' + ymStr, icon: 'alert', text: `今月の支出が予算（${budget.toLocaleString()}円）を超えました` });
 
+  return out;
+}
+
+// ===================================================================
+// ⑧ ホーム用スマート指標
+// ===================================================================
+
+const prevYm = (ymStr) => { const [y, m] = ymStr.split('-').map(Number); return ym(new Date(y, m - 2, 1)); };
+const pctChange = (cur, prev) => (prev === 0 ? null : ((cur - prev) / Math.abs(prev)) * 100);
+
+// 前月比（収入・支出・可処分）
+export function momChange(state, ymStr) {
+  const cur = monthlyPL(state, ymStr);
+  const prev = monthlyPL(state, prevYm(ymStr));
+  return {
+    income: { cur: cur.incomeTotal, prev: prev.incomeTotal, pct: pctChange(cur.incomeTotal, prev.incomeTotal) },
+    expense: { cur: cur.expenseTotal, prev: prev.expenseTotal, pct: pctChange(cur.expenseTotal, prev.expenseTotal) },
+    disposable: { cur: cur.disposable, prev: prev.disposable, pct: pctChange(cur.disposable, prev.disposable) },
+  };
+}
+
+// 貯蓄率 = (収入 − 支出) / 収入。収入0なら null
+export function savingsRate(state, ymStr) {
+  const pl = monthlyPL(state, ymStr);
+  if (pl.incomeTotal <= 0) return null;
+  return Math.round(((pl.incomeTotal - pl.expenseTotal) / pl.incomeTotal) * 100);
+}
+
+// 今月あと使える金額（予算ベース）: 月予算 − 今月の変動支出。残り日数と1日あたり目安も返す。
+export function spendableStatus(state, ymStr, refISO) {
+  const ref = refISO || toISO(new Date());
+  const refD = parseISO(ref);
+  const [y, m] = ymStr.split('-').map(Number);
+  const isCurrentMonth = y === refD.getFullYear() && m === refD.getMonth() + 1;
+  const lastDay = daysInMonth(y, m - 1);
+  const daysLeft = isCurrentMonth ? Math.max(1, lastDay - refD.getDate() + 1) : lastDay;
+
+  // 変動支出＝実績の支出取引（固定費・カードは別勘定）
+  const variableSpent = state.transactions
+    .filter((t) => t.type === 'expense' && ym(parseISO(t.date)) === ymStr)
+    .reduce((s, t) => s + (Number(t.amount) || 0), 0);
+  const budget = Number(state.settings.monthlyBudget) || 0;
+  const remaining = budget - variableSpent;
+  return {
+    hasBudget: budget > 0,
+    budget, variableSpent, remaining, daysLeft,
+    perDay: remaining > 0 ? Math.floor(remaining / daysLeft) : 0,
+    ratio: budget > 0 ? Math.min(1, variableSpent / budget) : 0,
+  };
+}
+
+// 最近追加した収支
+export function recentTransactions(state, n = 3) {
+  return state.transactions.slice().sort((a, b) => (b.date + b.id).localeCompare(a.date + a.id)).slice(0, n);
+}
+
+// 今月の固定費の残り（今日以降に発生予定の固定支出）
+export function fixedRemaining(state, ymStr, refISO) {
+  const ref = refISO || toISO(new Date());
+  const rec = recurringForMonth(state, ymStr).filter((r) => r.type === 'expense' && r.date >= ref);
+  return { count: rec.length, total: rec.reduce((s, r) => s + (Number(r.amount) || 0), 0), items: rec };
+}
+
+// 今月の支出ランキング TOP n
+export function expenseRankTop(state, ymStr, n = 3) {
+  return expenseByCategory(state, ymStr).slice(0, n);
+}
+
+// 今後 days 日以内の引落予定
+export function settlementsWithinDays(state, days = 7, refISO) {
+  const ref = refISO || toISO(new Date());
+  const refD = parseISO(ref);
+  const until = toISO(new Date(refD.getFullYear(), refD.getMonth(), refD.getDate() + days));
+  const s = settlements(state);
+  const out = [];
+  for (const card of state.cards) {
+    for (const [payISO, v] of Object.entries(s[card.id] || {})) {
+      if (payISO >= ref && payISO <= until) out.push({ card, payISO, amount: v.amount, count: v.items.length });
+    }
+  }
+  return out.sort((a, b) => a.payISO.localeCompare(b.payISO));
+}
+
+// 資産増減（昨日比・今月比・前年比）: assetHistory から算出。基準が無ければ null。
+export function assetDeltas(state) {
+  const h = (state.assetHistory || []).slice().sort((a, b) => a.date.localeCompare(b.date));
+  if (!h.length) return { yesterday: null, month: null, year: null, current: totalAssets(state) };
+  const current = totalAssets(state);
+  const today = toISO(new Date());
+  const d = parseISO(today);
+  const before = (iso) => { const arr = h.filter((p) => p.date <= iso); return arr.length ? arr[arr.length - 1].total : null; };
+  const yesterdayISO = toISO(new Date(d.getFullYear(), d.getMonth(), d.getDate() - 1));
+  const monthStartISO = toISO(new Date(d.getFullYear(), d.getMonth(), 0)); // 前月末＝今月頭の基準
+  const yearAgoISO = toISO(new Date(d.getFullYear() - 1, d.getMonth(), d.getDate()));
+  const mk = (base) => (base == null ? null : current - base);
+  return {
+    current,
+    yesterday: mk(before(yesterdayISO)),
+    month: mk(before(monthStartISO)),
+    year: mk(before(yearAgoISO)),
+  };
+}
+
+// 残高推移ミニグラフ用の系列。履歴が2点以上あれば実績、無ければ将来予測で代替。
+export function assetTrendSeries(state, points = 12) {
+  const h = (state.assetHistory || []).slice().sort((a, b) => a.date.localeCompare(b.date));
+  if (h.length >= 2) {
+    const tail = h.slice(-points);
+    return { mode: 'history', data: tail.map((p) => ({ label: `${parseISO(p.date).getMonth() + 1}/${parseISO(p.date).getDate()}`, value: p.total })) };
+  }
+  const sim = simulate(state, points);
+  return { mode: 'forecast', data: sim.map((p) => ({ label: `${parseISO(p.date).getMonth() + 1}月`, value: p.total })) };
+}
+
+// カード請求額との差額（カードに予定請求額 estimatedBill が設定されている場合）
+export function cardBillDiff(state, refISO) {
+  const ref = refISO || toISO(new Date());
+  const s = settlements(state);
+  const out = [];
+  for (const card of state.cards) {
+    const est = Number(card.estimatedBill) || 0;
+    if (est <= 0) continue;
+    // 直近（今日以降で最も近い）引落サイクルの登録済み金額
+    const future = Object.entries(s[card.id] || {}).filter(([iso]) => iso >= ref).sort((a, b) => a[0].localeCompare(b[0]));
+    const recorded = future.length ? future[0][1].amount : 0;
+    const payISO = future.length ? future[0][0] : null;
+    out.push({ card, estimated: est, recorded, diff: est - recorded, payISO });
+  }
   return out;
 }
