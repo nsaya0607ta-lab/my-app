@@ -1,11 +1,11 @@
 // app.js — ルーティング・画面描画・フォーム・操作の統合レイヤー
-import * as S from './store.js';
-import * as C from './calc.js';
-import { lineChart, barChart, groupedBarChart, donutChart } from './charts.js';
+import * as S from './store.js?v=20260721b';
+import * as C from './calc.js?v=20260721b';
+import { lineChart, barChart, groupedBarChart, donutChart } from './charts.js?v=20260721b';
 import {
   el, qs, yen, yenMasked, num, today, toISO, parseISO, ym, fmtDate, fmtDateLong,
   fmtMonth, addMonths, resolveDay, pad, weekdayName, haptic, escapeHtml, uid,
-} from './utils.js';
+} from './utils.js?v=20260721b';
 
 // ---- 画面ローカル状態（データではないUI状態） ----
 const ui = {
@@ -187,7 +187,9 @@ function renderDashboard() {
   // --- 口座一覧サマリー ---
   const accCard = card(
     sectionTitle('口座', el('button', { class: 'fc-link', type: 'button', text: '管理 →', onclick: () => go('accounts') })),
-    el('div', { class: 'fc-list' }, ...st.accounts.map((a) =>
+    st.accounts.length === 0
+      ? el('button', { class: 'fc-btn ghost block', type: 'button', text: '＋ 口座を追加して残高を登録', onclick: () => accountForm() })
+      : el('div', { class: 'fc-list' }, ...st.accounts.map((a) =>
       el('div', { class: 'fc-row' },
         el('div', { class: 'fc-row-ic', html: accIcon(a.type) }),
         el('div', { class: 'fc-row-main' }, el('div', { class: 'fc-row-title', text: a.name })),
@@ -469,7 +471,7 @@ function cardForm(c) {
   const closing = selectEl([{ value: 'end', label: '毎月末' }, ...Array.from({ length: 28 }, (_, i) => ({ value: i + 1, label: `毎月${i + 1}日` }))], c?.closingDay ?? 'end');
   const offset = selectEl([{ value: 0, label: '当月' }, { value: 1, label: '翌月' }, { value: 2, label: '翌々月' }], c?.payMonthOffset ?? 1);
   const payDay = selectEl([{ value: 'end', label: '末日' }, ...Array.from({ length: 31 }, (_, i) => ({ value: i + 1, label: `${i + 1}日` }))], c?.payDay ?? 27);
-  const acc = selectEl(accountOptions(), c?.payAccountId || S.getState().accounts[0]?.id);
+  const acc = selectEl([{ value: '', label: '（口座を先に追加してください）' }, ...accountOptions()], c?.payAccountId || S.getState().accounts[0]?.id || '');
   const color = inputEl({ type: 'color', value: c?.color || '#bf0000' });
   const body = el('div', {},
     field('カード名', name), field('締日', closing),

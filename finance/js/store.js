@@ -2,43 +2,27 @@
 // 設計方針: すべてのデータはこの1オブジェクトに集約し、mutate → save → emit。
 // 将来の証券口座連携などは accounts の type と外部同期モジュールを足すだけで拡張可能。
 
-import { uid, pad } from './utils.js';
+import { uid } from './utils.js?v=20260721b';
 
-const KEY = 'finance_app_v1';
+const KEY = 'finance_app_v2';
 const SCHEMA = 1;
-
-// 当月の指定日をISO文字列で返す（デモ用カード利用を常に「次回引落予定」に載せるため）
-function thisMonthDay(day) {
-  const n = new Date();
-  const d = Math.min(day, new Date(n.getFullYear(), n.getMonth() + 1, 0).getDate());
-  return `${n.getFullYear()}-${pad(n.getMonth() + 1)}-${pad(d)}`;
-}
 
 const listeners = new Set();
 let state = load();
 
-// ---- 初期（シード）データ：仕様書の例をそのまま反映 ----
+// ---- 初期（シード）データ ----
+// 金額はすべて空/ゼロのまっさらな状態。口座・取引・カード・固定収支は未登録で、
+// ユーザーが自分のデータを入力していく。カテゴリーだけは使い始めやすいよう
+// よく使う項目をプリセットとして用意している（自由に追加・編集・削除可能）。
 function seed() {
-  const acc = {
-    cash: uid('acc'), ufj: uid('acc'), rakuten: uid('acc'),
-    paypay: uid('acc'), sbi: uid('acc'), rakutenSec: uid('acc'),
-  };
-  const inc = { salary: uid('cat'), side: uid('cat'), dividend: uid('cat'), bonus: uid('cat'), other: uid('cat') };
+  const inc = { salary: uid('cat'), side: uid('cat'), dividend: uid('cat'), bonus: uid('cat') };
   const exp = {
     food: uid('cat'), rent: uid('cat'), utility: uid('cat'), gas: uid('cat'),
     comm: uid('cat'), subsc: uid('cat'), hobby: uid('cat'),
   };
-  const cardRakuten = uid('card');
   return {
     schema: SCHEMA,
-    accounts: [
-      { id: acc.cash, name: '現金', type: 'cash', balance: 82000 },
-      { id: acc.ufj, name: '三菱UFJ', type: 'bank', balance: 1250000 },
-      { id: acc.rakuten, name: '楽天銀行', type: 'bank', balance: 640000 },
-      { id: acc.paypay, name: 'PayPay銀行', type: 'bank', balance: 210000 },
-      { id: acc.sbi, name: 'SBI証券', type: 'securities', balance: 980000 },
-      { id: acc.rakutenSec, name: '楽天証券', type: 'securities', balance: 380000 },
-    ],
+    accounts: [],
     categories: {
       income: [
         { id: inc.salary, name: '給料', color: '#34c759' },
@@ -57,38 +41,24 @@ function seed() {
       ],
     },
     transactions: [],
-    recurring: [
-      { id: uid('rec'), type: 'income', name: '給料', day: 25, amount: 300000, categoryId: inc.salary, accountId: acc.ufj },
-      { id: uid('rec'), type: 'expense', name: '家賃', day: 27, amount: 65000, categoryId: exp.rent, accountId: acc.ufj },
-      { id: uid('rec'), type: 'expense', name: 'Netflix', day: 5, amount: 890, categoryId: exp.subsc, accountId: acc.rakuten },
-      { id: uid('rec'), type: 'expense', name: '携帯代', day: 12, amount: 8000, categoryId: exp.comm, accountId: acc.rakuten },
-    ],
-    cards: [
-      { id: cardRakuten, name: '楽天カード', closingDay: 'end', payDay: 27, payMonthOffset: 1, payAccountId: acc.rakuten, color: '#bf0000' },
-    ],
-    cardTransactions: [
-      { id: uid('ctx'), cardId: cardRakuten, date: thisMonthDay(10), amount: 3000, memo: 'Amazon', categoryId: exp.hobby },
-      { id: uid('ctx'), cardId: cardRakuten, date: thisMonthDay(18), amount: 600, memo: 'スターバックス', categoryId: exp.food },
-      { id: uid('ctx'), cardId: cardRakuten, date: thisMonthDay(25), amount: 4000, memo: 'ガソリン', categoryId: exp.gas },
-      { id: uid('ctx'), cardId: cardRakuten, date: thisMonthDay(3), amount: 12800, memo: 'スーパー', categoryId: exp.food },
-      { id: uid('ctx'), cardId: cardRakuten, date: thisMonthDay(15), amount: 52140, memo: '家電', categoryId: exp.hobby },
-    ],
+    recurring: [],
+    cards: [],
+    cardTransactions: [],
     simulation: {
-      startAsset: null, // null の場合は総資産を使う
-      monthlyIncome: 300000,
-      monthlyExpense: 180000,
-      monthlyInvestment: 50000,
-      annualReturn: 3, // 積立投資の想定年利(%)
-      bonusAmount: 1000000,
-      bonusMonths: [6, 12], // 6月・12月
+      startAsset: null, // null の場合は総資産に連動
+      monthlyIncome: 0,
+      monthlyExpense: 0,
+      monthlyInvestment: 0,
+      annualReturn: 0, // 積立投資の想定年利(%)
+      bonusAmount: 0,
+      bonusMonths: [],
     },
     settings: {
       secret: false,
       theme: 'auto', // 'auto' | 'light' | 'dark'
-      monthlyBudget: 200000,
+      monthlyBudget: 0,
       notifiedKeys: [],
     },
-    _meta: { catRef: { salary: inc.salary, food: exp.food } },
   };
 }
 
@@ -112,7 +82,7 @@ function migrate(data) {
   data.cards ||= [];
   data.cardTransactions ||= [];
   data.categories ||= { income: [], expense: [] };
-  data.settings ||= { secret: false, theme: 'auto', monthlyBudget: 200000, notifiedKeys: [] };
+  data.settings ||= { secret: false, theme: 'auto', monthlyBudget: 0, notifiedKeys: [] };
   data.settings.notifiedKeys ||= [];
   data.simulation ||= seed().simulation;
   return data;
