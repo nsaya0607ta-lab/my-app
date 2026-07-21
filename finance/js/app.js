@@ -1,13 +1,13 @@
 // app.js — ルーティング・画面描画・フォーム・操作の統合レイヤー
-import * as S from './store.js?v=20260723b';
-import * as C from './calc.js?v=20260723b';
-import * as CF from './cashflow.js?v=20260723b';
-import { lineChart, barChart, groupedBarChart, donutChart } from './charts.js?v=20260723b';
-import { iconHtml, icon } from './icons.js?v=20260723b';
+import * as S from './store.js?v=20260723c';
+import * as C from './calc.js?v=20260723c';
+import * as CF from './cashflow.js?v=20260723c';
+import { lineChart, barChart, groupedBarChart, donutChart } from './charts.js?v=20260723c';
+import { iconHtml, icon } from './icons.js?v=20260723c';
 import {
   el, qs, yen, yenMasked, num, today, toISO, parseISO, ym, fmtDate, fmtDateLong,
   fmtMonth, addMonths, resolveDay, pad, weekdayName, haptic, escapeHtml, uid,
-} from './utils.js?v=20260723b';
+} from './utils.js?v=20260723c';
 
 // ---- 画面ローカル状態（データではないUI状態） ----
 const ui = {
@@ -507,7 +507,6 @@ function accountLedgerView(st, acc) {
   const L = C.accountLedger(st, acc.id);
   const flt = ui.ledgerFilter;
   const box = el('div', {});
-  const wantsCard = flt === 'transfer' || (flt === 'income' && !L.income.length) || (flt === 'expense' && !L.expense.length);
 
   const txRow = (t) => {
     const cat = S.findCategory(t.categoryId);
@@ -517,6 +516,16 @@ function accountLedgerView(st, acc) {
         el('div', { class: 'fc-row-title', text: cat.name }),
         el('div', { class: 'fc-row-sub', text: `${fmtDate(t.date)}${t.memo ? '・' + t.memo : ''}` })),
       el('div', { class: 'fc-row-amt ' + (t.type === 'income' ? 'pos' : 'neg'), text: yen(t.amount, { sign: t.type === 'income' }) }));
+  };
+  // 固定費（毎月の固定支出）の行。タップで固定収支を編集。
+  const fixedRow = (r) => {
+    const cat = S.findCategory(r.categoryId);
+    return el('div', { class: 'fc-row tap', onclick: () => recurringForm(r) },
+      el('div', { class: 'fc-row-ic', style: `background:${cat.color}22;color:${cat.color}`, html: iconHtml('repeat', { size: 18 }) }),
+      el('div', { class: 'fc-row-main' },
+        el('div', { class: 'fc-row-title', text: r.name }),
+        el('div', { class: 'fc-row-sub', text: `毎月${r.day === 'end' ? '末' : r.day + '日'}・${cat.name}` })),
+      el('div', { class: 'fc-row-amt neg', text: yen(-r.amount) }));
   };
   const trRow = (tr) => {
     const f = S.findAccount(tr.fromAccountId), to = S.findAccount(tr.toAccountId);
@@ -528,16 +537,23 @@ function accountLedgerView(st, acc) {
         el('div', { class: 'fc-row-sub', text: `${fmtDate(tr.date)}${tr.memo ? '・' + tr.memo : ''}` })),
       el('div', { class: 'fc-row-amt ' + (out ? 'neg' : 'pos'), text: yen(out ? -tr.amount : tr.amount, { sign: true }) }));
   };
-  const section = (kind, title, items, rowFn) => {
-    if (flt !== 'all' && flt !== kind) return;
+  // showWhen: このセクションを表示するフィルター値（'income'|'expense'|'transfer'）
+  const section = (showWhen, title, total, items, rowFn) => {
+    if (flt !== 'all' && flt !== showWhen) return;
     box.append(card(
-      el('div', { class: 'fc-ledger-sec' }, el('span', { text: title }), el('span', { class: 'fc-ledger-sec-n', text: `${items.length}件` })),
+      el('div', { class: 'fc-ledger-sec' },
+        el('span', { text: title }),
+        total != null && items.length ? el('span', { class: 'fc-ledger-sec-total', text: M(total) }) : el('span', { class: 'fc-ledger-sec-n', text: `${items.length}件` })),
       items.length ? el('div', { class: 'fc-list' }, ...items.map(rowFn)) : el('p', { class: 'fc-empty', text: 'なし' })));
   };
-  section('income', '収入', L.income, txRow);
-  section('expense', '支出', L.expense, txRow);
-  section('transfer', '振替', L.transfers, trRow);
-  if (!L.income.length && !L.expense.length && !L.transfers.length && flt === 'all') {
+  // 順番: 収入 → 固定費 → 変動費 → 振替
+  section('income', '収入', L.incomeTotal, L.income, txRow);
+  section('expense', '固定費', L.fixedExpenseTotal, L.fixedExpense, fixedRow);
+  section('expense', '変動費', L.variableExpenseTotal, L.variableExpense, txRow);
+  section('transfer', '振替', null, L.transfers, trRow);
+
+  const totalItems = L.income.length + L.fixedExpense.length + L.variableExpense.length + L.transfers.length;
+  if (totalItems === 0 && flt === 'all') {
     box.innerHTML = '';
     box.append(card(el('p', { class: 'fc-empty', text: 'この口座の取引はまだありません。右下の＋から登録できます。' })));
   }

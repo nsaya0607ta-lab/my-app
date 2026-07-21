@@ -621,6 +621,7 @@ input[type='color'].fc-input { height: 46px; padding: 4px; }
 .fc-typechip.on { background: var(--fc-accent); color: #fff; border-color: var(--fc-accent); }
 .fc-ledger-sec { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; font-size: 14px; font-weight: 700; }
 .fc-ledger-sec-n { font-size: 11.5px; color: var(--fc-muted); font-weight: 600; }
+.fc-ledger-sec-total { font-size: 13px; color: var(--fc-text-2); font-weight: 700; }
 .fc-row.sel { background: var(--fc-accent-soft); }
 .fc-acct-check { color: var(--fc-accent); display: flex; }
 
