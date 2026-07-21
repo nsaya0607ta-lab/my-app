@@ -2,7 +2,7 @@
 // 最重要3機能: ①クレジットカード引落管理 ②将来資産シミュレーション ③可処分資金の自動計算
 // 純粋関数の集合として実装し、UIから独立させることでテスト・拡張を容易にする。
 
-import { ym, pad, resolveDay, addMonths, toISO, parseISO, daysInMonth } from './utils.js?v=20260723b';
+import { ym, pad, resolveDay, addMonths, toISO, parseISO, daysInMonth } from './utils.js?v=20260723c';
 
 // ===== 総資産 =====
 export const totalAssets = (state) =>
@@ -57,21 +57,31 @@ export const assetsByType = (state) => {
 };
 
 // ===== 口座別レポート（口座ベース設計の基盤・CSV/分析への拡張点） =====
-// 指定口座に紐付く 収入 / 支出 / 振替（方向付き）を新しい順で返す。
+// 指定口座に紐付く 収入 / 固定費 / 変動費 / 振替 を返す。
+// 固定費＝固定支出（recurring の expense）、変動費＝実績の支出取引（transactions の expense）で自動判定。
 export function accountLedger(state, accountId) {
   const byDateDesc = (a, b) => (b.date + (b.id || '')).localeCompare(a.date + (a.id || ''));
+  const dayAsc = (a, b) => sortDay(a.day) - sortDay(b.day);
   const income = state.transactions.filter((t) => t.type === 'income' && t.accountId === accountId).sort(byDateDesc);
-  const expense = state.transactions.filter((t) => t.type === 'expense' && t.accountId === accountId).sort(byDateDesc);
+  // 変動費（自分が使ったお金）
+  const variableExpense = state.transactions.filter((t) => t.type === 'expense' && t.accountId === accountId).sort(byDateDesc);
+  // 固定費（毎月必ず発生する支出）
+  const fixedExpense = state.recurring.filter((r) => r.type === 'expense' && r.accountId === accountId).sort(dayAsc);
+  const fixedIncome = state.recurring.filter((r) => r.type === 'income' && r.accountId === accountId).sort(dayAsc);
   const transfers = state.transfers
     .filter((tr) => tr.fromAccountId === accountId || tr.toAccountId === accountId)
     .map((tr) => ({ ...tr, direction: tr.fromAccountId === accountId ? 'out' : 'in' }))
     .sort(byDateDesc);
   return {
-    income, expense, transfers,
+    income, fixedIncome, fixedExpense, variableExpense, transfers,
+    // 後方互換: expense は変動費を指す
+    expense: variableExpense,
     incomeTotal: income.reduce((s, t) => s + (Number(t.amount) || 0), 0),
-    expenseTotal: expense.reduce((s, t) => s + (Number(t.amount) || 0), 0),
+    fixedExpenseTotal: fixedExpense.reduce((s, r) => s + (Number(r.amount) || 0), 0),
+    variableExpenseTotal: variableExpense.reduce((s, t) => s + (Number(t.amount) || 0), 0),
   };
 }
+const sortDay = (d) => (d === 'end' ? 99 : Number(d) || 0);
 
 // ===== ① クレジットカード引落 =====
 // カード利用1件が「いつ銀行から引き落とされるか」を求める。
