@@ -535,10 +535,33 @@ input[type='color'].fc-input { height: 46px; padding: 4px; }
 .fc-modal-total b { font-size: 18px; font-weight: 800; }
 .fc-evd-amt { font-size: 30px; font-weight: 800; text-align: center; margin-bottom: 14px; }
 
+/* ===== 振替 / 可処分資金 ===== */
+.fc-hero-split { display: flex; gap: 10px; margin: 10px 0 12px; position: relative; z-index: 1; }
+.fc-hsplit { flex: 1; background: rgba(255, 255, 255, 0.09); border-radius: 12px; padding: 9px 12px; display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.fc-hsplit-lab { font-size: 10.5px; opacity: 0.66; }
+.fc-hsplit-val { font-size: 16px; font-weight: 800; white-space: nowrap; }
+.fc-hsplit-val.dim { opacity: 0.72; font-weight: 700; }
+
+.fc-total-sub { display: flex; gap: 10px; margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--fc-line); }
+.fc-total-sub > div { flex: 1; display: flex; flex-direction: column; gap: 2px; }
+.fc-total-sub span { font-size: 11px; color: var(--fc-muted); }
+.fc-total-sub b { font-size: 16px; font-weight: 800; }
+
+.fc-field-toggle { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 14px; padding: 12px 14px; background: var(--fc-surface-2); border: 1px solid var(--fc-line); border-radius: 12px; }
+.fc-field-hint { font-size: 11px; color: var(--fc-muted); margin-top: 3px; line-height: 1.5; }
+.fc-seg3 .fc-seg-btn { font-size: 13px; }
+
+.fc-tr-route { display: flex; align-items: center; gap: 6px; }
+.fc-tr-arrow { display: inline-flex; color: var(--fc-muted); }
+
+.fc-simhero-split { display: flex; gap: 14px; margin-top: 8px; font-size: 12px; opacity: 0.9; }
+.fc-simhero-split span { white-space: nowrap; }
+
 @media (max-width: 360px) {
   .fc-hero-amount { font-size: 33px; }
   .fc-page-title { font-size: 22px; }
   .fc-disp-amount { font-size: 26px; }
   .fc-delta-val { font-size: 12px; }
   .fc-simhero-amt { font-size: 32px; }
+  .fc-hsplit-val { font-size: 14px; }
 }

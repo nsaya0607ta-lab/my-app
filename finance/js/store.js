@@ -2,7 +2,7 @@
 // 設計方針: すべてのデータはこの1オブジェクトに集約し、mutate → save → emit。
 // 将来の証券口座連携などは accounts の type と外部同期モジュールを足すだけで拡張可能。
 
-import { uid, pad } from './utils.js?v=20260722b';
+import { uid, pad } from './utils.js?v=20260722c';
 
 const KEY = 'finance_app_v2';
 const SCHEMA = 1;
@@ -48,6 +48,7 @@ function seed() {
     recurring: [],
     cards: [],
     cardTransactions: [],
+    transfers: [],
     simulation: {
       startAsset: null, // null の場合は総資産に連動
       monthlyIncome: 0,
@@ -100,11 +101,16 @@ function migrate(data) {
   data.recurring ||= [];
   data.cards ||= [];
   data.cardTransactions ||= [];
+  data.transfers ||= []; // 振替履歴（資産の移動。収入・支出とは別概念）
   data.categories ||= { income: [], expense: [] };
   data.settings ||= { secret: false, theme: 'auto', monthlyBudget: 0, notifiedKeys: [] };
   data.settings.notifiedKeys ||= [];
   data.simulation ||= seed().simulation;
   data.assetHistory ||= [];
+  // 可処分資金に含めるフラグ（既定: 証券口座以外は含める）
+  for (const a of data.accounts || []) {
+    if (a.includeInDisposable === undefined) a.includeInDisposable = a.type !== 'securities';
+  }
   return data;
 }
 
