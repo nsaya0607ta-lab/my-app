@@ -2,13 +2,17 @@
 // 設計方針: すべてのデータはこの1オブジェクトに集約し、mutate → save → emit。
 // 将来の証券口座連携などは accounts の type と外部同期モジュールを足すだけで拡張可能。
 
-import { uid, pad } from './utils.js?v=20260722a';
+import { uid, pad } from './utils.js?v=20260722b';
 
 const KEY = 'finance_app_v2';
 const SCHEMA = 1;
 
 const listeners = new Set();
 let state = load();
+// データ変更ごとに増える版数。将来資産シミュレーションのメモ化に使用し、
+// 「編集した瞬間に再計算」を無駄なく実現する。
+let _version = 0;
+export const version = () => _version;
 
 // ---- 初期（シード）データ ----
 // 金額はすべて空/ゼロのまっさらな状態。口座・取引・カード・固定収支は未登録で、
@@ -118,18 +122,21 @@ export const subscribe = (fn) => { listeners.add(fn); return () => listeners.del
 // mutator: 関数で state を書き換え、保存して通知
 export function update(mutator, { silent = false } = {}) {
   mutator(state);
+  _version++;
   persist();
   if (!silent) emit();
 }
 
 export function replaceState(next) {
   state = migrate(next);
+  _version++;
   persist();
   emit();
 }
 
 export function resetAll() {
   state = seed();
+  _version++;
   persist();
   emit();
 }

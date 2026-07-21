@@ -1,0 +1,205 @@
+// cashflow.js — 将来資産シミュレーションエンジン（日次キャッシュフロー計算）
+// 方針: ダミー計算は一切せず、登録済みデータ（口座残高・固定収支・カード・取引）だけから
+// 「現在資産 → 収入 → 固定収入 → 固定支出 → カード引落 → その他支出 → 翌日へ」を
+// 未来まで繰り返して現実に近い資産推移を求める。
+// 最重要: クレジットカードは「利用日」ではなく「実際の引落日」に銀行口座から差し引く。
+//
+// すべての将来イベントは共通の「キャッシュフローイベント」として表現する（拡張しやすい設計）:
+//   { date, amount(+/-), category, accountId, recurrence, description, priority, kind, meta }
+// これにより 投資・配当・積立NISA・ローン返済・住宅/車購入 などは
+// 新しい kind のイベント生成器を足すだけで追加できる。
+
+import { pad, toISO, parseISO, addMonths, resolveDay, daysInMonth, ym } from './utils.js?v=20260722b';
+import { settlements, settlementDate, totalAssets } from './calc.js?v=20260722b';
+import { version as storeVersion } from './store.js?v=20260722b';
+
+// 日次処理順（⑫）: 収入→固定収入→固定支出→カード引落→その他支出
+export const PRIORITY = { income: 1, 'fixed-income': 2, 'fixed-expense': 3, card: 4, expense: 5 };
+export const eventIcon = (kind) =>
+  ({ income: 'up', 'fixed-income': 'coins', 'fixed-expense': 'file', card: 'card', expense: 'down' }[kind] || 'file');
+export const eventLabel = (kind) =>
+  ({ income: '臨時収入', 'fixed-income': '固定収入', 'fixed-expense': '固定支出', card: 'カード引落', expense: '支出' }[kind] || 'イベント');
+
+const monthEndISO = (y, m /*0-11*/) => toISO(new Date(y, m, daysInMonth(y, m)));
+const todayISO = () => toISO(new Date());
+
+// ---- キャッシュフローイベントの生成（登録データのみから） ----
+export function buildEvents(state, fromISO, toISO_) {
+  const events = [];
+  const push = (e) => { if (e.date > fromISO && e.date <= toISO_) events.push(e); };
+
+  // ② 固定収入 / ③ 固定支出（毎月）
+  const start = parseISO(fromISO), end = parseISO(toISO_);
+  let cur = new Date(start.getFullYear(), start.getMonth(), 1);
+  const endMonth = new Date(end.getFullYear(), end.getMonth(), 1);
+  while (cur <= endMonth) {
+    const y = cur.getFullYear(), m = cur.getMonth();
+    for (const r of state.recurring) {
+      const day = resolveDay(y, m, r.day);
+      const date = `${y}-${pad(m + 1)}-${pad(day)}`;
+      const income = r.type === 'income';
+      push({
+        date, amount: income ? +r.amount : -r.amount,
+        kind: income ? 'fixed-income' : 'fixed-expense',
+        category: r.categoryId, accountId: r.accountId || null,
+        recurrence: 'monthly', description: r.name, priority: income ? 2 : 3,
+      });
+    }
+    cur = new Date(y, m + 1, 1);
+  }
+
+  // ⑤ カード引落（実際の引落日ベース）
+  const s = settlements(state);
+  for (const card of state.cards) {
+    for (const [payISO, v] of Object.entries(s[card.id] || {})) {
+      push({
+        date: payISO, amount: -v.amount, kind: 'card',
+        category: null, accountId: card.payAccountId || null,
+        recurrence: 'none', description: `${card.name} 引落`, priority: 4,
+        meta: { cardId: card.id, count: v.items.length, color: card.color },
+      });
+    }
+  }
+
+  // ④ 将来日付で登録された臨時の収支（過去分は現在残高に含まれるため対象外）
+  for (const t of state.transactions) {
+    const income = t.type === 'income';
+    push({
+      date: t.date, amount: income ? +t.amount : -t.amount,
+      kind: income ? 'income' : 'expense',
+      category: t.categoryId, accountId: t.accountId || null,
+      recurrence: 'none', description: t.memo || '', priority: income ? 1 : 5,
+    });
+  }
+
+  events.sort((a, b) => a.date.localeCompare(b.date) || a.priority - b.priority);
+  return events;
+}
+
+// ---- 日次シミュレーション本体 ----
+// 資産は「イベントのある日」だけ変化する区分定数なので、系列はイベント日のみ記録して高速化（⑥）。
+const _cache = new Map();
+export function simulate(state, months = 36) {
+  const key = `${storeVersion()}:${months}`;
+  const hit = _cache.get(key);
+  if (hit) return hit;
+
+  const from = todayISO();
+  const to = toISO(addMonths(parseISO(from), months));
+  const events = buildEvents(state, from, to);
+
+  // 日付ごとにまとめる
+  const byDate = new Map();
+  for (const e of events) {
+    if (!byDate.has(e.date)) byDate.set(e.date, []);
+    byDate.get(e.date).push(e);
+  }
+  const dates = [...byDate.keys()].sort();
+
+  const start = totalAssets(state);
+  let running = start;
+  const series = [{ date: from, total: start }];
+  let minPoint = { date: from, total: start };
+  let firstNegative = null;
+
+  for (const date of dates) {
+    const dayEvents = byDate.get(date); // すでに priority 順
+    const causes = [];
+    for (const ev of dayEvents) {
+      running += ev.amount;
+      if (ev.amount < 0) causes.push(ev);
+    }
+    series.push({ date, total: running });
+    if (running < minPoint.total) minPoint = { date, total: running };
+    if (running < 0 && !firstNegative) {
+      causes.sort((a, b) => a.amount - b.amount); // 大きな支出から
+      firstNegative = { date, total: running, causes };
+    }
+  }
+
+  const result = { from, to, start, series, byDate, events, minPoint, firstNegative, months };
+  _cache.set(key, result);
+  if (_cache.size > 8) _cache.delete(_cache.keys().next().value);
+  return result;
+}
+
+// 指定日時点の資産（区分定数系列から求める）
+export function balanceAt(series, iso) {
+  let val = series.length ? series[0].total : 0;
+  for (const p of series) { if (p.date <= iso) val = p.total; else break; }
+  return val;
+}
+
+// ---- グラフ用: 月次サンプリング系列 ----
+export function chartSeries(state, months = 36) {
+  const sim = simulate(state, months);
+  const base = parseISO(sim.from);
+  const out = [];
+  for (let k = 0; k <= months; k++) {
+    const d = addMonths(base, k);
+    const iso = monthEndISO(d.getFullYear(), d.getMonth());
+    const clamped = iso > sim.to ? sim.to : iso;
+    out.push({
+      iso: clamped,
+      value: balanceAt(sim.series, clamped),
+      label: k === 0 ? '今月' : k === 1 ? '来月' : k < 12 ? `${k}ヶ月` : k % 12 === 0 ? `${k / 12}年` : `${Math.floor(k / 12)}年${k % 12}ヶ月`,
+    });
+  }
+  return out;
+}
+
+// ---- 将来の可処分資金カード（⑧）: 今月末・来月末・3か月後・半年後・1年後 ----
+export function forecasts(state) {
+  const sim = simulate(state, 12);
+  const base = parseISO(sim.from);
+  const defs = [
+    ['今月末予想', 0], ['来月末予想', 1], ['3か月後', 3], ['半年後', 6], ['1年後', 12],
+  ];
+  return defs.map(([label, k]) => {
+    const d = addMonths(base, k);
+    const iso = monthEndISO(d.getFullYear(), d.getMonth());
+    const total = balanceAt(sim.series, iso > sim.to ? sim.to : iso);
+    return { label, iso, total, delta: total - sim.start };
+  });
+}
+
+// ---- ⑦ 未払いカード残高（まだ銀行から引き落とされていないカード利用） ----
+export function unpaidCards(state, fromISO) {
+  const from = fromISO || todayISO();
+  const items = [];
+  for (const card of state.cards) {
+    for (const t of state.cardTransactions) {
+      if (t.cardId !== card.id) continue;
+      const payISO = settlementDate(card, t.date);
+      if (payISO >= from) items.push({ card, txDate: t.date, payISO, amount: t.amount, memo: t.memo || '' });
+    }
+  }
+  items.sort((a, b) => a.payISO.localeCompare(b.payISO) || a.txDate.localeCompare(b.txDate));
+  return { total: items.reduce((s, i) => s + i.amount, 0), items };
+}
+
+// ---- ⑩ タイムライン用イベント（直近の将来イベント） ----
+export function timeline(state, { days = 120, max = 20 } = {}) {
+  const sim = simulate(state, Math.max(3, Math.ceil(days / 30)));
+  const from = parseISO(sim.from);
+  const until = toISO(new Date(from.getFullYear(), from.getMonth(), from.getDate() + days));
+  return sim.events.filter((e) => e.date <= until).slice(0, max)
+    .map((e) => ({ ...e, icon: eventIcon(e.kind), kindLabel: eventLabel(e.kind) }));
+}
+
+// ---- ⑪ 資産不足アラート ----
+export function shortageAlert(state, months = 36) {
+  const sim = simulate(state, months);
+  if (!sim.firstNegative) return null;
+  const d = parseISO(sim.firstNegative.date);
+  const monthLabel = `${d.getMonth() + 1}月`;
+  const cause = sim.firstNegative.causes[0];
+  return {
+    date: sim.firstNegative.date,
+    monthLabel,
+    total: sim.firstNegative.total,
+    causes: sim.firstNegative.causes.slice(0, 3),
+    message: `${d.getFullYear()}年${monthLabel}に資産が不足する可能性があります。`,
+    mainCause: cause ? cause.description || eventLabel(cause.kind) : null,
+  };
+}
