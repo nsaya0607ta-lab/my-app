@@ -2,10 +2,12 @@
 // 設計方針: すべてのデータはこの1オブジェクトに集約し、mutate → save → emit。
 // 将来の証券口座連携などは accounts の type と外部同期モジュールを足すだけで拡張可能。
 
-import { uid, pad } from './utils.js?v=20260722c';
+import { uid, pad } from './utils.js?v=20260723a';
+import { settlementDate } from './calc.js?v=20260723a';
 
 const KEY = 'finance_app_v2';
 const SCHEMA = 1;
+const todayISO = () => { const d = new Date(); return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`; };
 
 const listeners = new Set();
 let state = load();
@@ -49,6 +51,7 @@ function seed() {
     cards: [],
     cardTransactions: [],
     transfers: [],
+    recurringTransfers: [], // 固定振替（毎月の定期的な資産移動）
     simulation: {
       startAsset: null, // null の場合は総資産に連動
       monthlyIncome: 0,
@@ -62,6 +65,7 @@ function seed() {
       secret: false,
       theme: 'auto', // 'auto' | 'light' | 'dark'
       monthlyBudget: 0,
+      periodStartDay: 1, // 管理期間の開始日（1〜31）。例: 25 なら 7/25〜8/24 が1期間
       notifiedKeys: [],
     },
     // 総資産の日次スナップショット [{date:'YYYY-MM-DD', total:number}]。
@@ -102,16 +106,47 @@ function migrate(data) {
   data.cards ||= [];
   data.cardTransactions ||= [];
   data.transfers ||= []; // 振替履歴（資産の移動。収入・支出とは別概念）
+  data.recurringTransfers ||= []; // 固定振替
   data.categories ||= { income: [], expense: [] };
   data.settings ||= { secret: false, theme: 'auto', monthlyBudget: 0, notifiedKeys: [] };
   data.settings.notifiedKeys ||= [];
+  if (data.settings.periodStartDay === undefined) data.settings.periodStartDay = 1;
   data.simulation ||= seed().simulation;
   data.assetHistory ||= [];
   // 可処分資金に含めるフラグ（既定: 証券口座以外は含める）
   for (const a of data.accounts || []) {
     if (a.includeInDisposable === undefined) a.includeInDisposable = a.type !== 'securities';
   }
+  // カード利用の「引落済み」フラグ。既存データは、引落日が過ぎているものは
+  // 済み（残高に反映済みとみなす）、未来のものは未引落として扱う（残高は変更しない）。
+  const today = todayISO();
+  for (const t of data.cardTransactions) {
+    if (t.settled === undefined) {
+      const card = (data.cards || []).find((c) => c.id === t.cardId);
+      t.settled = card ? settlementDate(card, t.date) <= today : false;
+    }
+  }
   return data;
+}
+
+// 引落日を過ぎた未引落カード利用を確定する（銀行残高を減額し settled にする）。
+// 二重減算を防ぐため settled 済みは対象外。冪等。
+export function settleDueCards(s) {
+  const today = todayISO();
+  let changed = false;
+  for (const t of s.cardTransactions) {
+    if (t.settled) continue;
+    const card = s.cards.find((c) => c.id === t.cardId);
+    if (!card) continue;
+    if (settlementDate(card, t.date) <= today) {
+      const acc = s.accounts.find((a) => a.id === card.payAccountId);
+      if (acc) acc.balance = (Number(acc.balance) || 0) - (Number(t.amount) || 0);
+      t.settled = true;
+      t.settledDate = today;
+      changed = true;
+    }
+  }
+  return changed;
 }
 
 function persist() {
