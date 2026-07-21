@@ -1,13 +1,13 @@
 // app.js — ルーティング・画面描画・フォーム・操作の統合レイヤー
-import * as S from './store.js?v=20260723a';
-import * as C from './calc.js?v=20260723a';
-import * as CF from './cashflow.js?v=20260723a';
-import { lineChart, barChart, groupedBarChart, donutChart } from './charts.js?v=20260723a';
-import { iconHtml, icon } from './icons.js?v=20260723a';
+import * as S from './store.js?v=20260723b';
+import * as C from './calc.js?v=20260723b';
+import * as CF from './cashflow.js?v=20260723b';
+import { lineChart, barChart, groupedBarChart, donutChart } from './charts.js?v=20260723b';
+import { iconHtml, icon } from './icons.js?v=20260723b';
 import {
   el, qs, yen, yenMasked, num, today, toISO, parseISO, ym, fmtDate, fmtDateLong,
   fmtMonth, addMonths, resolveDay, pad, weekdayName, haptic, escapeHtml, uid,
-} from './utils.js?v=20260723a';
+} from './utils.js?v=20260723b';
 
 // ---- 画面ローカル状態（データではないUI状態） ----
 const ui = {
@@ -18,7 +18,12 @@ const ui = {
   anaYm: ym(new Date()),
   filter: { q: '', type: 'all', cat: 'all', min: '', max: '', from: '', to: '' },
   simOpen: new Set(), // 将来入出金で展開中の日付
+  ledgerAcct: null,   // 収支画面で表示中の口座ID
+  ledgerFilter: 'all', // すべて/収入/支出/振替
 };
+
+// 口座別の取引履歴（収支画面）を開く。ホームの口座カードから使用。
+function openAccountLedger(id) { ui.ledgerAcct = id; ui.ledgerFilter = 'all'; go('transactions'); }
 
 const app = () => qs('#view');
 const M = (n) => yenMasked(n, S.getState().settings.secret);
@@ -294,15 +299,18 @@ function renderDashboard() {
   }
 
   // --- 口座一覧サマリー ---
+  const acctRow = (a) => el('div', { class: 'fc-row tap', onclick: () => openAccountLedger(a.id) },
+    el('div', { class: 'fc-row-ic', html: accIcon(a.type) }),
+    el('div', { class: 'fc-row-main' },
+      el('div', { class: 'fc-row-title', text: a.name }),
+      el('div', { class: 'fc-row-sub', text: '取引履歴を見る' })),
+    el('div', { class: 'fc-row-amt', text: M(a.balance) }),
+    el('span', { class: 'fc-link-arrow', html: iconHtml('chevronRight', { size: 16 }) }));
   wrap.append(card(
     sectionTitle('口座', el('button', { class: 'fc-link', type: 'button', onclick: () => go('accounts') }, '管理', linkArrow())),
     st.accounts.length === 0
       ? el('button', { class: 'fc-btn ghost block', type: 'button', text: '口座を追加して残高を登録', onclick: () => accountForm() })
-      : el('div', { class: 'fc-list' }, ...st.accounts.map((a) =>
-          el('div', { class: 'fc-row tap', onclick: () => accountForm(a) },
-            el('div', { class: 'fc-row-ic', html: accIcon(a.type) }),
-            el('div', { class: 'fc-row-main' }, el('div', { class: 'fc-row-title', text: a.name })),
-            el('div', { class: 'fc-row-amt', text: M(a.balance) })))),
+      : el('div', { class: 'fc-list' }, ...st.accounts.map(acctRow)),
   ));
 
   // --- 資産のこれから（データ駆動の将来予測） ---
@@ -459,95 +467,108 @@ function accountForm(acc) {
   });
 }
 
-// ============ 取引（収入・支出） ============
+// ============ 収支（口座別の取引履歴） ============
 function renderTransactions() {
   const st = S.getState();
   const wrap = el('div', { class: 'fc-view' });
-  wrap.append(pageHead('収支の記録', '追加', () => txForm()));
+  if (!st.accounts.length) {
+    wrap.append(el('h1', { class: 'fc-page-title', text: '収支' }));
+    wrap.append(card(
+      el('p', { class: 'fc-empty', text: 'まず口座を追加してください。すべての取引（収入・支出・振替）は口座に紐付きます。' }),
+      el('button', { class: 'fc-btn primary block', type: 'button', text: '口座を追加', onclick: () => accountForm() })));
+    return wrap;
+  }
+  // 表示中口座を確定（無効なら先頭）
+  if (!ui.ledgerAcct || !st.accounts.find((a) => a.id === ui.ledgerAcct)) ui.ledgerAcct = st.accounts[0].id;
+  const acc = S.findAccount(ui.ledgerAcct);
 
-  // 検索・フィルター
-  const f = ui.filter;
-  const q = inputEl({ placeholder: 'メモ・カテゴリーで検索', value: f.q });
-  const qWrap = el('div', { class: 'fc-search' }, el('span', { class: 'fc-search-ic', html: iconHtml('search', { size: 17 }) }), q);
-  q.addEventListener('input', () => { f.q = q.value; renderTxList(listBox); });
-  const typeSel = selectEl([{ value: 'all', label: 'すべて' }, { value: 'income', label: '収入' }, { value: 'expense', label: '支出' }], f.type);
-  typeSel.addEventListener('change', () => { f.type = typeSel.value; renderTxList(listBox); });
-  const catSel = selectEl([{ value: 'all', label: 'カテゴリー：すべて' }, ...S.allCategories().map((c) => ({ value: c.id, label: c.name }))], f.cat);
-  catSel.addEventListener('change', () => { f.cat = catSel.value; renderTxList(listBox); });
+  // 口座スイッチャー + 残高
+  wrap.append(el('div', { class: 'fc-ledger-head' },
+    el('button', { class: 'fc-acct-switch', type: 'button', onclick: () => accountPicker() },
+      el('span', { class: 'fc-acct-switch-ic', html: accIcon(acc.type) }),
+      el('span', { class: 'fc-acct-switch-name', text: acc.name }),
+      el('span', { class: 'fc-acct-switch-chev', html: iconHtml('chevronDown', { size: 16 }) })),
+    el('div', { class: 'fc-ledger-bal' }, el('span', { class: 'fc-ledger-bal-lab', text: '残高' }), el('b', { text: M(acc.balance) }))));
 
-  const advBtn = el('button', { class: 'fc-chip', type: 'button', html: '<span>詳細条件</span>' + iconHtml('chevronDown', { size: 14 }) });
-  const adv = el('div', { class: 'fc-adv' });
-  const min = inputEl({ type: 'number', placeholder: '金額 下限', value: f.min });
-  const max = inputEl({ type: 'number', placeholder: '金額 上限', value: f.max });
-  const from = inputEl({ type: 'date', value: f.from });
-  const to = inputEl({ type: 'date', value: f.to });
-  [min, max, from, to].forEach((i) => i.addEventListener('input', () => { f.min = min.value; f.max = max.value; f.from = from.value; f.to = to.value; renderTxList(listBox); }));
-  adv.append(field('下限', min), field('上限', max), field('開始日', from), field('終了日', to),
-    el('button', { class: 'fc-btn ghost block', type: 'button', text: '条件クリア', onclick: () => { ui.filter = { q: '', type: 'all', cat: 'all', min: '', max: '', from: '', to: '' }; go('transactions'); } }));
-  adv.style.display = 'none';
-  advBtn.addEventListener('click', () => { adv.style.display = adv.style.display === 'none' ? 'grid' : 'none'; });
+  // 種別フィルター
+  const chips = el('div', { class: 'fc-typechips' });
+  for (const [val, lab] of [['all', 'すべて'], ['income', '収入'], ['expense', '支出'], ['transfer', '振替']])
+    chips.append(el('button', { class: 'fc-typechip' + (ui.ledgerFilter === val ? ' on' : ''), type: 'button', text: lab, onclick: () => { ui.ledgerFilter = val; render(); } }));
+  wrap.append(chips);
 
-  wrap.append(card(
-    el('div', { class: 'fc-filter' }, qWrap,
-      el('div', { class: 'fc-filter-row' }, typeSel, catSel), advBtn, adv),
-  ));
-
-  const listBox = el('div', {});
-  wrap.append(listBox);
-  renderTxList(listBox);
+  wrap.append(accountLedgerView(st, acc));
+  // 新規登録 FAB（表示中口座を初期値に）
+  wrap.append(fab(() => txForm(null, ui.ledgerFilter === 'transfer' || ui.ledgerFilter === 'income' ? ui.ledgerFilter : 'expense', acc.id)));
   return wrap;
 }
 
-function filteredTx() {
-  const st = S.getState();
-  const f = ui.filter;
-  let list = st.transactions.slice();
-  if (f.type !== 'all') list = list.filter((t) => t.type === f.type);
-  if (f.cat !== 'all') list = list.filter((t) => t.categoryId === f.cat);
-  if (f.min) list = list.filter((t) => t.amount >= Number(f.min));
-  if (f.max) list = list.filter((t) => t.amount <= Number(f.max));
-  if (f.from) list = list.filter((t) => t.date >= f.from);
-  if (f.to) list = list.filter((t) => t.date <= f.to);
-  if (f.q.trim()) {
-    const qq = f.q.trim().toLowerCase();
-    list = list.filter((t) => (t.memo || '').toLowerCase().includes(qq) || S.findCategory(t.categoryId).name.toLowerCase().includes(qq));
+// 口座に紐付く 収入 / 支出 / 振替 を表示（口座詳細と共通）
+function accountLedgerView(st, acc) {
+  const L = C.accountLedger(st, acc.id);
+  const flt = ui.ledgerFilter;
+  const box = el('div', {});
+  const wantsCard = flt === 'transfer' || (flt === 'income' && !L.income.length) || (flt === 'expense' && !L.expense.length);
+
+  const txRow = (t) => {
+    const cat = S.findCategory(t.categoryId);
+    return el('div', { class: 'fc-row tap', onclick: () => txForm(t) },
+      el('div', { class: 'fc-row-ic', style: `background:${cat.color}22;color:${cat.color}`, html: iconHtml(t.type === 'income' ? 'up' : 'down', { size: 18 }) }),
+      el('div', { class: 'fc-row-main' },
+        el('div', { class: 'fc-row-title', text: cat.name }),
+        el('div', { class: 'fc-row-sub', text: `${fmtDate(t.date)}${t.memo ? '・' + t.memo : ''}` })),
+      el('div', { class: 'fc-row-amt ' + (t.type === 'income' ? 'pos' : 'neg'), text: yen(t.amount, { sign: t.type === 'income' }) }));
+  };
+  const trRow = (tr) => {
+    const f = S.findAccount(tr.fromAccountId), to = S.findAccount(tr.toAccountId);
+    const out = tr.direction === 'out';
+    return el('div', { class: 'fc-row tap', onclick: () => transferForm(tr) },
+      el('div', { class: 'fc-row-ic', html: iconHtml('swap', { size: 18 }) }),
+      el('div', { class: 'fc-row-main' },
+        el('div', { class: 'fc-row-title fc-tr-route' }, el('span', { text: f?.name || '削除済み' }), el('span', { class: 'fc-tr-arrow', html: iconHtml('arrowRight', { size: 14 }) }), el('span', { text: to?.name || '削除済み' })),
+        el('div', { class: 'fc-row-sub', text: `${fmtDate(tr.date)}${tr.memo ? '・' + tr.memo : ''}` })),
+      el('div', { class: 'fc-row-amt ' + (out ? 'neg' : 'pos'), text: yen(out ? -tr.amount : tr.amount, { sign: true }) }));
+  };
+  const section = (kind, title, items, rowFn) => {
+    if (flt !== 'all' && flt !== kind) return;
+    box.append(card(
+      el('div', { class: 'fc-ledger-sec' }, el('span', { text: title }), el('span', { class: 'fc-ledger-sec-n', text: `${items.length}件` })),
+      items.length ? el('div', { class: 'fc-list' }, ...items.map(rowFn)) : el('p', { class: 'fc-empty', text: 'なし' })));
+  };
+  section('income', '収入', L.income, txRow);
+  section('expense', '支出', L.expense, txRow);
+  section('transfer', '振替', L.transfers, trRow);
+  if (!L.income.length && !L.expense.length && !L.transfers.length && flt === 'all') {
+    box.innerHTML = '';
+    box.append(card(el('p', { class: 'fc-empty', text: 'この口座の取引はまだありません。右下の＋から登録できます。' })));
   }
-  return list.sort((a, b) => b.date.localeCompare(a.date));
+  return box;
 }
 
-function renderTxList(box) {
-  const list = filteredTx();
-  box.innerHTML = '';
-  if (!list.length) { box.append(card(el('p', { class: 'fc-empty', text: '該当する取引がありません' }))); return; }
-  // 日付でグルーピング
-  const groups = {};
-  for (const t of list) (groups[t.date] ||= []).push(t);
-  const inc = list.filter((t) => t.type === 'income').reduce((s, t) => s + t.amount, 0);
-  const exp = list.filter((t) => t.type === 'expense').reduce((s, t) => s + t.amount, 0);
-  box.append(card(el('div', { class: 'fc-txsum' },
-    el('span', {}, '収入 ', el('b', { class: 'pos', text: yen(inc) })),
-    el('span', {}, '支出 ', el('b', { class: 'neg', text: yen(exp) })),
-    el('span', {}, '計 ', el('b', { text: yen(inc - exp, { sign: inc - exp > 0 }) })),
-  )));
-  for (const date of Object.keys(groups).sort((a, b) => b.localeCompare(a))) {
-    const rows = groups[date].map((t) => {
-      const cat = S.findCategory(t.categoryId);
-      return el('div', { class: 'fc-row tap', onclick: () => txForm(t) },
-        el('div', { class: 'fc-row-ic', style: `background:${cat.color}22;color:${cat.color}`, html: iconHtml(t.type === 'income' ? 'up' : 'down', { size: 18 }) }),
-        el('div', { class: 'fc-row-main' },
-          el('div', { class: 'fc-row-title', text: cat.name }),
-          t.memo ? el('div', { class: 'fc-row-sub', text: t.memo }) : ''),
-        el('div', { class: 'fc-row-amt ' + (t.type === 'income' ? 'pos' : 'neg'), text: yen(t.amount, { sign: t.type === 'income' }) }));
-    });
-    box.append(card(el('div', { class: 'fc-date-head', text: fmtDate(date) }), el('div', { class: 'fc-list' }, ...rows)));
-  }
+// 口座選択シート
+function accountPicker() {
+  const st = S.getState();
+  let ref;
+  const rows = st.accounts.map((a) => el('div', { class: 'fc-row tap' + (a.id === ui.ledgerAcct ? ' sel' : ''), onclick: () => { ui.ledgerAcct = a.id; ref?.close(); render(); } },
+    el('div', { class: 'fc-row-ic', html: accIcon(a.type) }),
+    el('div', { class: 'fc-row-main' }, el('div', { class: 'fc-row-title', text: a.name }),
+      el('div', { class: 'fc-row-sub', text: { cash: '現金', bank: '銀行口座', securities: '証券口座', other: 'その他' }[a.type] })),
+    a.id === ui.ledgerAcct ? el('span', { class: 'fc-acct-check', html: iconHtml('check', { size: 18 }) }) : el('div', { class: 'fc-row-amt', text: M(a.balance) })));
+  ref = modal('口座を選択', el('div', { class: 'fc-list' }, ...rows), {});
+}
+
+// フローティング追加ボタン
+function fab(onClick) {
+  return el('button', { class: 'fc-fab', type: 'button', 'aria-label': '追加', onclick: onClick, html: iconHtml('plus', { size: 26 }) });
 }
 
 // 収入・支出・振替を1つの追加フォームで扱う（新規は3種、編集は収支のみ）
-function txForm(tx, initialType) {
+// defaultAccountId: 新規時の初期口座（収支画面/口座詳細の表示中口座）
+function txForm(tx, initialType, defaultAccountId) {
   const isNew = !tx;
   const st = S.getState();
   let type = tx?.type || initialType || 'expense';
+  const defAcc = defaultAccountId || st.accounts[0]?.id || '';
+  const otherAcc = st.accounts.find((a) => a.id !== defAcc)?.id || defAcc;
 
   // 種別セグメント（新規のみ振替を含む）
   const seg = el('div', { class: 'fc-seg fc-seg3' });
@@ -561,17 +582,17 @@ function txForm(tx, initialType) {
   const date = inputEl({ type: 'date', value: tx?.date || today() });
   const amount = inputEl({ type: 'number', inputmode: 'numeric', placeholder: '0', value: tx?.amount ?? '' });
   const memo = inputEl({ placeholder: 'メモ（任意）', value: tx?.memo || '' });
-  // 収支用
+  // 収支用（口座は必須）
   const catWrap = el('div', {});
-  const acc = selectEl([{ value: '', label: '（口座指定なし）' }, ...accountOptions()], tx?.accountId || '');
+  const acc = selectEl(accountOptions(), tx?.accountId || defAcc);
   const refreshCats = () => {
     const cats = type === 'income' ? st.categories.income : st.categories.expense;
     catWrap.innerHTML = '';
     catWrap.append(field('カテゴリー', selectEl(cats.map((c) => ({ value: c.id, label: c.name })), tx?.categoryId || cats[0]?.id)));
   };
-  // 振替用
-  const fromSel = selectEl(accountOptions(), st.accounts[0]?.id);
-  const toSel = selectEl(accountOptions(), st.accounts[1]?.id || st.accounts[0]?.id);
+  // 振替用（表示中口座を振替元の初期値に）
+  const fromSel = selectEl(accountOptions(), defAcc);
+  const toSel = selectEl(accountOptions(), otherAcc);
 
   const fieldsWrap = el('div', {});
   const drawFields = () => {
@@ -585,7 +606,7 @@ function txForm(tx, initialType) {
         el('p', { class: 'fc-field-hint', text: '※ 振替は資産総額を変えず、口座間で資金を移動します。可処分対象口座から対象外へ動かすと可処分資金が減ります。' }));
     } else {
       refreshCats();
-      fieldsWrap.append(field('日付', date), field('金額（円）', amount), catWrap, field('口座（任意）', acc), field('メモ', memo));
+      fieldsWrap.append(field('日付', date), field('金額（円）', amount), catWrap, field(type === 'income' ? '入金先口座（必須）' : '支払口座（必須）', acc), field('メモ', memo));
     }
   };
   mkSeg(); drawFields();
@@ -615,9 +636,10 @@ function txForm(tx, initialType) {
         });
         render(); toast('振替を保存しました', 'swap'); close(); return;
       }
+      if (!acc.value) return toast(type === 'income' ? '入金先口座を選択してください' : '支払口座を選択してください', 'alert');
       const catId = catWrap.querySelector('select').value;
       S.update((s) => {
-        const rec = { date: date.value, amount: amt, type, categoryId: catId, memo: memo.value.trim(), accountId: acc.value || null };
+        const rec = { date: date.value, amount: amt, type, categoryId: catId, memo: memo.value.trim(), accountId: acc.value };
         if (isNew) s.transactions.push({ id: uid('tx'), ...rec });
         else Object.assign(s.transactions.find((x) => x.id === tx.id), rec);
       });
@@ -1255,15 +1277,18 @@ function recurringForm(r) {
   const name = inputEl({ placeholder: '例）家賃', value: r?.name || '' });
   const day = selectEl([{ value: 'end', label: '毎月末' }, ...Array.from({ length: 31 }, (_, i) => ({ value: i + 1, label: `毎月${i + 1}日` }))], r?.day ?? 25);
   const amount = inputEl({ type: 'number', value: r?.amount ?? '' });
-  const acc = selectEl([{ value: '', label: '（口座指定なし）' }, ...accountOptions()], r?.accountId || '');
-  const body = el('div', {}, field('種別', seg), field('名称', name), field('毎月の発生日', day), field('金額（円）', amount), catWrap, field('口座（任意）', acc),
+  const acc = st.accounts.length
+    ? selectEl(accountOptions(), r?.accountId || st.accounts[0]?.id)
+    : selectEl([{ value: '', label: '（先に口座を追加）' }], '');
+  const body = el('div', {}, field('種別', seg), field('名称', name), field('毎月の発生日', day), field('金額（円）', amount), catWrap, field('口座（必須）', acc),
     !isNew && el('button', { class: 'fc-btn danger block', type: 'button', text: '削除', onclick: () => confirmDialog('固定収支を削除', '削除しますか？', () => { S.update((s) => { s.recurring = s.recurring.filter((x) => x.id !== r.id); }); render(); toast('削除しました', 'trash'); qs('.fc-modal-back')?.remove(); }) }));
   modal(isNew ? '固定収支を追加' : '固定収支を編集', body, {
     onSave: (close) => {
       if (!name.value.trim() || !Number(amount.value)) return toast('名称と金額を入力してください', 'alert');
+      if (!acc.value) return toast('口座を選択してください（先に口座を追加）', 'alert');
       const catId = catWrap.querySelector('select').value;
       S.update((s) => {
-        const rec = { type, name: name.value.trim(), day: day.value === 'end' ? 'end' : Number(day.value), amount: Number(amount.value), categoryId: catId, accountId: acc.value || null };
+        const rec = { type, name: name.value.trim(), day: day.value === 'end' ? 'end' : Number(day.value), amount: Number(amount.value), categoryId: catId, accountId: acc.value };
         if (isNew) s.recurring.push({ id: uid('rec'), ...rec }); else Object.assign(s.recurring.find((x) => x.id === r.id), rec);
       });
       render(); toast('保存しました'); close();

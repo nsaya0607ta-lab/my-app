@@ -2,8 +2,8 @@
 // 設計方針: すべてのデータはこの1オブジェクトに集約し、mutate → save → emit。
 // 将来の証券口座連携などは accounts の type と外部同期モジュールを足すだけで拡張可能。
 
-import { uid, pad } from './utils.js?v=20260723a';
-import { settlementDate } from './calc.js?v=20260723a';
+import { uid, pad } from './utils.js?v=20260723b';
+import { settlementDate } from './calc.js?v=20260723b';
 
 const KEY = 'finance_app_v2';
 const SCHEMA = 1;
@@ -116,6 +116,12 @@ function migrate(data) {
   // 可処分資金に含めるフラグ（既定: 証券口座以外は含める）
   for (const a of data.accounts || []) {
     if (a.includeInDisposable === undefined) a.includeInDisposable = a.type !== 'securities';
+  }
+  // 口座ベース設計への移行: 口座未指定の既存取引を先頭口座へ割り当て（履歴が消えないように）
+  const firstAcc = (data.accounts || [])[0]?.id || null;
+  if (firstAcc) {
+    for (const t of data.transactions) if (!t.accountId) t.accountId = firstAcc;
+    for (const r of data.recurring) if (!r.accountId) r.accountId = firstAcc;
   }
   // カード利用の「引落済み」フラグ。既存データは、引落日が過ぎているものは
   // 済み（残高に反映済みとみなす）、未来のものは未引落として扱う（残高は変更しない）。
