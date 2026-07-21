@@ -2,11 +2,20 @@
 // 最重要3機能: ①クレジットカード引落管理 ②将来資産シミュレーション ③可処分資金の自動計算
 // 純粋関数の集合として実装し、UIから独立させることでテスト・拡張を容易にする。
 
-import { ym, pad, resolveDay, addMonths, toISO, parseISO, daysInMonth } from './utils.js?v=20260722b';
+import { ym, pad, resolveDay, addMonths, toISO, parseISO, daysInMonth } from './utils.js?v=20260722c';
 
 // ===== 総資産 =====
 export const totalAssets = (state) =>
   state.accounts.reduce((s, a) => s + (Number(a.balance) || 0), 0);
+
+// ===== 可処分資金 = 「今すぐ自由に使える口座」の残高合計 =====
+// 収入−支出の月次フローではなく、可処分対象口座（includeInDisposable=true）の
+// 残高合計から算出する。銀行→NISA の振替をすると銀行残高が減るため自動的に減少する。
+export const disposableAssets = (state) =>
+  state.accounts.reduce((s, a) => s + (a.includeInDisposable !== false ? (Number(a.balance) || 0) : 0), 0);
+// 可処分対象外（投資・NISA・iDeCo など）の残高合計
+export const reservedAssets = (state) =>
+  state.accounts.reduce((s, a) => s + (a.includeInDisposable === false ? (Number(a.balance) || 0) : 0), 0);
 
 export const assetsByType = (state) => {
   const m = {};
