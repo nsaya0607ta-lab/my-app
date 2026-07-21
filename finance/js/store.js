@@ -2,7 +2,7 @@
 // 設計方針: すべてのデータはこの1オブジェクトに集約し、mutate → save → emit。
 // 将来の証券口座連携などは accounts の type と外部同期モジュールを足すだけで拡張可能。
 
-import { uid } from './utils.js?v=20260721b';
+import { uid, pad } from './utils.js?v=20260722a';
 
 const KEY = 'finance_app_v2';
 const SCHEMA = 1;
@@ -59,7 +59,22 @@ function seed() {
       monthlyBudget: 0,
       notifiedKeys: [],
     },
+    // 総資産の日次スナップショット [{date:'YYYY-MM-DD', total:number}]。
+    // 昨日比・今月比・前年比、残高推移ミニグラフに使用。口座残高を編集するたび記録。
+    assetHistory: [],
   };
+}
+
+// 総資産のスナップショットを記録（同日は上書き、最大400件保持）
+export function recordAssetSnapshot(s) {
+  const total = s.accounts.reduce((sum, a) => sum + (Number(a.balance) || 0), 0);
+  const d = new Date();
+  const iso = `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+  s.assetHistory ||= [];
+  const last = s.assetHistory[s.assetHistory.length - 1];
+  if (last && last.date === iso) last.total = total;
+  else s.assetHistory.push({ date: iso, total });
+  if (s.assetHistory.length > 400) s.assetHistory = s.assetHistory.slice(-400);
 }
 
 function load() {
@@ -85,6 +100,7 @@ function migrate(data) {
   data.settings ||= { secret: false, theme: 'auto', monthlyBudget: 0, notifiedKeys: [] };
   data.settings.notifiedKeys ||= [];
   data.simulation ||= seed().simulation;
+  data.assetHistory ||= [];
   return data;
 }
 

@@ -1,11 +1,12 @@
 // app.js — ルーティング・画面描画・フォーム・操作の統合レイヤー
-import * as S from './store.js?v=20260721b';
-import * as C from './calc.js?v=20260721b';
-import { lineChart, barChart, groupedBarChart, donutChart } from './charts.js?v=20260721b';
+import * as S from './store.js?v=20260722a';
+import * as C from './calc.js?v=20260722a';
+import { lineChart, barChart, groupedBarChart, donutChart } from './charts.js?v=20260722a';
+import { iconHtml, icon } from './icons.js?v=20260722a';
 import {
   el, qs, yen, yenMasked, num, today, toISO, parseISO, ym, fmtDate, fmtDateLong,
   fmtMonth, addMonths, resolveDay, pad, weekdayName, haptic, escapeHtml, uid,
-} from './utils.js?v=20260721b';
+} from './utils.js?v=20260722a';
 
 // ---- 画面ローカル状態（データではないUI状態） ----
 const ui = {
@@ -63,6 +64,11 @@ function updateNav() {
 
 // ============ 共通UI部品 ============
 function card(...children) { return el('div', { class: 'fc-card' }, ...children); }
+// アイコン付きボタン
+function btnIcon(cls, iconName, label, onClick) {
+  return el('button', { class: 'fc-btn ' + cls, type: 'button', onclick: onClick },
+    el('span', { class: 'fc-btn-ic', html: iconHtml(iconName, { size: 17 }) }), el('span', { text: label }));
+}
 function sectionTitle(t, right) {
   return el('div', { class: 'fc-sec-head' }, el('h2', { class: 'fc-sec-title', text: t }), right || '');
 }
@@ -71,8 +77,10 @@ function iconBtn(label, onClick, cls = '') {
 }
 function pill(text, cls = '') { return el('span', { class: 'fc-pill ' + cls, text }); }
 
-function toast(msg, icon = '✅') {
-  const t = el('div', { class: 'fc-toast' }, el('span', { text: icon }), el('span', { text: msg }));
+function toast(msg, iconName = 'check') {
+  const t = el('div', { class: 'fc-toast' },
+    el('span', { class: 'fc-toast-ic', html: iconHtml(iconName, { size: 18 }) }),
+    el('span', { text: msg }));
   document.body.append(t);
   requestAnimationFrame(() => t.classList.add('show'));
   setTimeout(() => { t.classList.remove('show'); setTimeout(() => t.remove(), 300); }, 2600);
@@ -92,7 +100,7 @@ function modal(title, bodyNode, { onSave, saveLabel = '保存', danger, wide } =
   const sheet = el('div', { class: 'fc-modal-sheet' + (wide ? ' wide' : '') },
     el('div', { class: 'fc-modal-grip' }),
     el('div', { class: 'fc-modal-head' }, el('h3', { text: title }),
-      el('button', { class: 'fc-modal-x', type: 'button', text: '✕', onclick: closeAll })),
+      el('button', { class: 'fc-modal-x', type: 'button', 'aria-label': '閉じる', html: iconHtml('x', { size: 16 }), onclick: closeAll })),
     el('div', { class: 'fc-modal-body' }, bodyNode),
     foot,
   );
@@ -111,8 +119,11 @@ function confirmDialog(title, message, onYes, { yesLabel = '削除', danger = tr
 }
 
 // フォーム部品
+// 注意: <label> でラップするとセグメント等の内部ボタンをタップした際に
+// ブラウザが最初のフォーム要素へクリックを転送し、収入/支出の切替が
+// 効かなくなる不具合が起きる。そのため <div> でラップする。
 function field(label, input) {
-  return el('label', { class: 'fc-field' }, el('span', { class: 'fc-field-lab', text: label }), input);
+  return el('div', { class: 'fc-field' }, el('span', { class: 'fc-field-lab', text: label }), input);
 }
 function inputEl(attrs) { return el('input', { class: 'fc-input', ...attrs }); }
 function selectEl(options, value) {
@@ -129,97 +140,251 @@ function accountOptions() { return S.getState().accounts.map((a) => ({ value: a.
 // ============ ダッシュボード ============
 function renderDashboard() {
   const st = S.getState();
+  const secret = st.settings.secret;
   const total = C.totalAssets(st);
   const cur = ym(new Date());
   const pl = C.monthlyPL(st, cur);
-  const upcoming = C.upcomingSettlements(st);
   const byType = C.assetsByType(st);
   const typeLabel = { cash: '現金', bank: '預金', securities: '証券', other: 'その他' };
-
+  const deltas = C.assetDeltas(st);
+  const trend = C.assetTrendSeries(st, 12);
   const wrap = el('div', { class: 'fc-view' });
 
   // --- 合計資産ヒーロー ---
+  const amountNode = el('div', { class: 'fc-hero-amount' + (secret ? ' masked' : ''), text: M(total) });
+  const linkArrow = (route) => el('span', { class: 'fc-link-arrow', html: iconHtml('chevronRight', { size: 15 }) });
   const hero = el('div', { class: 'fc-hero' },
     el('div', { class: 'fc-hero-row' },
       el('span', { class: 'fc-hero-lab', text: '合計資産' }),
       el('button', {
-        class: 'fc-secret', type: 'button', title: 'シークレットモード',
-        html: st.settings.secret ? '🙈 表示' : '👁 隠す',
-        onclick: () => { S.update((s) => { s.settings.secret = !s.settings.secret; }); toast(st.settings.secret ? '金額を隠しました' : '金額を表示しました', '🔒'); },
+        class: 'fc-secret', type: 'button', 'aria-label': 'シークレットモード',
+        html: iconHtml(secret ? 'eyeOff' : 'eye', { size: 16 }) + `<span>${secret ? '表示' : '隠す'}</span>`,
+        onclick: () => { S.update((s) => { s.settings.secret = !s.settings.secret; }); render(); },
       }),
     ),
-    el('div', { class: 'fc-hero-amount' + (st.settings.secret ? ' masked' : ''), text: M(total) }),
-    el('div', { class: 'fc-hero-types' },
-      ...Object.entries(byType).map(([k, v]) =>
-        el('span', { class: 'fc-type-chip' }, el('i', { text: typeLabel[k] || k }), el('b', { text: M(v) }))),
+    amountNode,
+    // 資産増減（昨日比・今月比・前年比）
+    el('div', { class: 'fc-delta-row' },
+      deltaChip('昨日比', deltas.yesterday, secret),
+      deltaChip('今月比', deltas.month, secret),
+      deltaChip('前年比', deltas.year, secret),
     ),
+    // 残高推移スパークライン
+    !secret && trend.data.length > 1
+      ? el('div', { class: 'fc-hero-spark', html: lineChart(trend.data, { color: '#7db8ff', height: 60, width: 640, spark: true }) })
+      : '',
   );
   wrap.append(hero);
+  if (!secret) animateCount(amountNode, total);
 
-  // --- 今月自由に使えるお金 ---
-  const dispCard = card(
-    el('div', { class: 'fc-disp-head' }, el('span', { text: `${fmtMonth(cur)}・自由に使えるお金` }),
-      el('button', { class: 'fc-link', type: 'button', text: '損益 →', onclick: () => go('pl') })),
-    el('div', { class: 'fc-disp-amount ' + (pl.disposable >= 0 ? 'pos' : 'neg'), text: yen(pl.disposable, { sign: pl.disposable > 0 }) }),
-    el('div', { class: 'fc-disp-bars' },
-      miniBar('収入', pl.incomeTotal, Math.max(pl.incomeTotal, pl.expenseTotal), '#34c759'),
-      miniBar('支出', pl.expenseTotal, Math.max(pl.incomeTotal, pl.expenseTotal), '#ff453a'),
+  // --- 資産構成チップ ---
+  if (Object.keys(byType).length) {
+    wrap.append(el('div', { class: 'fc-type-row' },
+      ...Object.entries(byType).map(([k, v]) =>
+        el('div', { class: 'fc-type-chip' }, el('span', { class: 'fc-type-lab', text: typeLabel[k] || k }), el('span', { class: 'fc-type-val', text: M(v) }))),
+    ));
+  }
+
+  // --- 今月の可処分資金 ---
+  const mom = C.momChange(st, cur);
+  const sr = C.savingsRate(st, cur);
+  wrap.append(card(
+    el('div', { class: 'fc-disp-head' },
+      el('span', { class: 'fc-disp-title', text: '今月の可処分資金' }),
+      el('button', { class: 'fc-link', type: 'button', onclick: () => go('pl') }, '損益', linkArrow())),
+    el('div', { class: 'fc-disp-mainrow' },
+      el('div', { class: 'fc-disp-amount ' + (pl.disposable >= 0 ? 'pos' : 'neg'), text: secret ? '＊＊＊＊' : yen(pl.disposable, { sign: pl.disposable > 0 }) }),
+      sr != null ? el('div', { class: 'fc-savings' },
+        el('span', { class: 'fc-savings-lab', text: '貯蓄率' }),
+        el('span', { class: 'fc-savings-val', text: sr + '%' })) : '',
     ),
-  );
-  wrap.append(dispCard);
+    el('div', { class: 'fc-disp-bars' },
+      miniBar('収入', pl.incomeTotal, Math.max(pl.incomeTotal, pl.expenseTotal, 1), 'var(--fc-pos)', mom.income.pct, secret),
+      miniBar('支出', pl.expenseTotal, Math.max(pl.incomeTotal, pl.expenseTotal, 1), 'var(--fc-neg)', mom.expense.pct, secret),
+    ),
+  ));
 
-  // --- 次回引落予定 ---
-  const settleCard = card(
-    sectionTitle('次回引落予定', el('button', { class: 'fc-link', type: 'button', text: 'カード →', onclick: () => go('cards') })),
+  // --- 今月あと使える金額（予算ベース） ---
+  const sp = C.spendableStatus(st, cur);
+  if (sp.hasBudget) {
+    wrap.append(card(
+      el('div', { class: 'fc-spend-head' },
+        el('span', { class: 'fc-sec-title', text: '今月あと使える金額' }),
+        el('span', { class: 'fc-spend-days', text: `残り${sp.daysLeft}日` })),
+      el('div', { class: 'fc-spend-amt ' + (sp.remaining >= 0 ? '' : 'neg'), text: secret ? '＊＊＊＊' : yen(sp.remaining, { sign: false }) }),
+      el('div', { class: 'fc-progress' }, el('div', { class: 'fc-progress-fill' + (sp.ratio >= 1 ? ' over' : ''), style: `width:${Math.min(100, sp.ratio * 100)}%` })),
+      el('div', { class: 'fc-spend-foot' },
+        el('span', { text: secret ? '予算 ＊＊＊' : `予算 ${yen(sp.budget)}` }),
+        sp.remaining > 0 ? el('span', { text: secret ? '' : `1日あたり約 ${yen(sp.perDay)}` }) : el('span', { class: 'neg', text: '予算オーバー' })),
+    ));
+  } else {
+    wrap.append(card(
+      el('div', { class: 'fc-spend-head' }, el('span', { class: 'fc-sec-title', text: '今月あと使える金額' })),
+      el('button', { class: 'fc-btn ghost block', type: 'button', text: '月の予算を設定する', onclick: () => budgetForm() }),
+    ));
+  }
+
+  // --- スマート指標タイル（固定費・今後7日引落） ---
+  const fixed = C.fixedRemaining(st, cur);
+  const within7 = C.settlementsWithinDays(st, 7);
+  const within7Total = within7.reduce((s, u) => s + u.amount, 0);
+  wrap.append(el('div', { class: 'fc-tile-row' },
+    statTile('repeat', '固定費 残り', fixed.count > 0 ? `${fixed.count}件` : 'なし', fixed.count > 0 && !secret ? yen(fixed.total) : '', () => go('recurring')),
+    statTile('card', '7日内の引落', within7.length > 0 ? `${within7.length}件` : 'なし', within7.length > 0 && !secret ? yen(within7Total) : '', () => go('cards')),
+  ));
+
+  // --- カード請求額との差額 ---
+  const billDiffs = C.cardBillDiff(st).filter((b) => b.payISO);
+  if (billDiffs.length) {
+    wrap.append(card(
+      sectionTitle('カード請求額との差額'),
+      el('div', { class: 'fc-list' }, ...billDiffs.map((b) =>
+        el('div', { class: 'fc-billdiff' },
+          el('div', { class: 'fc-billdiff-head' },
+            el('span', { class: 'fc-row-ic sm', style: `background:${b.card.color}22;color:${b.card.color}`, html: iconHtml('card', { size: 16 }) }),
+            el('b', { text: b.card.name })),
+          el('div', { class: 'fc-billdiff-grid' },
+            billCol('請求予定', b.estimated, secret),
+            billCol('登録済', b.recorded, secret),
+            billCol(b.diff >= 0 ? '未登録' : '超過', Math.abs(b.diff), secret, b.diff >= 0 ? '' : 'neg'),
+          )))),
+    ));
+  }
+
+  // --- 今後7日以内の引落予定（詳細） ---
+  const upcoming = C.upcomingSettlements(st);
+  wrap.append(card(
+    sectionTitle('次回引落予定', el('button', { class: 'fc-link', type: 'button', onclick: () => go('cards') }, 'カード', linkArrow())),
     upcoming.length
-      ? el('div', { class: 'fc-list' }, ...upcoming.map((u) =>
+      ? el('div', { class: 'fc-list' }, ...upcoming.slice(0, 3).map((u) =>
           el('div', { class: 'fc-row' },
-            el('div', { class: 'fc-row-ic', html: '💳', style: `background:${u.card.color || '#333'}22` }),
+            el('div', { class: 'fc-row-ic', html: iconHtml('card', { size: 18 }), style: `background:${u.card.color || '#888'}22;color:${u.card.color || 'inherit'}` }),
             el('div', { class: 'fc-row-main' },
               el('div', { class: 'fc-row-title', text: u.card.name }),
               el('div', { class: 'fc-row-sub', text: `${fmtDate(u.payISO)} 引落・${u.count}件` })),
-            el('div', { class: 'fc-row-amt neg', text: yen(u.amount) })),
-        ))
+            el('div', { class: 'fc-row-amt neg', text: secret ? '＊＊＊' : yen(u.amount) })))
+        )
       : el('p', { class: 'fc-empty', text: 'カード利用の登録がありません' }),
-  );
-  wrap.append(settleCard);
+  ));
+
+  // --- 今月の支出ランキング TOP3 ---
+  const rank = C.expenseRankTop(st, cur, 3);
+  if (rank.length) {
+    const rankTotal = rank.reduce((s, g) => s + g.amount, 0);
+    wrap.append(card(
+      sectionTitle('今月の支出ランキング', el('button', { class: 'fc-link', type: 'button', onclick: () => go('analysis') }, '分析', linkArrow())),
+      el('div', { class: 'fc-list' }, ...rank.map((g, i) =>
+        el('div', { class: 'fc-rank-row' },
+          el('span', { class: 'fc-rank-no', text: i + 1 }),
+          el('span', { class: 'fc-rank-dot', style: `background:${g.color}` }),
+          el('span', { class: 'fc-rank-name', text: g.name }),
+          el('span', { class: 'fc-rank-amt', text: secret ? '＊＊＊' : yen(g.amount) }))),
+    )));
+  }
+
+  // --- 最近の収支 ---
+  const recent = C.recentTransactions(st, 3);
+  if (recent.length) {
+    wrap.append(card(
+      sectionTitle('最近の収支', el('button', { class: 'fc-link', type: 'button', onclick: () => go('transactions') }, 'すべて', linkArrow())),
+      el('div', { class: 'fc-list' }, ...recent.map((t) => {
+        const catc = S.findCategory(t.categoryId);
+        return el('div', { class: 'fc-row tap', onclick: () => txForm(t) },
+          el('div', { class: 'fc-row-ic', style: `background:${catc.color}22;color:${catc.color}`, html: iconHtml(t.type === 'income' ? 'up' : 'down', { size: 18 }) }),
+          el('div', { class: 'fc-row-main' },
+            el('div', { class: 'fc-row-title', text: catc.name }),
+            el('div', { class: 'fc-row-sub', text: `${fmtDate(t.date)}${t.memo ? '・' + t.memo : ''}` })),
+          el('div', { class: 'fc-row-amt ' + (t.type === 'income' ? 'pos' : 'neg'), text: secret ? '＊＊＊' : yen(t.amount, { sign: t.type === 'income' }) }));
+      })),
+    ));
+  }
 
   // --- 口座一覧サマリー ---
-  const accCard = card(
-    sectionTitle('口座', el('button', { class: 'fc-link', type: 'button', text: '管理 →', onclick: () => go('accounts') })),
+  wrap.append(card(
+    sectionTitle('口座', el('button', { class: 'fc-link', type: 'button', onclick: () => go('accounts') }, '管理', linkArrow())),
     st.accounts.length === 0
-      ? el('button', { class: 'fc-btn ghost block', type: 'button', text: '＋ 口座を追加して残高を登録', onclick: () => accountForm() })
+      ? el('button', { class: 'fc-btn ghost block', type: 'button', text: '口座を追加して残高を登録', onclick: () => accountForm() })
       : el('div', { class: 'fc-list' }, ...st.accounts.map((a) =>
-      el('div', { class: 'fc-row' },
-        el('div', { class: 'fc-row-ic', html: accIcon(a.type) }),
-        el('div', { class: 'fc-row-main' }, el('div', { class: 'fc-row-title', text: a.name })),
-        el('div', { class: 'fc-row-amt', text: M(a.balance) })),
-    )),
-  );
-  wrap.append(accCard);
+          el('div', { class: 'fc-row tap', onclick: () => accountForm(a) },
+            el('div', { class: 'fc-row-ic', html: accIcon(a.type) }),
+            el('div', { class: 'fc-row-main' }, el('div', { class: 'fc-row-title', text: a.name })),
+            el('div', { class: 'fc-row-amt', text: M(a.balance) })))),
+  ));
 
-  // --- ミニ資産推移（今後12ヶ月） ---
+  // --- 資産のこれから（将来予測） ---
   const sim = C.simulate(st, 12);
   const chartData = sim.map((p) => ({ label: `${parseISO(p.date).getMonth() + 1}月`, value: p.total }));
   wrap.append(card(
-    sectionTitle('資産のこれから', el('button', { class: 'fc-link', type: 'button', text: '詳細 →', onclick: () => go('simulate') })),
-    el('div', { class: 'fc-chart', html: st.settings.secret ? '' : lineChart(chartData, { color: '#0a84ff', height: 180 }) }),
-    st.settings.secret ? el('p', { class: 'fc-empty', text: 'シークレットモード中は非表示' }) : '',
+    sectionTitle('資産のこれから', el('button', { class: 'fc-link', type: 'button', onclick: () => go('simulate') }, '詳細', linkArrow())),
+    secret ? el('p', { class: 'fc-empty', text: 'シークレットモード中は非表示' })
+      : el('div', { class: 'fc-chart', html: lineChart(chartData, { color: 'var(--fc-accent)', height: 180 }) }),
   ));
 
   return wrap;
 }
 
-function miniBar(label, val, max, color) {
+// 資産増減チップ
+function deltaChip(label, value, secret) {
+  if (value == null) return el('div', { class: 'fc-delta' }, el('span', { class: 'fc-delta-lab', text: label }), el('span', { class: 'fc-delta-val muted', text: '—' }));
+  const up = value >= 0;
+  return el('div', { class: 'fc-delta' },
+    el('span', { class: 'fc-delta-lab', text: label }),
+    el('span', { class: 'fc-delta-val ' + (value === 0 ? 'muted' : up ? 'pos' : 'neg') },
+      value === 0 ? '' : el('span', { class: 'fc-delta-ic', html: iconHtml(up ? 'arrowUpRight' : 'arrowDownRight', { size: 13 }) }),
+      el('span', { text: secret ? '＊＊' : yen(Math.abs(value)) })));
+}
+
+// スマート指標タイル
+function statTile(iconName, label, main, sub, onClick) {
+  return el('button', { class: 'fc-stat-tile', type: 'button', onclick: onClick },
+    el('span', { class: 'fc-stat-ic', html: iconHtml(iconName, { size: 18 }) }),
+    el('span', { class: 'fc-stat-body' },
+      el('span', { class: 'fc-stat-lab', text: label }),
+      el('span', { class: 'fc-stat-main', text: main }),
+      sub ? el('span', { class: 'fc-stat-sub', text: sub }) : ''));
+}
+
+function billCol(label, value, secret, cls = '') {
+  return el('div', { class: 'fc-billcol' },
+    el('span', { class: 'fc-billcol-lab', text: label }),
+    el('span', { class: 'fc-billcol-val ' + cls, text: secret ? '＊＊＊' : yen(value) }));
+}
+
+function miniBar(label, val, max, color, momPct, secret) {
   const pct = max > 0 ? Math.max(2, (val / max) * 100) : 0;
+  let momNode = '';
+  if (momPct != null && isFinite(momPct) && Math.round(momPct) !== 0) {
+    const up = momPct > 0;
+    momNode = el('span', { class: 'fc-mom ' + (up ? 'up' : 'down') },
+      el('span', { class: 'fc-mom-ic', html: iconHtml(up ? 'arrowUpRight' : 'arrowDownRight', { size: 11 }) }),
+      el('span', { text: Math.abs(Math.round(momPct)) + '%' }));
+  }
   return el('div', { class: 'fc-minibar' },
     el('span', { class: 'fc-minibar-lab', text: label }),
     el('div', { class: 'fc-minibar-track' }, el('div', { class: 'fc-minibar-fill', style: `width:${pct}%;background:${color}` })),
-    el('span', { class: 'fc-minibar-val', text: yen(val) }),
+    momNode,
+    el('span', { class: 'fc-minibar-val', text: secret ? '＊＊＊' : yen(val) }),
   );
 }
-function accIcon(type) {
-  return { cash: '💵', bank: '🏦', securities: '📈', other: '💼' }[type] || '💼';
+function accIconName(type) {
+  return { cash: 'cash', bank: 'bank', securities: 'trending', other: 'wallet' }[type] || 'wallet';
+}
+function accIcon(type) { return iconHtml(accIconName(type), { size: 20 }); }
+
+// 数字がふわっと変わるカウントアップ演出（シークレット時・reduce-motion時はスキップ）
+function animateCount(node, to, { fmt = (v) => yen(v), dur = 620 } = {}) {
+  if (!node) return;
+  const reduce = window.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches;
+  if (reduce) { node.textContent = fmt(to); return; }
+  const start = performance.now();
+  const from = 0;
+  const ease = (t) => 1 - Math.pow(1 - t, 3);
+  const step = (now) => {
+    const t = Math.min(1, (now - start) / dur);
+    node.textContent = fmt(Math.round(from + (to - from) * ease(t)));
+    if (t < 1) requestAnimationFrame(step);
+  };
+  requestAnimationFrame(step);
 }
 
 // ============ 口座管理 ============
@@ -257,8 +422,8 @@ function accountForm(acc) {
     !isNew && el('button', {
       class: 'fc-btn danger block', type: 'button', text: 'この口座を削除',
       onclick: () => confirmDialog('口座を削除', `「${acc.name}」を削除しますか？`, () => {
-        S.update((s) => { s.accounts = s.accounts.filter((x) => x.id !== acc.id); });
-        render(); toast('削除しました', '🗑');
+        S.update((s) => { s.accounts = s.accounts.filter((x) => x.id !== acc.id); S.recordAssetSnapshot(s); });
+        render(); toast('削除しました', 'trash');
         qs('.fc-modal-back')?.classList.remove('show');
         setTimeout(() => qs('.fc-modal-back')?.remove(), 260);
       }),
@@ -266,10 +431,11 @@ function accountForm(acc) {
   );
   modal(isNew ? '口座を追加' : '口座を編集', body, {
     onSave: (close) => {
-      if (!name.value.trim()) return toast('口座名を入力してください', '⚠️');
+      if (!name.value.trim()) return toast('口座名を入力してください', 'alert');
       S.update((s) => {
         if (isNew) s.accounts.push({ id: uid('acc'), name: name.value.trim(), type: type.value, balance: Number(bal.value) || 0 });
         else { const a = s.accounts.find((x) => x.id === acc.id); a.name = name.value.trim(); a.type = type.value; a.balance = Number(bal.value) || 0; }
+        S.recordAssetSnapshot(s);
       });
       render(); toast('保存しました'); close();
     },
@@ -284,14 +450,15 @@ function renderTransactions() {
 
   // 検索・フィルター
   const f = ui.filter;
-  const q = inputEl({ placeholder: '🔍 メモ・カテゴリーで検索', value: f.q });
+  const q = inputEl({ placeholder: 'メモ・カテゴリーで検索', value: f.q });
+  const qWrap = el('div', { class: 'fc-search' }, el('span', { class: 'fc-search-ic', html: iconHtml('search', { size: 17 }) }), q);
   q.addEventListener('input', () => { f.q = q.value; renderTxList(listBox); });
   const typeSel = selectEl([{ value: 'all', label: 'すべて' }, { value: 'income', label: '収入' }, { value: 'expense', label: '支出' }], f.type);
   typeSel.addEventListener('change', () => { f.type = typeSel.value; renderTxList(listBox); });
   const catSel = selectEl([{ value: 'all', label: 'カテゴリー：すべて' }, ...S.allCategories().map((c) => ({ value: c.id, label: c.name }))], f.cat);
   catSel.addEventListener('change', () => { f.cat = catSel.value; renderTxList(listBox); });
 
-  const advBtn = el('button', { class: 'fc-chip', type: 'button', text: '詳細条件 ▾' });
+  const advBtn = el('button', { class: 'fc-chip', type: 'button', html: '<span>詳細条件</span>' + iconHtml('chevronDown', { size: 14 }) });
   const adv = el('div', { class: 'fc-adv' });
   const min = inputEl({ type: 'number', placeholder: '金額 下限', value: f.min });
   const max = inputEl({ type: 'number', placeholder: '金額 上限', value: f.max });
@@ -304,7 +471,7 @@ function renderTransactions() {
   advBtn.addEventListener('click', () => { adv.style.display = adv.style.display === 'none' ? 'grid' : 'none'; });
 
   wrap.append(card(
-    el('div', { class: 'fc-filter' }, q,
+    el('div', { class: 'fc-filter' }, qWrap,
       el('div', { class: 'fc-filter-row' }, typeSel, catSel), advBtn, adv),
   ));
 
@@ -349,7 +516,7 @@ function renderTxList(box) {
     const rows = groups[date].map((t) => {
       const cat = S.findCategory(t.categoryId);
       return el('div', { class: 'fc-row tap', onclick: () => txForm(t) },
-        el('div', { class: 'fc-row-ic', style: `background:${cat.color}22;color:${cat.color}`, text: t.type === 'income' ? '＋' : '－' }),
+        el('div', { class: 'fc-row-ic', style: `background:${cat.color}22;color:${cat.color}`, html: iconHtml(t.type === 'income' ? 'up' : 'down', { size: 18 }) }),
         el('div', { class: 'fc-row-main' },
           el('div', { class: 'fc-row-title', text: cat.name }),
           t.memo ? el('div', { class: 'fc-row-sub', text: t.memo }) : ''),
@@ -390,7 +557,7 @@ function txForm(tx) {
       class: 'fc-btn danger block', type: 'button', text: 'この取引を削除',
       onclick: () => confirmDialog('取引を削除', '削除しますか？', () => {
         S.update((s) => { s.transactions = s.transactions.filter((x) => x.id !== tx.id); });
-        render(); toast('削除しました', '🗑');
+        render(); toast('削除しました', 'trash');
         qs('.fc-modal-back')?.classList.remove('show'); setTimeout(() => qs('.fc-modal-back')?.remove(), 260);
       }),
     }),
@@ -398,7 +565,7 @@ function txForm(tx) {
   modal(isNew ? '収支を追加' : '収支を編集', body, {
     onSave: (close) => {
       const amt = Number(amount.value);
-      if (!amt || amt <= 0) return toast('金額を入力してください', '⚠️');
+      if (!amt || amt <= 0) return toast('金額を入力してください', 'alert');
       const catId = catWrap.querySelector('select').value;
       S.update((s) => {
         const rec = { date: date.value, amount: amt, type, categoryId: catId, memo: memo.value.trim(), accountId: acc.value || null };
@@ -421,7 +588,7 @@ function renderCards() {
     sectionTitle('次回引落予定'),
     upcoming.length ? el('div', { class: 'fc-list' }, ...upcoming.map((u) =>
       el('div', { class: 'fc-row' },
-        el('div', { class: 'fc-row-ic', style: `background:${u.card.color}22`, html: '💳' }),
+        el('div', { class: 'fc-row-ic', style: `background:${u.card.color}22;color:${u.card.color}`, html: iconHtml('card', { size: 18 }) }),
         el('div', { class: 'fc-row-main' },
           el('div', { class: 'fc-row-title', text: u.card.name }),
           el('div', { class: 'fc-row-sub', text: `${fmtDateLong(u.payISO)}・${u.count}件` })),
@@ -453,10 +620,9 @@ function renderCards() {
         el('div', { class: 'fc-card-headmain' },
           el('div', { class: 'fc-card-name', text: c.name }),
           el('div', { class: 'fc-card-meta', text: `締め:${closeLabel(c.closingDay)}／引落:${payLabel(c)}／${acc?.name || '口座未設定'}` })),
-        el('button', { class: 'fc-icobtn', type: 'button', text: '⚙', onclick: () => cardForm(c) }),
+        el('button', { class: 'fc-icobtn', type: 'button', 'aria-label': '設定', html: iconHtml('settings', { size: 18 }), onclick: () => cardForm(c) }),
       ),
-      el('div', { class: 'fc-card-actions' },
-        el('button', { class: 'fc-btn primary block', type: 'button', text: '＋ 利用を登録', onclick: () => cardTxForm(c) })),
+      el('div', { class: 'fc-card-actions' }, btnIcon('primary block', 'plus', '利用を登録', () => cardTxForm(c))),
       dates.length ? detail : el('p', { class: 'fc-empty', text: 'まだ利用登録がありません' }),
     ));
   }
@@ -472,26 +638,28 @@ function cardForm(c) {
   const offset = selectEl([{ value: 0, label: '当月' }, { value: 1, label: '翌月' }, { value: 2, label: '翌々月' }], c?.payMonthOffset ?? 1);
   const payDay = selectEl([{ value: 'end', label: '末日' }, ...Array.from({ length: 31 }, (_, i) => ({ value: i + 1, label: `${i + 1}日` }))], c?.payDay ?? 27);
   const acc = selectEl([{ value: '', label: '（口座を先に追加してください）' }, ...accountOptions()], c?.payAccountId || S.getState().accounts[0]?.id || '');
-  const color = inputEl({ type: 'color', value: c?.color || '#bf0000' });
+  const color = inputEl({ type: 'color', value: c?.color || '#0a84ff' });
+  const estBill = inputEl({ type: 'number', inputmode: 'numeric', placeholder: '任意（例）84200', value: c?.estimatedBill ?? '' });
   const body = el('div', {},
     field('カード名', name), field('締日', closing),
     field('引落タイミング', offset), field('引落日', payDay), field('引落口座', acc), field('カラー', color),
+    field('今回の請求予定額（任意）', estBill),
     !isNew && el('button', {
       class: 'fc-btn danger block', type: 'button', text: 'このカードを削除',
       onclick: () => confirmDialog('カードを削除', `「${c.name}」と利用履歴を削除しますか？`, () => {
         S.update((s) => { s.cards = s.cards.filter((x) => x.id !== c.id); s.cardTransactions = s.cardTransactions.filter((x) => x.cardId !== c.id); });
-        render(); toast('削除しました', '🗑');
+        render(); toast('削除しました', 'trash');
         qs('.fc-modal-back')?.classList.remove('show'); setTimeout(() => qs('.fc-modal-back')?.remove(), 260);
       }),
     }),
   );
   modal(isNew ? 'カードを追加' : 'カード設定', body, {
     onSave: (close) => {
-      if (!name.value.trim()) return toast('カード名を入力してください', '⚠️');
+      if (!name.value.trim()) return toast('カード名を入力してください', 'alert');
       const cd = closing.value === 'end' ? 'end' : Number(closing.value);
       const pd = payDay.value === 'end' ? 'end' : Number(payDay.value);
       S.update((s) => {
-        const rec = { name: name.value.trim(), closingDay: cd, payMonthOffset: Number(offset.value), payDay: pd, payAccountId: acc.value, color: color.value };
+        const rec = { name: name.value.trim(), closingDay: cd, payMonthOffset: Number(offset.value), payDay: pd, payAccountId: acc.value, color: color.value, estimatedBill: estBill.value === '' ? null : Number(estBill.value) };
         if (isNew) s.cards.push({ id: uid('card'), ...rec });
         else Object.assign(s.cards.find((x) => x.id === c.id), rec);
       });
@@ -510,7 +678,7 @@ function cardTxForm(cardObj, tx) {
   const memo = inputEl({ placeholder: '例）Amazon', value: tx?.memo || '' });
   const preview = el('div', { class: 'fc-settle-preview' });
   const upd = () => {
-    if (date.value) preview.textContent = `→ ${fmtDateLong(C.settlementDate(cardObj, date.value))} 引落予定`;
+    if (date.value) preview.textContent = `引落予定日：${fmtDateLong(C.settlementDate(cardObj, date.value))}`;
   };
   date.addEventListener('input', upd); upd();
   const body = el('div', {},
@@ -520,7 +688,7 @@ function cardTxForm(cardObj, tx) {
       class: 'fc-btn danger block', type: 'button', text: 'この利用を削除',
       onclick: () => confirmDialog('利用を削除', '削除しますか？', () => {
         S.update((s) => { s.cardTransactions = s.cardTransactions.filter((x) => x.id !== tx.id); });
-        render(); toast('削除しました', '🗑');
+        render(); toast('削除しました', 'trash');
         qs('.fc-modal-back')?.classList.remove('show'); setTimeout(() => qs('.fc-modal-back')?.remove(), 260);
       }),
     }),
@@ -528,7 +696,7 @@ function cardTxForm(cardObj, tx) {
   modal(isNew ? `${cardObj.name}・利用登録` : 'カード利用を編集', body, {
     onSave: (close) => {
       const amt = Number(amount.value);
-      if (!amt || amt <= 0) return toast('金額を入力してください', '⚠️');
+      if (!amt || amt <= 0) return toast('金額を入力してください', 'alert');
       S.update((s) => {
         const rec = { cardId: cardObj.id, date: date.value, amount: amt, memo: memo.value.trim(), categoryId: cat.value || null };
         if (isNew) s.cardTransactions.push({ id: uid('ctx'), ...rec });
@@ -562,13 +730,13 @@ function renderPL() {
       el('div', { class: 'fc-pl-total' }, el('span', { text: '支出合計' }), el('b', { class: 'neg', text: yen(pl.expenseTotal) }))),
   ));
   wrap.append(el('div', { class: 'fc-disp-hero ' + (pl.disposable >= 0 ? 'pos' : 'neg') },
-    el('span', { class: 'fc-disp-hero-lab', text: `${fmtMonth(ui.plYm)} 自由に使える金額` }),
-    el('span', { class: 'fc-disp-hero-amt', text: yen(pl.disposable, { sign: pl.disposable > 0 }) }),
+    el('span', { class: 'fc-disp-hero-lab', text: `${fmtMonth(ui.plYm)}の可処分資金` }),
+    el('span', { class: 'fc-disp-hero-amt', text: M(pl.disposable) }),
   ));
   if (pl.cardTotal > 0) {
     wrap.append(card(sectionTitle('カード支払予定の内訳'),
       el('div', { class: 'fc-list' }, ...pl.cardDetail.map((d) =>
-        el('div', { class: 'fc-row' }, el('div', { class: 'fc-row-ic', style: `background:${d.card.color}22`, html: '💳' }),
+        el('div', { class: 'fc-row' }, el('div', { class: 'fc-row-ic', style: `background:${d.card.color}22;color:${d.card.color}`, html: iconHtml('card', { size: 18 }) }),
           el('div', { class: 'fc-row-main' }, el('div', { class: 'fc-row-title', text: d.card.name })),
           el('div', { class: 'fc-row-amt neg', text: yen(d.amount) }))))));
   }
@@ -600,7 +768,7 @@ function renderSimulate() {
 
   wrap.append(el('div', { class: 'fc-sim-hero' },
     el('div', { class: 'fc-sim-hero-col' }, el('span', { text: '現在' }), el('b', { text: M(start) })),
-    el('div', { class: 'fc-sim-arrow', text: '→' }),
+    el('div', { class: 'fc-sim-arrow', html: iconHtml('arrowRight', { size: 20 }) }),
     el('div', { class: 'fc-sim-hero-col' }, el('span', { text: periods.find((p) => p[0] === ui.simMonths)[1] + '後' }), el('b', { class: diff >= 0 ? 'pos' : 'neg', text: M(last.total) })),
   ));
   wrap.append(el('div', { class: 'fc-sim-diff ' + (diff >= 0 ? 'pos' : 'neg'), text: `増減 ${yen(diff, { sign: diff > 0 })}（内 投資 ${yen(last.invested - sim[0].invested, { sign: true })}）` }));
@@ -676,9 +844,9 @@ function renderCalendar() {
   const wrap = el('div', { class: 'fc-view' });
   const { y, m } = ui.cal;
   const head = el('div', { class: 'fc-cal-nav' },
-    el('button', { class: 'fc-icobtn', type: 'button', text: '‹', onclick: () => { ui.cal = stepMonth(y, m, -1); render(); } }),
+    el('button', { class: 'fc-icobtn', type: 'button', 'aria-label': '前の月', html: iconHtml('arrowLeft', { size: 18 }), onclick: () => { ui.cal = stepMonth(y, m, -1); render(); } }),
     el('b', { text: `${y}年${m + 1}月` }),
-    el('button', { class: 'fc-icobtn', type: 'button', text: '›', onclick: () => { ui.cal = stepMonth(y, m, 1); render(); } }));
+    el('button', { class: 'fc-icobtn', type: 'button', 'aria-label': '次の月', html: iconHtml('arrowRight', { size: 18 }), onclick: () => { ui.cal = stepMonth(y, m, 1); render(); } }));
   wrap.append(el('div', { class: 'fc-page-head' }, el('h1', { class: 'fc-page-title', text: 'カレンダー' }), head));
 
   const events = C.calendarEvents(st, y, m);
@@ -711,7 +879,7 @@ function stepMonth(y, m, d) { const nd = new Date(y, m + d, 1); return { y: nd.g
 function dayDetail(iso, evs) {
   const body = evs.length ? el('div', { class: 'fc-list' }, ...evs.map((e) =>
     el('div', { class: 'fc-row' },
-      el('div', { class: 'fc-row-ic', html: e.kind === 'card' ? '💳' : e.type === 'income' ? '💰' : '📄' }),
+      el('div', { class: 'fc-row-ic', style: e.kind === 'card' && e.color ? `background:${e.color}22;color:${e.color}` : '', html: iconHtml(e.kind === 'card' ? 'card' : e.type === 'income' ? 'coins' : 'file', { size: 18 }) }),
       el('div', { class: 'fc-row-main' }, el('div', { class: 'fc-row-title', text: e.label || (e.type === 'income' ? '収入' : '支出') })),
       el('div', { class: 'fc-row-amt ' + (e.type === 'income' ? 'pos' : 'neg'), text: yen(e.amount, { sign: e.type === 'income' }) }))))
     : el('p', { class: 'fc-empty', text: '予定はありません' });
@@ -746,7 +914,7 @@ function renderAnalysis() {
       el('span', {}, el('i', { class: 'dot', style: 'background:#ff453a' }), '支出'))));
 
   // 可処分資金の推移（折れ線）
-  wrap.append(card(sectionTitle('自由に使えるお金の推移'),
+  wrap.append(card(sectionTitle('可処分資金の推移'),
     el('div', { class: 'fc-chart', html: lineChart(trend.map((t) => ({ label: `${Number(t.ym.split('-')[1])}月`, value: t.disposable })), { color: '#30d158', height: 190 }) })));
 
   // 資産推移（将来）
@@ -762,18 +930,18 @@ function renderMenu() {
   const wrap = el('div', { class: 'fc-view' });
   wrap.append(el('h1', { class: 'fc-page-title', text: '各種機能' }));
   const items = [
-    ['accounts', '🏦', '口座管理', '残高の追加・編集'],
-    ['pl', '📊', '損益計算書', '自由に使えるお金'],
-    ['calendar', '📅', 'カレンダー', '給料日・引落日'],
-    ['analysis', '📈', '分析', '支出割合・推移'],
-    ['recurring', '🔁', '固定収支', '毎月の収入・支出'],
-    ['categories', '🏷', 'カテゴリー', '追加・編集・削除'],
-    ['data', '💾', 'データ管理', 'バックアップ・CSV'],
+    ['accounts', 'bank', '口座管理', '残高の追加・編集'],
+    ['pl', 'receipt', '損益計算書', '今月の可処分資金'],
+    ['calendar', 'calendar', 'カレンダー', '給料日・引落日'],
+    ['analysis', 'pie', '分析', '支出割合・推移'],
+    ['recurring', 'repeat', '固定収支', '毎月の収入・支出'],
+    ['categories', 'tag', 'カテゴリー', '追加・編集・削除'],
+    ['data', 'database', 'データ管理', 'バックアップ・CSV'],
   ];
   const grid = el('div', { class: 'fc-menu-grid' });
   for (const [route, ic, title, sub] of items)
     grid.append(el('button', { class: 'fc-menu-tile', type: 'button', onclick: () => go(route) },
-      el('span', { class: 'fc-menu-ic', text: ic }),
+      el('span', { class: 'fc-menu-ic', html: iconHtml(ic, { size: 22 }) }),
       el('span', { class: 'fc-menu-title', text: title }),
       el('span', { class: 'fc-menu-sub', text: sub })));
   wrap.append(grid);
@@ -815,7 +983,7 @@ function renderRecurring() {
   const mkList = (arr) => el('div', { class: 'fc-list' }, ...arr.map((r) => {
     const cat = S.findCategory(r.categoryId);
     return el('div', { class: 'fc-row tap', onclick: () => recurringForm(r) },
-      el('div', { class: 'fc-row-ic', style: `background:${cat.color}22`, text: r.type === 'income' ? '💰' : '📄' }),
+      el('div', { class: 'fc-row-ic', style: `background:${cat.color}22;color:${cat.color}`, html: iconHtml(r.type === 'income' ? 'coins' : 'file', { size: 18 }) }),
       el('div', { class: 'fc-row-main' }, el('div', { class: 'fc-row-title', text: r.name }),
         el('div', { class: 'fc-row-sub', text: `毎月${r.day === 'end' ? '末' : r.day + '日'}・${cat.name}` })),
       el('div', { class: 'fc-row-amt ' + (r.type === 'income' ? 'pos' : 'neg'), text: yen(r.amount, { sign: r.type === 'income' }) }));
@@ -842,10 +1010,10 @@ function recurringForm(r) {
   const amount = inputEl({ type: 'number', value: r?.amount ?? '' });
   const acc = selectEl([{ value: '', label: '（口座指定なし）' }, ...accountOptions()], r?.accountId || '');
   const body = el('div', {}, field('種別', seg), field('名称', name), field('毎月の発生日', day), field('金額（円）', amount), catWrap, field('口座（任意）', acc),
-    !isNew && el('button', { class: 'fc-btn danger block', type: 'button', text: '削除', onclick: () => confirmDialog('固定収支を削除', '削除しますか？', () => { S.update((s) => { s.recurring = s.recurring.filter((x) => x.id !== r.id); }); render(); toast('削除しました', '🗑'); qs('.fc-modal-back')?.remove(); }) }));
+    !isNew && el('button', { class: 'fc-btn danger block', type: 'button', text: '削除', onclick: () => confirmDialog('固定収支を削除', '削除しますか？', () => { S.update((s) => { s.recurring = s.recurring.filter((x) => x.id !== r.id); }); render(); toast('削除しました', 'trash'); qs('.fc-modal-back')?.remove(); }) }));
   modal(isNew ? '固定収支を追加' : '固定収支を編集', body, {
     onSave: (close) => {
-      if (!name.value.trim() || !Number(amount.value)) return toast('名称と金額を入力してください', '⚠️');
+      if (!name.value.trim() || !Number(amount.value)) return toast('名称と金額を入力してください', 'alert');
       const catId = catWrap.querySelector('select').value;
       S.update((s) => {
         const rec = { type, name: name.value.trim(), day: day.value === 'end' ? 'end' : Number(day.value), amount: Number(amount.value), categoryId: catId, accountId: acc.value || null };
@@ -862,7 +1030,7 @@ function renderCategories() {
   const wrap = el('div', { class: 'fc-view' });
   wrap.append(el('h1', { class: 'fc-page-title', text: 'カテゴリー' }));
   const block = (label, kind, arr) => card(
-    sectionTitle(label, el('button', { class: 'fc-link', type: 'button', text: '＋ 追加', onclick: () => categoryForm(kind) })),
+    sectionTitle(label, el('button', { class: 'fc-link', type: 'button', onclick: () => categoryForm(kind) }, el('span', { class: 'fc-add-ic sm', html: iconHtml('plus', { size: 14 }) }), el('span', { text: '追加' }))),
     el('div', { class: 'fc-cat-wrap' }, ...arr.map((c) =>
       el('button', { class: 'fc-cat-chip', type: 'button', style: `--c:${c.color}`, onclick: () => categoryForm(kind, c) },
         el('i', { class: 'dot', style: `background:${c.color}` }), c.name))));
@@ -879,10 +1047,10 @@ function categoryForm(kind, c) {
   const draw = () => { sw.innerHTML = ''; palette.forEach((p) => sw.append(el('button', { class: 'fc-swatch' + (p === color ? ' on' : ''), type: 'button', style: `background:${p}`, onclick: () => { color = p; draw(); } }))); };
   draw();
   const body = el('div', {}, field('名称', name), field('カラー', sw),
-    !isNew && el('button', { class: 'fc-btn danger block', type: 'button', text: '削除', onclick: () => confirmDialog('カテゴリーを削除', `「${c.name}」を削除しますか？関連取引は「未分類」になります。`, () => { S.update((s) => { s.categories[kind] = s.categories[kind].filter((x) => x.id !== c.id); }); render(); toast('削除しました', '🗑'); qs('.fc-modal-back')?.remove(); }) }));
+    !isNew && el('button', { class: 'fc-btn danger block', type: 'button', text: '削除', onclick: () => confirmDialog('カテゴリーを削除', `「${c.name}」を削除しますか？関連取引は「未分類」になります。`, () => { S.update((s) => { s.categories[kind] = s.categories[kind].filter((x) => x.id !== c.id); }); render(); toast('削除しました', 'trash'); qs('.fc-modal-back')?.remove(); }) }));
   modal(isNew ? 'カテゴリーを追加' : 'カテゴリーを編集', body, {
     onSave: (close) => {
-      if (!name.value.trim()) return toast('名称を入力してください', '⚠️');
+      if (!name.value.trim()) return toast('名称を入力してください', 'alert');
       S.update((s) => {
         if (isNew) s.categories[kind].push({ id: uid('cat'), name: name.value.trim(), color });
         else { const cc = s.categories[kind].find((x) => x.id === c.id); cc.name = name.value.trim(); cc.color = color; }
@@ -898,14 +1066,14 @@ function renderData() {
   wrap.append(el('h1', { class: 'fc-page-title', text: 'データ管理' }));
   wrap.append(card(sectionTitle('バックアップ・復元'),
     el('p', { class: 'fc-note', text: 'すべてのデータをJSONファイルとして書き出し／読み込みできます。' }),
-    el('button', { class: 'fc-btn primary block', type: 'button', text: '⬇ バックアップを書き出す', onclick: exportBackup }),
-    el('button', { class: 'fc-btn ghost block', type: 'button', text: '⬆ バックアップから復元', onclick: () => importFile('json') })));
+    btnIcon('primary block', 'down', 'バックアップを書き出す', exportBackup),
+    btnIcon('ghost block', 'up', 'バックアップから復元', () => importFile('json'))));
   wrap.append(card(sectionTitle('CSV'),
     el('p', { class: 'fc-note', text: '取引履歴（収入・支出）をCSVで入出力できます。列: 日付,種別,金額,カテゴリー,メモ' }),
-    el('button', { class: 'fc-btn ghost block', type: 'button', text: '⬇ 取引をCSVエクスポート', onclick: exportCSV }),
-    el('button', { class: 'fc-btn ghost block', type: 'button', text: '⬆ CSVインポート', onclick: () => importFile('csv') })));
+    btnIcon('ghost block', 'down', '取引をCSVエクスポート', exportCSV),
+    btnIcon('ghost block', 'up', 'CSVインポート', () => importFile('csv'))));
   wrap.append(card(sectionTitle('リセット'),
-    el('button', { class: 'fc-btn danger block', type: 'button', text: 'すべてのデータを初期化', onclick: () => confirmDialog('初期化', '本当にすべてのデータを削除して初期状態に戻しますか？この操作は取り消せません。', () => { S.resetAll(); go('dashboard'); toast('初期化しました', '♻️'); }, { yesLabel: '初期化する' }) })));
+    el('button', { class: 'fc-btn danger block', type: 'button', text: 'すべてのデータを初期化', onclick: () => confirmDialog('初期化', '本当にすべてのデータを削除して初期状態に戻しますか？この操作は取り消せません。', () => { S.resetAll(); go('dashboard'); toast('初期化しました', 'repeat'); }, { yesLabel: '初期化する' }) })));
   return wrap;
 }
 function download(filename, text, mime = 'application/json') {
@@ -917,7 +1085,7 @@ function download(filename, text, mime = 'application/json') {
 }
 function exportBackup() {
   download(`finance-backup-${today()}.json`, JSON.stringify(S.getState(), null, 2));
-  toast('バックアップを書き出しました', '💾');
+  toast('バックアップを書き出しました', 'database');
 }
 function exportCSV() {
   const st = S.getState();
@@ -926,7 +1094,7 @@ function exportCSV() {
     rows.push([t.date, t.type === 'income' ? '収入' : '支出', t.amount, S.findCategory(t.categoryId).name, (t.memo || '').replace(/"/g, '""')]);
   const csv = '﻿' + rows.map((r) => r.map((c) => `"${c}"`).join(',')).join('\n');
   download(`finance-transactions-${today()}.csv`, csv, 'text/csv');
-  toast('CSVを書き出しました', '📄');
+  toast('CSVを書き出しました', 'file');
 }
 function importFile(kind) {
   const inp = el('input', { type: 'file', accept: kind === 'json' ? '.json,application/json' : '.csv,text/csv' });
@@ -942,8 +1110,8 @@ function doImportJSON(text) {
   try {
     const data = JSON.parse(text);
     if (!data.accounts || !data.categories) throw new Error('形式が不正です');
-    confirmDialog('復元', '現在のデータを、選択したバックアップで置き換えますか？', () => { S.replaceState(data); applyTheme(); go('dashboard'); toast('復元しました', '♻️'); }, { yesLabel: '復元する', danger: false });
-  } catch (e) { toast('読み込みに失敗しました: ' + e.message, '⚠️'); }
+    confirmDialog('復元', '現在のデータを、選択したバックアップで置き換えますか？', () => { S.replaceState(data); applyTheme(); go('dashboard'); toast('復元しました', 'repeat'); }, { yesLabel: '復元する', danger: false });
+  } catch (e) { toast('読み込みに失敗しました: ' + e.message, 'alert'); }
 }
 function doImportCSV(text) {
   try {
@@ -961,8 +1129,8 @@ function doImportCSV(text) {
         added++;
       }
     });
-    go('transactions'); toast(`${added}件をインポートしました`, '📥');
-  } catch (e) { toast('CSVの読み込みに失敗しました', '⚠️'); }
+    go('transactions'); toast(`${added}件をインポートしました`, 'down');
+  } catch (e) { toast('CSVの読み込みに失敗しました', 'alert'); }
 }
 function parseCsvLine(line) {
   const out = []; let cur = '', inQ = false;
@@ -977,7 +1145,8 @@ function parseCsvLine(line) {
 // ============ 共通ヘッダー・月ナビ ============
 function pageHead(title, addLabel, onAdd) {
   return el('div', { class: 'fc-page-head' }, el('h1', { class: 'fc-page-title', text: title }),
-    onAdd ? el('button', { class: 'fc-add-btn', type: 'button', onclick: onAdd }, '＋ ', addLabel) : '');
+    onAdd ? el('button', { class: 'fc-add-btn', type: 'button', onclick: onAdd },
+      el('span', { class: 'fc-add-ic', html: iconHtml('plus', { size: 16 }) }), el('span', { text: addLabel })) : '');
 }
 function monthNav(ymStr, onChange, title) {
   const [y, m] = ymStr.split('-').map(Number);
@@ -985,9 +1154,9 @@ function monthNav(ymStr, onChange, title) {
   const next = () => onChange(ym(new Date(y, m, 1)));
   return el('div', { class: 'fc-page-head' }, el('h1', { class: 'fc-page-title', text: title }),
     el('div', { class: 'fc-cal-nav' },
-      el('button', { class: 'fc-icobtn', type: 'button', text: '‹', onclick: prev }),
+      el('button', { class: 'fc-icobtn', type: 'button', 'aria-label': '前の月', html: iconHtml('arrowLeft', { size: 18 }), onclick: prev }),
       el('b', { text: `${y}年${m}月` }),
-      el('button', { class: 'fc-icobtn', type: 'button', text: '›', onclick: next })));
+      el('button', { class: 'fc-icobtn', type: 'button', 'aria-label': '次の月', html: iconHtml('arrowRight', { size: 18 }), onclick: next })));
 }
 
 // ============ テーマ・通知・初期化 ============
@@ -1011,19 +1180,16 @@ function checkNotifications() {
 function buildNav() {
   const nav = el('nav', { id: 'fc-nav', class: 'fc-nav' });
   const items = [
-    ['dashboard', 'ホーム', 'M3 11.5 12 4l9 7.5 M5.5 9.5V20a1 1 0 0 0 1 1H9a1 1 0 0 0 1-1v-4a1 1 0 0 1 1-1h2a1 1 0 0 1 1 1v4a1 1 0 0 0 1 1h2.5a1 1 0 0 0 1-1V9.5'],
-    ['transactions', '収支', 'M12 4v16 M4 8h10 M4 16h10 M18 6l2 2-2 2 M20 8h-6'],
-    ['cards', 'カード', 'RECT'],
-    ['simulate', '将来', 'M4 18l5-6 4 3 6-8 M4 4v16h16'],
-    ['menu', '各種', 'M4 6h16 M4 12h16 M4 18h16'],
+    ['dashboard', 'ホーム', 'home'],
+    ['transactions', '収支', 'swap'],
+    ['cards', 'カード', 'card'],
+    ['simulate', '将来', 'trending'],
+    ['menu', '各種', 'grid'],
   ];
-  for (const [route, label, path] of items) {
-    const svg = path === 'RECT'
-      ? '<rect x="3" y="6" width="18" height="12" rx="2.5"></rect><path d="M3 10h18"></path>'
-      : `<path d="${path}"></path>`;
+  for (const [route, label, iconName] of items) {
     nav.append(el('button', {
       class: 'fc-nav-btn', type: 'button', dataset: { route }, onclick: () => go(route),
-    }, el('span', { class: 'fc-nav-ic', html: `<svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${svg}</svg>` }),
+    }, el('span', { class: 'fc-nav-ic', html: iconHtml(iconName, { size: 23, sw: 2 }) }),
        el('span', { class: 'fc-nav-lab', text: label })));
   }
   return nav;
@@ -1031,11 +1197,15 @@ function buildNav() {
 
 export function init() {
   applyTheme();
+  // 起動時に資産スナップショットのベースラインを記録（口座があり履歴が無い場合）
+  const st0 = S.getState();
+  if ((st0.assetHistory || []).length === 0 && st0.accounts.length > 0) {
+    S.update((s) => S.recordAssetSnapshot(s), { silent: true });
+  }
   // ルート要素を用意
   const root = qs('#fc-root');
   root.append(el('div', { id: 'view', class: 'fc-content' }));
   root.append(buildNav());
-  S.subscribe(() => { /* 状態変化は各操作で render を明示呼び出し */ });
   render();
   setTimeout(checkNotifications, 400);
   // OSテーマ変更に追随（auto時）
