@@ -2,7 +2,7 @@
 // 最重要3機能: ①クレジットカード引落管理 ②将来資産シミュレーション ③可処分資金の自動計算
 // 純粋関数の集合として実装し、UIから独立させることでテスト・拡張を容易にする。
 
-import { ym, pad, resolveDay, addMonths, toISO, parseISO, daysInMonth } from './utils.js?v=20260722a';
+import { ym, pad, resolveDay, addMonths, toISO, parseISO, daysInMonth } from './utils.js?v=20260722b';
 
 // ===== 総資産 =====
 export const totalAssets = (state) =>

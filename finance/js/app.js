@@ -1,12 +1,13 @@
 // app.js — ルーティング・画面描画・フォーム・操作の統合レイヤー
-import * as S from './store.js?v=20260722a';
-import * as C from './calc.js?v=20260722a';
-import { lineChart, barChart, groupedBarChart, donutChart } from './charts.js?v=20260722a';
-import { iconHtml, icon } from './icons.js?v=20260722a';
+import * as S from './store.js?v=20260722b';
+import * as C from './calc.js?v=20260722b';
+import * as CF from './cashflow.js?v=20260722b';
+import { lineChart, barChart, groupedBarChart, donutChart } from './charts.js?v=20260722b';
+import { iconHtml, icon } from './icons.js?v=20260722b';
 import {
   el, qs, yen, yenMasked, num, today, toISO, parseISO, ym, fmtDate, fmtDateLong,
   fmtMonth, addMonths, resolveDay, pad, weekdayName, haptic, escapeHtml, uid,
-} from './utils.js?v=20260722a';
+} from './utils.js?v=20260722b';
 
 // ---- 画面ローカル状態（データではないUI状態） ----
 const ui = {
@@ -153,13 +154,13 @@ function renderDashboard() {
   // --- 合計資産ヒーロー ---
   const amountNode = el('div', { class: 'fc-hero-amount' + (secret ? ' masked' : ''), text: M(total) });
   const linkArrow = (route) => el('span', { class: 'fc-link-arrow', html: iconHtml('chevronRight', { size: 15 }) });
-  const hero = el('div', { class: 'fc-hero' },
+  const hero = el('div', { class: 'fc-hero tap', role: 'button', 'aria-label': '資産シミュレーションを開く', onclick: () => go('simulate') },
     el('div', { class: 'fc-hero-row' },
-      el('span', { class: 'fc-hero-lab', text: '合計資産' }),
+      el('span', { class: 'fc-hero-lab' }, el('span', { text: '合計資産' }), el('span', { class: 'fc-hero-sim', html: iconHtml('trending', { size: 13 }) + '<span>シミュレーション</span>' + iconHtml('chevronRight', { size: 13 }) })),
       el('button', {
         class: 'fc-secret', type: 'button', 'aria-label': 'シークレットモード',
         html: iconHtml(secret ? 'eyeOff' : 'eye', { size: 16 }) + `<span>${secret ? '表示' : '隠す'}</span>`,
-        onclick: () => { S.update((s) => { s.settings.secret = !s.settings.secret; }); render(); },
+        onclick: (e) => { e.stopPropagation(); S.update((s) => { s.settings.secret = !s.settings.secret; }); render(); },
       }),
     ),
     amountNode,
@@ -311,13 +312,14 @@ function renderDashboard() {
             el('div', { class: 'fc-row-amt', text: M(a.balance) })))),
   ));
 
-  // --- 資産のこれから（将来予測） ---
-  const sim = C.simulate(st, 12);
-  const chartData = sim.map((p) => ({ label: `${parseISO(p.date).getMonth() + 1}月`, value: p.total }));
+  // --- 資産のこれから（データ駆動の将来予測） ---
+  const chartData = CF.chartSeries(st, 12);
+  const shortage = CF.shortageAlert(st, 12);
   wrap.append(card(
     sectionTitle('資産のこれから', el('button', { class: 'fc-link', type: 'button', onclick: () => go('simulate') }, '詳細', linkArrow())),
     secret ? el('p', { class: 'fc-empty', text: 'シークレットモード中は非表示' })
-      : el('div', { class: 'fc-chart', html: lineChart(chartData, { color: 'var(--fc-accent)', height: 180 }) }),
+      : el('div', { class: 'fc-chart', html: lineChart(chartData, { color: shortage ? 'var(--fc-neg)' : 'var(--fc-accent)', height: 180 }) }),
+    shortage && !secret ? el('div', { class: 'fc-shortage-mini' }, el('span', { html: iconHtml('alert', { size: 14 }) }), el('span', { text: shortage.message })) : '',
   ));
 
   return wrap;
@@ -749,93 +751,127 @@ function plLine(name, amount, color) {
     el('span', { class: 'fc-pl-amt', text: num(amount) }));
 }
 
-// ============ 将来シミュレーション ============
+// ============ 資産シミュレーション（データ駆動・日次キャッシュフロー） ============
+function kv(k, v) { return el('div', { class: 'fc-kv-row' }, el('span', { text: k }), el('b', { text: v })); }
+
 function renderSimulate() {
   const st = S.getState();
+  const secret = st.settings.secret;
   const wrap = el('div', { class: 'fc-view' });
-  wrap.append(pageHead('将来シミュレーション', '設定', () => simForm()));
+  wrap.append(el('h1', { class: 'fc-page-title', text: '資産シミュレーション' }));
 
-  const periods = [[3, '3か月'], [6, '半年'], [12, '1年'], [36, '3年'], [60, '5年'], [120, '10年']];
+  // 期間切替
+  const periods = [[3, '3か月'], [6, '半年'], [12, '1年'], [24, '2年'], [36, '3年']];
+  if (!periods.some((p) => p[0] === ui.simMonths)) ui.simMonths = 12;
   const seg = el('div', { class: 'fc-period' });
   for (const [mo, lab] of periods)
     seg.append(el('button', { class: 'fc-period-btn' + (ui.simMonths === mo ? ' on' : ''), type: 'button', text: lab, onclick: () => { ui.simMonths = mo; render(); } }));
   wrap.append(seg);
 
-  const sim = C.simulate(st, ui.simMonths);
-  const last = sim[sim.length - 1];
-  const start = sim[0].total;
-  const diff = last.total - start;
+  const sim = CF.simulate(st, ui.simMonths);
+  const chart = CF.chartSeries(st, ui.simMonths);
+  const endTotal = chart[chart.length - 1].value;
+  const diff = endTotal - sim.start;
+  const shortage = CF.shortageAlert(st, ui.simMonths);
+  const unpaid = CF.unpaidCards(st);
 
-  wrap.append(el('div', { class: 'fc-sim-hero' },
-    el('div', { class: 'fc-sim-hero-col' }, el('span', { text: '現在' }), el('b', { text: M(start) })),
-    el('div', { class: 'fc-sim-arrow', html: iconHtml('arrowRight', { size: 20 }) }),
-    el('div', { class: 'fc-sim-hero-col' }, el('span', { text: periods.find((p) => p[0] === ui.simMonths)[1] + '後' }), el('b', { class: diff >= 0 ? 'pos' : 'neg', text: M(last.total) })),
+  // 現在資産ヒーロー
+  wrap.append(el('div', { class: 'fc-simhero' + (shortage ? ' warn' : '') },
+    el('span', { class: 'fc-simhero-lab', text: '現在資産' }),
+    el('span', { class: 'fc-simhero-amt', text: M(sim.start) }),
+    el('div', { class: 'fc-simhero-foot' },
+      el('span', { text: `${periods.find((p) => p[0] === ui.simMonths)[1]}後の予想` }),
+      el('b', { class: diff >= 0 ? 'pos' : 'neg', text: secret ? '＊＊＊' : M(endTotal) + `（${yen(diff, { sign: diff > 0 })}）` })),
   ));
-  wrap.append(el('div', { class: 'fc-sim-diff ' + (diff >= 0 ? 'pos' : 'neg'), text: `増減 ${yen(diff, { sign: diff > 0 })}（内 投資 ${yen(last.invested - sim[0].invested, { sign: true })}）` }));
 
-  const labelFor = (p) => {
-    const d = parseISO(p.date);
-    return ui.simMonths <= 12 ? `${d.getMonth() + 1}月` : `${String(d.getFullYear()).slice(2)}/${d.getMonth() + 1}`;
-  };
-  const chartData = sim.map((p) => ({ label: labelFor(p), value: p.total }));
-  wrap.append(card(sectionTitle('資産推移グラフ'),
-    el('div', { class: 'fc-chart', html: lineChart(chartData, { color: '#0a84ff', height: 240 }) }),
-    el('div', { class: 'fc-legend' },
-      el('span', {}, el('i', { class: 'dot', style: 'background:#0a84ff' }), '総資産'))));
-
-  // マイルストーン表
-  const rows = [];
-  const marks = ui.simMonths <= 12 ? sim.filter((_, i) => i % Math.max(1, Math.round(sim.length / 6)) === 0 || _ === last)
-    : sim.filter((p) => parseISO(p.date).getMonth() === parseISO(sim[0].date).getMonth() || p === last);
-  for (const p of marks) {
-    const d = parseISO(p.date);
-    rows.push(el('div', { class: 'fc-row' },
-      el('div', { class: 'fc-row-main' }, el('div', { class: 'fc-row-title', text: `${d.getFullYear()}年${d.getMonth() + 1}月` }),
-        el('div', { class: 'fc-row-sub', text: `投資 ${M(p.invested)}／現金 ${M(p.liquid)}` })),
-      el('div', { class: 'fc-row-amt', text: M(p.total) })));
+  // 資産不足アラート（⑪）
+  if (shortage) {
+    wrap.append(el('div', { class: 'fc-shortage' },
+      el('div', { class: 'fc-shortage-top' }, el('span', { class: 'fc-shortage-ic', html: iconHtml('alert', { size: 18 }) }), el('b', { text: shortage.message })),
+      el('div', { class: 'fc-shortage-sub', text: `最低残高の見込み ${M(sim.minPoint.total)}（${fmtDate(sim.minPoint.date)}）` }),
+      shortage.causes.length ? el('div', { class: 'fc-shortage-causes' },
+        el('span', { class: 'fc-shortage-causes-lab', text: '主な要因' }),
+        ...shortage.causes.map((c) => el('span', { class: 'fc-cause-chip' }, el('span', { class: 'fc-ico', html: iconHtml(CF.eventIcon(c.kind), { size: 13 }) }), el('span', { text: `${c.description || CF.eventLabel(c.kind)} ${yen(c.amount)}` })))) : '',
+    ));
   }
-  wrap.append(card(sectionTitle('推移の内訳'), el('div', { class: 'fc-list' }, ...rows)));
 
-  // 前提条件
-  const sm = st.simulation;
-  wrap.append(card(sectionTitle('前提条件', el('button', { class: 'fc-link', type: 'button', text: '編集', onclick: () => simForm() })),
-    el('div', { class: 'fc-kv' },
-      kv('開始資産', sm.startAsset != null ? yen(sm.startAsset) : '総資産に連動'),
-      kv('毎月の収入', yen(sm.monthlyIncome)),
-      kv('毎月の支出', yen(sm.monthlyExpense)),
-      kv('積立投資', `${yen(sm.monthlyInvestment)}／月（年利${sm.annualReturn}%）`),
-      kv('ボーナス', `${yen(sm.bonusAmount)}（${(sm.bonusMonths || []).join('・')}月）`))));
+  // 資産推移グラフ（⑧⑩）
+  wrap.append(card(
+    sectionTitle('資産推移', el('span', { class: 'fc-chart-hint', text: '下のタイムラインで詳細' })),
+    secret ? el('p', { class: 'fc-empty', text: 'シークレットモード中は非表示' })
+      : el('div', { class: 'fc-chart', html: lineChart(chart, { color: shortage ? 'var(--fc-neg)' : 'var(--fc-accent)', height: 230 }) }),
+  ));
+
+  // 未払いカード（⑦）
+  if (st.cards.length) {
+    wrap.append(el('div', { class: 'fc-unpaid tap', role: 'button', onclick: () => unpaidModal(unpaid) },
+      el('div', { class: 'fc-unpaid-ic', html: iconHtml('card', { size: 20 }) }),
+      el('div', { class: 'fc-unpaid-main' },
+        el('span', { class: 'fc-unpaid-lab', text: '現在未払い（カード）' }),
+        el('span', { class: 'fc-unpaid-sub', text: `${unpaid.items.length}件・タップで一覧` })),
+      el('span', { class: 'fc-unpaid-amt', text: secret ? '＊＊＊' : yen(unpaid.total) }),
+      el('span', { class: 'fc-link-arrow', html: iconHtml('chevronRight', { size: 16 }) }),
+    ));
+  }
+
+  // 将来の可処分資金（⑧）
+  const fc = CF.forecasts(st);
+  wrap.append(card(sectionTitle('将来の資産予想'),
+    el('div', { class: 'fc-fc-list' }, ...fc.map((f) =>
+      el('div', { class: 'fc-fc-row' },
+        el('span', { class: 'fc-fc-lab', text: f.label }),
+        el('span', { class: 'fc-fc-amt' + (f.total < 0 ? ' neg' : ''), text: M(f.total) }),
+        el('span', { class: 'fc-fc-delta ' + (f.delta >= 0 ? 'pos' : 'neg'), text: secret ? '' : yen(f.delta, { sign: f.delta > 0 }) }))),
+  )));
+
+  // 将来のイベント タイムライン（⑩）
+  const events = CF.timeline(st, { days: ui.simMonths <= 6 ? 120 : 200, max: 24 });
+  wrap.append(card(sectionTitle('これからの入出金'),
+    events.length ? el('div', { class: 'fc-timeline' }, ...events.map((e) => timelineItem(e, sim, secret)))
+      : el('p', { class: 'fc-empty', text: '固定収支やカード利用を登録すると、ここに将来の入出金が表示されます' })));
+
+  wrap.append(el('p', { class: 'fc-note', text: '※ 登録済みの口座残高・固定収支・カード利用・将来日付の取引だけから、カードは実際の引落日に銀行から差し引いて計算しています。編集すると即座に再計算されます。' }));
   return wrap;
 }
-function kv(k, v) { return el('div', { class: 'fc-kv-row' }, el('span', { text: k }), el('b', { text: v })); }
 
-function simForm() {
-  const sm = S.getState().simulation;
-  const startAsset = inputEl({ type: 'number', placeholder: '空欄=総資産に連動', value: sm.startAsset ?? '' });
-  const income = inputEl({ type: 'number', value: sm.monthlyIncome });
-  const expense = inputEl({ type: 'number', value: sm.monthlyExpense });
-  const invest = inputEl({ type: 'number', value: sm.monthlyInvestment });
-  const ret = inputEl({ type: 'number', step: '0.1', value: sm.annualReturn });
-  const bonus = inputEl({ type: 'number', value: sm.bonusAmount });
-  const bonusMonths = inputEl({ placeholder: '例）6,12', value: (sm.bonusMonths || []).join(',') });
+function timelineItem(e, sim, secret) {
+  const income = e.amount >= 0;
+  return el('div', { class: 'fc-tl-item tap', role: 'button', onclick: () => eventDetailModal(e, sim) },
+    el('div', { class: 'fc-tl-date' }, el('b', { text: `${parseISO(e.date).getMonth() + 1}/${parseISO(e.date).getDate()}` }), el('span', { text: `${weekdayName(parseISO(e.date).getDay())}` })),
+    el('div', { class: 'fc-tl-ic ' + (income ? 'pos' : 'neg'), html: iconHtml(e.icon, { size: 16 }) }),
+    el('div', { class: 'fc-tl-main' },
+      el('div', { class: 'fc-tl-title', text: e.description || e.kindLabel }),
+      el('div', { class: 'fc-tl-sub', text: e.kindLabel })),
+    el('div', { class: 'fc-tl-amt ' + (income ? 'pos' : 'neg'), text: secret ? '＊＊＊' : yen(e.amount, { sign: income }) }),
+  );
+}
+
+function unpaidModal(unpaid) {
+  const body = unpaid.items.length ? el('div', { class: 'fc-list' }, ...unpaid.items.map((i) =>
+    el('div', { class: 'fc-row' },
+      el('div', { class: 'fc-row-ic', style: `background:${i.card.color}22;color:${i.card.color}`, html: iconHtml('card', { size: 18 }) }),
+      el('div', { class: 'fc-row-main' },
+        el('div', { class: 'fc-row-title', text: `${i.card.name}${i.memo ? '・' + i.memo : ''}` }),
+        el('div', { class: 'fc-row-sub', text: `利用 ${fmtDate(i.txDate)} → 引落予定 ${fmtDate(i.payISO)}` })),
+      el('div', { class: 'fc-row-amt', text: yen(i.amount) })))) : el('p', { class: 'fc-empty', text: '未払いのカード利用はありません' });
+  const head = el('div', { class: 'fc-modal-total' }, el('span', { text: '未払い合計' }), el('b', { text: yen(unpaid.total) }));
+  modal('未払いカード一覧', el('div', {}, head, body), {});
+}
+
+function eventDetailModal(e, sim) {
+  const income = e.amount >= 0;
+  const balance = CF.balanceAt(sim.series, e.date);
   const body = el('div', {},
-    field('開始資産（円）', startAsset), field('毎月の収入（給与など）', income),
-    field('毎月の固定支出', expense), field('毎月の積立投資', invest),
-    field('投資の想定年利（%）', ret), field('ボーナス（1回あたり）', bonus), field('ボーナス支給月（カンマ区切り）', bonusMonths));
-  modal('シミュレーション設定', body, {
-    onSave: (close) => {
-      S.update((s) => {
-        s.simulation = {
-          startAsset: startAsset.value === '' ? null : Number(startAsset.value),
-          monthlyIncome: Number(income.value) || 0, monthlyExpense: Number(expense.value) || 0,
-          monthlyInvestment: Number(invest.value) || 0, annualReturn: Number(ret.value) || 0,
-          bonusAmount: Number(bonus.value) || 0,
-          bonusMonths: bonusMonths.value.split(',').map((x) => Number(x.trim())).filter((x) => x >= 1 && x <= 12),
-        };
-      });
-      render(); toast('保存しました'); close();
-    },
-  });
+    el('div', { class: 'fc-evd-amt ' + (income ? 'pos' : 'neg'), text: yen(e.amount, { sign: income }) }),
+    el('div', { class: 'fc-kv' },
+      kv('種別', e.kindLabel),
+      kv('内容', e.description || '—'),
+      kv('日付', fmtDateLong(e.date)),
+      e.meta?.count ? kv('内訳', `${e.meta.count}件のカード利用`) : '',
+      kv('この日の資産見込み', M(balance)),
+      e.recurrence === 'monthly' ? kv('繰り返し', '毎月') : ''),
+  );
+  modal('入出金の詳細', body, {});
 }
 
 // ============ カレンダー ============
@@ -917,11 +953,10 @@ function renderAnalysis() {
   wrap.append(card(sectionTitle('可処分資金の推移'),
     el('div', { class: 'fc-chart', html: lineChart(trend.map((t) => ({ label: `${Number(t.ym.split('-')[1])}月`, value: t.disposable })), { color: '#30d158', height: 190 }) })));
 
-  // 資産推移（将来）
-  const sim = C.simulate(st, 24);
-  wrap.append(card(sectionTitle('資産推移（今後2年）'),
-    el('div', { class: 'fc-chart', html: st.settings.secret ? '' : lineChart(sim.map((p) => ({ label: `${parseISO(p.date).getMonth() + 1}月`, value: p.total })), { color: '#0a84ff', height: 190 }) }),
-    st.settings.secret ? el('p', { class: 'fc-empty', text: 'シークレットモード中は非表示' }) : ''));
+  // 資産推移（将来・データ駆動）
+  wrap.append(card(sectionTitle('資産推移（今後2年）', el('button', { class: 'fc-link', type: 'button', onclick: () => go('simulate') }, '詳細', el('span', { class: 'fc-link-arrow', html: iconHtml('chevronRight', { size: 15 }) }))),
+    st.settings.secret ? el('p', { class: 'fc-empty', text: 'シークレットモード中は非表示' })
+      : el('div', { class: 'fc-chart', html: lineChart(CF.chartSeries(st, 24), { color: '#0a84ff', height: 190 }) })));
   return wrap;
 }
 
