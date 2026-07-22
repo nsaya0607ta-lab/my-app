@@ -232,8 +232,9 @@ function renderDashboard() {
   const acctRow = (a) => {
     let sub;
     if (a.type === 'securities') {
-      const profit = Sec.accountValuation(a) - Sec.accountPrincipal(a);
-      const rate = Sec.accountPrincipal(a) > 0 ? (profit / Sec.accountPrincipal(a)) * 100 : null;
+      const cost = Sec.accountCost(a);
+      const profit = Sec.accountValuation(a) - cost;
+      const rate = cost > 0 ? (profit / cost) * 100 : null;
       const cls = profit === 0 ? 'muted' : profit > 0 ? 'pos' : 'neg';
       sub = el('div', { class: 'fc-row-sub' }, el('span', { text: '評価損益 ' }),
         el('span', { class: 'fc-valchg ' + cls, text: `${secret ? '＊＊' : yen(profit, { sign: profit > 0 })}${rate != null ? ` (${rate >= 0 ? '+' : ''}${rate.toFixed(2)}%)` : ''}` }));
@@ -426,9 +427,8 @@ function accountForm(acc) {
     { value: 'securities', label: '証券口座' }, { value: 'other', label: 'その他' },
   ], acc?.type || 'bank');
   const bal = inputEl({ type: 'number', inputmode: 'numeric', placeholder: '0', value: acc?.balance ?? '' });
-  // 証券口座は「残高」ではなく 現金・元本 を管理（評価額は株価から自動計算）
+  // 証券口座は「残高」ではなく 現金 を管理（元本＝取得額合計、評価額は保有銘柄から自動計算）
   const cash = inputEl({ type: 'number', inputmode: 'numeric', placeholder: '0', value: acc?.cash ?? '' });
-  const principal = inputEl({ type: 'number', inputmode: 'numeric', placeholder: '0', value: acc?.principal ?? '' });
   let include = acc ? acc.includeInDisposable !== false : (acc?.type !== 'securities');
 
   // 種別に応じて金額入力欄を切り替える
@@ -438,8 +438,7 @@ function accountForm(acc) {
     if (type.value === 'securities') {
       amountWrap.append(
         field('現金（未投資・円）', cash),
-        field('元本（投資済み合計・円）', principal),
-        el('p', { class: 'fc-field-hint', text: '評価額は登録した保有銘柄の株価から毎日自動計算されます。銀行→証券の振替は現金へ入金されます。' }));
+        el('p', { class: 'fc-field-hint', text: '元本（取得額）と評価額は、登録した保有銘柄から自動計算されます。銀行→証券の振替は現金へ入金されます。' }));
     } else {
       amountWrap.append(field('残高（円）', bal));
     }
@@ -474,7 +473,7 @@ function accountForm(acc) {
         if (isNew) {
           const rec = { id: uid('acc'), name: name.value.trim(), type: type.value, includeInDisposable: include };
           if (isSec) {
-            Object.assign(rec, { cash: Number(cash.value) || 0, principal: Number(principal.value) || 0, holdings: [], accumulations: [], accumHistory: [], purchases: [], lastAccumDate: null, lastQuoteDate: null, valuations: [], balance: 0 });
+            Object.assign(rec, { cash: Number(cash.value) || 0, holdings: [], accumulations: [], accumHistory: [], purchases: [], lastAccumDate: null, balance: 0 });
             Sec.recomputeAccount(rec);
           } else rec.balance = Number(bal.value) || 0;
           s.accounts.push(rec);
@@ -482,8 +481,8 @@ function accountForm(acc) {
           const a = s.accounts.find((x) => x.id === acc.id);
           a.name = name.value.trim(); a.type = type.value; a.includeInDisposable = include;
           if (isSec) {
-            a.cash = Number(cash.value) || 0; a.principal = Number(principal.value) || 0;
-            a.holdings ||= []; a.accumulations ||= []; a.accumHistory ||= []; a.purchases ||= []; a.valuations ||= [];
+            a.cash = Number(cash.value) || 0;
+            a.holdings ||= []; a.accumulations ||= []; a.accumHistory ||= []; a.purchases ||= [];
             Sec.recomputeAccount(a);
           } else a.balance = Number(bal.value) || 0;
         }
@@ -538,7 +537,7 @@ function renderTransactions() {
 function renderSecuritiesPanel(wrap, st, acc) {
   const secret = st.settings.secret;
   const cash = Sec.accountCash(acc);
-  const principal = Sec.accountPrincipal(acc);
+  const principal = Sec.accountCost(acc); // 元本＝取得額の合計（保有銘柄から自動計算）
   const kind = Sec.accountValuationByKind(acc);
   const valuation = kind.index + kind.stock;
   const profit = valuation - principal;
@@ -595,16 +594,17 @@ function renderSecuritiesPanel(wrap, st, acc) {
     btnIcon('primary', 'plus', '銘柄を追加', () => holdingForm(acc)),
     btnIcon('ghost', 'coins', '個別株を購入', () => purchaseForm(acc)),
     btnIcon('ghost', 'repeat', '積立設定', () => accumulationForm(acc)),
-    btnIcon('ghost', 'trending', '株価を更新', () => refreshQuotesNow()),
+    btnIcon('ghost', 'trending', '株価を更新', () => priceUpdateForm(acc)),
   ));
 
-  // --- 保有銘柄一覧（区分ごと） ---
+  // --- 保有銘柄一覧（個別株・インデックス） ---
   const holdings = Sec.accountHoldings(acc);
-  const lastQuote = acc.lastQuoteDate ? `最終株価更新 ${fmtDateLong(acc.lastQuoteDate)}` : '株価は未取得です';
+  const stocks = holdings.filter(Sec.isStock);
+  const funds = holdings.filter(Sec.isIndex);
   const holdingsCard = card(
-    sectionTitle('保有銘柄一覧', el('span', { class: 'fc-sec-quotedate', text: lastQuote })),
+    sectionTitle('保有銘柄一覧'),
     holdings.length
-      ? el('div', {}, holdingGroup(st, acc, 'index', 'インデックス'), holdingGroup(st, acc, 'stock', '個別株'))
+      ? el('div', {}, stockGroup(st, acc, stocks), ...Sec.NISA_FRAMES.map((f) => indexGroup(st, acc, funds, f)))
       : el('p', { class: 'fc-empty', text: 'まだ保有銘柄がありません。「銘柄を追加」から登録してください。' }),
   );
   wrap.append(holdingsCard);
@@ -618,35 +618,53 @@ function secBox(label, val) {
     el('span', { class: 'fc-sec-box-lab', text: label }),
     el('span', { class: 'fc-sec-box-val', text: val }));
 }
+const plClass = (v) => (v === 0 ? 'muted' : v > 0 ? 'pos' : 'neg');
+const plText = (pl, secret) => `${secret ? '＊＊' : yen(pl.diff, { sign: pl.diff > 0 })}${pl.rate != null ? ` ${pl.rate >= 0 ? '+' : ''}${pl.rate.toFixed(1)}%` : ''}`;
 
-// 区分別の保有銘柄グループ（インデックス / 個別株を分けて表示）
-function holdingGroup(st, acc, kind, label) {
+// 個別株グループ（米国株・USD）: ティッカー / 現在株価(USD) / ドル円 / 評価額(円) / 損益 / 損益率
+function stockGroup(st, acc, stocks) {
+  if (!stocks.length) return '';
   const secret = st.settings.secret;
-  const items = Sec.accountHoldings(acc).filter((h) => (kind === 'stock' ? h.kind === 'stock' : h.kind !== 'stock'));
-  if (!items.length) return '';
-  const kindCls = kind === 'stock' ? 'stock' : 'index';
-  const rows = items.map((h) => {
+  const usd = (v) => (secret ? '＊＊' : `$${(Number(v) || 0).toLocaleString('en-US', { maximumFractionDigits: 2 })}`);
+  const rows = stocks.map((h) => {
     const pl = Sec.holdingPL(h);
-    const dc = Sec.holdingDayChange(h);
-    const price = Sec.holdingPrice(h);
-    const plCls = pl.diff === 0 ? 'muted' : pl.diff > 0 ? 'pos' : 'neg';
-    const dcCls = !dc || dc.diff === 0 ? 'muted' : dc.diff > 0 ? 'pos' : 'neg';
     return el('div', { class: 'fc-row fc-holding tap', onclick: () => holdingForm(acc, h) },
       el('div', { class: 'fc-row-main' },
         el('div', { class: 'fc-holding-top' },
-          el('span', { class: `fc-kind-badge ${kindCls}`, text: kind === 'stock' ? '個別株' : 'インデックス' }),
           el('span', { class: 'fc-holding-name', text: h.name }),
           h.ticker ? el('span', { class: 'fc-holding-ticker', text: h.ticker }) : ''),
         el('div', { class: 'fc-holding-meta' },
-          el('span', { text: `現在価格 ${secret ? '＊＊' : num(Math.round(price))}` }),
-          el('span', { text: `${num(h.quantity)}口` }),
-          dc ? el('span', { class: dcCls, text: `前日比 ${secret ? '＊＊' : yen(dc.diff, { sign: dc.diff > 0 })}${dc.pct != null ? `(${dc.pct >= 0 ? '+' : ''}${dc.pct.toFixed(2)}%)` : ''}` }) : el('span', { class: 'muted', text: '前日比 —' }))),
+          el('span', { text: `現在株価 ${usd(h.priceUsd)}` }),
+          el('span', { text: `ドル円 ${secret ? '＊＊' : num(Math.round((Number(h.fxRate) || 0) * 100) / 100)}` }))),
       el('div', { class: 'fc-holding-amt' },
         el('span', { class: 'fc-holding-val', text: secret ? '＊＊＊' : yen(pl.value) }),
-        el('span', { class: 'fc-holding-pl ' + plCls, text: `${secret ? '＊＊' : yen(pl.diff, { sign: pl.diff > 0 })}${pl.rate != null ? ` ${pl.rate >= 0 ? '+' : ''}${pl.rate.toFixed(1)}%` : ''}` })));
+        el('span', { class: 'fc-holding-pl ' + plClass(pl.diff), text: plText(pl, secret) })));
   });
   return el('div', { class: 'fc-holding-group' },
-    el('div', { class: 'fc-holding-grouphead' }, el('span', { class: `fc-kind-badge ${kindCls}`, text: label }), el('span', { class: 'fc-holding-groupn', text: `${items.length}銘柄` })),
+    el('div', { class: 'fc-holding-grouphead' }, el('span', { class: 'fc-kind-badge stock', text: '個別株（米国株）' }), el('span', { class: 'fc-holding-groupn', text: `${stocks.length}銘柄` })),
+    el('div', { class: 'fc-list' }, ...rows));
+}
+
+// インデックスグループ（NISA区分ごと）: 取得価額 / 現在保有額 / 損益 / 損益率
+function indexGroup(st, acc, funds, frame) {
+  const items = funds.filter((h) => (h.nisaFrame || 'growth') === frame.value);
+  if (!items.length) return '';
+  const secret = st.settings.secret;
+  const money = (v) => (secret ? '＊＊＊' : yen(v));
+  const rows = items.map((h) => {
+    const pl = Sec.holdingPL(h);
+    return el('div', { class: 'fc-row fc-holding tap', onclick: () => holdingForm(acc, h) },
+      el('div', { class: 'fc-row-main' },
+        el('div', { class: 'fc-holding-top' }, el('span', { class: 'fc-holding-name', text: h.name })),
+        el('div', { class: 'fc-holding-meta' },
+          el('span', { text: `取得価額 ${money(pl.cost)}` }),
+          el('span', { text: `保有額 ${money(pl.value)}` }))),
+      el('div', { class: 'fc-holding-amt' },
+        el('span', { class: 'fc-holding-val', text: money(pl.value) }),
+        el('span', { class: 'fc-holding-pl ' + plClass(pl.diff), text: plText(pl, secret) })));
+  });
+  return el('div', { class: 'fc-holding-group' },
+    el('div', { class: 'fc-holding-grouphead' }, el('span', { class: 'fc-kind-badge index', text: frame.label }), el('span', { class: 'fc-holding-groupn', text: `${items.length}銘柄` })),
     el('div', { class: 'fc-list' }, ...rows));
 }
 
@@ -681,19 +699,52 @@ function accumulationCard(st, acc) {
   );
 }
 
-// 銘柄の追加・編集フォーム
+// 銘柄の追加・編集フォーム（個別株＝米国株USD / インデックス＝円建て＋NISA区分）
 function holdingForm(acc, h) {
   const isNew = !h;
-  const name = inputEl({ placeholder: '例）eMAXIS Slim 米国株式(S&P500)', value: h?.name || '' });
-  const ticker = inputEl({ placeholder: '例）VOO（任意）', value: h?.ticker || '' });
-  const kindSel = selectEl([{ value: 'index', label: 'インデックス' }, { value: 'stock', label: '個別株' }], h?.kind || 'index');
+  let kindVal = h?.kind || 'stock';
+  const kindSeg = el('div', { class: 'fc-seg' });
+
+  // 個別株（米国株・USD）
+  const name = inputEl({ placeholder: kindVal === 'stock' ? '例）IonQ' : '例）eMAXIS Slim 米国株式(S&P500)', value: h?.name || '' });
+  const ticker = inputEl({ placeholder: '例）IONQ', value: h?.ticker || '' });
   const qty = inputEl({ type: 'number', inputmode: 'decimal', placeholder: '0', value: h?.quantity ?? '' });
-  const avg = inputEl({ type: 'number', inputmode: 'decimal', placeholder: '0', value: h?.avgPrice ?? '' });
+  const costUsd = inputEl({ type: 'number', inputmode: 'decimal', placeholder: '0.00', value: h?.costUsd ?? '' });
+  const priceUsd = inputEl({ type: 'number', inputmode: 'decimal', placeholder: '0.00', value: h?.priceUsd ?? '' });
+  const fx = inputEl({ type: 'number', inputmode: 'decimal', placeholder: '例）157.5', value: h?.fxRate ?? '' });
+  // インデックス（円建て）
+  const nisaSel = selectEl(Sec.NISA_FRAMES, h?.nisaFrame || 'growth');
+  const cost = inputEl({ type: 'number', inputmode: 'numeric', placeholder: '0', value: h?.cost ?? '' });
+  const value = inputEl({ type: 'number', inputmode: 'numeric', placeholder: '0', value: h?.value ?? '' });
   const memo = inputEl({ placeholder: 'メモ（任意）', value: h?.memo || '' });
+
+  const fieldsWrap = el('div', {});
+  const drawFields = () => {
+    fieldsWrap.innerHTML = '';
+    if (kindVal === 'stock') {
+      fieldsWrap.append(
+        field('銘柄名', name), field('ティッカー', ticker), field('保有数量', qty),
+        field('取得単価（USD）', costUsd), field('現在株価（USD）', priceUsd), field('ドル円レート（USD/JPY）', fx),
+        field('メモ（任意）', memo),
+        el('p', { class: 'fc-field-hint', text: '評価額 = 保有数量 × 現在株価(USD) × ドル円。現在株価は「株価を更新」からいつでも手入力できます。' }));
+    } else {
+      fieldsWrap.append(
+        field('ファンド名', name), field('NISA区分', nisaSel),
+        field('取得価額（円）', cost), field('現在保有額（円）', value),
+        field('メモ（任意）', memo),
+        el('p', { class: 'fc-field-hint', text: 'インデックスは数量・基準価額の管理は不要です。取得価額と現在保有額の差額から損益・損益率を計算します。' }));
+    }
+  };
+  const drawKindSeg = () => {
+    kindSeg.innerHTML = '';
+    for (const [v, l] of [['stock', '個別株（米国株）'], ['index', 'インデックス']])
+      kindSeg.append(el('button', { class: 'fc-seg-btn' + (kindVal === v ? ' on' : ''), type: 'button', text: l, onclick: () => { kindVal = v; drawKindSeg(); drawFields(); } }));
+  };
+  drawKindSeg(); drawFields();
+
   const body = el('div', {},
-    field('銘柄名', name), field('ティッカー（任意）', ticker), field('区分', kindSel),
-    field('保有数量', qty), field('平均取得単価', avg), field('メモ（任意）', memo),
-    el('p', { class: 'fc-field-hint', text: 'ティッカーを設定すると毎日株価を自動取得して評価額を更新します。未設定の銘柄は平均取得単価で評価します。' }),
+    isNew ? field('区分', kindSeg) : '',
+    fieldsWrap,
     !isNew && el('button', {
       class: 'fc-btn danger block', type: 'button', text: 'この銘柄を削除',
       onclick: () => confirmDialog('銘柄を削除', `「${h.name}」を削除しますか？`, () => {
@@ -707,8 +758,13 @@ function holdingForm(acc, h) {
       if (!name.value.trim()) return toast('銘柄名を入力してください', 'alert');
       S.update((s) => {
         const a = s.accounts.find((x) => x.id === acc.id);
-        const rec = { name: name.value.trim(), ticker: ticker.value.trim().toUpperCase(), kind: kindSel.value, quantity: Number(qty.value) || 0, avgPrice: Number(avg.value) || 0, memo: memo.value.trim() };
-        if (isNew) a.holdings.push({ id: uid('hd'), price: 0, prevClose: 0, updatedAt: null, ...rec });
+        let rec;
+        if (kindVal === 'stock') {
+          rec = { kind: 'stock', name: name.value.trim(), ticker: ticker.value.trim().toUpperCase(), quantity: Number(qty.value) || 0, costUsd: Number(costUsd.value) || 0, priceUsd: Number(priceUsd.value) || 0, fxRate: Number(fx.value) || 0, memo: memo.value.trim() };
+        } else {
+          rec = { kind: 'index', name: name.value.trim(), nisaFrame: nisaSel.value, cost: Number(cost.value) || 0, value: Number(value.value) || 0, memo: memo.value.trim() };
+        }
+        if (isNew) a.holdings.push({ id: uid('hd'), ...rec });
         else Object.assign(a.holdings.find((x) => x.id === h.id), rec);
         Sec.recomputeAccount(a);
         S.recordAssetSnapshot(s);
@@ -718,30 +774,34 @@ function holdingForm(acc, h) {
   });
 }
 
-// 個別株の購入フォーム（現金を減らし元本へ加算）
+// 個別株（米国株）の購入フォーム。購入金額(円)=株数×購入単価USD×ドル円。現金を減らし元本(取得額)へ反映。
 function purchaseForm(acc) {
-  const stocks = Sec.accountHoldings(acc);
-  if (!stocks.length) { modal('個別株を購入', el('p', { class: 'fc-empty', text: '先に「銘柄を追加」で個別株を登録してください。' }), {}); return; }
-  const sel = selectEl(stocks.map((h) => ({ value: h.id, label: `${h.name}（${h.kind === 'stock' ? '個別株' : 'インデックス'}）` })), stocks[0].id);
+  const stocks = Sec.accountHoldings(acc).filter(Sec.isStock);
+  if (!stocks.length) { modal('個別株を購入', el('p', { class: 'fc-empty', text: '先に「銘柄を追加」で個別株（米国株）を登録してください。' }), {}); return; }
+  const sel = selectEl(stocks.map((h) => ({ value: h.id, label: `${h.name}${h.ticker ? '（' + h.ticker + '）' : ''}` })), stocks[0].id);
   const shares = inputEl({ type: 'number', inputmode: 'decimal', placeholder: '0', value: '' });
-  const price = inputEl({ type: 'number', inputmode: 'decimal', placeholder: '0', value: '' });
+  const price = inputEl({ type: 'number', inputmode: 'decimal', placeholder: '0.00', value: '' });
+  const fx = inputEl({ type: 'number', inputmode: 'decimal', placeholder: '例）157.5', value: stocks[0]?.fxRate || '' });
   const date = inputEl({ type: 'date', value: today() });
   const preview = el('p', { class: 'fc-field-hint' });
   const upd = () => {
-    const amt = (Number(shares.value) || 0) * (Number(price.value) || 0);
-    preview.textContent = `購入金額 ${yen(amt)}／購入後の現金 ${yen(Sec.accountCash(acc) - amt)}`;
+    const amt = Math.round((Number(shares.value) || 0) * (Number(price.value) || 0) * (Number(fx.value) || 0));
+    preview.textContent = `購入金額 ${yen(amt)}（${num(Number(shares.value) || 0)}株 × $${num(Number(price.value) || 0)} × ${num(Number(fx.value) || 0)}）／購入後の現金 ${yen(Sec.accountCash(acc) - amt)}`;
   };
-  shares.addEventListener('input', upd); price.addEventListener('input', upd); upd();
+  // 選択銘柄が変わったらドル円の初期値を追従
+  sel.addEventListener('change', () => { const h = stocks.find((x) => x.id === sel.value); if (h && !fx.value) fx.value = h.fxRate || ''; upd(); });
+  shares.addEventListener('input', upd); price.addEventListener('input', upd); fx.addEventListener('input', upd); upd();
   const body = el('div', {},
-    field('銘柄', sel), field('購入株数', shares), field('購入価格（単価）', price), field('購入日', date), preview,
-    el('p', { class: 'fc-field-hint', text: '購入すると証券口座の現金が減り、購入金額が元本へ加算されます。現金が不足している場合は購入できません。' }));
+    field('銘柄', sel), field('購入株数', shares), field('購入価格（USD）', price), field('ドル円レート（USD/JPY）', fx), field('購入日', date), preview,
+    el('p', { class: 'fc-field-hint', text: '購入すると証券口座の現金が減り、購入金額が元本（取得額）へ反映されます。現金が不足している場合は購入できません。' }));
   modal('個別株を購入', body, {
     saveLabel: '購入する',
     onSave: (close) => {
-      const sh = Number(shares.value), pr = Number(price.value);
+      const sh = Number(shares.value), pr = Number(price.value), rate = Number(fx.value);
       if (!sh || sh <= 0 || !pr || pr <= 0) return toast('株数と価格を入力してください', 'alert');
+      if (!rate || rate <= 0) return toast('ドル円レートを入力してください', 'alert');
       let result;
-      S.update((s) => { result = Sec.purchaseStock(s, acc.id, sel.value, sh, pr, date.value); if (result.ok) S.recordAssetSnapshot(s); });
+      S.update((s) => { result = Sec.purchaseStock(s, acc.id, sel.value, sh, pr, rate, date.value); if (result.ok) S.recordAssetSnapshot(s); });
       if (!result.ok) {
         if (result.reason === 'cash') return toast(`現金が不足しています（購入額 ${yen(result.amount)}）`, 'alert');
         return toast('購入できませんでした', 'alert');
@@ -751,10 +811,45 @@ function purchaseForm(acc) {
   });
 }
 
+// 「株価を更新」= 現在株価(USD)を手入力する画面（API取得ではない）。保存で評価額・損益・損益率が即時再計算。
+function priceUpdateForm(acc) {
+  const stocks = Sec.accountHoldings(acc).filter(Sec.isStock);
+  if (!stocks.length) { modal('株価を更新', el('p', { class: 'fc-empty', text: '個別株（米国株）が登録されていません。「銘柄を追加」から登録してください。' }), {}); return; }
+  const rows = stocks.map((h) => {
+    const priceInp = inputEl({ type: 'number', inputmode: 'decimal', placeholder: '0.00', value: h.priceUsd ?? '' });
+    const fxInp = inputEl({ type: 'number', inputmode: 'decimal', placeholder: '例）157.5', value: h.fxRate ?? '' });
+    return { h, priceInp, fxInp, node: el('div', { class: 'fc-priceupd-row' },
+      el('div', { class: 'fc-priceupd-head' },
+        el('span', { class: 'fc-holding-name', text: h.name }),
+        h.ticker ? el('span', { class: 'fc-holding-ticker', text: h.ticker }) : ''),
+      el('div', { class: 'fc-priceupd-inputs' },
+        field('現在株価（USD）', priceInp), field('ドル円', fxInp))) };
+  });
+  const body = el('div', {},
+    el('p', { class: 'fc-field-hint', text: '各銘柄の現在株価（USD）とドル円を入力して保存すると、評価額・損益・損益率・保有割合が即時に再計算されます。' }),
+    ...rows.map((r) => r.node));
+  modal('株価を更新（現在株価を入力）', body, {
+    onSave: (close) => {
+      S.update((s) => {
+        const a = s.accounts.find((x) => x.id === acc.id);
+        for (const r of rows) {
+          const hh = a.holdings.find((x) => x.id === r.h.id);
+          if (!hh) continue;
+          if (r.priceInp.value !== '') hh.priceUsd = Number(r.priceInp.value) || 0;
+          if (r.fxInp.value !== '') hh.fxRate = Number(r.fxInp.value) || 0;
+        }
+        Sec.recomputeAccount(a);
+        S.recordAssetSnapshot(s);
+      });
+      render(); toast('評価額を更新しました', 'trending'); close();
+    },
+  });
+}
+
 // 積立設定フォーム（対象・毎日の積立額・開始日・終了日・ON/OFF）
 function accumulationForm(acc, a) {
   const isNew = !a;
-  const indexHoldings = Sec.accountHoldings(acc).filter((h) => h.kind !== 'stock');
+  const indexHoldings = Sec.accountHoldings(acc).filter(Sec.isIndex);
   if (!indexHoldings.length) { modal('積立設定', el('p', { class: 'fc-empty', text: '先に「銘柄を追加」でインデックス銘柄を登録してください。' }), {}); return; }
   const sel = selectEl(indexHoldings.map((h) => ({ value: h.id, label: h.name })), a?.holdingId || indexHoldings[0].id);
   const amount = inputEl({ type: 'number', inputmode: 'numeric', placeholder: '例）1000', value: a?.dailyAmount ?? '' });
@@ -789,32 +884,6 @@ function accumulationForm(acc, a) {
       render(); toast('保存しました'); close();
     },
   });
-}
-
-// 起動時の自動株価更新（本日未取得のときのみ）。取得できなくても他の表示は止めない。
-async function autoRefreshQuotes() {
-  const st = S.getState();
-  if (!Sec.quotesStale(st)) return;
-  const tickers = Sec.tickersToUpdate(st);
-  if (!tickers.length) return;
-  const { quotes } = await Sec.fetchQuotes(tickers);
-  let updated = 0;
-  S.update((s) => { updated = Sec.applyQuotes(s, quotes); S.recordAssetSnapshot(s); }, { silent: true });
-  if (updated > 0) { render(); toast(`${updated}銘柄の評価額を更新しました`, 'trending'); }
-}
-
-// 今すぐ株価を取得して評価額を更新
-async function refreshQuotesNow() {
-  const st = S.getState();
-  const tickers = Sec.tickersToUpdate(st);
-  if (!tickers.length) { toast('ティッカー設定済みの銘柄がありません', 'alert'); return; }
-  toast('株価を取得中…', 'trending');
-  const { quotes, errors } = await Sec.fetchQuotes(tickers);
-  let updated = 0;
-  S.update((s) => { updated = Sec.applyQuotes(s, quotes); S.recordAssetSnapshot(s); });
-  render();
-  if (updated > 0) toast(`${updated}銘柄の株価を更新しました${errors.length ? `（${errors.length}銘柄は取得不可）` : ''}`);
-  else toast('株価を取得できませんでした', 'alert');
 }
 
 // 口座に紐付く 収入 / 支出 / 振替 を表示（口座詳細と共通）
@@ -1861,8 +1930,6 @@ export function init() {
     Sec.recomputeAll(s);
     if (changed || accrued) S.recordAssetSnapshot(s);
   }, { silent: true });
-  // 起動時に本日分の株価をまだ取得していなければ自動取得して評価額を更新
-  autoRefreshQuotes();
   // 起動時に資産スナップショットのベースラインを記録（口座があり履歴が無い場合）
   const st0 = S.getState();
   if ((st0.assetHistory || []).length === 0 && st0.accounts.length > 0) {

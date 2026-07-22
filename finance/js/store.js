@@ -124,13 +124,25 @@ function migrate(data) {
     // （データを失わせない）。ユーザーが銘柄・元本を登録すると再計算される。
     if (isSecurities(a)) {
       if (a.cash === undefined) a.cash = Number(a.balance) || 0;
-      if (a.principal === undefined) a.principal = 0;
-      a.holdings ||= [];        // 保有銘柄 [{id,name,ticker,kind,quantity,avgPrice,memo,price,prevClose,updatedAt}]
+      a.holdings ||= [];        // 保有銘柄（個別株=USD建て / インデックス=円建て。kindで判別）
       a.accumulations ||= [];   // 積立設定 [{id,holdingId,dailyAmount,startDate,endDate,enabled}]
       a.accumHistory ||= [];    // 積立履歴 [{id,date,holdingId,holdingName,amount,status,reason}]
       a.purchases ||= [];       // 個別株の購入履歴
       if (a.lastAccumDate === undefined) a.lastAccumDate = null;
-      if (a.lastQuoteDate === undefined) a.lastQuoteDate = null;
+      // 保有銘柄を新スキーマへ補完（旧: quantity/avgPrice/price → 新: 個別株USD / インデックス円）
+      for (const h of a.holdings) {
+        if (h.kind === 'index') {
+          if (h.nisaFrame === undefined) h.nisaFrame = 'growth';
+          if (h.cost === undefined) h.cost = (Number(h.quantity) || 0) * (Number(h.avgPrice) || 0);
+          if (h.value === undefined) h.value = (Number(h.quantity) || 0) * (Number(h.price) || Number(h.avgPrice) || 0);
+        } else {
+          h.kind = 'stock';
+          if (h.costUsd === undefined) h.costUsd = Number(h.avgPrice) || 0;
+          if (h.priceUsd === undefined) h.priceUsd = Number(h.price) || Number(h.avgPrice) || 0;
+          if (h.fxRate === undefined) h.fxRate = 0;
+          if (h.quantity === undefined) h.quantity = 0;
+        }
+      }
       recomputeAccount(a);      // balance = 現金 + 評価額 に同期
     }
   }
