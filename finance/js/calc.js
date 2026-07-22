@@ -2,7 +2,7 @@
 // 最重要3機能: ①クレジットカード引落管理 ②将来資産シミュレーション ③可処分資金の自動計算
 // 純粋関数の集合として実装し、UIから独立させることでテスト・拡張を容易にする。
 
-import { ym, pad, resolveDay, addMonths, toISO, parseISO, daysInMonth } from './utils.js?v=20260723c';
+import { ym, pad, resolveDay, addMonths, toISO, parseISO, daysInMonth } from './utils.js?v=20260724a';
 
 // ===== 総資産 =====
 export const totalAssets = (state) =>
@@ -65,8 +65,8 @@ export function accountLedger(state, accountId) {
   const income = state.transactions.filter((t) => t.type === 'income' && t.accountId === accountId).sort(byDateDesc);
   // 変動費（自分が使ったお金）
   const variableExpense = state.transactions.filter((t) => t.type === 'expense' && t.accountId === accountId).sort(byDateDesc);
-  // 固定費（毎月必ず発生する支出）
-  const fixedExpense = state.recurring.filter((r) => r.type === 'expense' && r.accountId === accountId).sort(dayAsc);
+  // 固定費（毎月必ず発生する支出。カード払いはカード側で管理するため銀行口座の固定費からは除外）
+  const fixedExpense = state.recurring.filter((r) => r.type === 'expense' && r.paymentMethod !== 'card' && r.accountId === accountId).sort(dayAsc);
   const fixedIncome = state.recurring.filter((r) => r.type === 'income' && r.accountId === accountId).sort(dayAsc);
   const transfers = state.transfers
     .filter((tr) => tr.fromAccountId === accountId || tr.toAccountId === accountId)

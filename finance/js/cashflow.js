@@ -9,9 +9,9 @@
 // これにより 投資・配当・積立NISA・ローン返済・住宅/車購入 などは
 // 新しい kind のイベント生成器を足すだけで追加できる。
 
-import { pad, toISO, parseISO, addMonths, resolveDay, daysInMonth, ym } from './utils.js?v=20260723c';
-import { settlements, settlementDate, totalAssets } from './calc.js?v=20260723c';
-import { version as storeVersion } from './store.js?v=20260723c';
+import { pad, toISO, parseISO, addMonths, resolveDay, daysInMonth, ym } from './utils.js?v=20260724a';
+import { settlements, settlementDate, totalAssets } from './calc.js?v=20260724a';
+import { version as storeVersion } from './store.js?v=20260724a';
 
 // 日次処理順（⑫）: 収入→固定収入→固定支出→カード引落→振替→その他支出
 export const PRIORITY = { income: 1, 'fixed-income': 2, 'fixed-expense': 3, card: 4, transfer: 5, expense: 6 };
@@ -36,6 +36,8 @@ export function buildEvents(state, fromISO, toISO_) {
   while (cur <= endMonth) {
     const y = cur.getFullYear(), m = cur.getMonth();
     for (const r of state.recurring) {
+      // カード払いの固定支出は銀行から直接引かず、カード利用として引落日に反映する（後述）
+      if (r.type === 'expense' && r.paymentMethod === 'card') continue;
       const day = resolveDay(y, m, r.day);
       const date = `${y}-${pad(m + 1)}-${pad(day)}`;
       const income = r.type === 'income';
@@ -47,6 +49,30 @@ export function buildEvents(state, fromISO, toISO_) {
       });
     }
     cur = new Date(y, m + 1, 1);
+  }
+
+  // カード払いの固定支出（将来分）: 各月の発生日をカード利用とみなし、実際の引落日に
+  // 引落口座から差し引く。今日以前の発生分は store が実カード利用に具体化済みのため対象外。
+  for (const r of state.recurring) {
+    if (r.type !== 'expense' || r.paymentMethod !== 'card' || !r.cardId) continue;
+    const card = state.cards.find((c) => c.id === r.cardId);
+    if (!card) continue;
+    let c3 = new Date(start.getFullYear(), start.getMonth(), 1);
+    while (c3 <= endMonth) {
+      const y = c3.getFullYear(), m = c3.getMonth();
+      const day = resolveDay(y, m, r.day);
+      const useDate = `${y}-${pad(m + 1)}-${pad(day)}`;
+      if (useDate > fromISO) { // 未来の利用のみ（過去分は実データで settlements に反映済み）
+        const pay = settlementDate(card, useDate);
+        push({
+          date: pay, amount: -(Number(r.amount) || 0), kind: 'card',
+          category: r.categoryId, accountId: card.payAccountId || null,
+          recurrence: 'monthly', description: `${card.name} 引落（${r.name}）`, priority: 4,
+          meta: { cardId: card.id, count: 1, color: card.color, fromRecurring: r.id },
+        });
+      }
+      c3 = new Date(y, m + 1, 1);
+    }
   }
 
   // ⑤ カード引落（実際の引落日ベース）

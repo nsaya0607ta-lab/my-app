@@ -2,8 +2,8 @@
 // 設計方針: すべてのデータはこの1オブジェクトに集約し、mutate → save → emit。
 // 将来の証券口座連携などは accounts の type と外部同期モジュールを足すだけで拡張可能。
 
-import { uid, pad } from './utils.js?v=20260723c';
-import { settlementDate } from './calc.js?v=20260723c';
+import { uid, pad } from './utils.js?v=20260724a';
+import { settlementDate } from './calc.js?v=20260724a';
 
 const KEY = 'finance_app_v2';
 const SCHEMA = 1;
@@ -100,6 +100,7 @@ function load() {
 
 function migrate(data) {
   // 将来のスキーマ変更に備えた入れ物。今は欠損フィールドの補完のみ。
+  const today = todayISO();
   data.schema ||= SCHEMA;
   data.transactions ||= [];
   data.recurring ||= [];
@@ -117,15 +118,21 @@ function migrate(data) {
   for (const a of data.accounts || []) {
     if (a.includeInDisposable === undefined) a.includeInDisposable = a.type !== 'securities';
   }
-  // 口座ベース設計への移行: 口座未指定の既存取引を先頭口座へ割り当て（履歴が消えないように）
+  // 固定支出の支払方法（'bank' | 'card'）。既定は銀行口座。作成日は既存分を今日として
+  // 過去分の遡及生成を防ぐ（現在残高に既に反映済みとみなす）。
+  for (const r of data.recurring) {
+    if (r.type === 'expense' && r.paymentMethod === undefined) r.paymentMethod = 'bank';
+    if (r.createdAt === undefined) r.createdAt = today;
+  }
+  // 口座ベース設計への移行: 口座未指定の既存取引を先頭口座へ割り当て（履歴が消えないように）。
+  // カード払いの固定支出は銀行口座に直接紐付かないため対象外。
   const firstAcc = (data.accounts || [])[0]?.id || null;
   if (firstAcc) {
     for (const t of data.transactions) if (!t.accountId) t.accountId = firstAcc;
-    for (const r of data.recurring) if (!r.accountId) r.accountId = firstAcc;
+    for (const r of data.recurring) if (!r.accountId && r.paymentMethod !== 'card') r.accountId = firstAcc;
   }
   // カード利用の「引落済み」フラグ。既存データは、引落日が過ぎているものは
   // 済み（残高に反映済みとみなす）、未来のものは未引落として扱う（残高は変更しない）。
-  const today = todayISO();
   for (const t of data.cardTransactions) {
     if (t.settled === undefined) {
       const card = (data.cards || []).find((c) => c.id === t.cardId);
@@ -133,6 +140,37 @@ function migrate(data) {
     }
   }
   return data;
+}
+
+// カード払いの固定支出を、実際のカード利用（cardTransactions）として具体化する。
+// 作成日より後・今日以前の各月の発生日について、未生成のものだけカード利用を1件作る。
+// これにより 未引落残高・可処分資金・カード請求・引落 の各処理と自動的に整合する。冪等。
+export function materializeRecurringCardUsage(s) {
+  const today = todayISO();
+  let changed = false;
+  for (const r of s.recurring) {
+    if (r.type !== 'expense' || r.paymentMethod !== 'card' || !r.cardId) continue;
+    if (!s.cards.find((c) => c.id === r.cardId)) continue;
+    const since = r.createdAt || today;
+    // since の翌月〜今日までの各月の発生日を走査
+    let cur = new Date(Number(since.slice(0, 4)), Number(since.slice(5, 7)) - 1, 1);
+    const end = new Date(Number(today.slice(0, 4)), Number(today.slice(5, 7)) - 1, 1);
+    while (cur <= end) {
+      const y = cur.getFullYear(), m = cur.getMonth();
+      const day = r.day === 'end' ? new Date(y, m + 1, 0).getDate() : Math.min(Number(r.day), new Date(y, m + 1, 0).getDate());
+      const date = `${y}-${pad(m + 1)}-${pad(day)}`;
+      const occYm = `${y}-${pad(m + 1)}`;
+      if (date > since && date <= today) {
+        const exists = s.cardTransactions.some((t) => t.sourceRecurringId === r.id && t.occYm === occYm);
+        if (!exists) {
+          s.cardTransactions.push({ id: uid('ctx'), cardId: r.cardId, date, amount: Number(r.amount) || 0, memo: r.name, categoryId: r.categoryId || null, settled: false, sourceRecurringId: r.id, occYm });
+          changed = true;
+        }
+      }
+      cur = new Date(y, m + 1, 1);
+    }
+  }
+  return changed;
 }
 
 // 引落日を過ぎた未引落カード利用を確定する（銀行残高を減額し settled にする）。
