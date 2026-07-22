@@ -2,7 +2,7 @@
 // 最重要3機能: ①クレジットカード引落管理 ②将来資産シミュレーション ③可処分資金の自動計算
 // 純粋関数の集合として実装し、UIから独立させることでテスト・拡張を容易にする。
 
-import { ym, pad, resolveDay, addMonths, toISO, parseISO, daysInMonth } from './utils.js?v=20260724b';
+import { ym, pad, resolveDay, addMonths, toISO, parseISO, daysInMonth } from './utils.js?v=20260724c';
 
 // ===== 総資産 =====
 export const totalAssets = (state) =>
@@ -167,13 +167,16 @@ export function upcomingSettlements(state, fromISO) {
 }
 
 // ===== 固定収支の展開 =====
-// 指定年月に発生する固定収入/支出を実日付付きで返す
+// 固定収支が指定日に有効か（開始日・終了日の範囲内か）。終了日未設定は無期限。
+export const recurringActiveOn = (r, dateISO) =>
+  (!r.startDate || dateISO >= r.startDate) && (!r.endDate || dateISO <= r.endDate);
+
+// 指定年月に発生する固定収入/支出を実日付付きで返す（開始日〜終了日の範囲外は除外）
 export function recurringForMonth(state, ymStr) {
   const [y, m] = ymStr.split('-').map(Number);
-  return state.recurring.map((r) => {
-    const day = resolveDay(y, m - 1, r.day);
-    return { ...r, date: `${y}-${pad(m)}-${pad(day)}` };
-  });
+  return state.recurring
+    .map((r) => ({ ...r, date: `${y}-${pad(m)}-${pad(resolveDay(y, m - 1, r.day))}` }))
+    .filter((r) => recurringActiveOn(r, r.date));
 }
 
 // ===== ③ 可処分資金 / 損益計算書 =====
