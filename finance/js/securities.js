@@ -8,7 +8,7 @@
 //   ・インデックス(kind:'index') … 円建て。数量・基準価額は管理しない
 //       { name, kind:'index', nisaFrame:'growth'|'tsumitate', cost, value, memo }
 
-import { pad, toISO } from './utils.js?v=20260722s';
+import { pad, toISO } from './utils.js?v=20260722t';
 
 // ===== 証券口座の判定・取得 =====
 export const isSecurities = (a) => a && a.type === 'securities';
@@ -176,8 +176,8 @@ function runAccrualForDate(acc, iso) {
     if (!h || !isIndex(h)) { pushHistory(acc, { date: iso, holdingId: a.holdingId, holdingName, amount, status: 'failed', reason: '対象ファンドなし' }); continue; }
     if (accountCash(acc) < amount) { pushHistory(acc, { date: iso, holdingId: a.holdingId, holdingName, amount, status: 'failed', reason: '現金不足' }); continue; }
     acc.cash = accountCash(acc) - amount;   // ① 現金から積立額を引く
-    h.cost = n(h.cost) + amount;            // ② 取得価額へ加算（元本）
-    h.value = n(h.value) + amount;          // ③ 現在保有額へ加算（購入直後は同額）
+    h.cost = n(h.cost) + amount;            // ② 総元本へ加算（毎晩23時の積立はここに積み上がる）
+    h.value = n(h.value) + amount;          // ③ 現在保有額へ同額を反映（総資産の整合性維持。実評価額は手入力で上書き可）
     pushHistory(acc, { date: iso, holdingId: a.holdingId, holdingName, amount, status: 'success' });
   }
 }

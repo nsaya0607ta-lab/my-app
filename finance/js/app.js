@@ -1,14 +1,14 @@
 // app.js — ルーティング・画面描画・フォーム・操作の統合レイヤー
-import * as S from './store.js?v=20260722s';
-import * as C from './calc.js?v=20260722s';
-import * as CF from './cashflow.js?v=20260722s';
-import * as Sec from './securities.js?v=20260722s';
-import { lineChart, barChart, groupedBarChart, donutChart } from './charts.js?v=20260722s';
-import { iconHtml, icon } from './icons.js?v=20260722s';
+import * as S from './store.js?v=20260722t';
+import * as C from './calc.js?v=20260722t';
+import * as CF from './cashflow.js?v=20260722t';
+import * as Sec from './securities.js?v=20260722t';
+import { lineChart, barChart, groupedBarChart, donutChart } from './charts.js?v=20260722t';
+import { iconHtml, icon } from './icons.js?v=20260722t';
 import {
   el, qs, yen, yenMasked, num, today, toISO, parseISO, ym, fmtDate, fmtDateLong,
   fmtMonth, addMonths, resolveDay, pad, weekdayName, haptic, escapeHtml, uid,
-} from './utils.js?v=20260722s';
+} from './utils.js?v=20260722t';
 
 // ---- 画面ローカル状態（データではないUI状態） ----
 const ui = {
@@ -657,7 +657,7 @@ function indexGroup(st, acc, funds, frame) {
       el('div', { class: 'fc-row-main' },
         el('div', { class: 'fc-holding-top' }, el('span', { class: 'fc-holding-name', text: h.name })),
         el('div', { class: 'fc-holding-meta' },
-          el('span', { text: `取得価額 ${money(pl.cost)}` }),
+          el('span', { text: `総元本 ${money(pl.cost)}` }),
           el('span', { text: `保有額 ${money(pl.value)}` }))),
       el('div', { class: 'fc-holding-amt' },
         el('span', { class: 'fc-holding-val', text: money(pl.value) }),
@@ -730,9 +730,9 @@ function holdingForm(acc, h) {
     } else {
       fieldsWrap.append(
         field('ファンド名', name), field('NISA区分', nisaSel),
-        field('取得価額（円）', cost), field('現在保有額（円）', value),
+        field('総元本（円）', cost), field('現在保有額（円）', value),
         field('メモ（任意）', memo),
-        el('p', { class: 'fc-field-hint', text: 'インデックスは数量・基準価額の管理は不要です。取得価額と現在保有額の差額から損益・損益率を計算します。' }));
+        el('p', { class: 'fc-field-hint', text: 'インデックスは数量・基準価額の管理は不要です。毎晩23時の積立額はこの総元本に積み上がります。総元本と現在保有額の差額から損益・損益率を計算します。' }));
     }
   };
   const drawKindSeg = () => {
