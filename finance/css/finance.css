@@ -638,6 +638,11 @@ input[type='color'].fc-input { height: 46px; padding: 4px; }
 .fc-val-date { font-size: 11.5px; color: var(--fc-muted); margin-top: 8px; }
 .fc-valhist-wrap { margin-top: 6px; }
 .fc-valhist .fc-row { padding: 8px 2px; }
+
+/* 口座並び替え */
+.fc-reorder-btns { display: flex; gap: 6px; }
+.fc-reorder-btns .fc-icobtn { width: 34px; height: 34px; }
+.fc-reorder-btns .fc-icobtn[disabled] { opacity: 0.3; }
 .fc-row.sel { background: var(--fc-accent-soft); }
 .fc-acct-check { color: var(--fc-accent); display: flex; }
 
