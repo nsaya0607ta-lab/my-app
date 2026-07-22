@@ -1,13 +1,13 @@
 // app.js — ルーティング・画面描画・フォーム・操作の統合レイヤー
-import * as S from './store.js?v=20260724a';
-import * as C from './calc.js?v=20260724a';
-import * as CF from './cashflow.js?v=20260724a';
-import { lineChart, barChart, groupedBarChart, donutChart } from './charts.js?v=20260724a';
-import { iconHtml, icon } from './icons.js?v=20260724a';
+import * as S from './store.js?v=20260724b';
+import * as C from './calc.js?v=20260724b';
+import * as CF from './cashflow.js?v=20260724b';
+import { lineChart, barChart, groupedBarChart, donutChart } from './charts.js?v=20260724b';
+import { iconHtml, icon } from './icons.js?v=20260724b';
 import {
   el, qs, yen, yenMasked, num, today, toISO, parseISO, ym, fmtDate, fmtDateLong,
   fmtMonth, addMonths, resolveDay, pad, weekdayName, haptic, escapeHtml, uid,
-} from './utils.js?v=20260724a';
+} from './utils.js?v=20260724b';
 
 // ---- 画面ローカル状態（データではないUI状態） ----
 const ui = {
@@ -299,13 +299,18 @@ function renderDashboard() {
   }
 
   // --- 口座一覧サマリー ---
-  const acctRow = (a) => el('div', { class: 'fc-row tap', onclick: () => openAccountLedger(a.id) },
-    el('div', { class: 'fc-row-ic', html: accIcon(a.type) }),
-    el('div', { class: 'fc-row-main' },
-      el('div', { class: 'fc-row-title', text: a.name }),
-      el('div', { class: 'fc-row-sub', text: '取引履歴を見る' })),
-    el('div', { class: 'fc-row-amt', text: M(a.balance) }),
-    el('span', { class: 'fc-link-arrow', html: iconHtml('chevronRight', { size: 16 }) }));
+  const acctRow = (a) => {
+    const vc = a.type === 'securities' ? C.valuationChange(a) : null;
+    return el('div', { class: 'fc-row tap', onclick: () => openAccountLedger(a.id) },
+      el('div', { class: 'fc-row-ic', html: accIcon(a.type) }),
+      el('div', { class: 'fc-row-main' },
+        el('div', { class: 'fc-row-title', text: a.name }),
+        a.type === 'securities'
+          ? el('div', { class: 'fc-row-sub' }, el('span', { text: '前月比 ' }), valChangeInline(vc, { secret: st.settings.secret }))
+          : el('div', { class: 'fc-row-sub', text: '取引履歴を見る' })),
+      el('div', { class: 'fc-row-amt', text: M(a.balance) }),
+      el('span', { class: 'fc-link-arrow', html: iconHtml('chevronRight', { size: 16 }) }));
+  };
   wrap.append(card(
     sectionTitle('口座', el('button', { class: 'fc-link', type: 'button', onclick: () => go('accounts') }, '管理', linkArrow())),
     st.accounts.length === 0
@@ -425,6 +430,80 @@ function renderAccounts() {
   return wrap;
 }
 
+// 前月比のインライン表示（増加=緑▲ / 減少=赤▼ / 変化なし=グレー±）
+function valChangeInline(vc, { showMoney = true, secret = false } = {}) {
+  if (!vc) return el('span', { class: 'fc-valchg muted', text: '—' });
+  const up = vc.diff > 0, flat = vc.diff === 0;
+  const cls = flat ? 'muted' : up ? 'pos' : 'neg';
+  const arrow = flat ? '±' : up ? '▲' : '▼';
+  const pct = vc.pct == null ? '' : `${vc.pct >= 0 ? '+' : ''}${vc.pct.toFixed(2)}%`;
+  if (secret) return el('span', { class: 'fc-valchg ' + cls, text: `${arrow} ＊＊` });
+  const money = showMoney ? yen(vc.diff, { sign: true }) + ' ' : '';
+  return el('span', { class: 'fc-valchg ' + cls, text: flat ? `±0 ${pct}` : `${arrow} ${money}${pct}` });
+}
+
+// 証券口座の評価額を更新するフォーム
+function valuationForm(account) {
+  const st = S.getState();
+  const hist = C.valuationHistory(account);
+  const lastVal = hist[hist.length - 1];
+  const date = inputEl({ type: 'date', value: today() });
+  const amount = inputEl({ type: 'number', inputmode: 'numeric', placeholder: '0', value: '' });
+  let included = 'yes'; // 今月の振替分を含めているか
+  const seg = el('div', { class: 'fc-seg' });
+  const preview = el('div', { class: 'fc-field-hint' });
+  const updPreview = () => {
+    const input = Number(amount.value) || 0;
+    const since = lastVal?.date || null;
+    const add = included === 'no' ? C.transfersIntoBetween(st, account.id, since, date.value) : 0;
+    const saved = input + add;
+    preview.textContent = included === 'no' && add > 0
+      ? `保存する評価額: ${yen(saved)}（入力 ${yen(input)} ＋ 評価日までの振替 ${yen(add)}）`
+      : `保存する評価額: ${yen(saved)}`;
+  };
+  const drawSeg = () => { seg.innerHTML = ''; for (const [v, l] of [['yes', '含めている'], ['no', '含めていない']]) seg.append(el('button', { class: 'fc-seg-btn' + (included === v ? ' on' : ''), type: 'button', text: l, onclick: () => { included = v; drawSeg(); updPreview(); } })); };
+  drawSeg();
+  amount.addEventListener('input', updPreview);
+  date.addEventListener('input', updPreview);
+  updPreview();
+
+  const histList = hist.length
+    ? el('div', { class: 'fc-list fc-valhist' }, ...hist.slice(-6).reverse().map((v) =>
+        el('div', { class: 'fc-row' },
+          el('div', { class: 'fc-row-main' }, el('div', { class: 'fc-row-sub', text: fmtDateLong(v.date) })),
+          el('div', { class: 'fc-row-amt', text: yen(v.value) }))))
+    : el('p', { class: 'fc-empty', text: 'まだ評価履歴はありません' });
+
+  const body = el('div', {},
+    lastVal ? el('p', { class: 'fc-field-hint', text: `前回評価額: ${yen(lastVal.value)}（${fmtDate(lastVal.date)}）` }) : '',
+    field('評価日', date),
+    field('評価額（円）', amount),
+    field('今月の振替分を含めた金額ですか？', seg),
+    preview,
+    el('div', { class: 'fc-valhist-wrap' }, el('div', { class: 'fc-field-lab', text: '評価履歴' }), histList));
+  modal('評価額を更新', body, {
+    onSave: (close) => {
+      const input = Number(amount.value);
+      if (!input || input <= 0) return toast('評価額を入力してください', 'alert');
+      const since = lastVal?.date || null;
+      const add = included === 'no' ? C.transfersIntoBetween(st, account.id, since, date.value) : 0;
+      const saved = input + add;
+      S.update((s) => {
+        const a = s.accounts.find((x) => x.id === account.id);
+        a.valuations ||= [];
+        // 同じ評価日は上書き
+        const existing = a.valuations.find((v) => v.date === date.value);
+        if (existing) existing.value = saved; else a.valuations.push({ date: date.value, value: saved });
+        a.valuations.sort((x, y) => x.date.localeCompare(y.date));
+        // 最新評価日の値を残高に反映
+        a.balance = a.valuations[a.valuations.length - 1].value;
+        S.recordAssetSnapshot(s);
+      });
+      render(); toast('評価額を更新しました'); close();
+    },
+  });
+}
+
 function accountForm(acc) {
   const isNew = !acc;
   const name = inputEl({ placeholder: '例）三菱UFJ', value: acc?.name || '' });
@@ -489,6 +568,22 @@ function renderTransactions() {
       el('span', { class: 'fc-acct-switch-name', text: acc.name }),
       el('span', { class: 'fc-acct-switch-chev', html: iconHtml('chevronDown', { size: 16 }) })),
     el('div', { class: 'fc-ledger-bal' }, el('span', { class: 'fc-ledger-bal-lab', text: '残高' }), el('b', { text: M(acc.balance) }))));
+
+  // 証券口座: 評価額カード（前月比・評価額を更新）
+  if (acc.type === 'securities') {
+    const vc = C.valuationChange(acc);
+    const hist = C.valuationHistory(acc);
+    const last = hist[hist.length - 1];
+    wrap.append(card(
+      el('div', { class: 'fc-val-head' },
+        el('div', {}, el('div', { class: 'fc-val-lab', text: '評価額' }), el('div', { class: 'fc-val-amt', text: M(acc.balance) })),
+        el('button', { class: 'fc-btn primary', type: 'button', onclick: () => valuationForm(acc) }, el('span', { class: 'fc-btn-ic', html: iconHtml('trending', { size: 16 }) }), el('span', { text: '評価額を更新' }))),
+      el('div', { class: 'fc-val-change' },
+        el('span', { class: 'fc-val-change-lab', text: '前月比' }),
+        valChangeInline(vc, { secret: st.settings.secret })),
+      last ? el('div', { class: 'fc-val-date', text: `最終評価日 ${fmtDateLong(last.date)}` }) : el('div', { class: 'fc-val-date', text: '評価額はまだ登録されていません' }),
+    ));
+  }
 
   // 種別フィルター
   const chips = el('div', { class: 'fc-typechips' });

@@ -2,8 +2,8 @@
 // 設計方針: すべてのデータはこの1オブジェクトに集約し、mutate → save → emit。
 // 将来の証券口座連携などは accounts の type と外部同期モジュールを足すだけで拡張可能。
 
-import { uid, pad } from './utils.js?v=20260724a';
-import { settlementDate } from './calc.js?v=20260724a';
+import { uid, pad } from './utils.js?v=20260724b';
+import { settlementDate } from './calc.js?v=20260724b';
 
 const KEY = 'finance_app_v2';
 const SCHEMA = 1;
@@ -114,9 +114,10 @@ function migrate(data) {
   if (data.settings.periodStartDay === undefined) data.settings.periodStartDay = 1;
   data.simulation ||= seed().simulation;
   data.assetHistory ||= [];
-  // 可処分資金に含めるフラグ（既定: 証券口座以外は含める）
+  // 可処分資金に含めるフラグ（既定: 証券口座以外は含める）／評価額履歴
   for (const a of data.accounts || []) {
     if (a.includeInDisposable === undefined) a.includeInDisposable = a.type !== 'securities';
+    a.valuations ||= []; // 証券口座の評価額履歴 [{date:'YYYY-MM-DD', value:number}]
   }
   // 固定支出の支払方法（'bank' | 'card'）。既定は銀行口座。作成日は既存分を今日として
   // 過去分の遡及生成を防ぐ（現在残高に既に反映済みとみなす）。

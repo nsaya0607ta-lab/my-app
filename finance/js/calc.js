@@ -2,7 +2,7 @@
 // 最重要3機能: ①クレジットカード引落管理 ②将来資産シミュレーション ③可処分資金の自動計算
 // 純粋関数の集合として実装し、UIから独立させることでテスト・拡張を容易にする。
 
-import { ym, pad, resolveDay, addMonths, toISO, parseISO, daysInMonth } from './utils.js?v=20260724a';
+import { ym, pad, resolveDay, addMonths, toISO, parseISO, daysInMonth } from './utils.js?v=20260724b';
 
 // ===== 総資産 =====
 export const totalAssets = (state) =>
@@ -82,6 +82,25 @@ export function accountLedger(state, accountId) {
   };
 }
 const sortDay = (d) => (d === 'end' ? 99 : Number(d) || 0);
+
+// ===== 証券口座の評価額管理 =====
+// 指定口座へ afterISO より後・untilISO 以前に振り込まれた振替の合計（評価額の自動加算用）
+export function transfersIntoBetween(state, accountId, afterISO, untilISO) {
+  return state.transfers
+    .filter((tr) => tr.toAccountId === accountId && (!afterISO || tr.date > afterISO) && tr.date <= untilISO)
+    .reduce((s, tr) => s + (Number(tr.amount) || 0), 0);
+}
+// 評価履歴（日付昇順）
+export const valuationHistory = (account) => (account?.valuations || []).slice().sort((a, b) => a.date.localeCompare(b.date));
+// 前月比（前回入力した評価額との差額・増減率）。履歴が2件未満なら null。
+export function valuationChange(account) {
+  const v = valuationHistory(account);
+  if (v.length < 2) return null;
+  const cur = v[v.length - 1], prev = v[v.length - 2];
+  const diff = cur.value - prev.value;
+  const pct = prev.value !== 0 ? (diff / prev.value) * 100 : null;
+  return { cur, prev, diff, pct };
+}
 
 // ===== ① クレジットカード引落 =====
 // カード利用1件が「いつ銀行から引き落とされるか」を求める。
