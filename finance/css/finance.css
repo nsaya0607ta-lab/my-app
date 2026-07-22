@@ -665,3 +665,77 @@ input[type='color'].fc-input { height: 46px; padding: 4px; }
   .fc-simhero-amt { font-size: 32px; }
   .fc-hsplit-val { font-size: 14px; }
 }
+
+/* ===== 証券口座（現金・元本・評価額・保有銘柄・積立） ===== */
+/* ホームヒーローの評価損益・利益率（昨日比等の代わり） */
+.fc-heroprofit { display: flex; gap: 8px; position: relative; z-index: 1; }
+.fc-hp-col { flex: 1; background: rgba(255, 255, 255, 0.09); border-radius: 12px; padding: 9px 12px; display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.fc-hp-lab { font-size: 11px; opacity: 0.7; }
+.fc-hp-val { font-size: 19px; font-weight: 800; white-space: nowrap; letter-spacing: -0.01em; }
+.fc-hp-val.pos { color: #5ee08a; }
+.fc-hp-val.neg { color: #ff8f8f; }
+.fc-hp-val.flat { opacity: 0.75; }
+
+/* 資産内訳 */
+.fc-sec-grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; margin-top: 4px; }
+.fc-sec-grid:has(.fc-sec-box:nth-child(2):last-child) { grid-template-columns: 1fr 1fr; }
+.fc-sec-box { background: var(--fc-surface-2); border: 1px solid var(--fc-line); border-radius: 12px; padding: 10px 12px; display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.fc-sec-box-lab { font-size: 11px; color: var(--fc-text-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.fc-sec-box-val { font-size: 16px; font-weight: 700; letter-spacing: -0.01em; }
+.fc-sec-profit { display: flex; gap: 10px; margin: 10px 0; padding: 12px 14px; border-radius: 14px; background: var(--fc-surface-2); border: 1px solid var(--fc-line); }
+.fc-sec-profit.pos { background: rgba(18, 161, 80, 0.09); border-color: rgba(18, 161, 80, 0.22); }
+.fc-sec-profit.neg { background: rgba(229, 72, 77, 0.09); border-color: rgba(229, 72, 77, 0.22); }
+.fc-sec-profit-col { flex: 1; display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.fc-sec-profit-lab { font-size: 11.5px; color: var(--fc-text-2); }
+.fc-sec-profit-val { font-size: 22px; font-weight: 800; letter-spacing: -0.02em; }
+.fc-sec-profit.pos .fc-sec-profit-val { color: var(--fc-pos); }
+.fc-sec-profit.neg .fc-sec-profit-val { color: var(--fc-neg); }
+.fc-sec-profit.flat .fc-sec-profit-val { color: var(--fc-text-2); }
+
+/* 保有割合（横棒＋凡例） */
+.fc-alloc-bar { display: flex; height: 16px; border-radius: 8px; overflow: hidden; background: var(--fc-surface-2); margin: 6px 0 12px; }
+.fc-alloc-seg { height: 100%; transition: width 0.3s; }
+.fc-alloc-legend { display: flex; flex-direction: column; gap: 8px; }
+.fc-alloc-item { display: flex; align-items: center; gap: 8px; font-size: 13px; }
+.fc-alloc-item .dot { width: 10px; height: 10px; border-radius: 3px; flex: none; }
+.fc-alloc-name { flex: 1; color: var(--fc-text-2); }
+.fc-alloc-pct { font-weight: 800; font-variant-numeric: tabular-nums; }
+.fc-alloc-amt { color: var(--fc-muted); font-size: 12px; min-width: 72px; text-align: right; }
+
+/* 操作ボタン */
+.fc-sec-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin: 12px 0; }
+.fc-sec-actions .fc-btn { width: 100%; padding: 12px; font-size: 14px; }
+
+/* 保有銘柄一覧 */
+.fc-sec-quotedate { font-size: 11px; color: var(--fc-muted); }
+.fc-holding-group { margin-top: 6px; }
+.fc-holding-grouphead { display: flex; align-items: center; gap: 8px; margin: 10px 2px 4px; }
+.fc-holding-groupn { font-size: 11.5px; color: var(--fc-muted); }
+.fc-holding { align-items: flex-start; }
+.fc-holding-top { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.fc-holding-name { font-weight: 700; font-size: 14px; }
+.fc-holding-ticker { font-size: 11px; color: var(--fc-muted); background: var(--fc-surface-2); padding: 1px 6px; border-radius: 6px; }
+.fc-holding-meta { display: flex; flex-wrap: wrap; gap: 4px 10px; font-size: 11.5px; color: var(--fc-text-2); margin-top: 3px; }
+.fc-holding-meta .pos { color: var(--fc-pos); }
+.fc-holding-meta .neg { color: var(--fc-neg); }
+.fc-holding-meta .muted { color: var(--fc-muted); }
+.fc-holding-amt { display: flex; flex-direction: column; align-items: flex-end; gap: 2px; flex: none; }
+.fc-holding-val { font-weight: 700; font-size: 14px; font-variant-numeric: tabular-nums; }
+.fc-holding-pl { font-size: 11.5px; font-weight: 700; white-space: nowrap; }
+.fc-holding-pl.pos { color: var(--fc-pos); }
+.fc-holding-pl.neg { color: var(--fc-neg); }
+.fc-holding-pl.muted { color: var(--fc-muted); }
+
+/* 区分バッジ */
+.fc-kind-badge { font-size: 10.5px; font-weight: 800; padding: 2px 8px; border-radius: 999px; white-space: nowrap; }
+.fc-kind-badge.index { background: var(--fc-accent-soft); color: var(--fc-accent); }
+.fc-kind-badge.stock { background: rgba(191, 90, 242, 0.14); color: #bf5af2; }
+
+/* 積立 */
+.fc-accum-state { font-size: 11px; font-weight: 800; padding: 3px 10px; border-radius: 999px; }
+.fc-accum-state.on { background: rgba(18, 161, 80, 0.14); color: var(--fc-pos); }
+.fc-accum-state.off { background: var(--fc-surface-2); color: var(--fc-muted); }
+.fc-accum-histhead { font-size: 12px; font-weight: 700; color: var(--fc-text-2); margin: 14px 2px 6px; }
+.fc-accum-result { font-size: 11.5px; font-weight: 700; white-space: nowrap; }
+.fc-accum-result.ok { color: var(--fc-pos); }
+.fc-accum-result.ng { color: var(--fc-neg); }

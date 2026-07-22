@@ -2,8 +2,9 @@
 // 設計方針: すべてのデータはこの1オブジェクトに集約し、mutate → save → emit。
 // 将来の証券口座連携などは accounts の type と外部同期モジュールを足すだけで拡張可能。
 
-import { uid, pad } from './utils.js?v=20260724d';
-import { settlementDate, recurringActiveOn } from './calc.js?v=20260724d';
+import { uid, pad } from './utils.js?v=20260722s';
+import { settlementDate, recurringActiveOn } from './calc.js?v=20260722s';
+import { isSecurities, recomputeAccount } from './securities.js?v=20260722s';
 
 const KEY = 'finance_app_v2';
 const SCHEMA = 1;
@@ -118,6 +119,20 @@ function migrate(data) {
   for (const a of data.accounts || []) {
     if (a.includeInDisposable === undefined) a.includeInDisposable = a.type !== 'securities';
     a.valuations ||= []; // 証券口座の評価額履歴 [{date:'YYYY-MM-DD', value:number}]
+    // 証券口座の新スキーマ（現金・元本・保有銘柄・積立）を補完。
+    // 既存の証券口座は balance を「現金」として引き継ぎ、元本0・銘柄なしから開始する
+    // （データを失わせない）。ユーザーが銘柄・元本を登録すると再計算される。
+    if (isSecurities(a)) {
+      if (a.cash === undefined) a.cash = Number(a.balance) || 0;
+      if (a.principal === undefined) a.principal = 0;
+      a.holdings ||= [];        // 保有銘柄 [{id,name,ticker,kind,quantity,avgPrice,memo,price,prevClose,updatedAt}]
+      a.accumulations ||= [];   // 積立設定 [{id,holdingId,dailyAmount,startDate,endDate,enabled}]
+      a.accumHistory ||= [];    // 積立履歴 [{id,date,holdingId,holdingName,amount,status,reason}]
+      a.purchases ||= [];       // 個別株の購入履歴
+      if (a.lastAccumDate === undefined) a.lastAccumDate = null;
+      if (a.lastQuoteDate === undefined) a.lastQuoteDate = null;
+      recomputeAccount(a);      // balance = 現金 + 評価額 に同期
+    }
   }
   // 固定支出の支払方法（'bank' | 'card'）。既定は銀行口座。作成日は既存分を今日として
   // 過去分の遡及生成を防ぐ（現在残高に既に反映済みとみなす）。
