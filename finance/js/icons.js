@@ -27,6 +27,7 @@ const P = {
   down: '<path d="M12 5v13"/><path d="m6 12 6 6 6-6"/>',
   trash: '<path d="M3.5 6.5h17"/><path d="M8.5 6.5V4.5a1 1 0 0 1 1-1h5a1 1 0 0 1 1 1v2"/><path d="m6 6.5 1 13a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1l1-13"/>',
   chevronRight: '<path d="m9 6 6 6-6 6"/>',
+  chevronLeft: '<path d="m15 6-6 6 6 6"/>',
   chevronDown: '<path d="m6 9 6 6 6-6"/>',
   search: '<circle cx="11" cy="11" r="7"/><path d="m20 20-3.4-3.4"/>',
   bell: '<path d="M18 8.5a6 6 0 1 0-12 0c0 6-2.5 8-2.5 8h17s-2.5-2-2.5-8"/><path d="M13.5 20.5a2 2 0 0 1-3 0"/>',
