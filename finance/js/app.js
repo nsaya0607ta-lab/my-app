@@ -1,13 +1,13 @@
 // app.js — ルーティング・画面描画・フォーム・操作の統合レイヤー
-import * as S from './store.js?v=20260723c';
-import * as C from './calc.js?v=20260723c';
-import * as CF from './cashflow.js?v=20260723c';
-import { lineChart, barChart, groupedBarChart, donutChart } from './charts.js?v=20260723c';
-import { iconHtml, icon } from './icons.js?v=20260723c';
+import * as S from './store.js?v=20260724a';
+import * as C from './calc.js?v=20260724a';
+import * as CF from './cashflow.js?v=20260724a';
+import { lineChart, barChart, groupedBarChart, donutChart } from './charts.js?v=20260724a';
+import { iconHtml, icon } from './icons.js?v=20260724a';
 import {
   el, qs, yen, yenMasked, num, today, toISO, parseISO, ym, fmtDate, fmtDateLong,
   fmtMonth, addMonths, resolveDay, pad, weekdayName, haptic, escapeHtml, uid,
-} from './utils.js?v=20260723c';
+} from './utils.js?v=20260724a';
 
 // ---- 画面ローカル状態（データではないUI状態） ----
 const ui = {
@@ -1267,10 +1267,13 @@ function renderRecurring() {
   const expenses = st.recurring.filter((r) => r.type === 'expense');
   const mkList = (arr) => el('div', { class: 'fc-list' }, ...arr.map((r) => {
     const cat = S.findCategory(r.categoryId);
+    const isCard = r.type === 'expense' && r.paymentMethod === 'card';
+    const cardName = isCard ? (S.findCard(r.cardId)?.name || 'カード') : '';
+    const sub = isCard ? `毎月${r.day === 'end' ? '末' : r.day + '日'}・${cardName}払い` : `毎月${r.day === 'end' ? '末' : r.day + '日'}・${cat.name}`;
     return el('div', { class: 'fc-row tap', onclick: () => recurringForm(r) },
-      el('div', { class: 'fc-row-ic', style: `background:${cat.color}22;color:${cat.color}`, html: iconHtml(r.type === 'income' ? 'coins' : 'file', { size: 18 }) }),
+      el('div', { class: 'fc-row-ic', style: `background:${cat.color}22;color:${cat.color}`, html: iconHtml(r.type === 'income' ? 'coins' : isCard ? 'card' : 'file', { size: 18 }) }),
       el('div', { class: 'fc-row-main' }, el('div', { class: 'fc-row-title', text: r.name }),
-        el('div', { class: 'fc-row-sub', text: `毎月${r.day === 'end' ? '末' : r.day + '日'}・${cat.name}` })),
+        el('div', { class: 'fc-row-sub', text: sub })),
       el('div', { class: 'fc-row-amt ' + (r.type === 'income' ? 'pos' : 'neg'), text: yen(r.amount, { sign: r.type === 'income' }) }));
   }));
   wrap.append(card(sectionTitle('固定収入'), incomes.length ? mkList(incomes) : el('p', { class: 'fc-empty', text: 'なし' })));
@@ -1288,24 +1291,56 @@ function recurringForm(r) {
     const cats = type === 'income' ? st.categories.income : st.categories.expense;
     catWrap.innerHTML = ''; catWrap.append(field('カテゴリー', selectEl(cats.map((c) => ({ value: c.id, label: c.name })), r?.categoryId || cats[0]?.id)));
   };
-  const mkSeg = () => { seg.innerHTML = ''; for (const [val, lab] of [['expense', '支出'], ['income', '収入']]) seg.append(el('button', { class: 'fc-seg-btn' + (type === val ? ' on' : ''), type: 'button', text: lab, onclick: () => { type = val; mkSeg(); refreshCats(); } })); };
-  mkSeg(); refreshCats();
   const name = inputEl({ placeholder: '例）家賃', value: r?.name || '' });
   const day = selectEl([{ value: 'end', label: '毎月末' }, ...Array.from({ length: 31 }, (_, i) => ({ value: i + 1, label: `毎月${i + 1}日` }))], r?.day ?? 25);
   const amount = inputEl({ type: 'number', value: r?.amount ?? '' });
   const acc = st.accounts.length
     ? selectEl(accountOptions(), r?.accountId || st.accounts[0]?.id)
     : selectEl([{ value: '', label: '（先に口座を追加）' }], '');
-  const body = el('div', {}, field('種別', seg), field('名称', name), field('毎月の発生日', day), field('金額（円）', amount), catWrap, field('口座（必須）', acc),
+  const cardSel = st.cards.length
+    ? selectEl(st.cards.map((c) => ({ value: c.id, label: c.name })), r?.cardId || st.cards[0]?.id)
+    : selectEl([{ value: '', label: '（先にカードを追加）' }], '');
+
+  // 支払方法（固定支出のみ）: 銀行口座 / クレジットカード
+  let method = r?.paymentMethod || 'bank';
+  const methodSeg = el('div', { class: 'fc-seg' });
+  const drawMethodSeg = () => { methodSeg.innerHTML = ''; for (const [v, l] of [['bank', '銀行口座'], ['card', 'クレジットカード']]) methodSeg.append(el('button', { class: 'fc-seg-btn' + (method === v ? ' on' : ''), type: 'button', text: l, onclick: () => { method = v; drawMethodSeg(); drawPay(); } })); };
+  const payWrap = el('div', {});
+  const drawPay = () => {
+    payWrap.innerHTML = '';
+    if (type === 'income') { payWrap.append(field('入金先口座（必須）', acc)); return; }
+    payWrap.append(field('支払方法', methodSeg));
+    if (method === 'card') payWrap.append(field('カード（必須）', cardSel), el('p', { class: 'fc-field-hint', text: 'カード払いは銀行残高を即時に減らさず、カード利用額として管理し、引落日に引落口座から差し引きます。' }));
+    else payWrap.append(field('支払口座（必須）', acc));
+  };
+  drawMethodSeg();
+  // 種別セグメント変更時に支払UIも更新
+  const mkSegWithPay = () => { seg.innerHTML = ''; for (const [val, lab] of [['expense', '支出'], ['income', '収入']]) seg.append(el('button', { class: 'fc-seg-btn' + (type === val ? ' on' : ''), type: 'button', text: lab, onclick: () => { type = val; mkSegWithPay(); refreshCats(); drawPay(); } })); };
+  mkSegWithPay(); refreshCats(); drawPay();
+
+  const body = el('div', {}, field('種別', seg), field('名称', name), field('毎月の発生日', day), field('金額（円）', amount), catWrap, payWrap,
     !isNew && el('button', { class: 'fc-btn danger block', type: 'button', text: '削除', onclick: () => confirmDialog('固定収支を削除', '削除しますか？', () => { S.update((s) => { s.recurring = s.recurring.filter((x) => x.id !== r.id); }); render(); toast('削除しました', 'trash'); qs('.fc-modal-back')?.remove(); }) }));
   modal(isNew ? '固定収支を追加' : '固定収支を編集', body, {
     onSave: (close) => {
       if (!name.value.trim() || !Number(amount.value)) return toast('名称と金額を入力してください', 'alert');
-      if (!acc.value) return toast('口座を選択してください（先に口座を追加）', 'alert');
+      let accountId = null, cardId = null, pm = 'bank';
+      if (type === 'income') {
+        if (!acc.value) return toast('入金先口座を選択してください', 'alert');
+        accountId = acc.value;
+      } else if (method === 'card') {
+        if (!cardSel.value) return toast('カードを選択してください（先にカードを追加）', 'alert');
+        pm = 'card'; cardId = cardSel.value; accountId = null;
+      } else {
+        if (!acc.value) return toast('支払口座を選択してください', 'alert');
+        accountId = acc.value;
+      }
       const catId = catWrap.querySelector('select').value;
       S.update((s) => {
-        const rec = { type, name: name.value.trim(), day: day.value === 'end' ? 'end' : Number(day.value), amount: Number(amount.value), categoryId: catId, accountId: acc.value };
-        if (isNew) s.recurring.push({ id: uid('rec'), ...rec }); else Object.assign(s.recurring.find((x) => x.id === r.id), rec);
+        const rec = { type, name: name.value.trim(), day: day.value === 'end' ? 'end' : Number(day.value), amount: Number(amount.value), categoryId: catId, accountId, paymentMethod: type === 'expense' ? pm : 'bank', cardId };
+        if (isNew) s.recurring.push({ id: uid('rec'), createdAt: today(), ...rec });
+        else { const ex = s.recurring.find((x) => x.id === r.id); Object.assign(ex, rec); if (!ex.createdAt) ex.createdAt = today(); }
+        S.materializeRecurringCardUsage(s);
+        S.settleDueCards(s);
       });
       render(); toast('保存しました'); close();
     },
@@ -1485,8 +1520,12 @@ function buildNav() {
 
 export function init() {
   applyTheme();
-  // 起動時: 引落日を過ぎた未引落カードを確定（銀行残高を減額）。二重減算しない。
-  S.update((s) => { const changed = S.settleDueCards(s); if (changed) S.recordAssetSnapshot(s); }, { silent: true });
+  // 起動時: カード払いの固定支出を実カード利用に具体化 → 引落日を過ぎた分を確定（銀行減額）。
+  S.update((s) => {
+    S.materializeRecurringCardUsage(s);
+    const changed = S.settleDueCards(s);
+    if (changed) S.recordAssetSnapshot(s);
+  }, { silent: true });
   // 起動時に資産スナップショットのベースラインを記録（口座があり履歴が無い場合）
   const st0 = S.getState();
   if ((st0.assetHistory || []).length === 0 && st0.accounts.length > 0) {
