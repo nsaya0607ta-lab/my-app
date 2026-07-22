@@ -1,14 +1,14 @@
 // app.js — ルーティング・画面描画・フォーム・操作の統合レイヤー
-import * as S from './store.js?v=20260722t';
-import * as C from './calc.js?v=20260722t';
-import * as CF from './cashflow.js?v=20260722t';
-import * as Sec from './securities.js?v=20260722t';
-import { lineChart, barChart, groupedBarChart, donutChart } from './charts.js?v=20260722t';
-import { iconHtml, icon } from './icons.js?v=20260722t';
+import * as S from './store.js?v=20260722u';
+import * as C from './calc.js?v=20260722u';
+import * as CF from './cashflow.js?v=20260722u';
+import * as Sec from './securities.js?v=20260722u';
+import { lineChart, barChart, groupedBarChart, donutChart } from './charts.js?v=20260722u';
+import { iconHtml, icon } from './icons.js?v=20260722u';
 import {
   el, qs, yen, yenMasked, num, today, toISO, parseISO, ym, fmtDate, fmtDateLong,
   fmtMonth, addMonths, resolveDay, pad, weekdayName, haptic, escapeHtml, uid,
-} from './utils.js?v=20260722t';
+} from './utils.js?v=20260722u';
 
 // ---- 画面ローカル状態（データではないUI状態） ----
 const ui = {
@@ -57,9 +57,23 @@ const ROUTES = {
   recurring: renderRecurring,
   transfers: renderTransfers,
 };
+// 下部ナビにある主画面。これ以外（各種メニュー配下の詳細画面）には戻るボタンを出す。
+const PRIMARY_ROUTES = ['dashboard', 'transactions', 'cards', 'simulate', 'menu'];
+const isSecondaryRoute = (r) => !PRIMARY_ROUTES.includes(r);
+const navStack = []; // アプリ内ナビゲーション履歴（ブラウザ履歴ではなく独自管理）
 
 function go(route) {
+  if (route !== ui.route) { navStack.push(ui.route); if (navStack.length > 30) navStack.shift(); }
   ui.route = route;
+  haptic();
+  render();
+  window.scrollTo({ top: 0, behavior: 'instant' in window ? 'instant' : 'auto' });
+}
+
+// 1つ前の画面へ戻る（履歴が無ければホームへ）。ブラウザバックは使わない。
+function goBack() {
+  const prev = navStack.pop();
+  ui.route = prev || 'dashboard';
   haptic();
   render();
   window.scrollTo({ top: 0, behavior: 'instant' in window ? 'instant' : 'auto' });
@@ -98,6 +112,50 @@ function iconBtn(label, onClick, cls = '') {
 }
 function pill(text, cls = '') { return el('span', { class: 'fc-pill ' + cls, text }); }
 
+// iOS風の戻るボタン（画面タイトルの左に配置）
+function backBtn() {
+  return el('button', { class: 'fc-back', type: 'button', 'aria-label': '戻る', onclick: goBack },
+    el('span', { class: 'fc-back-ic', html: iconHtml('chevronLeft', { size: 22, sw: 2.4 }) }));
+}
+// 画面タイトル。詳細画面（下部ナビに無い画面）では左に戻るボタンを付ける。
+function headTitle(title) {
+  const showBack = isSecondaryRoute(ui.route);
+  return el('div', { class: 'fc-head-title' + (showBack ? ' has-back' : '') },
+    showBack ? backBtn() : '', el('h1', { class: 'fc-page-title', text: title }));
+}
+
+// ---- モーダル表示中の背景スクロール固定（iOS Safari / PWA / Android 対応） ----
+// body を position:fixed で固定し、スクロール量を top のマイナスで保持。閉じたら元の位置へ戻す。
+// ネストしたモーダル（確認ダイアログ等）に対応するためカウンタで管理する。
+let _modalCount = 0;
+let _savedScrollY = 0;
+function lockBodyScroll() {
+  if (_modalCount === 0) {
+    _savedScrollY = window.scrollY || window.pageYOffset || 0;
+    const b = document.body;
+    b.style.position = 'fixed';
+    b.style.top = `-${_savedScrollY}px`;
+    b.style.left = '0';
+    b.style.right = '0';
+    b.style.width = '100%';
+    document.documentElement.classList.add('fc-modal-open');
+  }
+  _modalCount++;
+}
+function unlockBodyScroll() {
+  _modalCount = Math.max(0, _modalCount - 1);
+  if (_modalCount === 0) {
+    const b = document.body;
+    b.style.position = '';
+    b.style.top = '';
+    b.style.left = '';
+    b.style.right = '';
+    b.style.width = '';
+    document.documentElement.classList.remove('fc-modal-open');
+    window.scrollTo(0, _savedScrollY);
+  }
+}
+
 function toast(msg, iconName = 'check') {
   const t = el('div', { class: 'fc-toast' },
     el('span', { class: 'fc-toast-ic', html: iconHtml(iconName, { size: 18 }) }),
@@ -108,28 +166,50 @@ function toast(msg, iconName = 'check') {
 }
 
 // モーダル（下からせり上がるシート）
-function modal(title, bodyNode, { onSave, saveLabel = '保存', danger, wide } = {}) {
+// options.dirty(): 未保存の入力があるか。true のとき閉じる操作で破棄確認を出す。
+// options.saveDisabled: 保存ボタンの初期無効状態。返り値の setSaveDisabled で動的に切替可能。
+function modal(title, bodyNode, { onSave, saveLabel = '保存', danger, wide, dirty, saveDisabled } = {}) {
   const back = el('div', { class: 'fc-modal-back' });
-  const closeAll = () => { back.classList.remove('show'); setTimeout(() => back.remove(), 260); };
+  let closed = false;
+  const closeAll = () => {
+    if (closed) return; closed = true;
+    back.classList.remove('show');
+    unlockBodyScroll();
+    setTimeout(() => back.remove(), 260);
+  };
+  // ユーザー操作による閉じる（X・キャンセル・背景タップ）: 未保存があれば破棄確認。
+  const attemptClose = () => {
+    if (dirty && dirty()) {
+      confirmDialog('入力を破棄しますか？', '入力した内容は保存されません。閉じてもよろしいですか？',
+        () => closeAll(), { yesLabel: '破棄する', danger: true });
+    } else closeAll();
+  };
+  const saveBtn = onSave ? el('button', {
+    class: 'fc-btn ' + (danger ? 'danger' : 'primary'), type: 'button', text: saveLabel,
+    disabled: saveDisabled ? '' : null,
+    onclick: () => { onSave(closeAll); },
+  }) : null;
   const foot = el('div', { class: 'fc-modal-foot' },
-    el('button', { class: 'fc-btn ghost', type: 'button', text: 'キャンセル', onclick: closeAll }),
-    onSave && el('button', {
-      class: 'fc-btn ' + (danger ? 'danger' : 'primary'), type: 'button', text: saveLabel,
-      onclick: () => { if (onSave(closeAll) !== false) { /* onSave が close を制御する場合あり */ } },
-    }),
+    el('button', { class: 'fc-btn ghost', type: 'button', text: 'キャンセル', onclick: attemptClose }),
+    saveBtn || '',
   );
   const sheet = el('div', { class: 'fc-modal-sheet' + (wide ? ' wide' : '') },
     el('div', { class: 'fc-modal-grip' }),
     el('div', { class: 'fc-modal-head' }, el('h3', { text: title }),
-      el('button', { class: 'fc-modal-x', type: 'button', 'aria-label': '閉じる', html: iconHtml('x', { size: 16 }), onclick: closeAll })),
+      el('button', { class: 'fc-modal-x', type: 'button', 'aria-label': '閉じる', html: iconHtml('x', { size: 16 }), onclick: attemptClose })),
     el('div', { class: 'fc-modal-body' }, bodyNode),
     foot,
   );
   back.append(sheet);
-  back.addEventListener('click', (e) => { if (e.target === back) closeAll(); });
+  back.addEventListener('click', (e) => { if (e.target === back) attemptClose(); });
+  lockBodyScroll();
   document.body.append(back);
   requestAnimationFrame(() => back.classList.add('show'));
-  return { close: closeAll };
+  return {
+    close: closeAll,
+    saveBtn,
+    setSaveDisabled: (d) => { if (saveBtn) saveBtn.disabled = !!d; },
+  };
 }
 
 function confirmDialog(title, message, onYes, { yesLabel = '削除', danger = true } = {}) {
@@ -157,6 +237,19 @@ function selectEl(options, value) {
   return s;
 }
 function accountOptions() { return S.getState().accounts.map((a) => ({ value: a.id, label: a.name })); }
+
+// 金額入力（3桁区切りで表示・数字キーボード）。value は円の整数。読み取りは amountValue()。
+function amountInput(initial) {
+  const has = initial != null && initial !== '' && !Number.isNaN(Number(initial));
+  const inp = inputEl({ type: 'text', inputmode: 'numeric', autocomplete: 'off',
+    placeholder: '0', value: has ? Number(initial).toLocaleString('ja-JP') : '' });
+  inp.addEventListener('input', () => {
+    const digits = inp.value.replace(/[^\d]/g, '');
+    inp.value = digits ? Number(digits).toLocaleString('ja-JP') : '';
+  });
+  return inp;
+}
+const amountValue = (inp) => Number(String(inp.value).replace(/[^\d]/g, '')) || 0;
 
 // 口座残高へ増減を反映するヘルパー。証券口座は「現金」を増減し、残高（現金＋評価額）を再計算する。
 // これにより 銀行→証券 の振替は証券口座の現金へ入金され、株購入で現金が減る設計と整合する。
@@ -966,8 +1059,10 @@ function fab(onClick) {
 function txForm(tx, initialType, defaultAccountId) {
   const isNew = !tx;
   const st = S.getState();
+  const lu = st.settings.lastUsed || {}; // 前回使用したカテゴリー・口座
   let type = tx?.type || initialType || 'expense';
-  const defAcc = defaultAccountId || st.accounts[0]?.id || '';
+  // 支払/入金口座の初期値: 編集中の口座 > 前回使用 > 表示中口座 > 先頭
+  const defAcc = tx?.accountId || lu.account || defaultAccountId || st.accounts[0]?.id || '';
   const otherAcc = st.accounts.find((a) => a.id !== defAcc)?.id || defAcc;
 
   // 種別セグメント（新規のみ振替を含む）
@@ -976,23 +1071,28 @@ function txForm(tx, initialType, defaultAccountId) {
   const mkSeg = () => {
     seg.innerHTML = '';
     for (const [val, lab] of opts)
-      seg.append(el('button', { class: 'fc-seg-btn' + (type === val ? ' on' : ''), type: 'button', text: lab, onclick: () => { type = val; mkSeg(); drawFields(); } }));
+      seg.append(el('button', { class: 'fc-seg-btn' + (type === val ? ' on' : ''), type: 'button', text: lab, onclick: () => { type = val; mkSeg(); drawFields(); validate(); } }));
   };
 
   const date = inputEl({ type: 'date', value: tx?.date || today() });
-  const amount = inputEl({ type: 'number', inputmode: 'numeric', placeholder: '0', value: tx?.amount ?? '' });
+  const amount = amountInput(tx?.amount); // 3桁区切り＋数字キーボード
   const memo = inputEl({ placeholder: 'メモ（任意）', value: tx?.memo || '' });
-  // 収支用（口座は必須）
+  amount.addEventListener('input', () => validate());
+  // 収支用（口座は必須）。前回使用したカテゴリー・口座を初期選択。
   const catWrap = el('div', {});
-  const acc = selectEl(accountOptions(), tx?.accountId || defAcc);
+  const acc = selectEl(accountOptions(), defAcc);
+  acc.addEventListener('change', () => validate());
   const refreshCats = () => {
     const cats = type === 'income' ? st.categories.income : st.categories.expense;
+    const preferred = tx?.categoryId || lu[type + 'Cat'];
     catWrap.innerHTML = '';
-    catWrap.append(field('カテゴリー', selectEl(cats.map((c) => ({ value: c.id, label: c.name })), tx?.categoryId || cats[0]?.id)));
+    catWrap.append(field('カテゴリー', selectEl(cats.map((c) => ({ value: c.id, label: c.name })), preferred || cats[0]?.id)));
   };
   // 振替用（表示中口座を振替元の初期値に）
   const fromSel = selectEl(accountOptions(), defAcc);
   const toSel = selectEl(accountOptions(), otherAcc);
+  fromSel.addEventListener('change', () => validate());
+  toSel.addEventListener('change', () => validate());
 
   const fieldsWrap = el('div', {});
   const drawFields = () => {
@@ -1011,6 +1111,19 @@ function txForm(tx, initialType, defaultAccountId) {
   };
   mkSeg(); drawFields();
 
+  // 必須項目が揃っているか（保存ボタンの有効・無効に使用）
+  const isValid = () => {
+    if (amountValue(amount) <= 0) return false;
+    if (type === 'transfer') return st.accounts.length >= 2 && fromSel.value && toSel.value && fromSel.value !== toSel.value;
+    return !!acc.value;
+  };
+  const dirty = () => {
+    if (isNew) return amountValue(amount) > 0 || !!memo.value.trim();
+    return amountValue(amount) !== (Number(tx.amount) || 0) || memo.value.trim() !== (tx.memo || '') || date.value !== tx.date || type !== tx.type;
+  };
+  let ctrl;
+  const validate = () => ctrl?.setSaveDisabled(!isValid());
+
   const body = el('div', {},
     field('種別', seg), fieldsWrap,
     !isNew && el('button', {
@@ -1026,9 +1139,11 @@ function txForm(tx, initialType, defaultAccountId) {
       }),
     }),
   );
-  modal(isNew ? '取引を追加' : '収支を編集', body, {
+  ctrl = modal(isNew ? '取引を追加' : '収支を編集', body, {
+    saveDisabled: true,
+    dirty,
     onSave: (close) => {
-      const amt = Number(amount.value);
+      const amt = amountValue(amount);
       if (!amt || amt <= 0) return toast('金額を入力してください', 'alert');
       if (type === 'transfer') {
         if (st.accounts.length < 2) return toast('口座を2つ以上登録してください', 'alert');
@@ -1051,11 +1166,14 @@ function txForm(tx, initialType, defaultAccountId) {
           Object.assign(s.transactions.find((x) => x.id === tx.id), rec);
         }
         applyTx(s, acc.value, type, amt);
+        // 次回のために使用したカテゴリー・口座を記録
+        s.settings.lastUsed = { ...(s.settings.lastUsed || {}), [type + 'Cat']: catId, account: acc.value };
         S.recordAssetSnapshot(s);
       });
       render(); toast('保存しました'); close();
     },
   });
+  validate(); // 初期状態の保存ボタン有効/無効を反映
 }
 
 // ============ 振替履歴 ============
@@ -1506,7 +1624,7 @@ function renderCalendar() {
     el('button', { class: 'fc-icobtn', type: 'button', 'aria-label': '前の月', html: iconHtml('arrowLeft', { size: 18 }), onclick: () => { ui.cal = stepMonth(y, m, -1); render(); } }),
     el('b', { text: `${y}年${m + 1}月` }),
     el('button', { class: 'fc-icobtn', type: 'button', 'aria-label': '次の月', html: iconHtml('arrowRight', { size: 18 }), onclick: () => { ui.cal = stepMonth(y, m, 1); render(); } }));
-  wrap.append(el('div', { class: 'fc-page-head' }, el('h1', { class: 'fc-page-title', text: 'カレンダー' }), head));
+  wrap.append(el('div', { class: 'fc-page-head' }, headTitle('カレンダー'), head));
 
   const events = C.calendarEvents(st, y, m);
   const first = new Date(y, m, 1).getDay();
@@ -1752,7 +1870,7 @@ function recurringForm(r) {
 function renderCategories() {
   const st = S.getState();
   const wrap = el('div', { class: 'fc-view' });
-  wrap.append(el('h1', { class: 'fc-page-title', text: 'カテゴリー' }));
+  wrap.append(headTitle('カテゴリー'));
   const block = (label, kind, arr) => card(
     sectionTitle(label, el('button', { class: 'fc-link', type: 'button', onclick: () => categoryForm(kind) }, el('span', { class: 'fc-add-ic sm', html: iconHtml('plus', { size: 14 }) }), el('span', { text: '追加' }))),
     el('div', { class: 'fc-cat-wrap' }, ...arr.map((c) =>
@@ -1787,7 +1905,7 @@ function categoryForm(kind, c) {
 // ============ データ管理 ============
 function renderData() {
   const wrap = el('div', { class: 'fc-view' });
-  wrap.append(el('h1', { class: 'fc-page-title', text: 'データ管理' }));
+  wrap.append(headTitle('データ管理'));
   wrap.append(card(sectionTitle('バックアップ・復元'),
     el('p', { class: 'fc-note', text: 'すべてのデータをJSONファイルとして書き出し／読み込みできます。' }),
     btnIcon('primary block', 'down', 'バックアップを書き出す', exportBackup),
@@ -1868,7 +1986,7 @@ function parseCsvLine(line) {
 
 // ============ 共通ヘッダー・月ナビ ============
 function pageHead(title, addLabel, onAdd) {
-  return el('div', { class: 'fc-page-head' }, el('h1', { class: 'fc-page-title', text: title }),
+  return el('div', { class: 'fc-page-head' }, headTitle(title),
     onAdd ? el('button', { class: 'fc-add-btn', type: 'button', onclick: onAdd },
       el('span', { class: 'fc-add-ic', html: iconHtml('plus', { size: 16 }) }), el('span', { text: addLabel })) : '');
 }
@@ -1876,7 +1994,7 @@ function monthNav(ymStr, onChange, title) {
   const [y, m] = ymStr.split('-').map(Number);
   const prev = () => onChange(ym(new Date(y, m - 2, 1)));
   const next = () => onChange(ym(new Date(y, m, 1)));
-  return el('div', { class: 'fc-page-head' }, el('h1', { class: 'fc-page-title', text: title }),
+  return el('div', { class: 'fc-page-head' }, headTitle(title),
     el('div', { class: 'fc-cal-nav' },
       el('button', { class: 'fc-icobtn', type: 'button', 'aria-label': '前の月', html: iconHtml('arrowLeft', { size: 18 }), onclick: prev }),
       el('b', { text: `${y}年${m}月` }),

@@ -746,3 +746,19 @@ input[type='color'].fc-input { height: 46px; padding: 4px; }
 .fc-priceupd-head { display: flex; align-items: center; gap: 6px; margin-bottom: 6px; }
 .fc-priceupd-inputs { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
 .fc-priceupd-inputs .fc-field { margin: 0; }
+
+/* ===== UI/UX改善: 戻るボタン・保存無効・モーダルスクロール固定 ===== */
+/* 画面タイトル＋戻るボタン（iOS風） */
+.fc-head-title { display: flex; align-items: center; gap: 4px; min-width: 0; }
+.fc-head-title .fc-page-title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.fc-back { display: inline-flex; align-items: center; justify-content: center; width: 36px; height: 36px; margin-left: -8px; flex: none; background: transparent; border: none; color: var(--fc-accent); border-radius: 50%; transition: transform 0.12s, background 0.15s; -webkit-tap-highlight-color: transparent; }
+.fc-back:active { transform: scale(0.9); background: var(--fc-accent-soft); }
+.fc-back-ic { display: inline-flex; }
+
+/* 保存ボタン等の無効状態 */
+.fc-btn:disabled { opacity: 0.4; filter: saturate(0.6); pointer-events: none; box-shadow: none; }
+
+/* モーダル表示中は背景を完全固定（iOS Safari / PWA / Android のオーバースクロール対策） */
+html.fc-modal-open, html.fc-modal-open body { overscroll-behavior: none; }
+.fc-modal-back { overscroll-behavior: contain; touch-action: none; }
+.fc-modal-sheet { overscroll-behavior: contain; touch-action: pan-y; -webkit-overflow-scrolling: touch; }
