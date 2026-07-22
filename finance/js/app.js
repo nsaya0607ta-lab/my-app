@@ -1,13 +1,13 @@
 // app.js — ルーティング・画面描画・フォーム・操作の統合レイヤー
-import * as S from './store.js?v=20260724c';
-import * as C from './calc.js?v=20260724c';
-import * as CF from './cashflow.js?v=20260724c';
-import { lineChart, barChart, groupedBarChart, donutChart } from './charts.js?v=20260724c';
-import { iconHtml, icon } from './icons.js?v=20260724c';
+import * as S from './store.js?v=20260724d';
+import * as C from './calc.js?v=20260724d';
+import * as CF from './cashflow.js?v=20260724d';
+import { lineChart, barChart, groupedBarChart, donutChart } from './charts.js?v=20260724d';
+import { iconHtml, icon } from './icons.js?v=20260724d';
 import {
   el, qs, yen, yenMasked, num, today, toISO, parseISO, ym, fmtDate, fmtDateLong,
   fmtMonth, addMonths, resolveDay, pad, weekdayName, haptic, escapeHtml, uid,
-} from './utils.js?v=20260724c';
+} from './utils.js?v=20260724d';
 
 // ---- 画面ローカル状態（データではないUI状態） ----
 const ui = {
@@ -165,6 +165,13 @@ function applyTransfer(s, fromId, toId, amt) {
   if (t) t.balance = (Number(t.balance) || 0) + amt;
 }
 function reverseTransfer(s, fromId, toId, amt) { applyTransfer(s, toId, fromId, amt); }
+
+// 収入・支出: 口座残高への反映（収入は+、支出は-）
+function applyTx(s, accountId, type, amt) {
+  const a = s.accounts.find((x) => x.id === accountId);
+  if (a) a.balance = (Number(a.balance) || 0) + (type === 'income' ? amt : -amt);
+}
+function reverseTx(s, accountId, type, amt) { applyTx(s, accountId, type === 'income' ? 'expense' : 'income', amt); }
 
 // ============ ダッシュボード ============
 function renderDashboard() {
@@ -677,8 +684,12 @@ function txForm(tx, initialType, defaultAccountId) {
     field('種別', seg), fieldsWrap,
     !isNew && el('button', {
       class: 'fc-btn danger block', type: 'button', text: 'この取引を削除',
-      onclick: () => confirmDialog('取引を削除', '削除しますか？', () => {
-        S.update((s) => { s.transactions = s.transactions.filter((x) => x.id !== tx.id); });
+      onclick: () => confirmDialog('取引を削除', '削除して口座残高を元に戻しますか？', () => {
+        S.update((s) => {
+          reverseTx(s, tx.accountId, tx.type, Number(tx.amount) || 0);
+          s.transactions = s.transactions.filter((x) => x.id !== tx.id);
+          S.recordAssetSnapshot(s);
+        });
         render(); toast('削除しました', 'trash');
         qs('.fc-modal-back')?.classList.remove('show'); setTimeout(() => qs('.fc-modal-back')?.remove(), 260);
       }),
@@ -702,8 +713,14 @@ function txForm(tx, initialType, defaultAccountId) {
       const catId = catWrap.querySelector('select').value;
       S.update((s) => {
         const rec = { date: date.value, amount: amt, type, categoryId: catId, memo: memo.value.trim(), accountId: acc.value };
-        if (isNew) s.transactions.push({ id: uid('tx'), ...rec });
-        else Object.assign(s.transactions.find((x) => x.id === tx.id), rec);
+        if (isNew) {
+          s.transactions.push({ id: uid('tx'), ...rec });
+        } else {
+          reverseTx(s, tx.accountId, tx.type, Number(tx.amount) || 0);
+          Object.assign(s.transactions.find((x) => x.id === tx.id), rec);
+        }
+        applyTx(s, acc.value, type, amt);
+        S.recordAssetSnapshot(s);
       });
       render(); toast('保存しました'); close();
     },
