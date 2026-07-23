@@ -21,7 +21,12 @@ export const num = (n) => (Number(n) || 0).toLocaleString('ja-JP');
 // ---- 日付ヘルパー ----
 export const pad = (n) => String(n).padStart(2, '0');
 export const toISO = (d) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
-export const today = () => toISO(new Date());
+// 「今日」は常に日本時間(Asia/Tokyo)の暦日。端末・サーバーのタイムゾーンに依存しない。
+// UTC+9 へシフトしてから UTC ゲッタで読むことで、日付のみの値のズレを防ぐ。
+export const today = () => {
+  const d = new Date(Date.now() + 9 * 3600 * 1000);
+  return `${d.getUTCFullYear()}-${pad(d.getUTCMonth() + 1)}-${pad(d.getUTCDate())}`;
+};
 export const parseISO = (s) => {
   const [y, m, d] = s.split('-').map(Number);
   return new Date(y, m - 1, d);

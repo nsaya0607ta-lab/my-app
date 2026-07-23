@@ -1,14 +1,15 @@
 // app.js — ルーティング・画面描画・フォーム・操作の統合レイヤー
-import * as S from './store.js?v=20260722u';
-import * as C from './calc.js?v=20260722u';
-import * as CF from './cashflow.js?v=20260722u';
-import * as Sec from './securities.js?v=20260722u';
-import { lineChart, barChart, groupedBarChart, donutChart } from './charts.js?v=20260722u';
-import { iconHtml, icon } from './icons.js?v=20260722u';
+import * as S from './store.js?v=20260723r';
+import * as C from './calc.js?v=20260723r';
+import * as CF from './cashflow.js?v=20260723r';
+import * as Sec from './securities.js?v=20260723r';
+import { lineChart, barChart, groupedBarChart, donutChart } from './charts.js?v=20260723r';
+import { iconHtml, icon } from './icons.js?v=20260723r';
 import {
   el, qs, yen, yenMasked, num, today, toISO, parseISO, ym, fmtDate, fmtDateLong,
   fmtMonth, addMonths, resolveDay, pad, weekdayName, haptic, escapeHtml, uid,
-} from './utils.js?v=20260722u';
+} from './utils.js?v=20260723r';
+import { nextRecurringDate, nextSettlementDate, isMonthEndDay } from './recurrence.js?v=20260723r';
 
 // ---- 画面ローカル状態（データではないUI状態） ----
 const ui = {
@@ -1191,11 +1192,13 @@ function renderTransfers() {
     sectionTitle('固定振替', el('button', { class: 'fc-link', type: 'button', onclick: () => recurringTransferForm() }, el('span', { class: 'fc-add-ic sm', html: iconHtml('plus', { size: 14 }) }), el('span', { text: '追加' }))),
     rts.length ? el('div', { class: 'fc-list' }, ...rts.map((rt) => {
       const f = S.findAccount(rt.fromAccountId), t = S.findAccount(rt.toAccountId);
+      const run = rt.nextRun ?? nextRecurringDate(rt);
       return el('div', { class: 'fc-row tap', onclick: () => recurringTransferForm(rt) },
         el('div', { class: 'fc-row-ic', html: iconHtml('repeat', { size: 18 }) }),
         el('div', { class: 'fc-row-main' },
           routeRow(f?.name, t?.name),
-          el('div', { class: 'fc-row-sub', text: `毎月${rt.day === 'end' ? '末' : rt.day + '日'}${rt.memo ? '・' + rt.memo : ''}` })),
+          el('div', { class: 'fc-row-sub', text: `毎月${rt.day === 'end' ? '末' : rt.day + '日'}${rt.memo ? '・' + rt.memo : ''}` }),
+          run ? el('div', { class: 'fc-row-sub fc-next-run', text: `次回実行日 ${fmtDate(run).replace(/\(.\)/, '')}` }) : null),
         el('div', { class: 'fc-row-amt', text: M(rt.amount) }));
     })) : el('p', { class: 'fc-empty', text: '毎月の積立（銀行→NISA など）を登録すると、将来シミュレーションに自動反映されます。' })));
 
@@ -1231,9 +1234,23 @@ function recurringTransferForm(rt) {
   const startDate = inputEl({ type: 'date', value: rt?.startDate || '' });
   const endDate = inputEl({ type: 'date', value: rt?.endDate || '' });
   const memo = inputEl({ placeholder: '例）積立NISA', value: rt?.memo || '' });
+  // 次回振替予定日のプレビュー（登録日ではなく開始日＋実行日から算出）。
+  const schedulePreview = el('p', { class: 'fc-field-hint fc-sched-preview' });
+  const updatePreview = () => {
+    const d = day.value === 'end' ? 'end' : Number(day.value);
+    const run = nextRecurringDate({ day: d, startDate: startDate.value || null, endDate: endDate.value || null });
+    schedulePreview.textContent = run ? `次回実行日：${fmtDateLong(run)}` : '終了日を過ぎているため実行予定はありません';
+  };
+  day.addEventListener('change', updatePreview);
+  startDate.addEventListener('change', updatePreview);
+  endDate.addEventListener('change', updatePreview);
+  updatePreview();
   const body = el('div', {},
     field('振替元口座', fromSel), field('振替先口座', toSel), field('金額（円）', amount), field('実行日', day),
     field('開始日（任意）', startDate), field('終了日（任意）', endDate), field('メモ', memo),
+    schedulePreview,
+    el('p', { class: 'fc-field-hint', text: '29〜31日・毎月末を選ぶと、その日が無い月（例：2月）は自動的にその月の最終日に処理されます。' }),
+    el('p', { class: 'fc-field-hint', text: '開始日は「この日以降から有効」。最初の実行日は開始日以降で、設定した実行日に一致する最初の日になります。' }),
     !isNew && el('button', {
       class: 'fc-btn danger block', type: 'button', text: 'この固定振替を削除',
       onclick: () => confirmDialog('固定振替を削除', '削除しますか？', () => {
@@ -1249,8 +1266,9 @@ function recurringTransferForm(rt) {
       if (fromSel.value === toSel.value) return toast('振替元と振替先を別々に選んでください', 'alert');
       S.update((s) => {
         const rec = { fromAccountId: fromSel.value, toAccountId: toSel.value, amount: amt, day: day.value === 'end' ? 'end' : Number(day.value), startDate: startDate.value || null, endDate: endDate.value || null, memo: memo.value.trim() };
-        if (isNew) s.recurringTransfers.push({ id: uid('rtr'), ...rec });
-        else Object.assign(s.recurringTransfers.find((x) => x.id === rt.id), rec);
+        if (isNew) s.recurringTransfers.push({ id: uid('rtr'), createdAt: today(), ...rec });
+        else { const ex = s.recurringTransfers.find((x) => x.id === rt.id); Object.assign(ex, rec); if (!ex.createdAt) ex.createdAt = today(); }
+        S.computeRecurringSchedule(s); // 次回実行予定日を保存（編集時も再計算）
       });
       render(); toast('保存しました'); close();
     },
@@ -1784,10 +1802,17 @@ function renderRecurring() {
     const base = isCard ? `毎月${r.day === 'end' ? '末' : r.day + '日'}・${cardName}払い` : `毎月${r.day === 'end' ? '末' : r.day + '日'}・${cat.name}`;
     const period = r.endDate ? `・〜${fmtDate(r.endDate).replace(/\(.\)/, '')}まで` : '';
     const sub = base + period;
+    // 次回実行日（カード払いは次回引落日も）。登録日ではなく開始日＋発生日から算出済み。
+    const run = r.nextRun ?? nextRecurringDate(r);
+    const nextParts = [];
+    if (run) nextParts.push(`次回実行日 ${fmtDate(run).replace(/\(.\)/, '')}`);
+    const pay = isCard ? (r.nextSettlement ?? nextSettlementDate(r, S.findCard(r.cardId))) : null;
+    if (pay) nextParts.push(`次回引落日 ${fmtDate(pay).replace(/\(.\)/, '')}`);
+    const nextLine = nextParts.length ? el('div', { class: 'fc-row-sub fc-next-run', text: nextParts.join('・') }) : null;
     return el('div', { class: 'fc-row tap', onclick: () => recurringForm(r) },
       el('div', { class: 'fc-row-ic', style: `background:${cat.color}22;color:${cat.color}`, html: iconHtml(r.type === 'income' ? 'coins' : isCard ? 'card' : 'file', { size: 18 }) }),
       el('div', { class: 'fc-row-main' }, el('div', { class: 'fc-row-title', text: r.name }),
-        el('div', { class: 'fc-row-sub', text: sub })),
+        el('div', { class: 'fc-row-sub', text: sub }), nextLine),
       el('div', { class: 'fc-row-amt ' + (r.type === 'income' ? 'pos' : 'neg'), text: yen(r.amount, { sign: r.type === 'income' }) }));
   }));
   wrap.append(card(sectionTitle('固定収入'), incomes.length ? mkList(incomes) : el('p', { class: 'fc-empty', text: 'なし' })));
@@ -1817,8 +1842,9 @@ function recurringForm(r) {
 
   // 支払方法（固定支出のみ）: 銀行口座 / クレジットカード
   let method = r?.paymentMethod || 'bank';
+  let updatePreview = () => {}; // 次回実行日プレビュー（後で本体を差し替え）
   const methodSeg = el('div', { class: 'fc-seg' });
-  const drawMethodSeg = () => { methodSeg.innerHTML = ''; for (const [v, l] of [['bank', '銀行口座'], ['card', 'クレジットカード']]) methodSeg.append(el('button', { class: 'fc-seg-btn' + (method === v ? ' on' : ''), type: 'button', text: l, onclick: () => { method = v; drawMethodSeg(); drawPay(); } })); };
+  const drawMethodSeg = () => { methodSeg.innerHTML = ''; for (const [v, l] of [['bank', '銀行口座'], ['card', 'クレジットカード']]) methodSeg.append(el('button', { class: 'fc-seg-btn' + (method === v ? ' on' : ''), type: 'button', text: l, onclick: () => { method = v; drawMethodSeg(); drawPay(); updatePreview(); } })); };
   const payWrap = el('div', {});
   const drawPay = () => {
     payWrap.innerHTML = '';
@@ -1829,13 +1855,36 @@ function recurringForm(r) {
   };
   drawMethodSeg();
   // 種別セグメント変更時に支払UIも更新
-  const mkSegWithPay = () => { seg.innerHTML = ''; for (const [val, lab] of [['expense', '支出'], ['income', '収入']]) seg.append(el('button', { class: 'fc-seg-btn' + (type === val ? ' on' : ''), type: 'button', text: lab, onclick: () => { type = val; mkSegWithPay(); refreshCats(); drawPay(); } })); };
+  const mkSegWithPay = () => { seg.innerHTML = ''; for (const [val, lab] of [['expense', '支出'], ['income', '収入']]) seg.append(el('button', { class: 'fc-seg-btn' + (type === val ? ' on' : ''), type: 'button', text: lab, onclick: () => { type = val; mkSegWithPay(); refreshCats(); drawPay(); updatePreview(); } })); };
   mkSegWithPay(); refreshCats(); drawPay();
   const startDate = inputEl({ type: 'date', value: r?.startDate || '' });
   const endDate = inputEl({ type: 'date', value: r?.endDate || '' });
 
+  // 次回実行日・次回引落日のプレビュー（登録日ではなく開始日＋実行日から算出）。
+  const schedulePreview = el('p', { class: 'fc-field-hint fc-sched-preview' });
+  updatePreview = () => {
+    const d = day.value === 'end' ? 'end' : Number(day.value);
+    const item = { day: d, startDate: startDate.value || null, endDate: endDate.value || null };
+    const run = nextRecurringDate(item);
+    let txt = run ? `次回実行日：${fmtDateLong(run)}` : '終了日を過ぎているため実行予定はありません';
+    if (type === 'expense' && method === 'card') {
+      const card = st.cards.find((c) => c.id === cardSel.value);
+      const pay = card ? nextSettlementDate(item, card) : null;
+      if (pay) txt += `　次回引落日：${fmtDateLong(pay)}`;
+    }
+    schedulePreview.textContent = txt;
+  };
+  day.addEventListener('change', updatePreview);
+  startDate.addEventListener('change', updatePreview);
+  endDate.addEventListener('change', updatePreview);
+  cardSel.addEventListener('change', updatePreview);
+  updatePreview();
+
   const body = el('div', {}, field('種別', seg), field('名称', name), field('毎月の発生日', day), field('金額（円）', amount), catWrap, payWrap,
     field('開始日（任意）', startDate), field('終了日（任意）', endDate),
+    schedulePreview,
+    el('p', { class: 'fc-field-hint', text: '29〜31日・毎月末を選ぶと、その日が無い月（例：2月）は自動的にその月の最終日に処理されます。' }),
+    el('p', { class: 'fc-field-hint', text: '開始日は「この日以降から有効」。最初の実行日は開始日以降で、設定した発生日に一致する最初の日になります（登録日・今日は使いません）。' }),
     el('p', { class: 'fc-field-hint', text: '終了日を設定すると、その日を過ぎた月は固定収支・損益・可処分資金・将来シミュレーションから除外されます。未設定は無期限です。' }),
     !isNew && el('button', { class: 'fc-btn danger block', type: 'button', text: '削除', onclick: () => confirmDialog('固定収支を削除', '削除しますか？', () => { S.update((s) => { s.recurring = s.recurring.filter((x) => x.id !== r.id); }); render(); toast('削除しました', 'trash'); qs('.fc-modal-back')?.remove(); }) }));
   modal(isNew ? '固定収支を追加' : '固定収支を編集', body, {
@@ -1860,6 +1909,7 @@ function recurringForm(r) {
         else { const ex = s.recurring.find((x) => x.id === r.id); Object.assign(ex, rec); if (!ex.createdAt) ex.createdAt = today(); }
         S.materializeRecurringCardUsage(s);
         S.settleDueCards(s);
+        S.computeRecurringSchedule(s); // 次回実行予定日・次回引落予定日を保存（編集時も再計算）
       });
       render(); toast('保存しました'); close();
     },
@@ -2046,6 +2096,7 @@ export function init() {
     const changed = S.settleDueCards(s);
     const accrued = Sec.runAccumulations(s);
     Sec.recomputeAll(s);
+    S.computeRecurringSchedule(s); // 次回実行予定日・次回引落予定日を最新化（日付が進んでも正しく表示）
     if (changed || accrued) S.recordAssetSnapshot(s);
   }, { silent: true });
   // 起動時に資産スナップショットのベースラインを記録（口座があり履歴が無い場合）

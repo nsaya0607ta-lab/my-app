@@ -9,9 +9,10 @@
 // これにより 投資・配当・積立NISA・ローン返済・住宅/車購入 などは
 // 新しい kind のイベント生成器を足すだけで追加できる。
 
-import { pad, toISO, parseISO, addMonths, resolveDay, daysInMonth, ym } from './utils.js?v=20260722u';
-import { settlements, settlementDate, totalAssets, recurringActiveOn } from './calc.js?v=20260722u';
-import { version as storeVersion } from './store.js?v=20260722u';
+import { toISO, parseISO, addMonths, daysInMonth } from './utils.js?v=20260723r';
+import { settlements, settlementDate, totalAssets } from './calc.js?v=20260723r';
+import { monthlyOccurrences, recurringActiveOn, jstTodayISO } from './recurrence.js?v=20260723r';
+import { version as storeVersion } from './store.js?v=20260723r';
 
 // 日次処理順（⑫）: 収入→固定収入→固定支出→カード引落→振替→その他支出
 export const PRIORITY = { income: 1, 'fixed-income': 2, 'fixed-expense': 3, card: 4, transfer: 5, expense: 6 };
@@ -22,26 +23,24 @@ export const eventLabel = (kind) =>
 export const eventGroup = (kind) => (kind === 'income' || kind === 'fixed-income' ? 'income' : kind === 'transfer' ? 'transfer' : 'expense');
 
 const monthEndISO = (y, m /*0-11*/) => toISO(new Date(y, m, daysInMonth(y, m)));
-const todayISO = () => toISO(new Date());
+const todayISO = () => jstTodayISO(); // 将来シミュレーションの起点も日本時間の今日
 
 // ---- キャッシュフローイベントの生成（登録データのみから） ----
 export function buildEvents(state, fromISO, toISO_) {
   const events = [];
   const push = (e) => { if (e.date > fromISO && e.date <= toISO_) events.push(e); };
 
+  // 月次イベントの生成期間（実行日→実日付の変換は共通の monthlyOccurrences に一本化）
+  const fromMonth = fromISO.slice(0, 7);
+  const toMonth = toISO_.slice(0, 7);
+
   // ② 固定収入 / ③ 固定支出（毎月）
-  const start = parseISO(fromISO), end = parseISO(toISO_);
-  let cur = new Date(start.getFullYear(), start.getMonth(), 1);
-  const endMonth = new Date(end.getFullYear(), end.getMonth(), 1);
-  while (cur <= endMonth) {
-    const y = cur.getFullYear(), m = cur.getMonth();
-    for (const r of state.recurring) {
-      // カード払いの固定支出は銀行から直接引かず、カード利用として引落日に反映する（後述）
-      if (r.type === 'expense' && r.paymentMethod === 'card') continue;
-      const day = resolveDay(y, m, r.day);
-      const date = `${y}-${pad(m + 1)}-${pad(day)}`;
+  for (const r of state.recurring) {
+    // カード払いの固定支出は銀行から直接引かず、カード利用として引落日に反映する（後述）
+    if (r.type === 'expense' && r.paymentMethod === 'card') continue;
+    const income = r.type === 'income';
+    for (const { date } of monthlyOccurrences(fromMonth, toMonth, r.day)) {
       if (!recurringActiveOn(r, date)) continue; // 開始日〜終了日の範囲外は生成しない
-      const income = r.type === 'income';
       push({
         date, amount: income ? +r.amount : -r.amount,
         kind: income ? 'fixed-income' : 'fixed-expense',
@@ -49,7 +48,6 @@ export function buildEvents(state, fromISO, toISO_) {
         recurrence: 'monthly', description: r.name, priority: income ? 2 : 3,
       });
     }
-    cur = new Date(y, m + 1, 1);
   }
 
   // カード払いの固定支出（将来分）: 各月の発生日をカード利用とみなし、実際の引落日に
@@ -58,11 +56,7 @@ export function buildEvents(state, fromISO, toISO_) {
     if (r.type !== 'expense' || r.paymentMethod !== 'card' || !r.cardId) continue;
     const card = state.cards.find((c) => c.id === r.cardId);
     if (!card) continue;
-    let c3 = new Date(start.getFullYear(), start.getMonth(), 1);
-    while (c3 <= endMonth) {
-      const y = c3.getFullYear(), m = c3.getMonth();
-      const day = resolveDay(y, m, r.day);
-      const useDate = `${y}-${pad(m + 1)}-${pad(day)}`;
+    for (const { date: useDate } of monthlyOccurrences(fromMonth, toMonth, r.day)) {
       if (useDate > fromISO && recurringActiveOn(r, useDate)) { // 未来の利用のみ・有効期間内
         const pay = settlementDate(card, useDate);
         push({
@@ -72,7 +66,6 @@ export function buildEvents(state, fromISO, toISO_) {
           meta: { cardId: card.id, count: 1, color: card.color, fromRecurring: r.id },
         });
       }
-      c3 = new Date(y, m + 1, 1);
     }
   }
 
@@ -91,24 +84,16 @@ export function buildEvents(state, fromISO, toISO_) {
 
   // 固定振替（毎月の定期的な資産移動）。総資産は変えないので amount:0、移動額は meta.moved。
   for (const rt of state.recurringTransfers || []) {
-    let c2 = new Date(start.getFullYear(), start.getMonth(), 1);
-    while (c2 <= endMonth) {
-      const y = c2.getFullYear(), m = c2.getMonth();
-      const day = resolveDay(y, m, rt.day);
-      const date = `${y}-${pad(m + 1)}-${pad(day)}`;
-      const okStart = !rt.startDate || date >= rt.startDate;
-      const okEnd = !rt.endDate || date <= rt.endDate;
-      if (okStart && okEnd) {
-        const fromA = state.accounts.find((a) => a.id === rt.fromAccountId);
-        const toA = state.accounts.find((a) => a.id === rt.toAccountId);
-        push({
-          date, amount: 0, kind: 'transfer',
-          category: null, accountId: rt.fromAccountId, recurrence: 'monthly',
-          description: rt.memo || `${fromA?.name || '?'} → ${toA?.name || '?'}`, priority: 5,
-          meta: { moved: Number(rt.amount) || 0, fromAccountId: rt.fromAccountId, toAccountId: rt.toAccountId, fromName: fromA?.name, toName: toA?.name },
-        });
-      }
-      c2 = new Date(y, m + 1, 1);
+    for (const { date } of monthlyOccurrences(fromMonth, toMonth, rt.day)) {
+      if (!recurringActiveOn(rt, date)) continue; // 開始日〜終了日の範囲外は生成しない
+      const fromA = state.accounts.find((a) => a.id === rt.fromAccountId);
+      const toA = state.accounts.find((a) => a.id === rt.toAccountId);
+      push({
+        date, amount: 0, kind: 'transfer',
+        category: null, accountId: rt.fromAccountId, recurrence: 'monthly',
+        description: rt.memo || `${fromA?.name || '?'} → ${toA?.name || '?'}`, priority: 5,
+        meta: { moved: Number(rt.amount) || 0, fromAccountId: rt.fromAccountId, toAccountId: rt.toAccountId, fromName: fromA?.name, toName: toA?.name },
+      });
     }
   }
 
