@@ -774,6 +774,11 @@ input[type='color'].fc-input { height: 46px; padding: 4px; }
 .fc-kind-badge.index { background: var(--fc-accent-soft); color: var(--fc-accent); }
 .fc-kind-badge.stock { background: rgba(191, 90, 242, 0.14); color: #bf5af2; }
 
+/* NISA投資枠タグ（積立設定・積立履歴の銘柄名に併記） */
+.fc-frame-tag { flex: none; font-size: 10px; font-weight: 700; padding: 1px 7px; border-radius: 999px; background: var(--fc-accent-soft); color: var(--fc-accent); white-space: nowrap; }
+.fc-row-title:has(.fc-frame-tag) { display: flex; align-items: center; gap: 6px; min-width: 0; }
+.fc-row-title:has(.fc-frame-tag) > span:first-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+
 /* 積立 */
 .fc-accum-state { font-size: 11px; font-weight: 800; padding: 3px 10px; border-radius: 999px; }
 .fc-accum-state.on { background: rgba(18, 161, 80, 0.14); color: var(--fc-pos); }

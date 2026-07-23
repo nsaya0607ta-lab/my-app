@@ -8,7 +8,8 @@
 //   ・インデックス(kind:'index') … 円建て。数量・基準価額は管理しない
 //       { name, kind:'index', nisaFrame:'growth'|'tsumitate', cost, value, memo }
 
-import { pad, toISO } from './utils.js?v=20260723s';
+import { pad, toISO } from './utils.js?v=20260723t';
+import { isBusinessDay, prevISO } from './holidays.js?v=20260723t';
 
 // ===== 証券口座の判定・取得 =====
 export const isSecurities = (a) => a && a.type === 'securities';
@@ -223,8 +224,9 @@ function daysSince(startISO, iso) {
 }
 
 // ===== 積立設定の頻度計算（実際の積立処理・将来シミュレーションの両方から共通利用） =====
-// 指定日にこの積立設定が実行対象かどうかと、その日の積立額を返す。frequency: 'daily'|'weekly'|'monthly'
-export function contributionForDate(a, iso) {
+// スケジュール上その日に発生する積立額（土日祝日の判定は考慮しない「生の金額」）。対象日でなければ0。
+// frequency: 'daily'|'weekly'|'monthly'
+function rawContribution(a, iso) {
   if (!accumActiveOn(a, iso)) return 0;
   const freq = a.frequency || 'daily';
   if (freq === 'monthly') {
@@ -242,6 +244,29 @@ export function contributionForDate(a, iso) {
     return Math.round(n(a.dailyAmount));
   }
   return Math.round(n(a.dailyAmount)); // daily
+}
+
+// 指定日に実際に約定する積立額。土日祝日の実行設定・非営業日の扱いを反映する。
+// ・includeHolidays !== false : 土日祝日も含めてスケジュール通り実行（従来動作）。
+// ・includeHolidays === false : 土日祝日（非営業日）は実行しない。
+//     nonBusinessDay==='carryover' のときは、直前の連続する非営業日に予定されていた積立を
+//     この営業日へまとめて反映する（各予定日は1回だけ・二重処理しない）。
+// 実際の積立処理(runAccrualForDate)と将来シミュレーション(futureSim.project)の両方が
+// この共通関数を通るため、土日祝日の扱いは全画面で一致する。
+export function contributionForDate(a, iso) {
+  if (!accumActiveOn(a, iso)) return 0;
+  if (a.includeHolidays !== false) return rawContribution(a, iso); // 土日祝日も実行
+  if (!isBusinessDay(iso)) return 0;                               // 非営業日は実行しない
+  let total = rawContribution(a, iso);                             // 当営業日のスケジュール分
+  if ((a.nonBusinessDay || 'skip') === 'carryover') {
+    // 直前の連続する非営業日ぶんを繰り越して加算（前の営業日まで遡って一度だけ）
+    let cur = prevISO(iso), guard = 0;
+    while (guard < 40 && !isBusinessDay(cur) && accumActiveOn(a, cur)) {
+      total += rawContribution(a, cur);
+      cur = prevISO(cur); guard++;
+    }
+  }
+  return total;
 }
 
 // 1口座・1日分の積立を実行（対象はONのインデックス積立設定のみ）。履歴に成否を記録。
