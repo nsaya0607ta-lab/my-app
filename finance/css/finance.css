@@ -310,6 +310,14 @@ input[type='date'].fc-input, input[type='number'].fc-input { -webkit-appearance:
 input[type='date'].fc-input::-webkit-date-and-time-value { text-align: left; margin: 0; }
 input[type='date'].fc-input::-webkit-calendar-picker-indicator { margin-left: auto; opacity: 0.5; }
 input[type='color'].fc-input { height: 46px; padding: 4px; }
+/* 任意日付フィールド: 入力欄＋確実にクリアできる専用ボタン */
+.fc-date-row { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.fc-date-row .fc-input { flex: 1; min-width: 0; }
+.fc-date-clear {
+  flex: none; border: 1px solid var(--fc-line); background: var(--fc-surface-2); color: var(--fc-text-2);
+  border-radius: 10px; padding: 12px 12px; font-size: 13px; font-weight: 600; white-space: nowrap;
+}
+.fc-date-clear:active { transform: scale(0.96); }
 
 /* セグメント */
 .fc-seg { display: flex; background: var(--fc-surface-2); border: 1px solid var(--fc-line); border-radius: 12px; padding: 3px; gap: 3px; }
