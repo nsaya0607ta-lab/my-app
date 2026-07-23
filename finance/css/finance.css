@@ -418,6 +418,10 @@ input[type='color'].fc-input { height: 46px; padding: 4px; }
 .fc-perf-divider { stroke: var(--fc-muted); stroke-width: 1; stroke-dasharray: 2 3; opacity: 0.8; }
 .fc-perf-todaylab { fill: var(--fc-muted); font-size: 10px; font-weight: 700; }
 .fc-perf-marker { stroke: var(--fc-accent); stroke-width: 1.5; opacity: 0.55; }
+/* 日々の変動グラフの0円基準線（増減の基準として強調） */
+.fc-perf-zero { stroke: var(--fc-muted); stroke-width: 1.4; opacity: 0.75; }
+/* 資産全体／日々の変動 の表示切替 */
+.fc-perf-modeseg { margin-top: 10px; }
 .fc-perf-hit { cursor: pointer; }
 .fc-perf-taphint { font-size: 11px; color: var(--fc-muted); text-align: center; margin-top: 6px; }
 .fc-perf-empty { text-align: center; color: var(--fc-text-2); font-size: 13.5px; line-height: 1.7; padding: 30px 16px; background: var(--fc-surface-2); border: 1px dashed var(--fc-line-2); border-radius: 14px; margin: 10px 0; }

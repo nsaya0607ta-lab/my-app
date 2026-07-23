@@ -10,6 +10,25 @@ const fmtShort = (n) => {
   return Math.round(n).toLocaleString();
 };
 
+// 現在の資産規模（absMax）に合わせて縦軸の単位を選び、目盛り間隔（range）に応じて小数桁を決める。
+// ズームで範囲が狭いときも各目盛りが同じ値に潰れないよう桁を増やし、読みやすい金額表示にする。
+function makeAxisFmt(min, max) {
+  const range = Math.abs(max - min) || 1;
+  const absMax = Math.max(Math.abs(min), Math.abs(max));
+  if (absMax >= 1e8) {
+    const dec = range < 1e7 ? 2 : range < 5e7 ? 1 : 0;
+    return (v) => (v / 1e8).toFixed(dec) + '億';
+  }
+  if (absMax >= 1e4) {
+    const dec = range < 1e4 ? 2 : range < 1e5 ? 1 : 0;
+    return (v) => {
+      const val = v / 1e4;
+      return (dec === 0 ? Math.round(val).toLocaleString() : val.toFixed(dec)) + '万';
+    };
+  }
+  return (v) => Math.round(v).toLocaleString();
+}
+
 // ===== 折れ線グラフ（資産推移・収支推移） =====
 // data: [{label, value}] , opts: {height, color, fill, area}
 export function lineChart(data, opts = {}) {
@@ -275,23 +294,27 @@ export function perfChart(points, series, opts = {}) {
   let dataMax = Math.max(...allVals);
   if (!isFinite(dataMin) || !isFinite(dataMax)) { dataMin = 0; dataMax = 1; }
   if (dataMin === dataMax) { dataMin -= 1; dataMax += 1; } // 全点同値でも高さゼロにしない
-  // 縦軸は0起点固定にせず、実データの範囲にズームする。値の差が小さいほど範囲が狭まり変化が見やすくなる。
+  const origMin = dataMin, origMax = dataMax;
+  // 変動幅が小さくても最低20,000円ぶんの表示幅を確保する（中心を保ったまま上下に広げる）。
+  const MIN_SPAN = opts.minSpan || 20000;
+  if (dataMax - dataMin < MIN_SPAN) {
+    const mid = (dataMax + dataMin) / 2;
+    dataMin = mid - MIN_SPAN / 2;
+    dataMax = mid + MIN_SPAN / 2;
+  }
+  // 縦軸は0起点固定にせず、実データの範囲にズームする。上下に変動幅の約15%の余白を付ける。
   const span = dataMax - dataMin;
-  const padV = 0.12 * span;
+  const padV = 0.15 * span;
   let min = dataMin - padV;
   let max = dataMax + padV;
-  // 正のデータで下辺が0を下回るなら0でクリップ（マイナスを含む系列＝評価損益などは0を基準線として残す）。
-  if (dataMin >= 0 && min < 0) min = 0;
-  if (dataMax <= 0 && max > 0) max = 0;
+  // 元データが全て0以上なら下辺は0未満にしない（マイナスを含む系列＝評価損益などは0を基準線として残す）。
+  if (origMin >= 0 && min < 0) min = 0;
+  if (origMax <= 0 && max > 0) max = 0;
   const x = (i) => pad.l + (N === 1 ? iw / 2 : (i / (N - 1)) * iw);
   const y = (v) => pad.t + ih - ((v - min) / (max - min)) * ih;
 
-  // 縦軸ラベル。範囲を狭くズームしたとき「万」丸めだと各目盛りが同じ値に潰れるため、範囲が小さいほど小数桁を増やす。
-  const axisFmt = (v) => {
-    const range = max - min;
-    if (Math.abs(v) >= 1e4 && Math.abs(v) < 1e8 && range < 1e5) return (v / 1e4).toFixed(range < 1e4 ? 2 : 1) + '万';
-    return fmtShort(v);
-  };
+  // 縦軸ラベル。資産規模に応じた単位（万・億）と、目盛り間隔に応じた小数桁で読みやすく表示する。
+  const axisFmt = makeAxisFmt(min, max);
   let grid = '';
   for (let k = 0; k <= 4; k++) {
     const v = min + ((max - min) * k) / 4;
@@ -375,6 +398,82 @@ export function perfChart(points, series, opts = {}) {
   }
 
   return `<svg viewBox="0 0 ${w} ${h}" class="fc-svg fc-perf-svg" preserveAspectRatio="none">${grid}${fcBg}${zeroLine}${divider}${marker}${lines}${dots}${xl}${hits}</svg>`;
+}
+
+// ===== 日々の変動グラフ（前日からの評価額の増減額を棒で表示） =====
+// 0円を基準線として、プラスは上向き（緑）・マイナスは下向き（赤）の棒で描く。
+// data: [{label, delta, kind?}]（kind:'forecast' なら予測ぶんとして淡色表示）
+export function perfDeltaChart(data, opts = {}) {
+  const w = opts.width || 640;
+  const h = opts.height || 240;
+  const pad = { t: 18, r: 14, b: 26, l: 52 };
+  const iw = w - pad.l - pad.r;
+  const ih = h - pad.t - pad.b;
+  const N = data.length;
+  if (!N) return `<svg viewBox="0 0 ${w} ${h}"></svg>`;
+
+  const vals = data.map((d) => d.delta);
+  // 縦軸は必ず0を含める（0円が基準線）。上下は変動幅の約15%を余白に。最低20,000円ぶんの幅を確保。
+  let dataMin = Math.min(...vals, 0);
+  let dataMax = Math.max(...vals, 0);
+  const MIN_SPAN = opts.minSpan || 20000;
+  if (dataMax - dataMin < MIN_SPAN) {
+    // 0を基準に対称に広げる（増減0付近でも読みやすく）
+    const half = MIN_SPAN / 2;
+    dataMin = Math.min(dataMin, -half);
+    dataMax = Math.max(dataMax, half);
+  }
+  const span = dataMax - dataMin;
+  const padV = 0.15 * span;
+  const min = dataMin - padV;
+  const max = dataMax + padV;
+  const gap = iw / N;
+  const bw = Math.min(26, gap * 0.6);
+  const x = (i) => pad.l + gap * i + gap / 2;
+  const y = (v) => pad.t + ih - ((v - min) / (max - min)) * ih;
+
+  const axisFmt = makeAxisFmt(min, max);
+  let grid = '';
+  for (let k = 0; k <= 4; k++) {
+    const v = min + ((max - min) * k) / 4;
+    const yy = y(v);
+    grid += `<line x1="${pad.l}" y1="${yy}" x2="${w - pad.r}" y2="${yy}" class="fc-grid"/>`;
+    grid += `<text x="${pad.l - 6}" y="${yy + 3}" class="fc-axis" text-anchor="end">${axisFmt(v)}</text>`;
+  }
+  // 0円の基準線（強調）
+  const y0 = y(0);
+  const zeroLine = `<line x1="${pad.l}" y1="${y0}" x2="${w - pad.r}" y2="${y0}" class="fc-perf-zero"/>`;
+
+  const posColor = opts.posColor || '#34c759';
+  const negColor = opts.negColor || '#ff453a';
+  let bars = '';
+  data.forEach((d, i) => {
+    const cx = x(i);
+    const v = d.delta;
+    const yv = y(v);
+    const top = Math.min(yv, y0);
+    const bh = Math.max(1, Math.abs(yv - y0));
+    const col = v >= 0 ? posColor : negColor;
+    const op = d.kind === 'forecast' ? '0.42' : '1';
+    bars += `<rect class="fc-perf-hit" data-i="${i}" x="${cx - bw / 2}" y="${top}" width="${bw}" height="${bh}" rx="3" fill="${col}" opacity="${op}"/>`;
+  });
+
+  // x軸ラベル（点が多いときは間引き）
+  let xl = '';
+  const step = Math.max(1, Math.ceil(N / 6));
+  data.forEach((d, i) => {
+    if (i % step === 0 || i === N - 1)
+      xl += `<text x="${x(i)}" y="${h - 8}" class="fc-axis" text-anchor="middle">${d.label}</text>`;
+  });
+
+  // 選択中の棒のマーカー
+  let marker = '';
+  if (opts.markerIndex != null && opts.markerIndex >= 0 && opts.markerIndex < N) {
+    const mx = x(opts.markerIndex);
+    marker = `<line x1="${mx}" y1="${pad.t}" x2="${mx}" y2="${pad.t + ih}" class="fc-perf-marker"/>`;
+  }
+
+  return `<svg viewBox="0 0 ${w} ${h}" class="fc-svg fc-perf-svg" preserveAspectRatio="none">${grid}${zeroLine}${marker}${bars}${xl}</svg>`;
 }
 
 export { fmtShort };
