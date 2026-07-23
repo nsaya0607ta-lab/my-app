@@ -994,32 +994,68 @@ function purchaseForm(acc) {
   });
 }
 
-// 「株価を更新」= 現在株価(USD)を手入力する画面（API取得ではない）。保存で評価額・損益・損益率が即時再計算。
+// 「株価を更新」= 現在株価(USD)・インデックスの現在保有額(円)を手入力する画面（API取得ではない）。
+// 保存で評価額・損益・損益率・保有割合が即時再計算。個別株とインデックス（成長投資枠／つみたて投資枠）を分けて入力できる。
 function priceUpdateForm(acc) {
   const stocks = Sec.accountHoldings(acc).filter(Sec.isStock);
-  if (!stocks.length) { modal('株価を更新', el('p', { class: 'fc-empty', text: '個別株（米国株）が登録されていません。「銘柄を追加」から登録してください。' }), {}); return; }
-  const rows = stocks.map((h) => {
-    const priceInp = inputEl({ type: 'number', inputmode: 'decimal', placeholder: '0.00', value: h.priceUsd ?? '' });
-    const fxInp = inputEl({ type: 'number', inputmode: 'decimal', placeholder: '例）157.5', value: h.fxRate ?? '' });
-    return { h, priceInp, fxInp, node: el('div', { class: 'fc-priceupd-row' },
-      el('div', { class: 'fc-priceupd-head' },
-        el('span', { class: 'fc-holding-name', text: h.name }),
-        h.ticker ? el('span', { class: 'fc-holding-ticker', text: h.ticker }) : ''),
-      el('div', { class: 'fc-priceupd-inputs' },
-        field('現在株価（USD）', priceInp), field('ドル円', fxInp))) };
-  });
+  const indexes = Sec.accountHoldings(acc).filter(Sec.isIndex);
+  if (!stocks.length && !indexes.length) {
+    modal('株価を更新', el('p', { class: 'fc-empty', text: '保有銘柄が登録されていません。「銘柄を追加」から登録してください。' }), {});
+    return;
+  }
+  const rows = [];
+  const sections = [];
+  const groupHead = (badgeClass, label, count) => el('div', { class: 'fc-holding-grouphead' },
+    el('span', { class: 'fc-kind-badge ' + badgeClass, text: label }),
+    el('span', { class: 'fc-holding-groupn', text: `${count}銘柄` }));
+
+  // 個別株（米国株・USD）: 現在株価(USD)・ドル円
+  if (stocks.length) {
+    sections.push(groupHead('stock', '個別株（米国株）', stocks.length));
+    for (const h of stocks) {
+      const priceInp = inputEl({ type: 'number', inputmode: 'decimal', placeholder: '0.00', value: h.priceUsd ?? '' });
+      const fxInp = inputEl({ type: 'number', inputmode: 'decimal', placeholder: '例）157.5', value: h.fxRate ?? '' });
+      rows.push({ h, kind: 'stock', priceInp, fxInp });
+      sections.push(el('div', { class: 'fc-priceupd-row' },
+        el('div', { class: 'fc-priceupd-head' },
+          el('span', { class: 'fc-holding-name', text: h.name }),
+          h.ticker ? el('span', { class: 'fc-holding-ticker', text: h.ticker }) : ''),
+        el('div', { class: 'fc-priceupd-inputs' },
+          field('現在株価（USD）', priceInp), field('ドル円', fxInp))));
+    }
+  }
+
+  // インデックス（円建て）: 現在保有額(円)。成長投資枠／つみたて投資枠で分けて表示。
+  for (const frame of Sec.NISA_FRAMES) {
+    const items = indexes.filter((h) => (h.nisaFrame || 'growth') === frame.value);
+    if (!items.length) continue;
+    sections.push(groupHead('index', frame.label, items.length));
+    for (const h of items) {
+      const valueInp = inputEl({ type: 'number', inputmode: 'numeric', placeholder: '0', value: h.value ?? '' });
+      rows.push({ h, kind: 'index', valueInp });
+      sections.push(el('div', { class: 'fc-priceupd-row' },
+        el('div', { class: 'fc-priceupd-head' },
+          el('span', { class: 'fc-holding-name', text: h.name })),
+        field('現在保有額（円）', valueInp)));
+    }
+  }
+
   const body = el('div', {},
-    el('p', { class: 'fc-field-hint', text: '各銘柄の現在株価（USD）とドル円を入力して保存すると、評価額・損益・損益率・保有割合が即時に再計算されます。' }),
-    ...rows.map((r) => r.node));
-  modal('株価を更新（現在株価を入力）', body, {
+    el('p', { class: 'fc-field-hint', text: '個別株は現在株価（USD）とドル円、インデックスは現在保有額（円）を入力して保存すると、評価額・損益・損益率・保有割合が即時に再計算されます。' }),
+    ...sections);
+  modal('保有状況を更新（現在の株価・保有額を入力）', body, {
     onSave: (close) => {
       S.update((s) => {
         const a = s.accounts.find((x) => x.id === acc.id);
         for (const r of rows) {
           const hh = a.holdings.find((x) => x.id === r.h.id);
           if (!hh) continue;
-          if (r.priceInp.value !== '') hh.priceUsd = Number(r.priceInp.value) || 0;
-          if (r.fxInp.value !== '') hh.fxRate = Number(r.fxInp.value) || 0;
+          if (r.kind === 'stock') {
+            if (r.priceInp.value !== '') hh.priceUsd = Number(r.priceInp.value) || 0;
+            if (r.fxInp.value !== '') hh.fxRate = Number(r.fxInp.value) || 0;
+          } else if (r.valueInp.value !== '') {
+            hh.value = Number(r.valueInp.value) || 0;
+          }
         }
         Sec.recomputeAccount(a);
         S.recordAssetSnapshot(s);
