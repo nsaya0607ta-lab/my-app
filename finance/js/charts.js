@@ -271,22 +271,33 @@ export function perfChart(points, series, opts = {}) {
   const boundary = Math.max(0, Math.min(N - 1, opts.boundaryIndex == null ? N - 1 : opts.boundaryIndex));
 
   const allVals = drawn.flatMap((s) => s.values.filter((v) => v != null));
-  let min = Math.min(...allVals, 0);
-  let max = Math.max(...allVals);
-  if (!isFinite(min) || !isFinite(max)) { min = 0; max = 1; }
-  if (min === max) max = min + 1;
-  const pxr = 0.08 * (max - min);
-  max += pxr;
-  if (min < 0) min -= pxr;
+  let dataMin = Math.min(...allVals);
+  let dataMax = Math.max(...allVals);
+  if (!isFinite(dataMin) || !isFinite(dataMax)) { dataMin = 0; dataMax = 1; }
+  if (dataMin === dataMax) { dataMin -= 1; dataMax += 1; } // 全点同値でも高さゼロにしない
+  // 縦軸は0起点固定にせず、実データの範囲にズームする。値の差が小さいほど範囲が狭まり変化が見やすくなる。
+  const span = dataMax - dataMin;
+  const padV = 0.12 * span;
+  let min = dataMin - padV;
+  let max = dataMax + padV;
+  // 正のデータで下辺が0を下回るなら0でクリップ（マイナスを含む系列＝評価損益などは0を基準線として残す）。
+  if (dataMin >= 0 && min < 0) min = 0;
+  if (dataMax <= 0 && max > 0) max = 0;
   const x = (i) => pad.l + (N === 1 ? iw / 2 : (i / (N - 1)) * iw);
   const y = (v) => pad.t + ih - ((v - min) / (max - min)) * ih;
 
+  // 縦軸ラベル。範囲を狭くズームしたとき「万」丸めだと各目盛りが同じ値に潰れるため、範囲が小さいほど小数桁を増やす。
+  const axisFmt = (v) => {
+    const range = max - min;
+    if (Math.abs(v) >= 1e4 && Math.abs(v) < 1e8 && range < 1e5) return (v / 1e4).toFixed(range < 1e4 ? 2 : 1) + '万';
+    return fmtShort(v);
+  };
   let grid = '';
   for (let k = 0; k <= 4; k++) {
     const v = min + ((max - min) * k) / 4;
     const yy = y(v);
     grid += `<line x1="${pad.l}" y1="${yy}" x2="${w - pad.r}" y2="${yy}" class="fc-grid"/>`;
-    grid += `<text x="${pad.l - 6}" y="${yy + 3}" class="fc-axis" text-anchor="end">${fmtShort(v)}</text>`;
+    grid += `<text x="${pad.l - 6}" y="${yy + 3}" class="fc-axis" text-anchor="end">${axisFmt(v)}</text>`;
   }
   const zeroLine = (min < 0 && max > 0)
     ? `<line x1="${pad.l}" y1="${y(0)}" x2="${w - pad.r}" y2="${y(0)}" class="fc-grid" stroke-dasharray="3 3"/>` : '';
@@ -329,6 +340,23 @@ export function perfChart(points, series, opts = {}) {
     }
   }
 
+  // 各データ点の丸プロット（どの日がどの地点か分かるように）。点が密集すると潰れるため一定数以下でのみ表示。
+  // 実績は塗りつぶし、予測（今日以降）は白抜きの丸で区別する。
+  let dots = '';
+  const showDots = opts.dots !== false && N <= 45;
+  if (showDots) {
+    for (const s of drawn) {
+      for (let i = 0; i < N; i++) {
+        const v = s.values[i];
+        if (v == null) continue;
+        const cx = x(i), cy = y(v);
+        dots += i > boundary
+          ? `<circle cx="${cx}" cy="${cy}" r="3.4" fill="var(--fc-surface)" stroke="${s.color}" stroke-width="1.8" opacity="0.92"/>`
+          : `<circle cx="${cx}" cy="${cy}" r="3.4" fill="${s.color}"/>`;
+      }
+    }
+  }
+
   // 選択中の点のマーカー（縦線）
   let marker = '';
   if (opts.markerIndex != null && opts.markerIndex >= 0 && opts.markerIndex < N) {
@@ -346,7 +374,7 @@ export function perfChart(points, series, opts = {}) {
     }
   }
 
-  return `<svg viewBox="0 0 ${w} ${h}" class="fc-svg fc-perf-svg" preserveAspectRatio="none">${grid}${fcBg}${zeroLine}${divider}${marker}${lines}${xl}${hits}</svg>`;
+  return `<svg viewBox="0 0 ${w} ${h}" class="fc-svg fc-perf-svg" preserveAspectRatio="none">${grid}${fcBg}${zeroLine}${divider}${marker}${lines}${dots}${xl}${hits}</svg>`;
 }
 
 export { fmtShort };
