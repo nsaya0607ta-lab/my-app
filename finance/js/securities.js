@@ -8,7 +8,7 @@
 //   ・インデックス(kind:'index') … 円建て。数量・基準価額は管理しない
 //       { name, kind:'index', nisaFrame:'growth'|'tsumitate', cost, value, memo }
 
-import { pad, toISO } from './utils.js?v=20260722u';
+import { pad, toISO } from './utils.js?v=20260723r';
 
 // ===== 証券口座の判定・取得 =====
 export const isSecurities = (a) => a && a.type === 'securities';

@@ -2,13 +2,33 @@
 // 設計方針: すべてのデータはこの1オブジェクトに集約し、mutate → save → emit。
 // 将来の証券口座連携などは accounts の type と外部同期モジュールを足すだけで拡張可能。
 
-import { uid, pad } from './utils.js?v=20260722u';
-import { settlementDate, recurringActiveOn } from './calc.js?v=20260722u';
-import { isSecurities, recomputeAccount } from './securities.js?v=20260722u';
+import { uid, pad } from './utils.js?v=20260723r';
+import { settlementDate } from './calc.js?v=20260723r';
+import {
+  recurringActiveOn, monthlyOccurrences, jstTodayISO, dedupeKey,
+  nextRecurringDate, nextSettlementDate,
+} from './recurrence.js?v=20260723r';
+import { isSecurities, recomputeAccount } from './securities.js?v=20260723r';
 
 const KEY = 'finance_app_v2';
 const SCHEMA = 1;
-const todayISO = () => { const d = new Date(); return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`; };
+const todayISO = () => jstTodayISO(); // 「今日」は常に日本時間
+
+// 定期取引に「次回実行予定日・次回引落予定日」を計算して保存する。
+// 登録日・今日を実行予定日に流用せず、開始日と実行日から算出する（編集時も再計算）。
+export function computeRecurringSchedule(s) {
+  const ref = jstTodayISO();
+  for (const r of s.recurring || []) {
+    r.nextRun = nextRecurringDate(r, ref);
+    if (r.type === 'expense' && r.paymentMethod === 'card' && r.cardId) {
+      const card = (s.cards || []).find((c) => c.id === r.cardId);
+      r.nextSettlement = card ? nextSettlementDate(r, card, ref) : null;
+    } else {
+      r.nextSettlement = null;
+    }
+  }
+  for (const rt of s.recurringTransfers || []) rt.nextRun = nextRecurringDate(rt, ref);
+}
 
 const listeners = new Set();
 let state = load();
@@ -153,6 +173,12 @@ function migrate(data) {
     if (r.type === 'expense' && r.paymentMethod === undefined) r.paymentMethod = 'bank';
     if (r.createdAt === undefined) r.createdAt = today;
   }
+  // 固定振替も作成日を補完（過去分の遡及生成を防ぐ基準）。
+  for (const rt of data.recurringTransfers) {
+    if (rt.createdAt === undefined) rt.createdAt = today;
+  }
+  // 既存データにも次回実行予定日・次回引落予定日を付与（画面表示・確認用）。
+  computeRecurringSchedule(data);
   // 口座ベース設計への移行: 口座未指定の既存取引を先頭口座へ割り当て（履歴が消えないように）。
   // カード払いの固定支出は銀行口座に直接紐付かないため対象外。
   const firstAcc = (data.accounts || [])[0]?.id || null;
@@ -181,22 +207,24 @@ export function materializeRecurringCardUsage(s) {
     if (r.type !== 'expense' || r.paymentMethod !== 'card' || !r.cardId) continue;
     if (!s.cards.find((c) => c.id === r.cardId)) continue;
     const since = r.createdAt || today;
-    // since の翌月〜今日までの各月の発生日を走査
-    let cur = new Date(Number(since.slice(0, 4)), Number(since.slice(5, 7)) - 1, 1);
-    const end = new Date(Number(today.slice(0, 4)), Number(today.slice(5, 7)) - 1, 1);
-    while (cur <= end) {
-      const y = cur.getFullYear(), m = cur.getMonth();
-      const day = r.day === 'end' ? new Date(y, m + 1, 0).getDate() : Math.min(Number(r.day), new Date(y, m + 1, 0).getDate());
-      const date = `${y}-${pad(m + 1)}-${pad(day)}`;
+    // since の月〜今日の月までの各月の発生日を走査（実日付変換は共通関数に一本化）。
+    for (const { y, m, date } of monthlyOccurrences(since.slice(0, 7), today.slice(0, 7), r.day)) {
       const occYm = `${y}-${pad(m + 1)}`;
+      // 登録日より後・今日以前・有効期間内のみ具体化（過去分の勝手な遡及生成を防ぐ）。
       if (date > since && date <= today && recurringActiveOn(r, date)) {
-        const exists = s.cardTransactions.some((t) => t.sourceRecurringId === r.id && t.occYm === occYm);
+        // 二重処理防止: (定期取引ID・本来の実行予定日・種別) で一意判定。
+        const key = dedupeKey(r.id, date, 'card-usage');
+        const exists = s.cardTransactions.some(
+          (t) => t.dedupeKey === key || (t.sourceRecurringId === r.id && t.occYm === occYm));
         if (!exists) {
-          s.cardTransactions.push({ id: uid('ctx'), cardId: r.cardId, date, amount: Number(r.amount) || 0, memo: r.name, categoryId: r.categoryId || null, settled: false, sourceRecurringId: r.id, occYm });
+          s.cardTransactions.push({
+            id: uid('ctx'), cardId: r.cardId, date, amount: Number(r.amount) || 0,
+            memo: r.name, categoryId: r.categoryId || null, settled: false,
+            sourceRecurringId: r.id, occYm, dedupeKey: key,
+          });
           changed = true;
         }
       }
-      cur = new Date(y, m + 1, 1);
     }
   }
   return changed;

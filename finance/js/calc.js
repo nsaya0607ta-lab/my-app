@@ -2,7 +2,14 @@
 // 最重要3機能: ①クレジットカード引落管理 ②将来資産シミュレーション ③可処分資金の自動計算
 // 純粋関数の集合として実装し、UIから独立させることでテスト・拡張を容易にする。
 
-import { ym, pad, resolveDay, addMonths, toISO, parseISO, daysInMonth } from './utils.js?v=20260722u';
+import { ym, pad, addMonths, toISO, parseISO, daysInMonth } from './utils.js?v=20260723r';
+import {
+  recurringActiveOn, settlementDateFor, occurrenceInMonth,
+  nextRecurringDate, nextSettlementDate, jstTodayISO,
+} from './recurrence.js?v=20260723r';
+
+// 定期処理の日付計算は recurrence.js に集約。ここでは後方互換のため再輸出する。
+export { recurringActiveOn, nextRecurringDate, nextSettlementDate, jstTodayISO };
 
 // ===== 総資産 =====
 export const totalAssets = (state) =>
@@ -105,16 +112,8 @@ export function valuationChange(account) {
 // ===== ① クレジットカード引落 =====
 // カード利用1件が「いつ銀行から引き落とされるか」を求める。
 // closingDay: 'end' か 1..28 / payDay: 'end' か 1..31 / payMonthOffset: 締め月から何ヶ月後に引落か
-export function settlementDate(card, txISO) {
-  const d = parseISO(txISO);
-  const y = d.getFullYear(), m = d.getMonth(), dd = d.getDate();
-  const closeDay = resolveDay(y, m, card.closingDay);
-  // 締日を過ぎた利用は翌月締めサイクルへ
-  const closeMonth = dd <= closeDay ? new Date(y, m, 1) : new Date(y, m + 1, 1);
-  const payMonth = addMonths(closeMonth, card.payMonthOffset ?? 1);
-  const payD = resolveDay(payMonth.getFullYear(), payMonth.getMonth(), card.payDay);
-  return toISO(new Date(payMonth.getFullYear(), payMonth.getMonth(), payD));
-}
+// 実装は recurrence.settlementDateFor に集約。引数順(card, txISO)は既存呼び出しのため維持。
+export const settlementDate = (card, txISO) => settlementDateFor(txISO, card);
 
 // カード別・引落日別に利用を集計。{ [cardId]: { [payISO]: {amount, items:[]} } }
 export function settlements(state) {
@@ -167,15 +166,12 @@ export function upcomingSettlements(state, fromISO) {
 }
 
 // ===== 固定収支の展開 =====
-// 固定収支が指定日に有効か（開始日・終了日の範囲内か）。終了日未設定は無期限。
-export const recurringActiveOn = (r, dateISO) =>
-  (!r.startDate || dateISO >= r.startDate) && (!r.endDate || dateISO <= r.endDate);
-
-// 指定年月に発生する固定収入/支出を実日付付きで返す（開始日〜終了日の範囲外は除外）
+// 指定年月に発生する固定収入/支出を実日付付きで返す（開始日〜終了日の範囲外は除外）。
+// 実行日→実日付の変換は recurrence.occurrenceInMonth（月末丸め込み込み）に一本化。
 export function recurringForMonth(state, ymStr) {
   const [y, m] = ymStr.split('-').map(Number);
   return state.recurring
-    .map((r) => ({ ...r, date: `${y}-${pad(m)}-${pad(resolveDay(y, m - 1, r.day))}` }))
+    .map((r) => ({ ...r, date: occurrenceInMonth(y, m - 1, r.day) }))
     .filter((r) => recurringActiveOn(r, r.date));
 }
 
