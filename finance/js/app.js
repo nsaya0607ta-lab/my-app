@@ -227,6 +227,17 @@ function confirmDialog(title, message, onYes, { yesLabel = '削除', danger = tr
 function field(label, input) {
   return el('div', { class: 'fc-field' }, el('span', { class: 'fc-field-lab', text: label }), input);
 }
+// 任意（空欄可）の日付フィールド。iOS Safariのネイティブ日付ピッカーに
+// 内蔵の「リセット」ボタンは値を空にできないことがあるため、確実に
+// 空へ戻せる独自の「クリア」ボタンを添える。
+function optionalDateField(label, input) {
+  const clearBtn = el('button', {
+    class: 'fc-date-clear', type: 'button', text: 'クリア',
+    onclick: () => { input.value = ''; input.dispatchEvent(new Event('change', { bubbles: true })); },
+  });
+  return el('div', { class: 'fc-field' }, el('span', { class: 'fc-field-lab', text: label }),
+    el('div', { class: 'fc-date-row' }, input, clearBtn));
+}
 function inputEl(attrs) { return el('input', { class: 'fc-input', ...attrs }); }
 function selectEl(options, value) {
   const s = el('select', { class: 'fc-input' });
@@ -989,7 +1000,7 @@ function accumulationForm(acc, a) {
   drawEn();
   const body = el('div', {},
     field('積立対象（インデックス）', sel), field('毎日の積立金額（円）', amount),
-    field('積立開始日', startDate), field('積立終了日（任意）', endDate), enRow,
+    field('積立開始日', startDate), optionalDateField('積立終了日（任意）', endDate), enRow,
     !isNew && el('button', {
       class: 'fc-btn danger block', type: 'button', text: 'この積立設定を削除',
       onclick: () => confirmDialog('積立設定を削除', '削除しますか？', () => {
@@ -1281,7 +1292,7 @@ function recurringTransferForm(rt) {
   updatePreview();
   const body = el('div', {},
     field('振替元口座', fromSel), field('振替先口座', toSel), field('金額（円）', amount), field('実行日', day),
-    field('開始日（任意）', startDate), field('終了日（任意）', endDate), field('メモ', memo),
+    optionalDateField('開始日（任意）', startDate), optionalDateField('終了日（任意）', endDate), field('メモ', memo),
     schedulePreview,
     el('p', { class: 'fc-field-hint', text: '29〜31日・毎月末を選ぶと、その日が無い月（例：2月）は自動的にその月の最終日に処理されます。' }),
     el('p', { class: 'fc-field-hint', text: '開始日は「この日以降から有効」。最初の実行日は開始日以降で、設定した実行日に一致する最初の日になります。' }),
@@ -1915,7 +1926,7 @@ function recurringForm(r) {
   updatePreview();
 
   const body = el('div', {}, field('種別', seg), field('名称', name), field('毎月の発生日', day), field('金額（円）', amount), catWrap, payWrap,
-    field('開始日（任意）', startDate), field('終了日（任意）', endDate),
+    optionalDateField('開始日（任意）', startDate), optionalDateField('終了日（任意）', endDate),
     schedulePreview,
     el('p', { class: 'fc-field-hint', text: '29〜31日・毎月末を選ぶと、その日が無い月（例：2月）は自動的にその月の最終日に処理されます。' }),
     el('p', { class: 'fc-field-hint', text: '開始日は「この日以降から有効」。最初の実行日は開始日以降で、設定した発生日に一致する最初の日になります（登録日・今日は使いません）。' }),
