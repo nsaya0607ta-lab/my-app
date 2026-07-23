@@ -2131,7 +2131,17 @@ function futureMainChartCard(state, fs, proj) {
   const seriesList = FUTURE_SERIES_DEFS.filter((d) => visible[d.key]).map((d) => ({
     label: d.label, color: d.color, data: sampled.map((p, i) => ({ label: labelFor(p.date, i), value: p[d.field] })),
   }));
-  const shortfall = FS.firstShortfall(proj.series);
+  const money = (v) => (secret ? '＊＊＊' : yen(v));
+  // 銀行資金がマイナス（生活費・カード等で使いすぎ）
+  const bankShort = proj.series.find((p) => p.bankCash < 0) || null;
+  // 証券口座現金の不足。適切な振替設定（毎月の振替≧毎月の積立）なら警告しない。
+  //   ・個別株の購入予定が現金不足で実行できない → 常に警告
+  //   ・NISA積立の不足 → 毎月の構造的な不足（monthlyShortfall>0）があるときのみ警告
+  //     （初月の入金前の一時的なズレは、振替が積立を上回っていれば以降解消するため除外）
+  const plan = FS.securitiesCashPlan(state);
+  const purchaseShort = (proj.shortfalls || []).find((s) => s.kind === 'purchase') || null;
+  const accumShort = plan.monthlyShortfall > 0 ? (proj.shortfalls || []).find((s) => s.kind === 'accumulation') : null;
+  const secShort = [purchaseShort, accumShort].filter(Boolean).sort((a, b) => a.date.localeCompare(b.date))[0] || null;
 
   return card(
     sectionTitle('将来資産グラフ'),
@@ -2139,10 +2149,18 @@ function futureMainChartCard(state, fs, proj) {
     secret ? el('p', { class: 'fc-empty', text: 'シークレットモード中は非表示' })
       : (seriesList.length ? el('div', { class: 'fc-chart', html: multiLineChart(seriesList, { height: 240 }) })
         : el('p', { class: 'fc-empty', text: '表示する項目を選択してください' })),
-    shortfall ? el('div', { class: 'fc-shortage' },
+    bankShort ? el('div', { class: 'fc-shortage' },
       el('div', { class: 'fc-shortage-top' }, el('span', { class: 'fc-shortage-ic', html: iconHtml('alert', { size: 18 }) }),
-        el('b', { text: `${fmtDateLong(shortfall.date)}頃に資金がマイナスになる見込みです` })),
-      el('div', { class: 'fc-shortage-sub', text: '積立額・購入予定・銀行⇔証券の振替設定を見直してください。' })) : '',
+        el('b', { text: `${fmtDateLong(bankShort.date)}頃に銀行資金がマイナスになる見込みです` })),
+      el('div', { class: 'fc-shortage-sub', text: '固定収支・カード引落・銀行⇔証券の振替設定を見直してください。' })) : '',
+    secShort ? el('div', { class: 'fc-shortage' },
+      el('div', { class: 'fc-shortage-top' }, el('span', { class: 'fc-shortage-ic', html: iconHtml('alert', { size: 18 }) }),
+        el('b', { text: `${fmtDateLong(secShort.date)}頃に証券口座現金が不足する見込みです` })),
+      el('div', { class: 'fc-shortage-sub', text: `不足予定額 約${money(secShort.deficit)}・原因: ${secShort.kind === 'accumulation' ? 'NISA積立' : '個別株購入'}「${secShort.name}」` }),
+      plan ? el('div', { class: 'fc-kv fc-shortage-plan' },
+        kv('毎月必要な振替額', money(plan.requiredMonthly)),
+        kv('現在の振替額', money(plan.currentMonthlyTransfer)),
+        kv('毎月の不足見込み', money(plan.monthlyShortfall))) : '') : '',
   );
 }
 
@@ -2174,9 +2192,14 @@ function futureDateLookupCard(state, fs) {
     const pt = FS.pointAt(proj30.series, iso);
     const profitRate = pt.principal > 0 ? ((pt.valuation - pt.principal) / pt.principal) * 100 : null;
     result.innerHTML = '';
+    // 証券口座現金の行はタップで内訳（現在残高・振替累計・購入累計）を表示
+    const secRow = kv('証券口座現金', secret ? '＊＊＊' : yen(pt.secCash));
+    secRow.classList.add('tap');
+    secRow.append(el('span', { class: 'fc-kv-chev', html: iconHtml('chevronRight', { size: 14 }) }));
+    secRow.addEventListener('click', () => secCashBreakdownModal(pt, fmtDateLong(pt.date)));
     result.append(el('div', { class: 'fc-kv' },
       kv('銀行残高', secret ? '＊＊＊' : yen(pt.bankCash)),
-      kv('証券口座現金', secret ? '＊＊＊' : yen(pt.secCash)),
+      secRow,
       kv('元本', secret ? '＊＊＊' : yen(pt.principal)),
       kv('評価額', secret ? '＊＊＊' : yen(pt.valuation)),
       kv('合計資産', secret ? '＊＊＊' : yen(pt.total)),
@@ -2185,6 +2208,30 @@ function futureDateLookupCard(state, fs) {
   dateInp.addEventListener('change', () => { ui.futureCheckDate = dateInp.value; draw(); });
   draw();
   return card(sectionTitle('資産推移を確認'), field('日付を選択', dateInp), result);
+}
+
+// 証券口座現金の内訳モーダル（資金の流れ: 初期残高＋振替入金＋その他入金−NISA購入−個別株購入−振替出金）
+function secCashBreakdownModal(pt, dateLabel) {
+  const secret = S.getState().settings.secret;
+  const money = (v) => (secret ? '＊＊＊' : yen(v, { sign: false }));
+  const rows = [
+    ['現在残高', pt.secCashInitial, false],
+    ['銀行からの振替累計', pt.secXferIn, false],
+    ['その他の入金累計', pt.secDepositIn, false],
+    ['NISA購入累計', -pt.secNisaBuy, true],
+    ['個別株購入累計', -pt.secStockBuy, true],
+    ['証券→銀行の振替累計', -pt.secXferOut, true],
+    ['その他の出金累計', -pt.secWithdraw, true],
+  ].filter(([, v]) => Math.abs(Number(v) || 0) > 0);
+  const body = el('div', {},
+    el('div', { class: 'fc-perf-latest-rate' }, el('span', { text: '証券口座現金' }),
+      el('b', { class: pt.secCash < 0 ? 'neg' : '', text: secret ? '＊＊＊' : yen(pt.secCash) })),
+    el('p', { class: 'fc-field-hint', text: '銀行→証券の振替で入金し、NISA積立・個別株購入で投資元本へ移動します。振替や購入は資産間の移動のため合計資産は変わりません。' }),
+    el('div', { class: 'fc-kv' }, ...rows.map(([label, v, neg]) =>
+      el('div', { class: 'fc-kv-row' }, el('span', { text: label }),
+        el('b', { class: neg ? 'neg' : '', text: (secret ? '＊＊＊' : (v < 0 ? '−' : '') + money(Math.abs(v))) })))),
+  );
+  modal(`証券口座現金の内訳（${dateLabel}）`, body, {});
 }
 
 // ---- シナリオ比較（保守・通常・強気・自由設定） ----
