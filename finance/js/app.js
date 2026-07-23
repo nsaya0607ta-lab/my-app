@@ -1,16 +1,17 @@
 // app.js — ルーティング・画面描画・フォーム・操作の統合レイヤー
-import * as S from './store.js?v=20260723r';
-import * as C from './calc.js?v=20260723r';
-import * as CF from './cashflow.js?v=20260723r';
-import * as Sec from './securities.js?v=20260723r';
-import * as FS from './futureSim.js?v=20260723r';
-import { lineChart, barChart, groupedBarChart, donutChart, multiLineChart, fanChart } from './charts.js?v=20260723r';
-import { iconHtml, icon } from './icons.js?v=20260723r';
+import * as S from './store.js?v=20260723s';
+import * as C from './calc.js?v=20260723s';
+import * as CF from './cashflow.js?v=20260723s';
+import * as Sec from './securities.js?v=20260723s';
+import * as FS from './futureSim.js?v=20260723s';
+import * as Perf from './performance.js?v=20260723s';
+import { lineChart, barChart, groupedBarChart, donutChart, multiLineChart, fanChart, perfChart } from './charts.js?v=20260723s';
+import { iconHtml, icon } from './icons.js?v=20260723s';
 import {
-  el, qs, yen, yenMasked, num, today, toISO, parseISO, ym, fmtDate, fmtDateLong,
+  el, qs, qsa, yen, yenMasked, num, today, toISO, parseISO, ym, fmtDate, fmtDateLong,
   fmtMonth, addMonths, resolveDay, pad, weekdayName, haptic, escapeHtml, uid,
-} from './utils.js?v=20260723r';
-import { nextRecurringDate, nextSettlementDate, isMonthEndDay } from './recurrence.js?v=20260723r';
+} from './utils.js?v=20260723s';
+import { nextRecurringDate, nextSettlementDate, isMonthEndDay } from './recurrence.js?v=20260723s';
 
 // ---- 画面ローカル状態（データではないUI状態） ----
 const ui = {
@@ -1752,6 +1753,265 @@ function eventDetailModal(e, sim) {
   modal('入出金の詳細', body, {});
 }
 
+// ============ 投資実績グラフ（実績＋将来予測の連結表示） ============
+// 過去の実績（保存済みの評価額履歴）を実線、今日以降の予測を破線で1本の軸に連続表示する。
+// 対象（全体/NISA/個別株）・期間・表示系列をその場で切り替えられ、タップで日別詳細を表示する。
+function futurePerformanceCard(state, fs) {
+  const perf = fs.perf;
+  const secret = state.settings.secret;
+
+  // 予測はWhat-If（積立変更）とは独立に、登録済み設定のみから計算する
+  const forecast = perf.forecast !== false;
+  const proj = forecast ? FS.project(state, { years: fs.years }) : null;
+  const view = Perf.buildPerfView(state, proj);
+
+  // --- 対象タブ（全体 / NISA / 個別株） ---
+  const tabSeg = el('div', { class: 'fc-seg' });
+  for (const t of Perf.PERF_TARGETS)
+    tabSeg.append(el('button', {
+      class: 'fc-seg-btn' + (perf.target === t.key ? ' on' : ''), type: 'button', text: t.label,
+      onclick: () => { S.update((s) => { s.futureSim.perf.target = t.key; }); render(); },
+    }));
+
+  // --- 期間切替（1週間〜全期間） ---
+  const periodSeg = el('div', { class: 'fc-period' });
+  for (const p of Perf.PERF_PERIODS)
+    periodSeg.append(el('button', {
+      class: 'fc-period-btn' + (perf.period === p.key ? ' on' : ''), type: 'button', text: p.label,
+      onclick: () => { S.update((s) => { s.futureSim.perf.period = p.key; }); render(); },
+    }));
+
+  const body = el('div', {});
+
+  if (!view.hasEnough) {
+    // 履歴が0〜1件のときは架空データを作らず、案内メッセージのみ表示する
+    body.append(el('p', { class: 'fc-perf-empty', text: '評価額を更新すると、ここに資産推移が表示されます' }));
+  } else if (secret) {
+    body.append(el('p', { class: 'fc-empty', text: 'シークレットモード中は非表示' }));
+  } else {
+    body.append(perfChartBlock(state, fs, view));
+  }
+
+  // --- 最新値（グラフ下） ---
+  const latest = view.latestSnap;
+  const latestBox = latest ? perfLatestBox(state, latest) : '';
+
+  // --- 表示オプション ---
+  const opts = perfOptionRows(fs, view);
+
+  return card(
+    sectionTitle('投資実績', latest
+      ? el('button', { class: 'fc-link', type: 'button', text: '履歴を編集', onclick: () => perfHistoryModal(state) })
+      : ''),
+    tabSeg,
+    periodSeg,
+    body,
+    view.hasEnough && !secret ? perfSeriesChips(fs, view) : '',
+    opts,
+    latestBox,
+    el('p', { class: 'fc-note', text: '実線は保存済みの実績、破線は今日以降の予測です。予測は最新の実績評価額を起点に、設定した年利・積立・購入予定から計算します。過去の実績は設定を変えても書き換わりません。' }),
+  );
+}
+
+// 実績グラフ本体（チャート＋タップで日別詳細）
+function perfChartBlock(state, fs, view) {
+  const perf = fs.perf;
+  const series = [];
+  // メイン系列（選択タブの評価額・元本・評価損益・証券口座現金）
+  for (const def of Perf.PERF_SERIES) {
+    if (def.totalOnly && perf.target !== 'total') continue;
+    if (!perf.visible[def.key]) continue;
+    series.push({
+      label: def.label, color: def.color,
+      values: view.points.map((p) => (p[def.field] == null ? null : p[def.field])),
+    });
+  }
+  // 銘柄別（NISA/個別株タブ・実績のみ）
+  const holdingColors = ['#0a84ff', '#bf5af2', '#ff375f', '#34c759', '#ff9500', '#5ac8fa', '#ffd60a', '#64d2ff'];
+  if (view.holdingSeries) {
+    view.holdingSeries.forEach((hs, i) => {
+      // 銘柄別データは実績点のみ。予測点ぶんは null で埋める。
+      const map = new Map(hs.data.map((d) => [d.date, d.value]));
+      series.push({
+        label: hs.name, color: holdingColors[i % holdingColors.length], width: 1.8,
+        values: view.points.map((p) => (p.kind === 'actual' && map.has(p.date) ? map.get(p.date) : null)),
+      });
+    });
+  }
+
+  const chart = el('div', { class: 'fc-chart fc-perf-chart', html: perfChart(view.points, series, { height: 240, boundaryIndex: view.boundaryIndex }) });
+  // タップで該当日の詳細を表示（当たり領域のdata-iから点を特定）
+  chart.addEventListener('click', (e) => {
+    const hit = e.target.closest ? e.target.closest('.fc-perf-hit') : null;
+    const idx = hit ? Number(hit.getAttribute('data-i')) : NaN;
+    if (Number.isInteger(idx) && view.points[idx]) perfDayDetailModal(view.points[idx], view.target);
+  });
+
+  const wrap = el('div', {});
+  wrap.append(chart);
+  if (view.holdingSeries && view.holdingSeries.length) {
+    wrap.append(el('div', { class: 'fc-legend-list' }, ...view.holdingSeries.map((hs, i) =>
+      el('div', { class: 'fc-legend-row' },
+        el('i', { class: 'dot', style: `background:${holdingColors[i % holdingColors.length]}` }),
+        el('span', { class: 'fc-legend-name', text: hs.name })))));
+  }
+  wrap.append(el('p', { class: 'fc-perf-taphint', text: 'グラフをタップすると、その日の詳細を表示します' }));
+  return wrap;
+}
+
+// 表示系列トグル（評価額・元本・評価損益・証券口座現金）
+function perfSeriesChips(fs, view) {
+  const perf = fs.perf;
+  const wrap = el('div', { class: 'fc-chipwrap' });
+  for (const def of Perf.PERF_SERIES) {
+    if (def.totalOnly && perf.target !== 'total') continue;
+    const on = !!perf.visible[def.key];
+    wrap.append(el('button', {
+      class: 'fc-serieschip' + (on ? ' on' : ''), type: 'button',
+      style: on ? `background:${def.color}22;color:${def.color};border-color:${def.color}66` : '',
+      onclick: () => { S.update((s) => { s.futureSim.perf.visible[def.key] = !s.futureSim.perf.visible[def.key]; }); render(); },
+    }, el('i', { class: 'dot', style: `background:${def.color}` }), el('span', { text: def.label })));
+  }
+  return wrap;
+}
+
+// 表示オプション（現金含有・銘柄別・予測表示）
+function perfOptionRows(fs, view) {
+  const perf = fs.perf;
+  const rows = el('div', { class: 'fc-perf-opts' });
+  const optRow = (label, on, onToggle) => el('div', { class: 'fc-field-toggle' },
+    el('div', {}, el('div', { class: 'fc-field-lab', text: label })), toggle(on, onToggle));
+
+  if (perf.target === 'total') {
+    rows.append(optRow('証券口座の未投資現金を含める', !!perf.includeCash,
+      () => { S.update((s) => { s.futureSim.perf.includeCash = !s.futureSim.perf.includeCash; }); render(); }));
+  } else {
+    rows.append(optRow('銘柄ごとに表示する', !!perf.byHolding,
+      () => { S.update((s) => { s.futureSim.perf.byHolding = !s.futureSim.perf.byHolding; }); render(); }));
+  }
+  rows.append(optRow('将来予測を連結表示する', perf.forecast !== false,
+    () => { S.update((s) => { s.futureSim.perf.forecast = !(s.futureSim.perf.forecast !== false); }); render(); }));
+  return rows;
+}
+
+// 最新値（グラフの下に表示）
+function perfLatestBox(state, snap) {
+  const secret = state.settings.secret;
+  const money = (v) => (secret ? '＊＊＊' : yen(v));
+  const rate = snap.profitRate;
+  const pcls = snap.profit === 0 ? 'flat' : snap.profit > 0 ? 'pos' : 'neg';
+  return el('div', { class: 'fc-perf-latest' },
+    el('div', { class: 'fc-perf-latest-head' },
+      el('span', { class: 'fc-perf-latest-lab', text: '最新の実績' }),
+      el('span', { class: 'fc-perf-latest-date', text: fmtDateLong(snap.date) })),
+    el('div', { class: 'fc-sec-grid' },
+      secBox('評価額', money(snap.valuation)),
+      secBox('元本', money(snap.principal)),
+      secBox('評価損益', secret ? '＊＊＊' : yen(snap.profit, { sign: snap.profit > 0 }))),
+    el('div', { class: 'fc-perf-latest-rate ' + pcls },
+      el('span', { text: '利益率' }),
+      el('b', { text: rate == null ? '—' : `${rate >= 0 ? '+' : ''}${rate.toFixed(2)}%` })));
+}
+
+// 日別詳細モーダル（グラフのタップで表示）。表示例に沿った内訳を並べる。
+function perfDayDetailModal(point, target) {
+  const secret = S.getState().settings.secret;
+  const money = (v) => (secret ? '＊＊＊' : yen(v));
+  const r = point.raw || {};
+  const isForecast = point.kind === 'forecast';
+  // 実績スナップショットと予測スナップショットで内訳フィールド名が異なるため吸収する
+  const nisaPrincipal = isForecast ? r.indexPrincipal : r.nisaPrincipal;
+  const nisaValue = isForecast ? r.indexValuation : r.nisaValue;
+  const stockPrincipal = isForecast ? r.stockPrincipal : r.stockPrincipal;
+  const stockValue = isForecast ? r.stockValuation : r.stockValue;
+  const principal = r.principal;
+  const valuation = r.valuation;
+  const profit = (valuation != null && principal != null) ? valuation - principal : point.profit;
+  const rate = principal > 0 ? (profit / principal) * 100 : null;
+
+  const rowKV = (k, v) => el('div', { class: 'fc-kv-row' }, el('span', { text: k }), el('b', { text: v }));
+  const body = el('div', {},
+    isForecast ? el('div', { class: 'fc-perf-detail-badge', text: '将来予測（今日以降）' }) : '',
+    el('div', { class: 'fc-kv' },
+      rowKV('NISA元本', money(nisaPrincipal)),
+      rowKV('NISA評価額', money(nisaValue)),
+      rowKV('個別株元本', money(stockPrincipal)),
+      rowKV('個別株評価額', money(stockValue)),
+      rowKV('投資元本合計', money(principal)),
+      rowKV('投資評価額合計', money(valuation)),
+      rowKV('評価損益', secret ? '＊＊＊' : yen(profit, { sign: profit > 0 })),
+      rowKV('利益率', rate == null ? '—' : `${rate >= 0 ? '+' : ''}${rate.toFixed(2)}%`),
+      point.secCash != null && target === 'total' ? rowKV('証券口座現金', money(point.secCash)) : ''),
+  );
+  modal(fmtDateLong(point.date), body, {});
+}
+
+// 履歴の編集・削除（誤登録の修正用）。変更後はグラフ・損益が再計算される。
+function perfHistoryModal(state) {
+  const hist = (state.performanceHistory || []).slice().sort((a, b) => b.date.localeCompare(a.date));
+  const body = el('div', {});
+  if (!hist.length) {
+    body.append(el('p', { class: 'fc-empty', text: 'まだ実績履歴がありません' }));
+  } else {
+    body.append(el('div', { class: 'fc-list' }, ...hist.map((rec) =>
+      el('div', { class: 'fc-row tap', onclick: () => perfHistoryEditForm(state, rec) },
+        el('div', { class: 'fc-row-main' },
+          el('div', { class: 'fc-row-title', text: fmtDateLong(rec.date) }),
+          el('div', { class: 'fc-row-sub', text: `評価額 ${yen(rec.valuation)}・元本 ${yen(rec.principal)}・損益 ${yen(rec.profit, { sign: rec.profit > 0 })}` })),
+        el('span', { class: 'fc-link-arrow', html: iconHtml('chevronRight', { size: 16 }) })))));
+  }
+  modal('実績履歴の編集', body, {});
+}
+
+// 1件の実績履歴を編集（評価額・元本・現金）。保存で損益・利益率を再計算。
+function perfHistoryEditForm(state, rec) {
+  const nisaVal = inputEl({ type: 'number', inputmode: 'numeric', value: rec.nisaValue ?? '' });
+  const nisaPri = inputEl({ type: 'number', inputmode: 'numeric', value: rec.nisaPrincipal ?? '' });
+  const stockVal = inputEl({ type: 'number', inputmode: 'numeric', value: rec.stockValue ?? '' });
+  const stockPri = inputEl({ type: 'number', inputmode: 'numeric', value: rec.stockPrincipal ?? '' });
+  const secCash = inputEl({ type: 'number', inputmode: 'numeric', value: rec.secCash ?? '' });
+  const body = el('div', {},
+    el('p', { class: 'fc-field-hint', text: `${fmtDateLong(rec.date)} の実績を修正します。元本・評価額を直すと損益・利益率とグラフが再計算されます。` }),
+    field('NISA評価額（円）', nisaVal), field('NISA元本（円）', nisaPri),
+    field('個別株評価額（円）', stockVal), field('個別株元本（円）', stockPri),
+    field('証券口座現金（円）', secCash),
+    el('button', {
+      class: 'fc-btn danger block', type: 'button', text: 'この履歴を削除',
+      onclick: () => confirmDialog('履歴を削除', `${fmtDateLong(rec.date)} の実績履歴を削除しますか？この操作は元に戻せません。`, () => {
+        S.update((s) => {
+          s.performanceHistory = (s.performanceHistory || []).filter((r) => r.date !== rec.date);
+          S.normalizePerformanceHistory(s);
+        });
+        render();
+        toast('削除しました', 'trash');
+        qsa('.fc-modal-back').forEach((b) => { b.classList.remove('show'); setTimeout(() => b.remove(), 260); });
+      }),
+    }),
+  );
+  modal('実績を編集', body, {
+    onSave: (close) => {
+      S.update((s) => {
+        const r = (s.performanceHistory || []).find((x) => x.date === rec.date);
+        if (!r) return;
+        r.nisaValue = Math.round(Number(nisaVal.value) || 0);
+        r.nisaPrincipal = Math.round(Number(nisaPri.value) || 0);
+        r.stockValue = Math.round(Number(stockVal.value) || 0);
+        r.stockPrincipal = Math.round(Number(stockPri.value) || 0);
+        r.secCash = Math.round(Number(secCash.value) || 0);
+        r.valuation = r.nisaValue + r.stockValue;
+        r.principal = r.nisaPrincipal + r.stockPrincipal;
+        r.profit = r.valuation - r.principal;
+        r.profitRate = r.principal > 0 ? (r.profit / r.principal) * 100 : null;
+        r.edited = true;
+        S.normalizePerformanceHistory(s);
+      });
+      render();
+      toast('保存しました');
+      close();
+    },
+  });
+}
+
 // ============ 投資将来予測（将来資産シミュレーションの投資予測タブ） ============
 const FUTURE_SERIES_DEFS = [
   { key: 'total', label: '総資産', color: '#0a84ff', field: 'total' },
@@ -1769,6 +2029,7 @@ function renderFutureSim() {
   const fs = st.futureSim;
   const wrap = el('div', {});
 
+  wrap.append(futurePerformanceCard(st, fs));
   wrap.append(futurePeriodCard(fs));
   wrap.append(futureRateCard(fs));
   wrap.append(futureWhatIfCard());
@@ -2717,6 +2978,9 @@ export function init() {
     Sec.recomputeAll(s);
     S.computeRecurringSchedule(s); // 次回実行予定日・次回引落予定日を最新化（日付が進んでも正しく表示）
     if (changed || accrued) S.recordAssetSnapshot(s);
+    // 起動時に当日の投資実績スナップショットを記録（証券口座があれば。同日は上書き）。
+    // これで毎日の推移が残り、積立が実行された日も履歴・グラフへ反映される。
+    S.recordPerformanceSnapshot(s);
   }, { silent: true });
   // 起動時に資産スナップショットのベースラインを記録（口座があり履歴が無い場合）
   const st0 = S.getState();

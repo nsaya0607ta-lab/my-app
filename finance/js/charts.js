@@ -255,4 +255,98 @@ export function fanChart(data, opts = {}) {
   </svg>`;
 }
 
+// ===== 投資実績＋将来予測グラフ =====
+// 過去の実績（実線）と今日以降の予測（破線）を1本の時間軸で連続表示する。
+// points: [{label}]（x軸・タップ判定用）、series: [{label,color,values:[n|null...],width?}]
+// opts.boundaryIndex: 実績と予測の境界（この点までが実績＝実線、以降は予測＝破線）
+export function perfChart(points, series, opts = {}) {
+  const w = opts.width || 640;
+  const h = opts.height || 240;
+  const pad = { t: 18, r: 14, b: 26, l: 52 };
+  const iw = w - pad.l - pad.r;
+  const ih = h - pad.t - pad.b;
+  const N = points.length;
+  const drawn = series.filter((s) => s.values.some((v) => v != null));
+  if (!N || !drawn.length) return `<svg viewBox="0 0 ${w} ${h}"></svg>`;
+  const boundary = Math.max(0, Math.min(N - 1, opts.boundaryIndex == null ? N - 1 : opts.boundaryIndex));
+
+  const allVals = drawn.flatMap((s) => s.values.filter((v) => v != null));
+  let min = Math.min(...allVals, 0);
+  let max = Math.max(...allVals);
+  if (!isFinite(min) || !isFinite(max)) { min = 0; max = 1; }
+  if (min === max) max = min + 1;
+  const pxr = 0.08 * (max - min);
+  max += pxr;
+  if (min < 0) min -= pxr;
+  const x = (i) => pad.l + (N === 1 ? iw / 2 : (i / (N - 1)) * iw);
+  const y = (v) => pad.t + ih - ((v - min) / (max - min)) * ih;
+
+  let grid = '';
+  for (let k = 0; k <= 4; k++) {
+    const v = min + ((max - min) * k) / 4;
+    const yy = y(v);
+    grid += `<line x1="${pad.l}" y1="${yy}" x2="${w - pad.r}" y2="${yy}" class="fc-grid"/>`;
+    grid += `<text x="${pad.l - 6}" y="${yy + 3}" class="fc-axis" text-anchor="end">${fmtShort(v)}</text>`;
+  }
+  const zeroLine = (min < 0 && max > 0)
+    ? `<line x1="${pad.l}" y1="${y(0)}" x2="${w - pad.r}" y2="${y(0)}" class="fc-grid" stroke-dasharray="3 3"/>` : '';
+
+  // 予測エリアの背景と「今日」の区切り線（実績と予測を明確に区別）
+  let fcBg = '', divider = '';
+  if (boundary < N - 1) {
+    const bx = x(boundary);
+    fcBg = `<rect x="${bx}" y="${pad.t}" width="${w - pad.r - bx}" height="${ih}" class="fc-perf-fcbg"/>`;
+    divider = `<line x1="${bx}" y1="${pad.t}" x2="${bx}" y2="${pad.t + ih}" class="fc-perf-divider"/>` +
+      `<text x="${bx}" y="${pad.t - 6}" class="fc-perf-todaylab" text-anchor="middle">今日</text>`;
+  }
+
+  // x軸ラベル（長期は間引き）
+  let xl = '';
+  const step = Math.max(1, Math.ceil(N / 6));
+  points.forEach((p, i) => {
+    if (i % step === 0 || i === N - 1)
+      xl += `<text x="${x(i)}" y="${h - 8}" class="fc-axis" text-anchor="middle">${p.label}</text>`;
+  });
+
+  // null を挟んだら線を切る（欠損は補間しない＝架空の値を作らない）
+  const segPath = (vals, lo, hi) => {
+    let d = '', pen = false;
+    for (let i = lo; i <= hi; i++) {
+      const v = vals[i];
+      if (v == null) { pen = false; continue; }
+      d += `${pen ? 'L' : 'M'} ${x(i)},${y(v)} `;
+      pen = true;
+    }
+    return d.trim();
+  };
+  let lines = '';
+  for (const s of drawn) {
+    const solid = segPath(s.values, 0, boundary);
+    if (solid) lines += `<path d="${solid}" fill="none" stroke="${s.color}" stroke-width="${s.width || 2.4}" stroke-linecap="round" stroke-linejoin="round"/>`;
+    if (boundary < N - 1) {
+      const dash = segPath(s.values, boundary, N - 1);
+      if (dash) lines += `<path d="${dash}" fill="none" stroke="${s.color}" stroke-width="${s.width || 2.4}" stroke-dasharray="5 4" stroke-linecap="round" stroke-linejoin="round" opacity="0.92"/>`;
+    }
+  }
+
+  // 選択中の点のマーカー（縦線）
+  let marker = '';
+  if (opts.markerIndex != null && opts.markerIndex >= 0 && opts.markerIndex < N) {
+    const mx = x(opts.markerIndex);
+    marker = `<line x1="${mx}" y1="${pad.t}" x2="${mx}" y2="${pad.t + ih}" class="fc-perf-marker"/>`;
+  }
+
+  // タップ判定用の透明な当たり領域（各点にdata-i）。最前面に置く。
+  let hits = '';
+  if (opts.hit !== false) {
+    const bw = N > 1 ? iw / (N - 1) : iw;
+    for (let i = 0; i < N; i++) {
+      const cx = x(i);
+      hits += `<rect class="fc-perf-hit" data-i="${i}" x="${cx - bw / 2}" y="${pad.t}" width="${bw}" height="${ih}" fill="transparent"/>`;
+    }
+  }
+
+  return `<svg viewBox="0 0 ${w} ${h}" class="fc-svg fc-perf-svg" preserveAspectRatio="none">${grid}${fcBg}${zeroLine}${divider}${marker}${lines}${xl}${hits}</svg>`;
+}
+
 export { fmtShort };

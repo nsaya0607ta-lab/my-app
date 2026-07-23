@@ -8,7 +8,7 @@
 //   ・インデックス(kind:'index') … 円建て。数量・基準価額は管理しない
 //       { name, kind:'index', nisaFrame:'growth'|'tsumitate', cost, value, memo }
 
-import { pad, toISO } from './utils.js?v=20260723r';
+import { pad, toISO } from './utils.js?v=20260723s';
 
 // ===== 証券口座の判定・取得 =====
 export const isSecurities = (a) => a && a.type === 'securities';
@@ -147,6 +147,51 @@ function jstDate(ms = Date.now()) { return new Date(ms + 9 * 3600 * 1000); }
 export function jstTodayISO() {
   const d = jstDate();
   return `${d.getUTCFullYear()}-${pad(d.getUTCMonth() + 1)}-${pad(d.getUTCDate())}`;
+}
+// 日本時間の日付＋時刻（詳細履歴の更新日時に使用。例 "2026-07-23T23:15:04+09:00"）
+export function jstNowISO() {
+  const d = jstDate();
+  return `${d.getUTCFullYear()}-${pad(d.getUTCMonth() + 1)}-${pad(d.getUTCDate())}` +
+    `T${pad(d.getUTCHours())}:${pad(d.getUTCMinutes())}:${pad(d.getUTCSeconds())}+09:00`;
+}
+
+// ===================================================================
+// 投資実績スナップショット（日次履歴・実績グラフのもと）
+// ===================================================================
+// 全証券口座を横断し、NISA(インデックス)と個別株を分けて元本・評価額・現金・損益を集計する。
+// 各銘柄の保有数量・評価額も内訳として保持する。すべて登録済みデータからの計算のみ（ダミー値なし）。
+export function performanceSnapshot(state) {
+  const accs = securitiesAccounts(state);
+  let secCash = 0, nisaPrincipal = 0, nisaValue = 0, stockPrincipal = 0, stockValue = 0;
+  const holdings = [];
+  for (const a of accs) {
+    secCash += accountCash(a);
+    for (const h of accountHoldings(a)) {
+      const value = holdingValue(h);
+      const cost = holdingCost(h);
+      const index = isIndex(h);
+      if (index) { nisaPrincipal += cost; nisaValue += value; }
+      else { stockPrincipal += cost; stockValue += value; }
+      holdings.push({
+        id: h.id, name: h.name, kind: index ? 'index' : 'stock',
+        nisaFrame: index ? (h.nisaFrame || 'growth') : null,
+        quantity: index ? null : n(h.quantity),
+        value: Math.round(value), cost: Math.round(cost),
+      });
+    }
+  }
+  const principal = nisaPrincipal + stockPrincipal;   // 投資元本合計（現金は含めない）
+  const valuation = nisaValue + stockValue;            // 投資評価額合計
+  const profit = valuation - principal;                // 評価損益 = 評価額 − 元本
+  const profitRate = principal > 0 ? (profit / principal) * 100 : null; // 利益率(%)
+  return {
+    secCash: Math.round(secCash),
+    nisaPrincipal: Math.round(nisaPrincipal), nisaValue: Math.round(nisaValue),
+    stockPrincipal: Math.round(stockPrincipal), stockValue: Math.round(stockValue),
+    principal: Math.round(principal), valuation: Math.round(valuation),
+    profit: Math.round(profit), profitRate,
+    holdings,
+  };
 }
 // 23:00 を過ぎて確定済みとみなせる「最新の対象日」。JST23時以降なら今日、未満なら昨日。
 export function lastAccrualISO() {

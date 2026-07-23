@@ -2,13 +2,13 @@
 // 設計方針: すべてのデータはこの1オブジェクトに集約し、mutate → save → emit。
 // 将来の証券口座連携などは accounts の type と外部同期モジュールを足すだけで拡張可能。
 
-import { uid, pad } from './utils.js?v=20260723r';
-import { settlementDate } from './calc.js?v=20260723r';
+import { uid, pad } from './utils.js?v=20260723s';
+import { settlementDate } from './calc.js?v=20260723s';
 import {
   recurringActiveOn, monthlyOccurrences, jstTodayISO, dedupeKey,
   nextRecurringDate, nextSettlementDate,
-} from './recurrence.js?v=20260723r';
-import { isSecurities, recomputeAccount } from './securities.js?v=20260723r';
+} from './recurrence.js?v=20260723s';
+import { isSecurities, hasSecurities, recomputeAccount, performanceSnapshot, jstNowISO } from './securities.js?v=20260723s';
 
 const KEY = 'finance_app_v2';
 const SCHEMA = 1;
@@ -94,6 +94,12 @@ function seed() {
     // 総資産の日次スナップショット [{date:'YYYY-MM-DD', total:number}]。
     // 昨日比・今月比・前年比、残高推移ミニグラフに使用。口座残高を編集するたび記録。
     assetHistory: [],
+    // 投資実績の日次スナップショット（実績グラフのもと）。評価額を更新するたび記録。
+    // 同じ日は最新値で上書き。[{date, secCash, nisaPrincipal, nisaValue, stockPrincipal,
+    //  stockValue, principal, valuation, profit, profitRate, holdings, updatedAt}]
+    performanceHistory: [],
+    // 日中を含む詳細履歴（将来の日中履歴表示用。更新日時つきで追記）。日次履歴とは別に保持。
+    performanceLog: [],
   };
 }
 
@@ -109,6 +115,21 @@ function seedFutureSim() {
     goals: [],   // 投資達成目標 {id, name, targetAmount, metric:'total'|'valuation', createdAt}
     events: [],  // 将来イベント {id, name, date, amount, memo}
     plans: [],   // 保存済みシミュレーションプラン {id, name, savedAt, config}
+    // 投資実績グラフ（実績＋将来予測の連結表示）の設定
+    perf: seedPerf(),
+  };
+}
+
+// ---- 投資実績グラフの表示設定 ----
+function seedPerf() {
+  return {
+    target: 'total',           // 表示対象タブ: 'total'(全体) | 'nisa' | 'stock'
+    period: '1m',              // 表示期間: 1w|1m|3m|6m|1y|3y|5y|all
+    includeCash: false,        // 全体タブで証券口座の未投資現金を評価額へ含めるか
+    forecast: true,            // 今日以降の将来予測を連結表示するか
+    byHolding: false,          // NISA/個別株タブで銘柄ごとに表示するか
+    // 実績グラフに重ねる系列の表示切替
+    visible: { valuation: true, principal: true, profit: false, secCash: false },
   };
 }
 export const SCENARIO_RATES = { conservative: 5, normal: 8, aggressive: 15 };
@@ -123,6 +144,42 @@ export function recordAssetSnapshot(s) {
   if (last && last.date === iso) last.total = total;
   else s.assetHistory.push({ date: iso, total });
   if (s.assetHistory.length > 400) s.assetHistory = s.assetHistory.slice(-400);
+  // 総資産スナップショットと同じタイミングで投資実績も記録する。
+  // これにより評価額・元本・現金が変わる全経路（保有銘柄の追加/編集/削除・株価更新・
+  // 個別株購入・振替・毎晩の積立など）で実績履歴が最新化され、保存直後にグラフへ反映される。
+  recordPerformanceSnapshot(s);
+}
+
+// 投資実績スナップショットを記録（評価額・元本を更新するたびに呼ぶ）。
+// ・日付は日本時間の暦日。同じ日は最新値で上書き（同日複数回更新は最新のみ日次に残す）。
+// ・詳細履歴(performanceLog)には更新日時つきで毎回追記（将来の日中履歴表示用）。
+// ・証券口座が無い場合は記録しない（架空の過去データを作らない）。
+export function recordPerformanceSnapshot(s) {
+  if (!hasSecurities(s)) return;
+  const snap = performanceSnapshot(s);
+  const date = jstTodayISO();
+  const updatedAt = jstNowISO();
+  const rec = { date, ...snap, updatedAt };
+  s.performanceHistory ||= [];
+  const idx = s.performanceHistory.findIndex((r) => r.date === date);
+  if (idx >= 0) s.performanceHistory[idx] = rec;           // 同日は上書き
+  else {
+    // 日付昇順を保って挿入（通常は末尾だが、端末時刻のズレにも耐える）
+    let at = s.performanceHistory.length;
+    while (at > 0 && s.performanceHistory[at - 1].date > date) at--;
+    s.performanceHistory.splice(at, 0, rec);
+  }
+  s.performanceLog ||= [];
+  s.performanceLog.push({ ts: updatedAt, ...rec });        // 詳細履歴は毎回追記
+  if (s.performanceHistory.length > 800) s.performanceHistory = s.performanceHistory.slice(-800);
+  if (s.performanceLog.length > 2000) s.performanceLog = s.performanceLog.slice(-2000);
+}
+
+// 履歴の編集・削除後に、日次履歴の整合（日付昇順・同日重複排除）を取り直す。
+export function normalizePerformanceHistory(s) {
+  const map = new Map();
+  for (const r of s.performanceHistory || []) map.set(r.date, r); // 同日は後勝ち
+  s.performanceHistory = [...map.values()].sort((a, b) => a.date.localeCompare(b.date));
 }
 
 function load() {
@@ -165,6 +222,15 @@ function migrate(data) {
   data.futureSim.goals ||= [];
   data.futureSim.events ||= [];
   data.futureSim.plans ||= [];
+  // 投資実績グラフの設定を補完
+  const perfDefault = seedPerf();
+  data.futureSim.perf ||= perfDefault;
+  for (const k of Object.keys(perfDefault)) if (data.futureSim.perf[k] === undefined) data.futureSim.perf[k] = perfDefault[k];
+  data.futureSim.perf.visible ||= perfDefault.visible;
+  for (const k of Object.keys(perfDefault.visible)) if (data.futureSim.perf.visible[k] === undefined) data.futureSim.perf.visible[k] = perfDefault.visible[k];
+  // 投資実績履歴の入れ物を補完（既存ユーザーは空から開始し、次回の評価額更新時に記録される）
+  data.performanceHistory ||= [];
+  data.performanceLog ||= [];
   // 可処分資金に含めるフラグ（既定: 証券口座以外は含める）／評価額履歴
   for (const a of data.accounts || []) {
     if (a.includeInDisposable === undefined) a.includeInDisposable = a.type !== 'securities';
