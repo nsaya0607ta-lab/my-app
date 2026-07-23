@@ -5,7 +5,7 @@ import * as CF from './cashflow.js?v=20260724a';
 import * as Sec from './securities.js?v=20260724a';
 import * as FS from './futureSim.js?v=20260724a';
 import * as Perf from './performance.js?v=20260724a';
-import { lineChart, barChart, groupedBarChart, donutChart, multiLineChart, fanChart, perfChart } from './charts.js?v=20260724a';
+import { lineChart, barChart, groupedBarChart, donutChart, multiLineChart, fanChart, perfChart, perfDeltaChart } from './charts.js?v=20260724a';
 import { iconHtml, icon } from './icons.js?v=20260724a';
 import {
   el, qs, qsa, yen, yenMasked, num, today, toISO, parseISO, ym, fmtDate, fmtDateLong,
@@ -1860,6 +1860,15 @@ function futurePerformanceCard(state, fs) {
       onclick: () => { S.update((s) => { s.futureSim.perf.period = p.key; }); render(); },
     }));
 
+  // --- 表示切替（資産全体＝折れ線 / 日々の変動＝棒） ---
+  const mode = perf.chartMode === 'daily' ? 'daily' : 'assets';
+  const modeSeg = el('div', { class: 'fc-seg fc-perf-modeseg' });
+  for (const m of [{ key: 'assets', label: '資産全体' }, { key: 'daily', label: '日々の変動' }])
+    modeSeg.append(el('button', {
+      class: 'fc-seg-btn' + (mode === m.key ? ' on' : ''), type: 'button', text: m.label,
+      onclick: () => { S.update((s) => { s.futureSim.perf.chartMode = m.key; }); render(); },
+    }));
+
   const body = el('div', {});
 
   if (!view.hasEnough) {
@@ -1867,6 +1876,8 @@ function futurePerformanceCard(state, fs) {
     body.append(el('p', { class: 'fc-perf-empty', text: '評価額を更新すると、ここに資産推移が表示されます' }));
   } else if (secret) {
     body.append(el('p', { class: 'fc-empty', text: 'シークレットモード中は非表示' }));
+  } else if (mode === 'daily') {
+    body.append(perfDeltaBlock(state, fs, view));
   } else {
     body.append(perfChartBlock(state, fs, view));
   }
@@ -1884,11 +1895,14 @@ function futurePerformanceCard(state, fs) {
       : ''),
     tabSeg,
     periodSeg,
+    modeSeg,
     body,
-    view.hasEnough && !secret ? perfSeriesChips(fs, view) : '',
+    view.hasEnough && !secret && mode === 'assets' ? perfSeriesChips(fs, view) : '',
     opts,
     latestBox,
-    el('p', { class: 'fc-note', text: '実線は保存済みの実績、破線は今日以降の予測です。予測は最新の実績評価額を起点に、設定した年利・積立・購入予定から計算します。過去の実績は設定を変えても書き換わりません。' }),
+    el('p', { class: 'fc-note', text: mode === 'daily'
+      ? '前回の記録からの評価額の増減を、0円を基準に表示します。プラスは緑（上向き）、マイナスは赤（下向き）です。日々の変動は保存済みの実績のみを対象とします。'
+      : '実線は保存済みの実績、破線は今日以降の予測です。予測は最新の実績評価額を起点に、設定した年利・積立・購入予定から計算します。過去の実績は設定を変えても書き換わりません。' }),
   );
 }
 
@@ -1936,6 +1950,50 @@ function perfChartBlock(state, fs, view) {
   }
   wrap.append(el('p', { class: 'fc-perf-taphint', text: 'グラフをタップすると、その日の詳細を表示します' }));
   return wrap;
+}
+
+// 日々の変動（前日からの評価額の増減額を棒グラフで表示。0円を基準にプラス＝緑・マイナス＝赤）
+function perfDeltaBlock(state, fs, view) {
+  const wrap = el('div', {});
+  const deltas = view.deltaPts || [];
+  if (deltas.length < 1) {
+    wrap.append(el('p', { class: 'fc-perf-empty', text: 'この期間には増減を計算できるデータがまだありません' }));
+    return wrap;
+  }
+  const chart = el('div', {
+    class: 'fc-chart fc-perf-chart',
+    html: perfDeltaChart(deltas, { height: 240 }),
+  });
+  // タップで該当日の詳細を表示（実績・予測スナップショットがある点のみ）
+  chart.addEventListener('click', (e) => {
+    const hit = e.target.closest ? e.target.closest('.fc-perf-hit') : null;
+    const idx = hit ? Number(hit.getAttribute('data-i')) : NaN;
+    const d = Number.isInteger(idx) ? deltas[idx] : null;
+    if (d) perfDeltaDetailModal(d, view.target);
+  });
+  wrap.append(chart);
+
+  // 凡例（増加＝緑 / 減少＝赤）
+  wrap.append(el('div', { class: 'fc-legend-list' },
+    el('div', { class: 'fc-legend-row' },
+      el('i', { class: 'dot', style: 'background:#34c759' }), el('span', { class: 'fc-legend-name', text: '増加' })),
+    el('div', { class: 'fc-legend-row' },
+      el('i', { class: 'dot', style: 'background:#ff453a' }), el('span', { class: 'fc-legend-name', text: '減少' }))));
+  wrap.append(el('p', { class: 'fc-perf-taphint', text: '棒をタップすると、その日の詳細を表示します' }));
+  return wrap;
+}
+
+// 日々の変動の1日ぶんの詳細（増減額と、その日の内訳）
+function perfDeltaDetailModal(d, target) {
+  const secret = S.getState().settings.secret;
+  const up = d.delta >= 0;
+  const body = el('div', {},
+    d.kind === 'forecast' ? el('div', { class: 'fc-perf-detail-badge', text: '将来予測（今日以降）' }) : '',
+    el('div', { class: 'fc-evd-amt ' + (up ? 'pos' : 'neg'), text: secret ? '＊＊＊' : yen(d.delta, { sign: true }) }),
+    el('div', { class: 'fc-kv' },
+      el('div', { class: 'fc-kv-row' }, el('span', { text: '前回からの増減' }),
+        el('b', { text: secret ? '＊＊＊' : yen(d.delta, { sign: true }) }))));
+  modal(fmtDateLong(d.date) + ' の変動', body, {});
 }
 
 // 表示系列トグル（評価額・元本・評価損益・証券口座現金）

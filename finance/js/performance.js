@@ -116,10 +116,16 @@ export function buildPerfView(state, project) {
   const actualAll = history.filter((r) => r.date <= today);
   // 期間ウィンドウ（今日からさかのぼる）
   let windowStart = '0000-00-00';
+  // 予測の前方ウィンドウ（今日から進む）。選択期間の長さぶんだけ先まで表示し、期間外の予測点は含めない。
+  // 例:「1週間」なら8月31日など期間外の月次予測点は表示しない。
+  let windowEnd = null;
   if (periodDef.days !== Infinity) {
     const d = parseISO(today);
     d.setDate(d.getDate() - periodDef.days);
     windowStart = toISO(d);
+    const e = parseISO(today);
+    e.setDate(e.getDate() + periodDef.days);
+    windowEnd = toISO(e);
   }
   let inWindow = actualAll.filter((r) => r.date >= windowStart);
   // ウィンドウ内に実績が無ければ、直近の実績1点をアンカーとして使う（予測と連結できるように）
@@ -139,7 +145,8 @@ export function buildPerfView(state, project) {
     const fwdMonths = periodDef.fwd == null ? fsYears * 12 : periodDef.fwd;
     forecastPts = project.series
       .slice(0, fwdMonths + 1)
-      .filter((pt) => pt.date > lastActualDate)
+      // 実績の最終日より後、かつ選択期間の前方ウィンドウ内の点のみ（期間外の予測は表示しない）
+      .filter((pt) => pt.date > lastActualDate && (windowEnd == null || pt.date <= windowEnd))
       .map((pt) => ({
         date: pt.date, label: labelFor(pt.date, grain), kind: 'forecast',
         ...forecastMetrics(pt, target, includeCash), raw: pt,
@@ -150,9 +157,18 @@ export function buildPerfView(state, project) {
   const boundaryIndex = Math.max(0, actualPts.length - 1);
   const byHolding = !!perf.byHolding && (target === 'nisa' || target === 'stock');
 
+  // 日々の変動（前回＝直前の点からの評価額の増減額）。選択期間内の実績点だけを対象にする。
+  // 月次粒度の予測点を混ぜると1本だけ巨大な棒になり日々の変動が読めなくなるため、予測は含めない。
+  const deltaPts = [];
+  for (let i = 1; i < actualPts.length; i++) {
+    const prev = actualPts[i - 1], cur = actualPts[i];
+    if (prev.value == null || cur.value == null) continue;
+    deltaPts.push({ date: cur.date, label: cur.label, delta: cur.value - prev.value, kind: cur.kind, raw: cur.raw });
+  }
+
   return {
     target, grain, includeCash,
-    points, actualPts, forecastPts, boundaryIndex,
+    points, actualPts, forecastPts, boundaryIndex, deltaPts,
     actualTotalCount: actualAll.length,
     hasEnough: actualAll.length >= 2,
     latestSnap: actualAll.length ? actualAll[actualAll.length - 1] : null,

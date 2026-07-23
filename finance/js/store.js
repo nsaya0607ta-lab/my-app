@@ -125,6 +125,7 @@ function seedPerf() {
   return {
     target: 'total',           // 表示対象タブ: 'total'(全体) | 'nisa' | 'stock'
     period: '1m',              // 表示期間: 1w|1m|3m|6m|1y|3y|5y|all
+    chartMode: 'assets',       // 表示切替: 'assets'(資産全体・折れ線) | 'daily'(日々の変動・棒)
     includeCash: false,        // 全体タブで証券口座の未投資現金を評価額へ含めるか
     forecast: true,            // 今日以降の将来予測を連結表示するか
     byHolding: false,          // NISA/個別株タブで銘柄ごとに表示するか
