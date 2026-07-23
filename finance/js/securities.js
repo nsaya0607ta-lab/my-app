@@ -161,18 +161,52 @@ const nextISO = (iso) => {
   const nd = new Date(Date.UTC(y, m - 1, d + 1));
   return `${nd.getUTCFullYear()}-${pad(nd.getUTCMonth() + 1)}-${pad(nd.getUTCDate())}`;
 };
+// 積立停止日〜積立再開日の期間は積立を止める（積立停止日のみ設定時は再開日未設定として無期限停止）。
+const inPause = (a, iso) => {
+  if (!a.pauseStart) return false;
+  if (a.pauseEnd) return iso >= a.pauseStart && iso <= a.pauseEnd;
+  return iso >= a.pauseStart;
+};
 const accumActiveOn = (a, iso) =>
-  a.enabled !== false && (!a.startDate || iso >= a.startDate) && (!a.endDate || iso <= a.endDate);
+  a.enabled !== false && (!a.startDate || iso >= a.startDate) && (!a.endDate || iso <= a.endDate) && !inPause(a, iso);
+
+// 経過日数（startDateからisoまで。0始まり）
+function daysSince(startISO, iso) {
+  const [sy, sm, sd] = startISO.split('-').map(Number);
+  const [y, m, d] = iso.split('-').map(Number);
+  return Math.round((Date.UTC(y, m - 1, d) - Date.UTC(sy, sm - 1, sd)) / 86400000);
+}
+
+// ===== 積立設定の頻度計算（実際の積立処理・将来シミュレーションの両方から共通利用） =====
+// 指定日にこの積立設定が実行対象かどうかと、その日の積立額を返す。frequency: 'daily'|'weekly'|'monthly'
+export function contributionForDate(a, iso) {
+  if (!accumActiveOn(a, iso)) return 0;
+  const freq = a.frequency || 'daily';
+  if (freq === 'monthly') {
+    const day = Number(iso.split('-')[2]);
+    const startDay = a.startDate ? Number(a.startDate.split('-')[2]) : day;
+    const [y, m] = iso.split('-').map(Number);
+    const last = new Date(y, m, 0).getDate();
+    if (day !== Math.min(startDay, last)) return 0;
+    return Math.round(n(a.monthlyAmount));
+  }
+  if (freq === 'weekly') {
+    if (!a.startDate) return 0;
+    const diff = daysSince(a.startDate, iso);
+    if (diff < 0 || diff % 7 !== 0) return 0;
+    return Math.round(n(a.dailyAmount));
+  }
+  return Math.round(n(a.dailyAmount)); // daily
+}
 
 // 1口座・1日分の積立を実行（対象はONのインデックス積立設定のみ）。履歴に成否を記録。
 // インデックス投資は円建てのため、積立額を 取得価額(cost) と 現在保有額(value) の両方へ加算する。
 function runAccrualForDate(acc, iso) {
   for (const a of acc.accumulations || []) {
-    if (!accumActiveOn(a, iso)) continue;
+    const amount = contributionForDate(a, iso);
+    if (amount <= 0) continue;
     const h = accountHoldings(acc).find((x) => x.id === a.holdingId);
     const holdingName = h ? h.name : '積立対象';
-    const amount = Math.round(n(a.dailyAmount));
-    if (amount <= 0) continue;
     if (!h || !isIndex(h)) { pushHistory(acc, { date: iso, holdingId: a.holdingId, holdingName, amount, status: 'failed', reason: '対象ファンドなし' }); continue; }
     if (accountCash(acc) < amount) { pushHistory(acc, { date: iso, holdingId: a.holdingId, holdingName, amount, status: 'failed', reason: '現金不足' }); continue; }
     acc.cash = accountCash(acc) - amount;   // ① 現金から積立額を引く

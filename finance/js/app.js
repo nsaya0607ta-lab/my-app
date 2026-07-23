@@ -3,7 +3,8 @@ import * as S from './store.js?v=20260723r';
 import * as C from './calc.js?v=20260723r';
 import * as CF from './cashflow.js?v=20260723r';
 import * as Sec from './securities.js?v=20260723r';
-import { lineChart, barChart, groupedBarChart, donutChart } from './charts.js?v=20260723r';
+import * as FS from './futureSim.js?v=20260723r';
+import { lineChart, barChart, groupedBarChart, donutChart, multiLineChart, fanChart } from './charts.js?v=20260723r';
 import { iconHtml, icon } from './icons.js?v=20260723r';
 import {
   el, qs, yen, yenMasked, num, today, toISO, parseISO, ym, fmtDate, fmtDateLong,
@@ -15,6 +16,10 @@ import { nextRecurringDate, nextSettlementDate, isMonthEndDay } from './recurren
 const ui = {
   route: 'dashboard',
   simMonths: 12,           // 将来シミュレーションの表示期間
+  simTab: 'cashflow',      // 「将来」タブ内の切替: 'cashflow'(収支) | 'invest'(投資将来予測)
+  futureCheckDate: null,   // 投資予測: 資産推移を確認する日付
+  futureCompare: false,    // 投資予測: シナリオ比較を表示するか
+  futureExtra: 0,          // 投資予測: 積立変更シミュレーション(What-If、円/月)
   cal: { y: new Date().getFullYear(), m: new Date().getMonth() },
   plYm: ym(new Date()),
   anaYm: ym(new Date()),
@@ -814,13 +819,17 @@ function accumulationCard(st, acc) {
   const setRows = accums.length ? el('div', { class: 'fc-list' }, ...accums.map((a) => {
     const h = Sec.accountHoldings(acc).find((x) => x.id === a.holdingId);
     const range = `${a.startDate ? fmtDate(a.startDate).replace(/\(.\)/, '') : '開始日未設定'}${a.endDate ? '〜' + fmtDate(a.endDate).replace(/\(.\)/, '') : '〜'}`;
+    const freqLabel = { daily: '毎日', weekly: '毎週', monthly: '毎月' }[a.frequency || 'daily'];
+    const amt = a.frequency === 'monthly' ? a.monthlyAmount : a.dailyAmount;
+    const td = today();
+    const paused = !!(a.pauseStart && a.pauseStart <= td && (!a.pauseEnd || a.pauseEnd >= td));
     return el('div', { class: 'fc-row tap', onclick: () => accumulationForm(acc, a) },
       el('div', { class: 'fc-row-ic', html: iconHtml('repeat', { size: 18 }) }),
       el('div', { class: 'fc-row-main' },
         el('div', { class: 'fc-row-title', text: h ? h.name : '（対象銘柄なし）' }),
-        el('div', { class: 'fc-row-sub', text: `毎日 ${yen(a.dailyAmount)}・${range}` })),
-      el('span', { class: 'fc-accum-state ' + (a.enabled !== false ? 'on' : 'off'), text: a.enabled !== false ? 'ON' : 'OFF' }));
-  })) : el('p', { class: 'fc-empty', text: 'インデックスの毎日積立を登録できます（日本時間23:00に自動実行）。' });
+        el('div', { class: 'fc-row-sub', text: `${freqLabel} ${yen(amt)}・${range}${paused ? '・一時停止中' : ''}` })),
+      el('span', { class: 'fc-accum-state ' + (a.enabled !== false && !paused ? 'on' : 'off'), text: a.enabled !== false ? (paused ? '停止中' : 'ON') : 'OFF' }));
+  })) : el('p', { class: 'fc-empty', text: 'インデックスの積立を登録できます（日本時間23:00に自動実行）。' });
 
   const histRows = history.length ? el('div', { class: 'fc-list' }, ...history.map((h) =>
     el('div', { class: 'fc-row' },
@@ -856,6 +865,19 @@ function holdingForm(acc, h) {
   const cost = inputEl({ type: 'number', inputmode: 'numeric', placeholder: '0', value: h?.cost ?? '' });
   const value = inputEl({ type: 'number', inputmode: 'numeric', placeholder: '0', value: h?.value ?? '' });
   const memo = inputEl({ placeholder: 'メモ（任意）', value: h?.memo || '' });
+  // 将来資産シミュレーション用（想定年利・計算方式・配当）
+  const simReturn = inputEl({ type: 'number', inputmode: 'decimal', placeholder: kindVal === 'index' ? '例）5' : '例）7', value: h?.simAnnualReturn ?? '' });
+  const returnModeSel = selectEl([{ value: 'compound', label: '複利' }, { value: 'simple', label: '単利' }], h?.returnMode || 'compound');
+  const divYield = inputEl({ type: 'number', inputmode: 'decimal', placeholder: '例）2.5', value: h?.dividendYield ?? '' });
+  let divReinvest = h ? h.dividendReinvest !== false : true;
+  const divReinvestRow = el('div', { class: 'fc-field-toggle' });
+  const drawDivReinvest = () => {
+    divReinvestRow.innerHTML = '';
+    divReinvestRow.append(el('div', {}, el('div', { class: 'fc-field-lab', text: '配当を再投資する' }),
+      el('div', { class: 'fc-field-hint', text: 'OFFにすると配当は現金として受け取る想定で将来シミュレーションへ反映します' })),
+      toggle(divReinvest, () => { divReinvest = !divReinvest; drawDivReinvest(); }));
+  };
+  drawDivReinvest();
 
   const fieldsWrap = el('div', {});
   const drawFields = () => {
@@ -865,13 +887,18 @@ function holdingForm(acc, h) {
         field('銘柄名', name), field('ティッカー', ticker), field('保有数量', qty),
         field('取得単価（USD）', costUsd), field('現在株価（USD）', priceUsd), field('ドル円レート（USD/JPY）', fx),
         field('メモ（任意）', memo),
-        el('p', { class: 'fc-field-hint', text: '評価額 = 保有数量 × 現在株価(USD) × ドル円。現在株価は「株価を更新」からいつでも手入力できます。' }));
+        el('p', { class: 'fc-field-hint', text: '評価額 = 保有数量 × 現在株価(USD) × ドル円。現在株価は「株価を更新」からいつでも手入力できます。' }),
+        el('p', { class: 'fc-field-sep', text: '将来資産シミュレーション用の設定' }),
+        field('想定年利（%）', simReturn), field('年利の計算方式', returnModeSel),
+        field('年間配当利回り（%・任意）', divYield), divReinvestRow);
     } else {
       fieldsWrap.append(
         field('ファンド名', name), field('NISA区分', nisaSel),
         field('総元本（円）', cost), field('現在保有額（円）', value),
         field('メモ（任意）', memo),
-        el('p', { class: 'fc-field-hint', text: 'インデックスは数量・基準価額の管理は不要です。毎晩23時の積立額はこの総元本に積み上がります。総元本と現在保有額の差額から損益・損益率を計算します。' }));
+        el('p', { class: 'fc-field-hint', text: 'インデックスは数量・基準価額の管理は不要です。毎晩23時の積立額はこの総元本に積み上がります。総元本と現在保有額の差額から損益・損益率を計算します。' }),
+        el('p', { class: 'fc-field-sep', text: '将来資産シミュレーション用の設定' }),
+        field('想定年利（%）', simReturn), field('年利の計算方式', returnModeSel));
     }
   };
   const drawKindSeg = () => {
@@ -899,9 +926,17 @@ function holdingForm(acc, h) {
         const a = s.accounts.find((x) => x.id === acc.id);
         let rec;
         if (kindVal === 'stock') {
-          rec = { kind: 'stock', name: name.value.trim(), ticker: ticker.value.trim().toUpperCase(), quantity: Number(qty.value) || 0, costUsd: Number(costUsd.value) || 0, priceUsd: Number(priceUsd.value) || 0, fxRate: Number(fx.value) || 0, memo: memo.value.trim() };
+          rec = {
+            kind: 'stock', name: name.value.trim(), ticker: ticker.value.trim().toUpperCase(), quantity: Number(qty.value) || 0, costUsd: Number(costUsd.value) || 0, priceUsd: Number(priceUsd.value) || 0, fxRate: Number(fx.value) || 0, memo: memo.value.trim(),
+            simAnnualReturn: Number(simReturn.value) || 0, returnMode: returnModeSel.value,
+            dividendYield: Number(divYield.value) || 0, dividendReinvest: divReinvest,
+          };
+          if (isNew) rec.plannedPurchases = [];
         } else {
-          rec = { kind: 'index', name: name.value.trim(), nisaFrame: nisaSel.value, cost: Number(cost.value) || 0, value: Number(value.value) || 0, memo: memo.value.trim() };
+          rec = {
+            kind: 'index', name: name.value.trim(), nisaFrame: nisaSel.value, cost: Number(cost.value) || 0, value: Number(value.value) || 0, memo: memo.value.trim(),
+            simAnnualReturn: Number(simReturn.value) || 0, returnMode: returnModeSel.value,
+          };
         }
         if (isNew) a.holdings.push({ id: uid('hd'), ...rec });
         else Object.assign(a.holdings.find((x) => x.id === h.id), rec);
@@ -991,16 +1026,39 @@ function accumulationForm(acc, a) {
   const indexHoldings = Sec.accountHoldings(acc).filter(Sec.isIndex);
   if (!indexHoldings.length) { modal('積立設定', el('p', { class: 'fc-empty', text: '先に「銘柄を追加」でインデックス銘柄を登録してください。' }), {}); return; }
   const sel = selectEl(indexHoldings.map((h) => ({ value: h.id, label: h.name })), a?.holdingId || indexHoldings[0].id);
+  let freq = a?.frequency || 'daily';
+  const freqSeg = el('div', { class: 'fc-seg' });
   const amount = inputEl({ type: 'number', inputmode: 'numeric', placeholder: '例）1000', value: a?.dailyAmount ?? '' });
+  const monthlyAmount = inputEl({ type: 'number', inputmode: 'numeric', placeholder: '例）30000', value: a?.monthlyAmount ?? '' });
   const startDate = inputEl({ type: 'date', value: a?.startDate || today() });
   const endDate = inputEl({ type: 'date', value: a?.endDate || '' });
+  const pauseStart = inputEl({ type: 'date', value: a?.pauseStart || '' });
+  const pauseEnd = inputEl({ type: 'date', value: a?.pauseEnd || '' });
   let enabled = a ? a.enabled !== false : true;
   const enRow = el('div', { class: 'fc-field-toggle' });
-  const drawEn = () => { enRow.innerHTML = ''; enRow.append(el('div', {}, el('div', { class: 'fc-field-lab', text: '積立 ON/OFF' }), el('div', { class: 'fc-field-hint', text: 'ONのインデックスのみ毎日23:00に積立されます' })), toggle(enabled, () => { enabled = !enabled; drawEn(); })); };
+  const drawEn = () => { enRow.innerHTML = ''; enRow.append(el('div', {}, el('div', { class: 'fc-field-lab', text: '積立 ON/OFF' }), el('div', { class: 'fc-field-hint', text: 'ONの設定のみ実行されます（実際の自動積立は日本時間23:00に処理されます）' })), toggle(enabled, () => { enabled = !enabled; drawEn(); })); };
   drawEn();
+
+  const amountWrap = el('div', {});
+  const drawAmount = () => {
+    amountWrap.innerHTML = '';
+    if (freq === 'monthly') amountWrap.append(field('毎月の積立金額（円）', monthlyAmount));
+    else amountWrap.append(field(freq === 'weekly' ? '毎週の積立金額（円）' : '毎日の積立金額（円）', amount));
+  };
+  const drawFreqSeg = () => {
+    freqSeg.innerHTML = '';
+    for (const [v, l] of [['daily', '毎日'], ['weekly', '毎週'], ['monthly', '毎月']])
+      freqSeg.append(el('button', { class: 'fc-seg-btn' + (freq === v ? ' on' : ''), type: 'button', text: l, onclick: () => { freq = v; drawFreqSeg(); drawAmount(); } }));
+  };
+  drawFreqSeg(); drawAmount();
+
   const body = el('div', {},
-    field('積立対象（インデックス）', sel), field('毎日の積立金額（円）', amount),
-    field('積立開始日', startDate), optionalDateField('積立終了日（任意）', endDate), enRow,
+    field('積立対象（インデックス）', sel),
+    field('積立頻度', freqSeg), amountWrap,
+    field('積立開始日', startDate), optionalDateField('積立終了日（任意）', endDate),
+    optionalDateField('積立停止日（任意）', pauseStart), optionalDateField('積立再開日（任意）', pauseEnd),
+    el('p', { class: 'fc-field-hint', text: '積立停止日〜積立再開日の間は積立を一時停止します（積立再開日を空欄にすると停止日以降ずっと停止します）。' }),
+    enRow,
     !isNew && el('button', {
       class: 'fc-btn danger block', type: 'button', text: 'この積立設定を削除',
       onclick: () => confirmDialog('積立設定を削除', '削除しますか？', () => {
@@ -1011,12 +1069,20 @@ function accumulationForm(acc, a) {
   );
   modal(isNew ? '積立設定を追加' : '積立設定を編集', body, {
     onSave: (close) => {
-      const amt = Number(amount.value);
+      const amt = freq === 'monthly' ? Number(monthlyAmount.value) : Number(amount.value);
       if (!amt || amt <= 0) return toast('積立金額を入力してください', 'alert');
       if (startDate.value && endDate.value && endDate.value < startDate.value) return toast('終了日は開始日より後にしてください', 'alert');
+      if (pauseStart.value && pauseEnd.value && pauseEnd.value < pauseStart.value) return toast('積立再開日は積立停止日より後にしてください', 'alert');
       S.update((s) => {
         const ac = s.accounts.find((x) => x.id === acc.id);
-        const rec = { holdingId: sel.value, dailyAmount: amt, startDate: startDate.value || null, endDate: endDate.value || null, enabled };
+        const rec = {
+          holdingId: sel.value, frequency: freq,
+          dailyAmount: freq === 'monthly' ? (Number(amount.value) || 0) : amt,
+          monthlyAmount: freq === 'monthly' ? amt : (Number(monthlyAmount.value) || 0),
+          startDate: startDate.value || null, endDate: endDate.value || null,
+          pauseStart: pauseStart.value || null, pauseEnd: pauseEnd.value || null,
+          enabled,
+        };
         if (isNew) ac.accumulations.push({ id: uid('acm'), ...rec });
         else Object.assign(ac.accumulations.find((x) => x.id === a.id), rec);
       });
@@ -1538,6 +1604,14 @@ function renderSimulate() {
   const wrap = el('div', { class: 'fc-view' });
   wrap.append(el('h1', { class: 'fc-page-title', text: '資産シミュレーション' }));
 
+  // 収支シミュレーション / 投資将来予測 の切替(一元管理)
+  const tabSeg = el('div', { class: 'fc-seg' });
+  for (const [v, l] of [['cashflow', '収支シミュレーション'], ['invest', '投資将来予測']])
+    tabSeg.append(el('button', { class: 'fc-seg-btn' + (ui.simTab === v ? ' on' : ''), type: 'button', text: l, onclick: () => { ui.simTab = v; render(); } }));
+  wrap.append(tabSeg);
+
+  if (ui.simTab === 'invest') { wrap.append(renderFutureSim()); return wrap; }
+
   // 期間切替
   const periods = [[3, '3か月'], [6, '半年'], [12, '1年'], [24, '2年'], [36, '3年']];
   if (!periods.some((p) => p[0] === ui.simMonths)) ui.simMonths = 12;
@@ -1676,6 +1750,506 @@ function eventDetailModal(e, sim) {
       e.recurrence === 'monthly' ? kv('繰り返し', '毎月') : ''),
   );
   modal('入出金の詳細', body, {});
+}
+
+// ============ 投資将来予測（将来資産シミュレーションの投資予測タブ） ============
+const FUTURE_SERIES_DEFS = [
+  { key: 'total', label: '総資産', color: '#0a84ff', field: 'total' },
+  { key: 'cash', label: '現金', color: '#8e8e93', field: 'bankCash' },
+  { key: 'secCash', label: '証券口座現金', color: '#5ac8fa', field: 'secCash' },
+  { key: 'principal', label: '元本', color: '#ff9500', field: 'principal' },
+  { key: 'valuation', label: '評価額', color: '#34c759', field: 'valuation' },
+  { key: 'indexValuation', label: 'インデックス評価額', color: '#bf5af2', field: 'indexValuation' },
+  { key: 'stockValuation', label: '個別株評価額', color: '#ff375f', field: 'stockValuation' },
+];
+const FUTURE_EVENT_PRESETS = ['住宅購入', '車購入', '旅行', '結婚', '教育費', '大型家電'];
+
+function renderFutureSim() {
+  const st = S.getState();
+  const fs = st.futureSim;
+  const wrap = el('div', {});
+
+  wrap.append(futurePeriodCard(fs));
+  wrap.append(futureRateCard(fs));
+  wrap.append(futureWhatIfCard());
+
+  const proj = FS.project(st, { years: fs.years, extraMonthlyInvestment: ui.futureExtra || 0 });
+  wrap.append(futureMainChartCard(st, fs, proj));
+  wrap.append(futureSnapshotCard(fs, proj));
+  wrap.append(futureDateLookupCard(st, fs));
+  wrap.append(futureCompareCard(st, fs));
+  wrap.append(futureSensitivityCard(st, fs));
+  wrap.append(futureGoalsCard(st, fs));
+  wrap.append(futureEventsCard(fs));
+  wrap.append(futureDividendCard(st, fs));
+  wrap.append(futureStockPlansCard(st));
+  wrap.append(futureMonteCarloCard(st, fs));
+  wrap.append(futureInsightsCard(st));
+  wrap.append(futurePlansCard(st, fs));
+  wrap.append(el('p', { class: 'fc-note', text: '※ 登録済みの証券口座・保有銘柄・積立設定・購入予定・将来イベントから計算しています。想定年利は将来の運用成果を保証するものではありません。' }));
+  return wrap;
+}
+
+// ---- 保有期間シミュレーション（ワンタップ切替） ----
+function futurePeriodCard(fs) {
+  const seg = el('div', { class: 'fc-period' });
+  for (const y of FS.YEAR_OPTIONS)
+    seg.append(el('button', { class: 'fc-period-btn' + (fs.years === y ? ' on' : ''), type: 'button', text: `${y}年`, onclick: () => { S.update((s) => { s.futureSim.years = y; }); render(); } }));
+  return card(sectionTitle('保有期間'), seg);
+}
+
+// ---- 年利シミュレーション（クイック選択＋スライダー＋一律適用トグル） ----
+function futureRateCard(fs) {
+  const rate = FS.scenarioRate(fs);
+  const chips = el('div', { class: 'fc-period' });
+  for (const r of FS.RATE_CHIPS) {
+    chips.append(el('button', {
+      class: 'fc-period-btn' + (fs.scenario === 'custom' && Math.abs((Number(fs.customReturn) || 0) - r) < 0.001 ? ' on' : ''),
+      type: 'button', text: `${r}%`,
+      onclick: () => { S.update((s) => { s.futureSim.scenario = 'custom'; s.futureSim.customReturn = r; }); render(); },
+    }));
+  }
+  chips.append(el('button', { class: 'fc-period-btn', type: 'button', text: '自由入力', onclick: () => futureCustomRateForm(fs) }));
+
+  const slider = el('input', { type: 'range', class: 'fc-slider', min: '0', max: '30', step: '0.5', value: String(rate) });
+  const sliderLabel = el('span', { class: 'fc-slider-val', text: `年${rate.toFixed(1)}%` });
+  slider.addEventListener('input', () => { sliderLabel.textContent = `年${Number(slider.value).toFixed(1)}%`; });
+  slider.addEventListener('change', () => { S.update((s) => { s.futureSim.scenario = 'custom'; s.futureSim.customReturn = Number(slider.value); }); render(); });
+
+  const useOverride = fs.useOverride !== false;
+  const toggleRow = el('div', { class: 'fc-field-toggle' },
+    el('div', {}, el('div', { class: 'fc-field-lab', text: '一律の想定年利を全銘柄へ適用' }),
+      el('div', { class: 'fc-field-hint', text: 'OFFにすると銘柄ごとに設定した想定年利・計算方式を使用します' })),
+    toggle(useOverride, () => { S.update((s) => { s.futureSim.useOverride = !useOverride; }); render(); }));
+
+  return card(sectionTitle('年利シミュレーション'), chips, el('div', { class: 'fc-slider-row' }, slider, sliderLabel), toggleRow);
+}
+function futureCustomRateForm(fs) {
+  const inp = inputEl({ type: 'number', inputmode: 'decimal', placeholder: '例）12', value: fs.scenario === 'custom' ? fs.customReturn : '' });
+  modal('想定年利を自由入力', field('想定年利（%）', inp), {
+    onSave: (close) => {
+      const v = Number(inp.value);
+      if (Number.isNaN(v)) return toast('数値を入力してください', 'alert');
+      S.update((s) => { s.futureSim.scenario = 'custom'; s.futureSim.customReturn = v; });
+      render(); close();
+    },
+  });
+}
+
+// ---- 積立変更シミュレーション（What-If・実データは変更しない） ----
+function futureWhatIfCard() {
+  const val = ui.futureExtra || 0;
+  const slider = el('input', { type: 'range', class: 'fc-slider', min: '0', max: '300000', step: '5000', value: String(val) });
+  const label = el('span', { class: 'fc-slider-val', text: `+${yen(val)}/月` });
+  slider.addEventListener('input', () => { label.textContent = `+${yen(Number(slider.value))}/月`; });
+  slider.addEventListener('change', () => { ui.futureExtra = Number(slider.value); render(); });
+  return card(
+    sectionTitle('積立変更シミュレーション'),
+    el('p', { class: 'fc-field-hint', text: '実際の積立設定は変更せず、毎月の追加投資額を仮に変えた場合の効果だけをその場で試せます（下のグラフ・数値へ即反映）。' }),
+    el('div', { class: 'fc-slider-row' }, slider, label),
+  );
+}
+
+// ---- 将来資産グラフ（表示項目を切替） ----
+function futureMainChartCard(state, fs, proj) {
+  const secret = state.settings.secret;
+  const visible = fs.chartVisible || {};
+  const chips = el('div', { class: 'fc-chipwrap' });
+  for (const d of FUTURE_SERIES_DEFS) {
+    const on = !!visible[d.key];
+    chips.append(el('button', {
+      class: 'fc-serieschip' + (on ? ' on' : ''), type: 'button',
+      style: on ? `background:${d.color}22;color:${d.color};border-color:${d.color}66` : '',
+      onclick: () => { S.update((s) => { s.futureSim.chartVisible[d.key] = !s.futureSim.chartVisible[d.key]; }); render(); },
+    }, el('i', { class: 'dot', style: `background:${d.color}` }), el('span', { text: d.label })));
+  }
+
+  const labelFor = (iso, i) => { if (i === 0) return '今'; const d = parseISO(iso); return `${d.getFullYear()}/${d.getMonth() + 1}`; };
+  const step = Math.max(1, Math.floor(proj.series.length / 60));
+  const sampled = proj.series.filter((_, i) => i % step === 0 || i === proj.series.length - 1);
+  const seriesList = FUTURE_SERIES_DEFS.filter((d) => visible[d.key]).map((d) => ({
+    label: d.label, color: d.color, data: sampled.map((p, i) => ({ label: labelFor(p.date, i), value: p[d.field] })),
+  }));
+  const shortfall = FS.firstShortfall(proj.series);
+
+  return card(
+    sectionTitle('将来資産グラフ'),
+    chips,
+    secret ? el('p', { class: 'fc-empty', text: 'シークレットモード中は非表示' })
+      : (seriesList.length ? el('div', { class: 'fc-chart', html: multiLineChart(seriesList, { height: 240 }) })
+        : el('p', { class: 'fc-empty', text: '表示する項目を選択してください' })),
+    shortfall ? el('div', { class: 'fc-shortage' },
+      el('div', { class: 'fc-shortage-top' }, el('span', { class: 'fc-shortage-ic', html: iconHtml('alert', { size: 18 }) }),
+        el('b', { text: `${fmtDateLong(shortfall.date)}頃に資金がマイナスになる見込みです` })),
+      el('div', { class: 'fc-shortage-sub', text: '積立額・購入予定・銀行⇔証券の振替設定を見直してください。' })) : '',
+  );
+}
+
+// ---- 期間後スナップショット ----
+function futureSnapshotCard(fs, proj) {
+  const secret = S.getState().settings.secret;
+  const money = (v) => (secret ? '＊＊＊' : yen(v));
+  const start = proj.series[0], end = proj.series.at(-1);
+  const profitRate = end.principal > 0 ? ((end.valuation - end.principal) / end.principal) * 100 : null;
+  return card(
+    sectionTitle(`${fs.years}年後の予測`),
+    el('div', { class: 'fc-sec-grid' },
+      secBox('総資産', money(end.total)), secBox('現金合計', money(end.bankCash + end.secCash)), secBox('評価額', money(end.valuation))),
+    el('div', { class: 'fc-sec-grid' },
+      secBox('元本', money(end.principal)), secBox('評価損益', money(end.valuation - end.principal)),
+      secBox('利益率', profitRate == null ? '—' : `${profitRate >= 0 ? '+' : ''}${profitRate.toFixed(1)}%`)),
+    el('p', { class: 'fc-field-hint', text: `現在（${fmtDate(start.date)}）の総資産 ${money(start.total)} から ${fs.years}年後は ${money(end.total)}（${secret ? '＊＊＊' : yen(end.total - start.total, { sign: end.total - start.total > 0 })}）の見込みです。` }),
+  );
+}
+
+// ---- 資産推移（任意の日付を選んで内訳を確認） ----
+function futureDateLookupCard(state, fs) {
+  const secret = state.settings.secret;
+  const proj30 = FS.project(state, { years: Math.max(fs.years, 30) });
+  const dateInp = inputEl({ type: 'date', value: ui.futureCheckDate || proj30.series[Math.min(12, proj30.series.length - 1)].date, min: proj30.from, max: proj30.to });
+  const result = el('div', {});
+  const draw = () => {
+    const iso = dateInp.value || proj30.from;
+    const pt = FS.pointAt(proj30.series, iso);
+    const profitRate = pt.principal > 0 ? ((pt.valuation - pt.principal) / pt.principal) * 100 : null;
+    result.innerHTML = '';
+    result.append(el('div', { class: 'fc-kv' },
+      kv('銀行残高', secret ? '＊＊＊' : yen(pt.bankCash)),
+      kv('証券口座現金', secret ? '＊＊＊' : yen(pt.secCash)),
+      kv('元本', secret ? '＊＊＊' : yen(pt.principal)),
+      kv('評価額', secret ? '＊＊＊' : yen(pt.valuation)),
+      kv('合計資産', secret ? '＊＊＊' : yen(pt.total)),
+      kv('利益率', profitRate == null ? '—' : `${profitRate >= 0 ? '+' : ''}${profitRate.toFixed(1)}%`)));
+  };
+  dateInp.addEventListener('change', () => { ui.futureCheckDate = dateInp.value; draw(); });
+  draw();
+  return card(sectionTitle('資産推移を確認'), field('日付を選択', dateInp), result);
+}
+
+// ---- シナリオ比較（保守・通常・強気・自由設定） ----
+function futureCompareCard(state, fs) {
+  const secret = state.settings.secret;
+  const body = el('div', {});
+  const draw = () => {
+    body.innerHTML = '';
+    if (!ui.futureCompare) { body.append(el('p', { class: 'fc-field-hint', text: 'タップすると保守・通常・強気・自由設定のシナリオを重ねて比較できます。' })); return; }
+    const cmp = FS.scenarioComparison(state, { years: fs.years });
+    const step = Math.max(1, Math.floor(cmp[0].series.length / 60));
+    const seriesList = cmp.map((c) => ({
+      label: `${c.label}（${c.rate.toFixed(1)}%）`, color: c.color,
+      data: c.series.filter((_, i) => i % step === 0 || i === c.series.length - 1).map((p) => ({ label: '', value: p.total })),
+    }));
+    body.append(
+      secret ? el('p', { class: 'fc-empty', text: 'シークレットモード中は非表示' }) : el('div', { class: 'fc-chart', html: multiLineChart(seriesList, { height: 220 }) }),
+      el('div', { class: 'fc-legend-list' }, ...cmp.map((c) => el('div', { class: 'fc-legend-row' },
+        el('i', { class: 'dot', style: `background:${c.color}` }),
+        el('span', { class: 'fc-legend-name', text: `${c.label}（年${c.rate.toFixed(1)}%）` }),
+        el('span', { class: 'fc-legend-amt', text: secret ? '＊＊＊' : yen(c.series.at(-1).total) })))),
+    );
+  };
+  draw();
+  return card(sectionTitle('シナリオ比較', el('button', { class: 'fc-link', type: 'button', text: ui.futureCompare ? '閉じる' : '表示する', onclick: () => { ui.futureCompare = !ui.futureCompare; render(); } })), body);
+}
+
+// ---- 年利感度分析 ----
+function futureSensitivityCard(state, fs) {
+  const secret = state.settings.secret;
+  const base = FS.scenarioRate(fs);
+  const rows = FS.sensitivityAnalysis(state, { years: fs.years, baseRate: base, deltas: [-4, -2, 0, 2, 4] });
+  return card(
+    sectionTitle('年利感度分析', el('span', { class: 'fc-chart-hint', text: `基準 年${base.toFixed(1)}%` })),
+    el('div', { class: 'fc-sens-list' }, ...rows.map((r) => el('div', { class: 'fc-sens-row' + (r.delta === 0 ? ' base' : '') },
+      el('span', { class: 'fc-sens-rate', text: `年利${r.rate.toFixed(1)}%` }),
+      el('span', { class: 'fc-sens-amt', text: secret ? '＊＊＊' : yen(r.total) })))),
+  );
+}
+
+// ---- 投資達成予測（目標） ----
+function futureGoalsCard(state, fs) {
+  const secret = state.settings.secret;
+  const preds = FS.goalPredictions(state);
+  const rows = preds.length ? el('div', { class: 'fc-list' }, ...preds.map(({ goal, date, reached }) =>
+    el('div', { class: 'fc-row tap', onclick: () => futureGoalForm(goal) },
+      el('div', { class: 'fc-row-ic', html: iconHtml('target', { size: 18 }) }),
+      el('div', { class: 'fc-row-main' },
+        el('div', { class: 'fc-row-title', text: goal.name }),
+        el('div', { class: 'fc-row-sub', text: `${goal.metric === 'valuation' ? '評価額' : '総資産'} ${secret ? '＊＊＊' : yen(goal.targetAmount)}` })),
+      el('span', { class: 'fc-goal-date' + (reached ? '' : ' na'), text: reached ? fmtMonth(date.slice(0, 7)) + '頃' : '30年以内未達成' }))))
+    : el('p', { class: 'fc-empty', text: '目標を追加すると到達予定時期が表示されます（例: 資産1,000万円到達予定）。' });
+  return card(sectionTitle('投資達成予測', el('button', { class: 'fc-link', type: 'button', onclick: () => futureGoalForm() },
+    el('span', { class: 'fc-add-ic sm', html: iconHtml('plus', { size: 14 }) }), el('span', { text: '目標を追加' }))), rows);
+}
+function futureGoalForm(goal) {
+  const isNew = !goal;
+  const name = inputEl({ placeholder: '例）資産1,000万円 / FIRE目標', value: goal?.name || '' });
+  const amount = amountInput(goal?.targetAmount);
+  const metricSel = selectEl([{ value: 'total', label: '総資産' }, { value: 'valuation', label: '評価額（投資分のみ）' }], goal?.metric || 'total');
+  const body = el('div', {},
+    field('目標名', name), field('目標金額（円）', amount), field('対象指標', metricSel),
+    !isNew && el('button', {
+      class: 'fc-btn danger block', type: 'button', text: 'この目標を削除',
+      onclick: () => confirmDialog('目標を削除', `「${goal.name}」を削除しますか？`, () => {
+        S.update((s) => { s.futureSim.goals = s.futureSim.goals.filter((g) => g.id !== goal.id); });
+        render(); toast('削除しました', 'trash'); qs('.fc-modal-back')?.classList.remove('show'); setTimeout(() => qs('.fc-modal-back')?.remove(), 260);
+      }),
+    }),
+  );
+  modal(isNew ? '目標を追加' : '目標を編集', body, {
+    onSave: (close) => {
+      if (!name.value.trim()) return toast('目標名を入力してください', 'alert');
+      const amt = amountValue(amount);
+      if (!amt || amt <= 0) return toast('目標金額を入力してください', 'alert');
+      S.update((s) => {
+        const rec = { name: name.value.trim(), targetAmount: amt, metric: metricSel.value };
+        if (isNew) s.futureSim.goals.push({ id: uid('goal'), createdAt: today(), ...rec });
+        else Object.assign(s.futureSim.goals.find((g) => g.id === goal.id), rec);
+      });
+      render(); toast('保存しました'); close();
+    },
+  });
+}
+
+// ---- 将来イベント ----
+function futureEventsCard(fs) {
+  const secret = S.getState().settings.secret;
+  const events = (fs.events || []).slice().sort((a, b) => a.date.localeCompare(b.date));
+  const rows = events.length ? el('div', { class: 'fc-list' }, ...events.map((e) =>
+    el('div', { class: 'fc-row tap', onclick: () => futureEventForm(e) },
+      el('div', { class: 'fc-row-ic', html: iconHtml('calendar', { size: 18 }) }),
+      el('div', { class: 'fc-row-main' },
+        el('div', { class: 'fc-row-title', text: e.name }),
+        el('div', { class: 'fc-row-sub', text: fmtDate(e.date) })),
+      el('span', { class: 'fc-row-amt neg', text: secret ? '＊＊＊' : yen(-e.amount) }))))
+    : el('p', { class: 'fc-empty', text: '住宅購入・車購入・旅行などの将来イベントを登録すると、発生日に支出として反映します。' });
+  return card(sectionTitle('将来イベント', el('button', { class: 'fc-link', type: 'button', onclick: () => futureEventForm() },
+    el('span', { class: 'fc-add-ic sm', html: iconHtml('plus', { size: 14 }) }), el('span', { text: '追加' }))), rows);
+}
+function futureEventForm(ev) {
+  const isNew = !ev;
+  const name = inputEl({ placeholder: '例）住宅購入', value: ev?.name || '' });
+  const presetRow = el('div', { class: 'fc-chipwrap' });
+  for (const p of FUTURE_EVENT_PRESETS) presetRow.append(el('button', { class: 'fc-typechip', type: 'button', text: p, onclick: () => { name.value = p; } }));
+  const amount = amountInput(ev?.amount);
+  const date = inputEl({ type: 'date', value: ev?.date || today() });
+  const memo = inputEl({ placeholder: 'メモ（任意）', value: ev?.memo || '' });
+  const body = el('div', {},
+    field('よく使う項目', presetRow), field('イベント名', name), field('金額（円）', amount), field('発生予定日', date), field('メモ（任意）', memo),
+    !isNew && el('button', {
+      class: 'fc-btn danger block', type: 'button', text: 'このイベントを削除',
+      onclick: () => confirmDialog('イベントを削除', `「${ev.name}」を削除しますか？`, () => {
+        S.update((s) => { s.futureSim.events = s.futureSim.events.filter((x) => x.id !== ev.id); });
+        render(); toast('削除しました', 'trash'); qs('.fc-modal-back')?.classList.remove('show'); setTimeout(() => qs('.fc-modal-back')?.remove(), 260);
+      }),
+    }),
+  );
+  modal(isNew ? '将来イベントを追加' : '将来イベントを編集', body, {
+    onSave: (close) => {
+      if (!name.value.trim()) return toast('イベント名を入力してください', 'alert');
+      const amt = amountValue(amount);
+      if (!amt || amt <= 0) return toast('金額を入力してください', 'alert');
+      if (!date.value) return toast('発生予定日を入力してください', 'alert');
+      S.update((s) => {
+        const rec = { name: name.value.trim(), amount: amt, date: date.value, memo: memo.value.trim() };
+        if (isNew) s.futureSim.events.push({ id: uid('fev'), ...rec });
+        else Object.assign(s.futureSim.events.find((x) => x.id === ev.id), rec);
+      });
+      render(); toast('保存しました'); close();
+    },
+  });
+}
+
+// ---- 配当金シミュレーション ----
+function futureDividendCard(state, fs) {
+  const secret = state.settings.secret;
+  const div = FS.dividendComparison(state, { years: fs.years });
+  if (!div) return card(sectionTitle('配当金シミュレーション'),
+    el('p', { class: 'fc-empty', text: '個別株の編集画面で「年間配当利回り」を設定すると、配当の再投資あり/なしを比較できます。' }));
+  const step = Math.max(1, Math.floor(div.series.length / 60));
+  const sampled = div.series.filter((_, i) => i % step === 0 || i === div.series.length - 1);
+  const seriesList = [
+    { label: '評価額（再投資あり）', color: '#34c759', data: sampled.map((p) => ({ label: '', value: p.reinvestValue })) },
+    { label: '評価額（再投資なし）', color: '#8e8e93', data: sampled.map((p) => ({ label: '', value: p.flatValue })) },
+  ];
+  return card(
+    sectionTitle('配当金シミュレーション', el('span', { class: 'fc-chart-hint', text: `対象 ${div.eligible.length}銘柄` })),
+    secret ? el('p', { class: 'fc-empty', text: 'シークレットモード中は非表示' }) : el('div', { class: 'fc-chart', html: multiLineChart(seriesList, { height: 220 }) }),
+    el('div', { class: 'fc-sec-grid' },
+      secBox('評価額（再投資あり）', secret ? '＊＊＊' : yen(div.end.reinvestValue)),
+      secBox('評価額（再投資なし）', secret ? '＊＊＊' : yen(div.end.flatValue))),
+    el('div', { class: 'fc-sec-grid' },
+      secBox('累計配当（再投資分）', secret ? '＊＊＊' : yen(div.end.cumReinvestDividend)),
+      secBox('累計配当（受取・再投資なし）', secret ? '＊＊＊' : yen(div.end.cumFlatDividend))),
+  );
+}
+
+// ---- 個別株の購入予定 ----
+function futureStockPlansCard(state) {
+  const secret = state.settings.secret;
+  const stocks = [];
+  for (const acc of Sec.securitiesAccounts(state)) for (const h of Sec.accountHoldings(acc).filter(Sec.isStock)) stocks.push({ acc, h });
+  if (!stocks.length) return card(sectionTitle('個別株の購入予定'), el('p', { class: 'fc-empty', text: '個別株を登録すると、今後の購入予定を追加できます。' }));
+
+  const rows = [];
+  for (const { acc, h } of stocks) for (const p of (h.plannedPurchases || [])) rows.push({ acc, h, p });
+  rows.sort((a, b) => a.p.date.localeCompare(b.p.date));
+  const list = rows.length ? el('div', { class: 'fc-list' }, ...rows.map(({ acc, h, p }) =>
+    el('div', { class: 'fc-row tap', onclick: () => futureStockPlanForm(acc, h, p) },
+      el('div', { class: 'fc-row-ic', html: iconHtml('coins', { size: 18 }) }),
+      el('div', { class: 'fc-row-main' },
+        el('div', { class: 'fc-row-title', text: `${h.name}${h.ticker ? '（' + h.ticker + '）' : ''}` }),
+        el('div', { class: 'fc-row-sub', text: `${fmtDate(p.date)}・想定年利${p.annualReturn}%・${p.holdYears}年保有` })),
+      el('span', { class: 'fc-row-amt', text: secret ? '＊＊＊' : yen(p.amount) }))))
+    : el('p', { class: 'fc-empty', text: '購入予定はまだありません。' });
+
+  return card(sectionTitle('個別株の購入予定', el('button', { class: 'fc-link', type: 'button', onclick: () => futureStockPlanPicker(stocks) },
+    el('span', { class: 'fc-add-ic sm', html: iconHtml('plus', { size: 14 }) }), el('span', { text: '追加' }))), list,
+    el('p', { class: 'fc-field-hint', text: '購入予定日に証券口座現金から元本・評価額へ自動反映してシミュレーションします。' }));
+}
+function futureStockPlanPicker(stocks) {
+  if (stocks.length === 1) return futureStockPlanForm(stocks[0].acc, stocks[0].h);
+  const closeCur = () => { qs('.fc-modal-back')?.classList.remove('show'); setTimeout(() => qs('.fc-modal-back')?.remove(), 260); };
+  const body = el('div', { class: 'fc-list' }, ...stocks.map(({ acc, h }) =>
+    el('div', { class: 'fc-row tap', onclick: () => { closeCur(); futureStockPlanForm(acc, h); } },
+      el('div', { class: 'fc-row-main' }, el('div', { class: 'fc-row-title', text: `${h.name}${h.ticker ? '（' + h.ticker + '）' : ''}` })))));
+  modal('銘柄を選択', body, {});
+}
+function futureStockPlanForm(acc, h, p) {
+  const isNew = !p;
+  const date = inputEl({ type: 'date', value: p?.date || today() });
+  const amount = amountInput(p?.amount);
+  const shares = inputEl({ type: 'number', inputmode: 'decimal', placeholder: '0', value: p?.shares ?? '' });
+  const rate = inputEl({ type: 'number', inputmode: 'decimal', placeholder: '例）10', value: p?.annualReturn ?? h.simAnnualReturn ?? 7 });
+  const holdYears = inputEl({ type: 'number', inputmode: 'numeric', placeholder: '例）5', value: p?.holdYears ?? 5 });
+  const preview = el('p', { class: 'fc-field-hint' });
+  const upd = () => {
+    const proj = FS.plannedPurchaseProjection({ amount: amountValue(amount), annualReturn: Number(rate.value) || 0, holdYears: Number(holdYears.value) || 0 });
+    preview.textContent = `${Number(holdYears.value) || 0}年後の予測評価額（複利概算）: ${yen(proj)}`;
+  };
+  amount.addEventListener('input', upd); rate.addEventListener('input', upd); holdYears.addEventListener('input', upd); upd();
+  const body = el('div', {},
+    el('p', { class: 'fc-field-hint', text: `対象銘柄: ${h.name}${h.ticker ? '（' + h.ticker + '）' : ''}` }),
+    field('購入予定日', date), field('購入予定金額（円）', amount), field('購入予定株数', shares),
+    field('想定年利（%）', rate), field('保有予定年数', holdYears), preview,
+    !isNew && el('button', {
+      class: 'fc-btn danger block', type: 'button', text: 'この購入予定を削除',
+      onclick: () => confirmDialog('購入予定を削除', '削除しますか？', () => {
+        S.update((s) => { const a = s.accounts.find((x) => x.id === acc.id); const hh = a.holdings.find((x) => x.id === h.id); hh.plannedPurchases = (hh.plannedPurchases || []).filter((x) => x.id !== p.id); });
+        render(); toast('削除しました', 'trash'); qs('.fc-modal-back')?.classList.remove('show'); setTimeout(() => qs('.fc-modal-back')?.remove(), 260);
+      }),
+    }),
+  );
+  modal(isNew ? '購入予定を追加' : '購入予定を編集', body, {
+    onSave: (close) => {
+      if (!date.value) return toast('購入予定日を入力してください', 'alert');
+      const amt = amountValue(amount);
+      if (!amt || amt <= 0) return toast('購入予定金額を入力してください', 'alert');
+      S.update((s) => {
+        const a = s.accounts.find((x) => x.id === acc.id);
+        const hh = a.holdings.find((x) => x.id === h.id);
+        hh.plannedPurchases ||= [];
+        const rec = { date: date.value, amount: amt, shares: Number(shares.value) || 0, annualReturn: Number(rate.value) || 0, holdYears: Number(holdYears.value) || 0 };
+        if (isNew) hh.plannedPurchases.push({ id: uid('pp'), ...rec });
+        else Object.assign(hh.plannedPurchases.find((x) => x.id === p.id), rec);
+      });
+      render(); toast('保存しました'); close();
+    },
+  });
+}
+
+// ---- モンテカルロシミュレーション（上級機能） ----
+function futureMonteCarloCard(state, fs) {
+  const secret = state.settings.secret;
+  const mc = fs.monteCarlo || {};
+  const enabled = mc.enabled === true;
+  const toggleRow = el('div', { class: 'fc-field-toggle' },
+    el('div', {}, el('div', { class: 'fc-field-lab', text: 'モンテカルロシミュレーション' }),
+      el('div', { class: 'fc-field-hint', text: '年ごとにランダムなリターンを発生させ、資産の幅を確認します' })),
+    toggle(enabled, () => { S.update((s) => { s.futureSim.monteCarlo.enabled = !enabled; }); render(); }));
+  if (!enabled) return card(sectionTitle('モンテカルロシミュレーション', pill('上級機能')), toggleRow);
+
+  const runsChips = el('div', { class: 'fc-period' });
+  for (const r of [100, 300, 500, 1000]) runsChips.append(el('button', { class: 'fc-period-btn' + (mc.runs === r ? ' on' : ''), type: 'button', text: `${r}回`, onclick: () => { S.update((s) => { s.futureSim.monteCarlo.runs = r; }); render(); } }));
+
+  const result = FS.monteCarlo(state, { years: fs.years, runs: mc.runs, volatility: mc.volatility });
+  const fanData = result.years.map((y) => ({ label: y.year === 0 ? '今' : `${y.year}年`, median: y.median, p5: y.p5, p95: y.p95, min: y.min, max: y.max }));
+  const money = (v) => (secret ? '＊＊＊' : yen(v));
+
+  return card(
+    sectionTitle('モンテカルロシミュレーション', el('span', { class: 'fc-chart-hint', text: `標準偏差 ±${mc.volatility}%` })),
+    toggleRow, runsChips,
+    secret ? el('p', { class: 'fc-empty', text: 'シークレットモード中は非表示' }) : el('div', { class: 'fc-chart', html: fanChart(fanData, { height: 240 }) }),
+    el('div', { class: 'fc-sec-grid' },
+      secBox('中央値', money(result.end.median)), secBox('90%範囲(下限)', money(result.end.p5)), secBox('90%範囲(上限)', money(result.end.p95))),
+    el('div', { class: 'fc-sec-grid' },
+      secBox('最悪ケース', money(result.end.min)), secBox('最高ケース', money(result.end.max))),
+    el('p', { class: 'fc-note', text: `${result.runs}回のシミュレーション結果です。実際のリターンを保証するものではありません。` }),
+  );
+}
+
+// ---- AI分析カード（ルールベースの参考情報） ----
+function futureInsightsCard(state) {
+  const lines = FS.insights(state);
+  return card(
+    sectionTitle('自動分析', pill('参考情報')),
+    el('div', { class: 'fc-insight-list' }, ...lines.map((t) => el('div', { class: 'fc-insight-row' },
+      el('span', { class: 'fc-insight-ic', html: iconHtml('trending', { size: 16 }) }), el('span', { text: t })))),
+    el('p', { class: 'fc-note', text: '登録済みデータからのルールベースの参考情報であり、将来の成果を保証・断定するものではありません。' }),
+  );
+}
+
+// ---- 保存プラン（あとから比較） ----
+function futurePlansCard(state, fs) {
+  const secret = state.settings.secret;
+  const plans = fs.plans || [];
+  const rows = plans.length ? el('div', { class: 'fc-list' }, ...plans.map((p) => {
+    const end = FS.project(state, { years: p.config.years, rateOverride: FS.scenarioRate(p.config) }).series.at(-1);
+    return el('div', { class: 'fc-row tap', onclick: () => futurePlanDetail(p) },
+      el('div', { class: 'fc-row-ic', html: iconHtml('database', { size: 18 }) }),
+      el('div', { class: 'fc-row-main' },
+        el('div', { class: 'fc-row-title', text: p.name }),
+        el('div', { class: 'fc-row-sub', text: `${p.config.years}年・年${FS.scenarioRate(p.config).toFixed(1)}%目安` })),
+      el('span', { class: 'fc-row-amt', text: secret ? '＊＊＊' : yen(end.total) }));
+  })) : el('p', { class: 'fc-empty', text: '現在の設定をプランとして保存すると、あとから比較できます（例: 通常プラン・積立強化プラン・FIREプラン）。' });
+  return card(sectionTitle('保存プラン', el('button', { class: 'fc-link', type: 'button', onclick: () => futurePlanSaveForm() },
+    el('span', { class: 'fc-add-ic sm', html: iconHtml('plus', { size: 14 }) }), el('span', { text: '現在の設定を保存' }))), rows);
+}
+function futurePlanSaveForm() {
+  const name = inputEl({ placeholder: '例）通常プラン / 積立強化プラン / FIREプラン' });
+  modal('プランを保存', field('プラン名', name), {
+    onSave: (close) => {
+      if (!name.value.trim()) return toast('プラン名を入力してください', 'alert');
+      S.update((s) => {
+        s.futureSim.plans.push({
+          id: uid('plan'), name: name.value.trim(), savedAt: today(),
+          config: { years: s.futureSim.years, scenario: s.futureSim.scenario, customReturn: s.futureSim.customReturn, useOverride: s.futureSim.useOverride, monteCarlo: { ...s.futureSim.monteCarlo } },
+        });
+      });
+      render(); toast('保存しました'); close();
+    },
+  });
+}
+function futurePlanDetail(p) {
+  const body = el('div', {},
+    el('div', { class: 'fc-kv' },
+      kv('保有期間', `${p.config.years}年`), kv('想定年利', `年${FS.scenarioRate(p.config).toFixed(1)}%`),
+      kv('銘柄ごとの年利を使用', p.config.useOverride === false ? 'はい' : 'いいえ（一律適用）'), kv('保存日', fmtDateLong(p.savedAt))),
+    el('button', {
+      class: 'fc-btn primary block', type: 'button', text: 'この設定を読み込む',
+      onclick: () => {
+        S.update((s) => { Object.assign(s.futureSim, { years: p.config.years, scenario: p.config.scenario, customReturn: p.config.customReturn, useOverride: p.config.useOverride, monteCarlo: { ...p.config.monteCarlo } }); });
+        render(); toast('読み込みました');
+        qs('.fc-modal-back')?.classList.remove('show'); setTimeout(() => qs('.fc-modal-back')?.remove(), 260);
+      },
+    }),
+    el('button', {
+      class: 'fc-btn danger block', type: 'button', text: 'このプランを削除',
+      onclick: () => confirmDialog('プランを削除', `「${p.name}」を削除しますか？`, () => {
+        S.update((s) => { s.futureSim.plans = s.futureSim.plans.filter((x) => x.id !== p.id); });
+        render(); toast('削除しました', 'trash'); qs('.fc-modal-back')?.classList.remove('show'); setTimeout(() => qs('.fc-modal-back')?.remove(), 260);
+      }),
+    }),
+  );
+  modal(p.name, body, {});
 }
 
 // ============ カレンダー ============
