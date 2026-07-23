@@ -82,6 +82,8 @@ function seed() {
       bonusAmount: 0,
       bonusMonths: [],
     },
+    // 将来資産シミュレーション（投資予測）の設定。collections/config。
+    futureSim: seedFutureSim(),
     settings: {
       secret: false,
       theme: 'auto', // 'auto' | 'light' | 'dark'
@@ -94,6 +96,22 @@ function seed() {
     assetHistory: [],
   };
 }
+
+// ---- 将来資産シミュレーション（投資予測）の初期設定 ----
+function seedFutureSim() {
+  return {
+    years: 10,                 // 保有期間シミュレーション（1/3/5/10/15/20/30年）
+    scenario: 'normal',        // 'conservative'|'normal'|'aggressive'|'custom'
+    customReturn: 8,           // 自由入力の想定年利(%)
+    useOverride: true,         // true: シナリオの年利を全銘柄へ一律適用／false: 銘柄ごとの想定年利を使用
+    monteCarlo: { enabled: false, runs: 300, volatility: 15 }, // volatility: 年率リターンの標準偏差(%)
+    chartVisible: { total: true, cash: true, secCash: false, principal: false, valuation: true, indexValuation: false, stockValuation: false },
+    goals: [],   // 投資達成目標 {id, name, targetAmount, metric:'total'|'valuation', createdAt}
+    events: [],  // 将来イベント {id, name, date, amount, memo}
+    plans: [],   // 保存済みシミュレーションプラン {id, name, savedAt, config}
+  };
+}
+export const SCENARIO_RATES = { conservative: 5, normal: 8, aggressive: 15 };
 
 // 総資産のスナップショットを記録（同日は上書き、最大400件保持）
 export function recordAssetSnapshot(s) {
@@ -136,6 +154,17 @@ function migrate(data) {
   if (data.settings.periodStartDay === undefined) data.settings.periodStartDay = 1;
   data.simulation ||= seed().simulation;
   data.assetHistory ||= [];
+  // 将来資産シミュレーション（投資予測）の設定を補完
+  const fsDefault = seedFutureSim();
+  data.futureSim ||= fsDefault;
+  for (const k of Object.keys(fsDefault)) if (data.futureSim[k] === undefined) data.futureSim[k] = fsDefault[k];
+  data.futureSim.monteCarlo ||= fsDefault.monteCarlo;
+  for (const k of Object.keys(fsDefault.monteCarlo)) if (data.futureSim.monteCarlo[k] === undefined) data.futureSim.monteCarlo[k] = fsDefault.monteCarlo[k];
+  data.futureSim.chartVisible ||= fsDefault.chartVisible;
+  for (const k of Object.keys(fsDefault.chartVisible)) if (data.futureSim.chartVisible[k] === undefined) data.futureSim.chartVisible[k] = fsDefault.chartVisible[k];
+  data.futureSim.goals ||= [];
+  data.futureSim.events ||= [];
+  data.futureSim.plans ||= [];
   // 可処分資金に含めるフラグ（既定: 証券口座以外は含める）／評価額履歴
   for (const a of data.accounts || []) {
     if (a.includeInDisposable === undefined) a.includeInDisposable = a.type !== 'securities';
@@ -156,13 +185,29 @@ function migrate(data) {
           if (h.nisaFrame === undefined) h.nisaFrame = 'growth';
           if (h.cost === undefined) h.cost = (Number(h.quantity) || 0) * (Number(h.avgPrice) || 0);
           if (h.value === undefined) h.value = (Number(h.quantity) || 0) * (Number(h.price) || Number(h.avgPrice) || 0);
+          // 将来資産シミュレーション用の想定年利・計算方式（インデックス）
+          if (h.simAnnualReturn === undefined) h.simAnnualReturn = 5;
+          if (h.returnMode === undefined) h.returnMode = 'compound';
         } else {
           h.kind = 'stock';
           if (h.costUsd === undefined) h.costUsd = Number(h.avgPrice) || 0;
           if (h.priceUsd === undefined) h.priceUsd = Number(h.price) || Number(h.avgPrice) || 0;
           if (h.fxRate === undefined) h.fxRate = 0;
           if (h.quantity === undefined) h.quantity = 0;
+          // 将来資産シミュレーション用の想定年利・計算方式・配当・購入予定（個別株）
+          if (h.simAnnualReturn === undefined) h.simAnnualReturn = 7;
+          if (h.returnMode === undefined) h.returnMode = 'compound';
+          if (h.dividendYield === undefined) h.dividendYield = 0; // 年間配当利回り(%)
+          if (h.dividendReinvest === undefined) h.dividendReinvest = true;
+          h.plannedPurchases ||= []; // 今後の購入予定 {id,date,amount,shares,annualReturn,holdYears}
         }
+      }
+      // 積立設定に将来シミュレーション用の頻度・停止/再開日・毎月積立額を補完
+      for (const acm of a.accumulations || []) {
+        if (acm.frequency === undefined) acm.frequency = 'daily';
+        if (acm.monthlyAmount === undefined) acm.monthlyAmount = Math.round((Number(acm.dailyAmount) || 0) * 30);
+        if (acm.pauseStart === undefined) acm.pauseStart = null;
+        if (acm.pauseEnd === undefined) acm.pauseEnd = null;
       }
       recomputeAccount(a);      // balance = 現金 + 評価額 に同期
     }

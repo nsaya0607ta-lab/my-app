@@ -772,3 +772,48 @@ input[type='color'].fc-input { height: 46px; padding: 4px; }
 html.fc-modal-open, html.fc-modal-open body { overscroll-behavior: none; }
 .fc-modal-back { overscroll-behavior: contain; touch-action: none; }
 .fc-modal-sheet { overscroll-behavior: contain; touch-action: pan-y; -webkit-overflow-scrolling: touch; }
+
+/* ===== 投資将来予測（将来資産シミュレーション拡張） ===== */
+
+/* グラフの滑らかな描画アニメーション */
+.fc-svg { animation: fc-chart-in 0.5s cubic-bezier(0.22, 1, 0.36, 1); }
+@keyframes fc-chart-in { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: translateY(0); } }
+@media (prefers-reduced-motion: reduce) { .fc-svg { animation: none; } }
+
+/* 年利・積立額のスライダー */
+.fc-slider-row { display: flex; align-items: center; gap: 12px; margin-top: 10px; }
+.fc-slider { flex: 1; appearance: none; -webkit-appearance: none; height: 6px; border-radius: 999px; background: var(--fc-line-2); accent-color: var(--fc-accent); }
+.fc-slider::-webkit-slider-thumb { appearance: none; -webkit-appearance: none; width: 22px; height: 22px; border-radius: 50%; background: var(--fc-accent); box-shadow: 0 2px 6px rgba(10, 132, 255, 0.4); cursor: pointer; border: 3px solid var(--fc-surface); }
+.fc-slider::-moz-range-thumb { width: 22px; height: 22px; border-radius: 50%; background: var(--fc-accent); box-shadow: 0 2px 6px rgba(10, 132, 255, 0.4); cursor: pointer; border: 3px solid var(--fc-surface); }
+.fc-slider::-moz-range-track { height: 6px; border-radius: 999px; background: var(--fc-line-2); }
+.fc-slider-val { flex: none; min-width: 78px; text-align: right; font-size: 14px; font-weight: 800; color: var(--fc-accent); font-variant-numeric: tabular-nums; }
+
+/* グラフ表示項目の切替チップ */
+.fc-chipwrap { display: flex; flex-wrap: wrap; gap: 7px; margin-bottom: 6px; }
+.fc-serieschip { display: inline-flex; align-items: center; gap: 6px; border: 1px solid var(--fc-line); background: var(--fc-surface); border-radius: 999px; padding: 7px 13px 7px 10px; font-size: 12.5px; font-weight: 700; color: var(--fc-text-2); transition: 0.15s; }
+.fc-serieschip .dot { width: 8px; height: 8px; border-radius: 50%; flex: none; opacity: 0.5; }
+.fc-serieschip.on .dot { opacity: 1; }
+.fc-serieschip.on { font-weight: 800; }
+
+/* バッジ（参考情報・上級機能など） */
+.fc-pill { display: inline-flex; align-items: center; font-size: 11px; font-weight: 700; color: var(--fc-text-2); background: var(--fc-surface-2); border: 1px solid var(--fc-line); border-radius: 999px; padding: 4px 10px; }
+
+/* フォーム内の小見出し区切り */
+.fc-field-sep { font-size: 12px; font-weight: 700; color: var(--fc-accent); margin: 14px 0 4px; padding-top: 10px; border-top: 1px dashed var(--fc-line); }
+
+/* 年利感度分析 */
+.fc-sens-list { display: flex; flex-direction: column; }
+.fc-sens-row { display: flex; align-items: center; justify-content: space-between; padding: 9px 4px; border-top: 1px solid var(--fc-line); font-size: 13.5px; }
+.fc-sens-row:first-child { border-top: none; }
+.fc-sens-row.base { background: var(--fc-accent-soft); border-radius: 10px; padding: 9px 10px; border-top: none; }
+.fc-sens-rate { color: var(--fc-text-2); font-weight: 600; }
+.fc-sens-amt { font-weight: 800; font-variant-numeric: tabular-nums; }
+
+/* 投資達成予測（目標到達日） */
+.fc-goal-date { flex: none; font-size: 12.5px; font-weight: 800; color: var(--fc-accent); background: var(--fc-accent-soft); border-radius: 999px; padding: 5px 11px; white-space: nowrap; }
+.fc-goal-date.na { color: var(--fc-muted); background: var(--fc-surface-2); }
+
+/* AI分析カード */
+.fc-insight-list { display: flex; flex-direction: column; gap: 10px; }
+.fc-insight-row { display: flex; align-items: flex-start; gap: 9px; font-size: 13.5px; line-height: 1.55; padding: 10px 12px; background: var(--fc-surface-2); border-radius: 12px; }
+.fc-insight-ic { flex: none; color: var(--fc-accent); margin-top: 1px; }

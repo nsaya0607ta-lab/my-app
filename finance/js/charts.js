@@ -157,4 +157,102 @@ export function donutChart(data, opts = {}) {
   return `<svg viewBox="0 0 ${size} ${size}" class="fc-donut">${arcs}${center}</svg>`;
 }
 
+// ===== 複数系列の折れ線グラフ（将来資産シミュレーション：総資産・現金・元本・評価額などの重ね表示） =====
+// seriesList: [{label, color, data:[{label,value}], dashed?}]（表示するものだけ渡す）
+export function multiLineChart(seriesList, opts = {}) {
+  const w = opts.width || 640;
+  const h = opts.height || 240;
+  const pad = { t: 16, r: 14, b: 26, l: 50 };
+  const iw = w - pad.l - pad.r;
+  const ih = h - pad.t - pad.b;
+  const visible = seriesList.filter((s) => s.data && s.data.length);
+  if (!visible.length) return `<svg viewBox="0 0 ${w} ${h}"></svg>`;
+
+  const allVals = visible.flatMap((s) => s.data.map((d) => d.value));
+  let min = Math.min(...allVals, 0);
+  let max = Math.max(...allVals);
+  if (min === max) max = min + 1;
+  const pxr = 0.08 * (max - min);
+  max += pxr;
+  if (min < 0) min -= pxr;
+  const first = visible[0].data;
+  const x = (i) => pad.l + (first.length === 1 ? iw / 2 : (i / (first.length - 1)) * iw);
+  const y = (v) => pad.t + ih - ((v - min) / (max - min)) * ih;
+
+  let grid = '';
+  for (let k = 0; k <= 4; k++) {
+    const v = min + ((max - min) * k) / 4;
+    const yy = y(v);
+    grid += `<line x1="${pad.l}" y1="${yy}" x2="${w - pad.r}" y2="${yy}" class="fc-grid"/>`;
+    grid += `<text x="${pad.l - 6}" y="${yy + 3}" class="fc-axis" text-anchor="end">${fmtShort(v)}</text>`;
+  }
+  let xl = '';
+  const step = Math.ceil(first.length / 6);
+  first.forEach((d, i) => {
+    if (i % step === 0 || i === first.length - 1)
+      xl += `<text x="${x(i)}" y="${h - 8}" class="fc-axis" text-anchor="middle">${d.label}</text>`;
+  });
+  const zeroLine = (min < 0 && max > 0)
+    ? `<line x1="${pad.l}" y1="${y(0)}" x2="${w - pad.r}" y2="${y(0)}" class="fc-grid" stroke-dasharray="3 3"/>` : '';
+
+  let lines = '';
+  for (const s of visible) {
+    const pts = s.data.map((d, i) => `${x(i)},${y(d.value)}`).join(' ');
+    lines += `<polyline points="${pts}" fill="none" stroke="${s.color}" stroke-width="${s.width || 2.5}" stroke-linecap="round" stroke-linejoin="round"${s.dashed ? ' stroke-dasharray="5 4"' : ''}/>`;
+  }
+  return `<svg viewBox="0 0 ${w} ${h}" class="fc-svg fc-multiline" preserveAspectRatio="none">${grid}${zeroLine}${lines}${xl}</svg>`;
+}
+
+// ===== モンテカルロ用ファンチャート（中央値・90%範囲・最悪/最高ケース） =====
+// data: [{label, median, p5, p95, min, max}]
+export function fanChart(data, opts = {}) {
+  const w = opts.width || 640;
+  const h = opts.height || 240;
+  const pad = { t: 16, r: 14, b: 26, l: 50 };
+  const iw = w - pad.l - pad.r;
+  const ih = h - pad.t - pad.b;
+  if (!data.length) return `<svg viewBox="0 0 ${w} ${h}"></svg>`;
+
+  const allVals = data.flatMap((d) => [d.min, d.max]);
+  let min = Math.min(...allVals, 0);
+  let max = Math.max(...allVals);
+  if (min === max) max = min + 1;
+  const pxr = 0.08 * (max - min);
+  max += pxr;
+  if (min < 0) min -= pxr;
+  const x = (i) => pad.l + (data.length === 1 ? iw / 2 : (i / (data.length - 1)) * iw);
+  const y = (v) => pad.t + ih - ((v - min) / (max - min)) * ih;
+  const color = opts.color || '#0a84ff';
+
+  let grid = '';
+  for (let k = 0; k <= 4; k++) {
+    const v = min + ((max - min) * k) / 4;
+    const yy = y(v);
+    grid += `<line x1="${pad.l}" y1="${yy}" x2="${w - pad.r}" y2="${yy}" class="fc-grid"/>`;
+    grid += `<text x="${pad.l - 6}" y="${yy + 3}" class="fc-axis" text-anchor="end">${fmtShort(v)}</text>`;
+  }
+  let xl = '';
+  const step = Math.ceil(data.length / 6);
+  data.forEach((d, i) => {
+    if (i % step === 0 || i === data.length - 1)
+      xl += `<text x="${x(i)}" y="${h - 8}" class="fc-axis" text-anchor="middle">${d.label}</text>`;
+  });
+
+  const top = data.map((d, i) => `${x(i)},${y(d.p95)}`);
+  const bottom = data.map((d, i) => `${x(i)},${y(d.p5)}`).reverse();
+  const bandPath = `M ${top.join(' L ')} L ${bottom.join(' L ')} Z`;
+  const medianPts = data.map((d, i) => `${x(i)},${y(d.median)}`).join(' ');
+  const minPts = data.map((d, i) => `${x(i)},${y(d.min)}`).join(' ');
+  const maxPts = data.map((d, i) => `${x(i)},${y(d.max)}`).join(' ');
+
+  return `<svg viewBox="0 0 ${w} ${h}" class="fc-svg fc-fan" preserveAspectRatio="none">
+    ${grid}
+    <path d="${bandPath}" fill="${color}" opacity="0.16"/>
+    <polyline points="${maxPts}" fill="none" stroke="${color}" stroke-width="1.4" stroke-dasharray="3 4" opacity="0.55"/>
+    <polyline points="${minPts}" fill="none" stroke="${color}" stroke-width="1.4" stroke-dasharray="3 4" opacity="0.55"/>
+    <polyline points="${medianPts}" fill="none" stroke="${color}" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/>
+    ${xl}
+  </svg>`;
+}
+
 export { fmtShort };
