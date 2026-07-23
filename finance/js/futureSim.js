@@ -4,14 +4,14 @@
 // 証券口座の現金・元本・評価額（インデックス／個別株）を月次で前進させて一元的な将来資産を計算する。
 // ダミー値・外部APIは使わず、登録済みデータ（口座・保有銘柄・積立設定・購入予定・futureSim設定）のみから計算する。
 
-import { pad, toISO, parseISO, addMonths, daysInMonth } from './utils.js?v=20260723r';
-import { jstTodayISO } from './recurrence.js?v=20260723r';
-import { buildEvents } from './cashflow.js?v=20260723r';
+import { pad, toISO, parseISO, addMonths, daysInMonth } from './utils.js?v=20260723s';
+import { jstTodayISO } from './recurrence.js?v=20260723s';
+import { buildEvents } from './cashflow.js?v=20260723s';
 import {
   isSecurities, securitiesAccounts, accountHoldings, isIndex, contributionForDate,
   holdingCost, holdingValue,
-} from './securities.js?v=20260723r';
-import { SCENARIO_RATES } from './store.js?v=20260723r';
+} from './securities.js?v=20260723s';
+import { SCENARIO_RATES } from './store.js?v=20260723s';
 
 const n = (v) => Number(v) || 0;
 
@@ -138,6 +138,7 @@ export function project(state, opts = {}) {
       date: dateISO,
       bankCash: Math.round(bank), secCash: Math.round(sec),
       principal: Math.round(principal), valuation: Math.round(valuation),
+      indexPrincipal: Math.round(indexPrincipal), stockPrincipal: Math.round(stockPrincipal),
       indexValuation: Math.round(indexValue), stockValuation: Math.round(stockValue),
       total: Math.round(bank + sec + valuation),
     };
