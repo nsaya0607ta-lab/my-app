@@ -4,14 +4,14 @@
 // 証券口座の現金・元本・評価額（インデックス／個別株）を月次で前進させて一元的な将来資産を計算する。
 // ダミー値・外部APIは使わず、登録済みデータ（口座・保有銘柄・積立設定・購入予定・futureSim設定）のみから計算する。
 
-import { pad, toISO, parseISO, addMonths, daysInMonth } from './utils.js?v=20260723s';
-import { jstTodayISO } from './recurrence.js?v=20260723s';
-import { buildEvents } from './cashflow.js?v=20260723s';
+import { pad, toISO, parseISO, addMonths, daysInMonth } from './utils.js?v=20260723t';
+import { jstTodayISO } from './recurrence.js?v=20260723t';
+import { buildEvents } from './cashflow.js?v=20260723t';
 import {
   isSecurities, securitiesAccounts, accountHoldings, isIndex, contributionForDate,
   holdingCost, holdingValue,
-} from './securities.js?v=20260723s';
-import { SCENARIO_RATES } from './store.js?v=20260723s';
+} from './securities.js?v=20260723t';
+import { SCENARIO_RATES } from './store.js?v=20260723t';
 
 const n = (v) => Number(v) || 0;
 
@@ -122,9 +122,13 @@ export function project(state, opts = {}) {
   //   xout: 証券→銀行の振替出金 / dout: 証券口座からのその他出金 / bank: 銀行残高の増減
   const events = buildEvents(state, from, to);
   const byDay = new Map();
+  //   bank: 銀行残高の純増減 / binc: 銀行の収入 / bexp: 銀行の支出（内訳表示用に収入・支出を分離）
+  //   xin: 銀行→証券の振替入金 / din: 証券口座へのその他入金 /
+  //   xout: 証券→銀行の振替出金 / dout: 証券口座からのその他出金
   const addDay = (date, o) => {
-    const d = byDay.get(date) || { bank: 0, xin: 0, din: 0, xout: 0, dout: 0 };
-    d.bank += o.bank || 0; d.xin += o.xin || 0; d.din += o.din || 0; d.xout += o.xout || 0; d.dout += o.dout || 0;
+    const d = byDay.get(date) || { bank: 0, binc: 0, bexp: 0, xin: 0, din: 0, xout: 0, dout: 0 };
+    d.bank += o.bank || 0; d.binc += o.binc || 0; d.bexp += o.bexp || 0;
+    d.xin += o.xin || 0; d.din += o.din || 0; d.xout += o.xout || 0; d.dout += o.dout || 0;
     byDay.set(date, d);
   };
   for (const e of events) {
@@ -137,22 +141,26 @@ export function project(state, opts = {}) {
       // 銀行→銀行 / 証券→証券 は2口座バケットでは相殺されるため無視
     } else {
       const delta = eventBankSecDelta(state, e); // {bank, sec}
-      if (delta.sec >= 0) addDay(e.date, { bank: delta.bank, din: delta.sec });
-      else addDay(e.date, { bank: delta.bank, dout: -delta.sec });
+      const binc = delta.bank > 0 ? delta.bank : 0, bexp = delta.bank < 0 ? -delta.bank : 0;
+      if (delta.sec >= 0) addDay(e.date, { bank: delta.bank, binc, bexp, din: delta.sec });
+      else addDay(e.date, { bank: delta.bank, binc, bexp, dout: -delta.sec });
     }
   }
   // 将来イベント(住宅購入・旅行など)は銀行資金からの支出
   for (const ev of (fs.events || [])) {
     if (!ev.date || ev.date <= from || ev.date > to) continue;
-    addDay(ev.date, { bank: -n(ev.amount) });
+    addDay(ev.date, { bank: -n(ev.amount), bexp: n(ev.amount) });
   }
 
   const { indexLots, stockLots } = cloneHoldingsState(state);
   let { bank, sec } = initialCash(state);
   const secInitial = sec;
+  const bankInitial = bank;
   let synth = 0; // What-If追加投資の合成枠
   // 証券口座現金の内訳（累計）。secCash = 初期 + 振替入金 + その他入金 − NISA購入 − 個別株購入 − 振替出金 − その他出金
   let cumXferIn = 0, cumDepositIn = 0, cumNisaBuy = 0, cumStockBuy = 0, cumXferOut = 0, cumWithdraw = 0;
+  // 銀行残高の内訳（累計）。bankCash = 初期 + 収入 − 支出 − 証券への振替(cumXferIn) + 証券からの振替(cumXferOut)
+  let cumBankIncome = 0, cumBankExpense = 0;
   const shortfalls = []; // 現金不足で実行できなかった購入 [{date, kind, name, amount, deficit}]
 
   const rateFor = (holdingRate) => (rateOverride != null ? rateOverride : (useOverride ? scenarioRate(fs) : holdingRate));
@@ -175,6 +183,10 @@ export function project(state, opts = {}) {
       secXferIn: Math.round(cumXferIn), secDepositIn: Math.round(cumDepositIn),
       secNisaBuy: Math.round(cumNisaBuy), secStockBuy: Math.round(cumStockBuy),
       secXferOut: Math.round(cumXferOut), secWithdraw: Math.round(cumWithdraw),
+      // 銀行残高の内訳（タップで確認できるように保持）
+      bankInitial: Math.round(bankInitial),
+      bankIncome: Math.round(cumBankIncome), bankExpense: Math.round(cumBankExpense),
+      bankXferToSec: Math.round(cumXferIn), bankXferFromSec: Math.round(cumXferOut),
     };
   };
 
@@ -225,6 +237,7 @@ export function project(state, opts = {}) {
         if (dd.xout) { sec -= dd.xout; cumXferOut += dd.xout; }
         if (dd.dout) { sec -= dd.dout; cumWithdraw += dd.dout; }
         bank += dd.bank;
+        cumBankIncome += dd.binc; cumBankExpense += dd.bexp;
       }
     }
 

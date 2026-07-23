@@ -2,13 +2,13 @@
 // 設計方針: すべてのデータはこの1オブジェクトに集約し、mutate → save → emit。
 // 将来の証券口座連携などは accounts の type と外部同期モジュールを足すだけで拡張可能。
 
-import { uid, pad } from './utils.js?v=20260723s';
-import { settlementDate } from './calc.js?v=20260723s';
+import { uid, pad } from './utils.js?v=20260723t';
+import { settlementDate } from './calc.js?v=20260723t';
 import {
   recurringActiveOn, monthlyOccurrences, jstTodayISO, dedupeKey,
   nextRecurringDate, nextSettlementDate,
-} from './recurrence.js?v=20260723s';
-import { isSecurities, hasSecurities, recomputeAccount, performanceSnapshot, jstNowISO } from './securities.js?v=20260723s';
+} from './recurrence.js?v=20260723t';
+import { isSecurities, hasSecurities, recomputeAccount, performanceSnapshot, jstNowISO } from './securities.js?v=20260723t';
 
 const KEY = 'finance_app_v2';
 const SCHEMA = 1;
@@ -268,12 +268,16 @@ function migrate(data) {
           h.plannedPurchases ||= []; // 今後の購入予定 {id,date,amount,shares,annualReturn,holdYears}
         }
       }
-      // 積立設定に将来シミュレーション用の頻度・停止/再開日・毎月積立額を補完
+      // 積立設定に将来シミュレーション用の頻度・停止/再開日・毎月積立額・土日祝日設定を補完
       for (const acm of a.accumulations || []) {
         if (acm.frequency === undefined) acm.frequency = 'daily';
         if (acm.monthlyAmount === undefined) acm.monthlyAmount = Math.round((Number(acm.dailyAmount) || 0) * 30);
         if (acm.pauseStart === undefined) acm.pauseStart = null;
         if (acm.pauseEnd === undefined) acm.pauseEnd = null;
+        // 土日祝日の実行設定。既存データは従来動作（毎日実行）を維持するため true。
+        if (acm.includeHolidays === undefined) acm.includeHolidays = true;
+        // 非営業日の扱い: 'skip'（その日はスキップ）| 'carryover'（次の営業日に繰り越す）
+        if (acm.nonBusinessDay === undefined) acm.nonBusinessDay = 'skip';
       }
       recomputeAccount(a);      // balance = 現金 + 評価額 に同期
     }

@@ -1,17 +1,17 @@
 // app.js — ルーティング・画面描画・フォーム・操作の統合レイヤー
-import * as S from './store.js?v=20260723s';
-import * as C from './calc.js?v=20260723s';
-import * as CF from './cashflow.js?v=20260723s';
-import * as Sec from './securities.js?v=20260723s';
-import * as FS from './futureSim.js?v=20260723s';
-import * as Perf from './performance.js?v=20260723s';
-import { lineChart, barChart, groupedBarChart, donutChart, multiLineChart, fanChart, perfChart } from './charts.js?v=20260723s';
-import { iconHtml, icon } from './icons.js?v=20260723s';
+import * as S from './store.js?v=20260723t';
+import * as C from './calc.js?v=20260723t';
+import * as CF from './cashflow.js?v=20260723t';
+import * as Sec from './securities.js?v=20260723t';
+import * as FS from './futureSim.js?v=20260723t';
+import * as Perf from './performance.js?v=20260723t';
+import { lineChart, barChart, groupedBarChart, donutChart, multiLineChart, fanChart, perfChart } from './charts.js?v=20260723t';
+import { iconHtml, icon } from './icons.js?v=20260723t';
 import {
   el, qs, qsa, yen, yenMasked, num, today, toISO, parseISO, ym, fmtDate, fmtDateLong,
   fmtMonth, addMonths, resolveDay, pad, weekdayName, haptic, escapeHtml, uid,
-} from './utils.js?v=20260723s';
-import { nextRecurringDate, nextSettlementDate, isMonthEndDay } from './recurrence.js?v=20260723s';
+} from './utils.js?v=20260723t';
+import { nextRecurringDate, nextSettlementDate, isMonthEndDay } from './recurrence.js?v=20260723t';
 
 // ---- 画面ローカル状態（データではないUI状態） ----
 const ui = {
@@ -815,27 +815,35 @@ function indexGroup(st, acc, funds, frame) {
 
 // 積立設定＋積立履歴カード
 function accumulationCard(st, acc) {
-  const accums = acc.accumulations || [];
+  const accums = (acc.accumulations || []).slice()
+    .sort((a, b) => (a.startDate || '').localeCompare(b.startDate || '')); // 期間を時系列で一覧表示
+  const frameOf = (holdingId) => { const h = Sec.accountHoldings(acc).find((x) => x.id === holdingId); return h ? Sec.nisaLabel(h.nisaFrame || 'growth') : ''; };
   const history = (acc.accumHistory || []).slice().sort((a, b) => (b.date + b.id).localeCompare(a.date + a.id)).slice(0, 12);
   const setRows = accums.length ? el('div', { class: 'fc-list' }, ...accums.map((a) => {
     const h = Sec.accountHoldings(acc).find((x) => x.id === a.holdingId);
     const range = `${a.startDate ? fmtDate(a.startDate).replace(/\(.\)/, '') : '開始日未設定'}${a.endDate ? '〜' + fmtDate(a.endDate).replace(/\(.\)/, '') : '〜'}`;
     const freqLabel = { daily: '毎日', weekly: '毎週', monthly: '毎月' }[a.frequency || 'daily'];
     const amt = a.frequency === 'monthly' ? a.monthlyAmount : a.dailyAmount;
+    const holInfo = a.includeHolidays === false ? (a.nonBusinessDay === 'carryover' ? '土日祝は翌営業日' : '土日祝は除く') : '土日祝も実行';
     const td = today();
     const paused = !!(a.pauseStart && a.pauseStart <= td && (!a.pauseEnd || a.pauseEnd >= td));
     return el('div', { class: 'fc-row tap', onclick: () => accumulationForm(acc, a) },
       el('div', { class: 'fc-row-ic', html: iconHtml('repeat', { size: 18 }) }),
       el('div', { class: 'fc-row-main' },
-        el('div', { class: 'fc-row-title', text: h ? h.name : '（対象銘柄なし）' }),
-        el('div', { class: 'fc-row-sub', text: `${freqLabel} ${yen(amt)}・${range}${paused ? '・一時停止中' : ''}` })),
+        el('div', { class: 'fc-row-title' },
+          el('span', { text: h ? h.name : '（対象銘柄なし）' }),
+          h ? el('span', { class: 'fc-frame-tag', text: frameOf(a.holdingId) }) : ''),
+        el('div', { class: 'fc-row-sub', text: `${freqLabel} ${yen(amt)}・${range}` }),
+        el('div', { class: 'fc-row-sub', text: `${holInfo}${paused ? '・一時停止中' : ''}` })),
       el('span', { class: 'fc-accum-state ' + (a.enabled !== false && !paused ? 'on' : 'off'), text: a.enabled !== false ? (paused ? '停止中' : 'ON') : 'OFF' }));
   })) : el('p', { class: 'fc-empty', text: 'インデックスの積立を登録できます（日本時間23:00に自動実行）。' });
 
   const histRows = history.length ? el('div', { class: 'fc-list' }, ...history.map((h) =>
     el('div', { class: 'fc-row' },
       el('div', { class: 'fc-row-main' },
-        el('div', { class: 'fc-row-title', text: h.holdingName || '積立' }),
+        el('div', { class: 'fc-row-title' },
+          el('span', { text: h.holdingName || '積立' }),
+          frameOf(h.holdingId) ? el('span', { class: 'fc-frame-tag', text: frameOf(h.holdingId) }) : ''),
         el('div', { class: 'fc-row-sub', text: `${fmtDate(h.date).replace(/\(.\)/, '')}・${yen(h.amount)}` })),
       el('span', { class: 'fc-accum-result ' + (h.status === 'success' ? 'ok' : 'ng'), text: h.status === 'success' ? '成功' : `失敗${h.reason ? '（' + h.reason + '）' : ''}` })))
   ) : el('p', { class: 'fc-empty', text: 'まだ積立履歴はありません' });
@@ -1026,7 +1034,8 @@ function accumulationForm(acc, a) {
   const isNew = !a;
   const indexHoldings = Sec.accountHoldings(acc).filter(Sec.isIndex);
   if (!indexHoldings.length) { modal('積立設定', el('p', { class: 'fc-empty', text: '先に「銘柄を追加」でインデックス銘柄を登録してください。' }), {}); return; }
-  const sel = selectEl(indexHoldings.map((h) => ({ value: h.id, label: h.name })), a?.holdingId || indexHoldings[0].id);
+  // 同じ銘柄でも投資枠が違えば別銘柄として管理するため、ファンド名に投資枠を併記する。
+  const sel = selectEl(indexHoldings.map((h) => ({ value: h.id, label: `${h.name}（${Sec.nisaLabel(h.nisaFrame || 'growth')}）` })), a?.holdingId || indexHoldings[0].id);
   let freq = a?.frequency || 'daily';
   const freqSeg = el('div', { class: 'fc-seg' });
   const amount = inputEl({ type: 'number', inputmode: 'numeric', placeholder: '例）1000', value: a?.dailyAmount ?? '' });
@@ -1039,6 +1048,29 @@ function accumulationForm(acc, a) {
   const enRow = el('div', { class: 'fc-field-toggle' });
   const drawEn = () => { enRow.innerHTML = ''; enRow.append(el('div', {}, el('div', { class: 'fc-field-lab', text: '積立 ON/OFF' }), el('div', { class: 'fc-field-hint', text: 'ONの設定のみ実行されます（実際の自動積立は日本時間23:00に処理されます）' })), toggle(enabled, () => { enabled = !enabled; drawEn(); })); };
   drawEn();
+
+  // 土日祝日の実行設定（新規は既定OFF＝土日祝日は積立しない。既存は保存値を尊重）。
+  let includeHolidays = a ? a.includeHolidays !== false : false;
+  let nonBiz = a?.nonBusinessDay || 'skip';
+  const holRow = el('div', { class: 'fc-field-toggle' });
+  const nonBizSeg = el('div', { class: 'fc-seg' });
+  const nonBizWrap = el('div', {});
+  const drawNonBizSeg = () => {
+    nonBizSeg.innerHTML = '';
+    for (const [v, l] of [['skip', 'スキップ'], ['carryover', '翌営業日に繰り越す']])
+      nonBizSeg.append(el('button', { class: 'fc-seg-btn' + (nonBiz === v ? ' on' : ''), type: 'button', text: l, onclick: () => { nonBiz = v; drawNonBizSeg(); } }));
+  };
+  const drawNonBizWrap = () => {
+    nonBizWrap.innerHTML = '';
+    if (!includeHolidays) nonBizWrap.append(field('非営業日（土日祝日）の扱い', nonBizSeg));
+  };
+  const drawHol = () => {
+    holRow.innerHTML = '';
+    holRow.append(el('div', {}, el('div', { class: 'fc-field-lab', text: '土日祝日も積立を実行する' }),
+      el('div', { class: 'fc-field-hint', text: 'OFFにすると土曜・日曜・日本の祝日（年末年始を含む）は積立しません' })),
+      toggle(includeHolidays, () => { includeHolidays = !includeHolidays; drawHol(); drawNonBizWrap(); }));
+  };
+  drawNonBizSeg(); drawHol(); drawNonBizWrap();
 
   const amountWrap = el('div', {});
   const drawAmount = () => {
@@ -1056,9 +1088,11 @@ function accumulationForm(acc, a) {
   const body = el('div', {},
     field('積立対象（インデックス）', sel),
     field('積立頻度', freqSeg), amountWrap,
-    field('積立開始日', startDate), optionalDateField('積立終了日（任意）', endDate),
+    field('適用開始日', startDate), optionalDateField('適用終了日（任意）', endDate),
+    holRow, nonBizWrap,
     optionalDateField('積立停止日（任意）', pauseStart), optionalDateField('積立再開日（任意）', pauseEnd),
     el('p', { class: 'fc-field-hint', text: '積立停止日〜積立再開日の間は積立を一時停止します（積立再開日を空欄にすると停止日以降ずっと停止します）。' }),
+    el('p', { class: 'fc-field-hint', text: '同じ銘柄で期間を分けて登録すると、期間ごとに積立金額を変更できます（期間の重複はできません）。' }),
     enRow,
     !isNew && el('button', {
       class: 'fc-btn danger block', type: 'button', text: 'この積立設定を削除',
@@ -1074,6 +1108,14 @@ function accumulationForm(acc, a) {
       if (!amt || amt <= 0) return toast('積立金額を入力してください', 'alert');
       if (startDate.value && endDate.value && endDate.value < startDate.value) return toast('終了日は開始日より後にしてください', 'alert');
       if (pauseStart.value && pauseEnd.value && pauseEnd.value < pauseStart.value) return toast('積立再開日は積立停止日より後にしてください', 'alert');
+      // 同じ銘柄で日付範囲が重複する積立設定を禁止（期間ごとに1つ）。空欄は無期限とみなす。
+      const s0 = startDate.value || '0000-01-01', e0 = endDate.value || '9999-12-31';
+      const overlap = (acc.accumulations || []).some((x) => {
+        if (x.id === a?.id || x.holdingId !== sel.value) return false;
+        const s1 = x.startDate || '0000-01-01', e1 = x.endDate || '9999-12-31';
+        return s0 <= e1 && s1 <= e0; // 期間が重なる
+      });
+      if (overlap) return toast('同じ銘柄で期間が重複する積立設定があります', 'alert');
       S.update((s) => {
         const ac = s.accounts.find((x) => x.id === acc.id);
         const rec = {
@@ -1082,6 +1124,7 @@ function accumulationForm(acc, a) {
           monthlyAmount: freq === 'monthly' ? amt : (Number(monthlyAmount.value) || 0),
           startDate: startDate.value || null, endDate: endDate.value || null,
           pauseStart: pauseStart.value || null, pauseEnd: pauseEnd.value || null,
+          includeHolidays, nonBusinessDay: nonBiz,
           enabled,
         };
         if (isNew) ac.accumulations.push({ id: uid('acm'), ...rec });
@@ -2192,17 +2235,21 @@ function futureDateLookupCard(state, fs) {
     const pt = FS.pointAt(proj30.series, iso);
     const profitRate = pt.principal > 0 ? ((pt.valuation - pt.principal) / pt.principal) * 100 : null;
     result.innerHTML = '';
-    // 証券口座現金の行はタップで内訳（現在残高・振替累計・購入累計）を表示
-    const secRow = kv('証券口座現金', secret ? '＊＊＊' : yen(pt.secCash));
-    secRow.classList.add('tap');
-    secRow.append(el('span', { class: 'fc-kv-chev', html: iconHtml('chevronRight', { size: 14 }) }));
-    secRow.addEventListener('click', () => secCashBreakdownModal(pt, fmtDateLong(pt.date)));
+    const dateLabel = fmtDateLong(pt.date);
+    // タップで内訳を表示できる行（銀行残高・証券口座現金・元本・評価額・合計資産）
+    const tapRow = (label, val, onTap) => {
+      const row = kv(label, secret ? '＊＊＊' : yen(val));
+      row.classList.add('tap');
+      row.append(el('span', { class: 'fc-kv-chev', html: iconHtml('chevronRight', { size: 14 }) }));
+      row.addEventListener('click', onTap);
+      return row;
+    };
     result.append(el('div', { class: 'fc-kv' },
-      kv('銀行残高', secret ? '＊＊＊' : yen(pt.bankCash)),
-      secRow,
-      kv('元本', secret ? '＊＊＊' : yen(pt.principal)),
-      kv('評価額', secret ? '＊＊＊' : yen(pt.valuation)),
-      kv('合計資産', secret ? '＊＊＊' : yen(pt.total)),
+      tapRow('銀行残高', pt.bankCash, () => bankBreakdownModal(pt, dateLabel)),
+      tapRow('証券口座現金', pt.secCash, () => secCashBreakdownModal(pt, dateLabel)),
+      tapRow('元本', pt.principal, () => principalBreakdownModal(pt, dateLabel)),
+      tapRow('評価額', pt.valuation, () => valuationBreakdownModal(pt, dateLabel)),
+      tapRow('合計資産', pt.total, () => totalBreakdownModal(pt, dateLabel)),
       kv('利益率', profitRate == null ? '—' : `${profitRate >= 0 ? '+' : ''}${profitRate.toFixed(1)}%`)));
   };
   dateInp.addEventListener('change', () => { ui.futureCheckDate = dateInp.value; draw(); });
@@ -2210,11 +2257,39 @@ function futureDateLookupCard(state, fs) {
   return card(sectionTitle('資産推移を確認'), field('日付を選択', dateInp), result);
 }
 
-// 証券口座現金の内訳モーダル（資金の流れ: 初期残高＋振替入金＋その他入金−NISA購入−個別株購入−振替出金）
-function secCashBreakdownModal(pt, dateLabel) {
+// 残高内訳モーダルの共通描画（現在残高＋増減の累計＝選択日残高）。
+// rows: [ラベル, 符号付き金額, negフラグ]。hint: 補足説明。resultLabel/resultVal: 選択日残高。
+function balanceBreakdownModal(title, resultLabel, resultVal, hint, rows) {
   const secret = S.getState().settings.secret;
-  const money = (v) => (secret ? '＊＊＊' : yen(v, { sign: false }));
-  const rows = [
+  const money = (v) => (secret ? '＊＊＊' : yen(Math.abs(v)));
+  const shown = rows.filter(([, v]) => Math.abs(Number(v) || 0) > 0);
+  const body = el('div', {},
+    el('div', { class: 'fc-perf-latest-rate' }, el('span', { text: resultLabel }),
+      el('b', { class: resultVal < 0 ? 'neg' : '', text: secret ? '＊＊＊' : yen(resultVal) })),
+    hint ? el('p', { class: 'fc-field-hint', text: hint }) : '',
+    el('div', { class: 'fc-kv' }, ...shown.map(([label, v, neg]) =>
+      el('div', { class: 'fc-kv-row' }, el('span', { text: label }),
+        el('b', { class: neg ? 'neg' : '', text: secret ? '＊＊＊' : (v < 0 ? '−' : '') + money(v) })))),
+  );
+  modal(title, body, {});
+}
+
+// 銀行残高の内訳（現在残高＋収入−支出−証券への振替＋証券からの振替＝選択日残高）
+function bankBreakdownModal(pt, dateLabel) {
+  balanceBreakdownModal(`銀行残高の内訳（${dateLabel}）`, '選択日の銀行残高', pt.bankCash,
+    '銀行残高は収入で増え、支出で減ります。証券口座への振替は銀行残高のみを減らし、同額が証券口座現金へ移ります。投資の評価益や投資元本は銀行残高には含めません。', [
+    ['現在残高', pt.bankInitial, false],
+    ['収入累計', pt.bankIncome, false],
+    ['支出累計', -pt.bankExpense, true],
+    ['証券口座への振替累計', -pt.bankXferToSec, true],
+    ['証券口座からの振替累計', pt.bankXferFromSec, false],
+  ]);
+}
+
+// 証券口座現金の内訳（初期残高＋振替入金＋その他入金−NISA購入−個別株購入−振替出金）
+function secCashBreakdownModal(pt, dateLabel) {
+  balanceBreakdownModal(`証券口座現金の内訳（${dateLabel}）`, '選択日の証券口座現金', pt.secCash,
+    '銀行→証券の振替で入金し、NISA積立・個別株購入で投資元本へ移動します。振替や購入は資産間の移動のため合計資産は変わりません。', [
     ['現在残高', pt.secCashInitial, false],
     ['銀行からの振替累計', pt.secXferIn, false],
     ['その他の入金累計', pt.secDepositIn, false],
@@ -2222,16 +2297,35 @@ function secCashBreakdownModal(pt, dateLabel) {
     ['個別株購入累計', -pt.secStockBuy, true],
     ['証券→銀行の振替累計', -pt.secXferOut, true],
     ['その他の出金累計', -pt.secWithdraw, true],
-  ].filter(([, v]) => Math.abs(Number(v) || 0) > 0);
-  const body = el('div', {},
-    el('div', { class: 'fc-perf-latest-rate' }, el('span', { text: '証券口座現金' }),
-      el('b', { class: pt.secCash < 0 ? 'neg' : '', text: secret ? '＊＊＊' : yen(pt.secCash) })),
-    el('p', { class: 'fc-field-hint', text: '銀行→証券の振替で入金し、NISA積立・個別株購入で投資元本へ移動します。振替や購入は資産間の移動のため合計資産は変わりません。' }),
-    el('div', { class: 'fc-kv' }, ...rows.map(([label, v, neg]) =>
-      el('div', { class: 'fc-kv-row' }, el('span', { text: label }),
-        el('b', { class: neg ? 'neg' : '', text: (secret ? '＊＊＊' : (v < 0 ? '−' : '') + money(Math.abs(v))) })))),
-  );
-  modal(`証券口座現金の内訳（${dateLabel}）`, body, {});
+  ]);
+}
+
+// 元本の内訳（NISA元本＋個別株元本）。元本は評価額とは別の参考情報で、合計資産へは加算しない。
+function principalBreakdownModal(pt, dateLabel) {
+  balanceBreakdownModal(`元本の内訳（${dateLabel}）`, '選択日の投資元本', pt.principal,
+    '元本は購入時に証券口座現金から移動した投資額の累計です。評価額とは別の参考値で、二重計上を避けるため合計資産には加算しません。', [
+    ['NISA元本', pt.indexPrincipal, false],
+    ['個別株元本', pt.stockPrincipal, false],
+  ]);
+}
+
+// 評価額の内訳（NISA評価額＋個別株評価額）
+function valuationBreakdownModal(pt, dateLabel) {
+  balanceBreakdownModal(`評価額の内訳（${dateLabel}）`, '選択日の投資評価額', pt.valuation,
+    '評価額は保有銘柄の時価合計です。合計資産にはこの評価額を加算します（元本は加算しません）。', [
+    ['NISA評価額', pt.indexValuation, false],
+    ['個別株評価額', pt.stockValuation, false],
+  ]);
+}
+
+// 合計資産の内訳（銀行残高＋証券口座現金＋評価額。元本は二重計上を避けるため含めない）
+function totalBreakdownModal(pt, dateLabel) {
+  balanceBreakdownModal(`合計資産の内訳（${dateLabel}）`, '選択日の合計資産', pt.total,
+    '合計資産＝銀行残高＋証券口座現金＋投資評価額。投資元本は評価額と重複するため合計資産へは加算しません。', [
+    ['銀行残高', pt.bankCash, false],
+    ['証券口座現金', pt.secCash, false],
+    ['投資評価額', pt.valuation, false],
+  ]);
 }
 
 // ---- シナリオ比較（保守・通常・強気・自由設定） ----
