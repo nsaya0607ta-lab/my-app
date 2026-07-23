@@ -180,10 +180,16 @@ export function recurringForMonth(state, ymStr) {
 }
 
 // ===== ③ 可処分資金 / 損益計算書 =====
+// 今月の収支 = 今月の収入 − 今月の支出。生活上の収入・支出だけで計算する。
+// 証券口座の評価額変動（株式・インデックスの評価損益）、元本の増減、銀行⇔証券の振替、
+// 証券口座内の現金→元本への移動（積立・購入）は、収入にも支出にも一切含めない。
+// これらは balance / cash / holdings を書き換えるだけで transactions・recurring を作らないため、
+// 下の集計（transactions と recurring のみを参照）に自然と入らない。
+// 売却益・配当金も自動集計はせず、利用者が income 取引として明示的に登録した分だけ収入へ反映する。
 export function monthlyPL(state, ymStr) {
   const inMonth = (iso) => ym(parseISO(iso)) === ymStr;
 
-  // 実績取引
+  // 実績取引（利用者が登録した収入・支出のみ。証券の評価損益は含まれない）
   const txIncome = state.transactions.filter((t) => t.type === 'income' && inMonth(t.date));
   const txExpense = state.transactions.filter((t) => t.type === 'expense' && inMonth(t.date));
 

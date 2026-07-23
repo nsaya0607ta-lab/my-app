@@ -367,6 +367,11 @@ function renderDashboard() {
     ),
   ));
 
+  // --- 投資状況（証券口座を保有している場合のみ表示） ---
+  // 今月の収支（生活の収入・支出）とは明確に分けて表示する。投資の評価損益・利益率は
+  // 収支には一切含めず、この投資状況カードと証券口座画面・合計資産の内訳にのみ反映する。
+  if (Sec.hasSecurities(st)) wrap.append(renderInvestmentStatus(st, secret));
+
   // --- 次回引落予定 ---
   const upcoming = C.upcomingSettlements(st);
   wrap.append(card(
@@ -411,6 +416,35 @@ function heroProfit(st, secret) {
     el('div', { class: 'fc-hp-col' },
       el('span', { class: 'fc-hp-lab', text: '利益率' }),
       el('span', { class: 'fc-hp-val ' + cls, text: secret ? '＊＊' : rateText })),
+  );
+}
+
+// ホームの「投資状況」カード（元本 / 評価額 / 評価損益 / 利益率）。
+// 今月の収支とは独立した指標で、株価やインデックスの評価額が変動しても収支には影響しない。
+// 評価損益・利益率はこの投資状況・証券口座画面・合計資産の内訳にのみ反映する。
+function renderInvestmentStatus(st, secret) {
+  const p = Sec.portfolio(st);
+  const cls = p.profit === 0 ? 'flat' : p.profit > 0 ? 'pos' : 'neg';
+  const rateText = p.profitRate == null ? '—' : `${p.profitRate >= 0 ? '+' : ''}${p.profitRate.toFixed(2)}%`;
+  const money = (v, opts) => (secret ? '＊＊＊' : yen(v, opts));
+  const firstSec = Sec.securitiesAccounts(st)[0];
+  const linkArrow = () => el('span', { class: 'fc-link-arrow', html: iconHtml('chevronRight', { size: 15 }) });
+  return card(
+    el('div', { class: 'fc-disp-head' },
+      el('span', { class: 'fc-disp-title', text: '投資状況' }),
+      firstSec ? el('button', { class: 'fc-link', type: 'button', onclick: () => openAccountLedger(firstSec.id) }, '証券', linkArrow()) : ''),
+    el('div', { class: 'fc-sec-grid' },
+      secBox('元本', money(p.principal)),
+      secBox('評価額', money(p.valuation)),
+    ),
+    el('div', { class: 'fc-sec-profit ' + cls },
+      el('div', { class: 'fc-sec-profit-col' },
+        el('span', { class: 'fc-sec-profit-lab', text: '評価損益' }),
+        el('span', { class: 'fc-sec-profit-val', text: money(p.profit, { sign: p.profit > 0 }) })),
+      el('div', { class: 'fc-sec-profit-col' },
+        el('span', { class: 'fc-sec-profit-lab', text: '利益率' }),
+        el('span', { class: 'fc-sec-profit-val', text: secret ? '＊＊' : rateText }))),
+    el('p', { class: 'fc-note', text: '投資の評価損益は今月の収支には含まれません。売却益・配当金は収入として登録した場合のみ収支へ反映されます。' }),
   );
 }
 
