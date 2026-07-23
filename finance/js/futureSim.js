@@ -97,8 +97,9 @@ function isSecAcc(state, id) {
 
 // ===== ① 統合将来資産シミュレーション（日次キャッシュフロー） =====
 // opts.rateOverride: 指定するとシナリオ設定に関わらず全銘柄へこの年利(%)を一律適用(シナリオ比較・感度分析・目標探索用)
-// opts.extraMonthlyInvestment: 「積立を毎月+n円にしたら」という簡易What-Ifの追加投資額(証券口座現金の残高には影響させず、
-//   銀行資金からその場で追加投資する想定で bankCash を減らし、評価額(合成枠)へ積み上げる)
+// opts.extraMonthlyInvestment: 「積立を毎月+n円にしたら」という簡易What-Ifの追加投資額。
+//   投資購入で銀行残高をマイナスにしない方針のため、銀行資金・証券口座現金は減らさず、
+//   仮定の追加投資ぶん(合成枠 synth)を積み増して評価額・総資産の伸びだけを試算する。
 // opts.logAccruals: 選択日内訳表示用に、NISA積立が発生した日の履歴(accrualLog)を1件ずつ記録する。
 //
 // 資金の流れ: 銀行口座 →(振替)→ 証券口座現金 →(NISA/個別株の購入)→ 投資元本。
@@ -159,8 +160,14 @@ function createProjection(state, opts, from, to) {
   let cumXferIn = 0, cumDepositIn = 0, cumNisaBuy = 0, cumStockBuy = 0, cumXferOut = 0, cumWithdraw = 0;
   // 銀行残高の内訳（累計）。bankCash = 初期 + 収入 − 支出 − 証券への振替(cumXferIn) + 証券からの振替(cumXferOut)
   let cumBankIncome = 0, cumBankExpense = 0;
-  const shortfalls = []; // 現金不足で実行できなかった購入 [{date, kind, name, amount, deficit}]
+  const shortfalls = []; // 現金不足で実行できなかった購入 [{date, month, kind, name, amount, deficit}]
   const accrualLog = []; // 積立・振替の日次履歴（選択日内訳のタイムライン用）
+  // 月別の集計（証券口座現金不足の警告表示用）。ym('YYYY-MM') ごとに
+  //   deposit: 証券口座への入金予定額（銀行→証券の振替＋その他入金）
+  //   invest : 投資購入予定額（NISA積立＋個別株購入、資金の有無に関わらず「予定額」を計上）
+  const monthDeposit = new Map();
+  const monthInvest = new Map();
+  const addMonth = (map, ym, v) => { if (v) map.set(ym, (map.get(ym) || 0) + v); };
 
   const rateFor = (holdingRate) => (rateOverride != null ? rateOverride : (useOverride ? scenarioRate(fs) : holdingRate));
 
@@ -192,11 +199,12 @@ function createProjection(state, opts, from, to) {
   // 1日分のキャッシュフローを反映（同日は 入金→積立→株購入→出金 の順）。呼び出し側で from<iso<=to を保証する。
   const stepDay = (iso) => {
     const dd = byDay.get(iso);
+    const ym = iso.slice(0, 7);
 
     // 1) 銀行→証券の振替入金 / 2) 証券口座へのその他入金
     if (dd) {
-      if (dd.xin) { sec += dd.xin; cumXferIn += dd.xin; if (logAccruals) accrualLog.push({ date: iso, kind: 'transfer', name: '銀行→証券の振替', amount: dd.xin, secAfter: Math.round(sec) }); }
-      if (dd.din) { sec += dd.din; cumDepositIn += dd.din; if (logAccruals) accrualLog.push({ date: iso, kind: 'deposit', name: '証券口座への入金', amount: dd.din, secAfter: Math.round(sec) }); }
+      if (dd.xin) { sec += dd.xin; cumXferIn += dd.xin; addMonth(monthDeposit, ym, dd.xin); if (logAccruals) accrualLog.push({ date: iso, kind: 'transfer', name: '銀行→証券の振替', amount: dd.xin, secAfter: Math.round(sec) }); }
+      if (dd.din) { sec += dd.din; cumDepositIn += dd.din; addMonth(monthDeposit, ym, dd.din); if (logAccruals) accrualLog.push({ date: iso, kind: 'deposit', name: '証券口座への入金', amount: dd.din, secAfter: Math.round(sec) }); }
     }
 
     // 3) NISA積立購入（1日あたりの積立額のみ証券口座現金から減額。現金不足なら実行せず記録）
@@ -205,11 +213,12 @@ function createProjection(state, opts, from, to) {
       for (const a of l.accums) {
         const amt = contributionForDate(a, iso);
         if (amt <= 0) continue;
+        addMonth(monthInvest, ym, amt); // 資金の有無に関わらず「その月の投資予定額」として集計
         if (sec >= amt) {
           sec -= amt; l.principal += amt; l.value += amt; cumNisaBuy += amt;
           if (logAccruals) accrualLog.push({ date: iso, kind: 'accumulation', name: l.name, amount: -amt, secAfter: Math.round(sec) });
         } else {
-          shortfalls.push({ date: iso, kind: 'accumulation', name: l.name, amount: amt, deficit: Math.round(amt - sec) });
+          shortfalls.push({ date: iso, month: ym, kind: 'accumulation', name: l.name, amount: amt, deficit: Math.round(amt - sec) });
         }
       }
     }
@@ -220,11 +229,12 @@ function createProjection(state, opts, from, to) {
         if (p._applied || !p.date || p.date !== iso || p.date <= from) continue;
         const amt = n(p.amount);
         if (amt <= 0) { p._applied = true; continue; }
+        addMonth(monthInvest, ym, amt); // 資金の有無に関わらず「その月の投資予定額」として集計
         if (sec >= amt) {
           sec -= amt; l.principal += amt; l.value += amt; cumStockBuy += amt; p._applied = true;
           if (logAccruals) accrualLog.push({ date: iso, kind: 'purchase', name: l.name, amount: -amt, secAfter: Math.round(sec) });
         } else {
-          shortfalls.push({ date: iso, kind: 'purchase', name: l.name, amount: amt, deficit: Math.round(amt - sec) });
+          shortfalls.push({ date: iso, month: ym, kind: 'purchase', name: l.name, amount: amt, deficit: Math.round(amt - sec) });
         }
       }
     }
@@ -247,9 +257,11 @@ function createProjection(state, opts, from, to) {
         if (l.dividendReinvest) l.value += div; else bank += div;
       }
     }
-    // 5') What-If 追加投資(任意・銀行資金から合成枠へ)
+    // 5') What-If 追加投資（任意）。「毎月これだけ多く積立できたら」という仮定の追加投資。
+    //     投資購入で銀行残高をマイナスにしない方針のため、銀行・証券口座現金は減らさず、
+    //     追加投資ぶん(合成枠 synth)だけを積み増して評価額・総資産の伸びを試算する。
     if (extra > 0) {
-      bank -= extra; synth += extra;
+      synth += extra;
       synth += synth * (rateFor(scenarioRate(fs)) / 100 / 12);
     }
     // 6') 評価額の成長(想定年利・単利/複利)
@@ -257,7 +269,7 @@ function createProjection(state, opts, from, to) {
     for (const l of stockLots) growLot(l, rateFor(l.rate), l.mode);
   };
 
-  return { snapshot, stepDay, stepMonthEnd, shortfalls, accrualLog };
+  return { snapshot, stepDay, stepMonthEnd, shortfalls, accrualLog, monthDeposit, monthInvest };
 }
 
 export function project(state, opts = {}) {
@@ -288,7 +300,10 @@ export function project(state, opts = {}) {
     series.push(sim.snapshot(pointISO));
   }
 
-  return { from, to, years, series, shortfalls: sim.shortfalls };
+  return {
+    from, to, years, series, shortfalls: sim.shortfalls,
+    monthDeposit: Object.fromEntries(sim.monthDeposit), monthInvest: Object.fromEntries(sim.monthInvest),
+  };
 }
 
 // ===== 選択日の精密スナップショット（日次で証券口座現金・元本・評価額を計算） =====
@@ -357,6 +372,33 @@ export function securitiesCashPlan(state) {
 // 証券口座現金の不足（購入を実行できなかった最初の予定）。無ければ null。
 export function firstSecShortfall(proj) {
   return proj && proj.shortfalls && proj.shortfalls.length ? proj.shortfalls[0] : null;
+}
+
+// 証券口座現金の不足レポート（警告表示用）。
+// NISA積立・個別株購入が「実行日時点の証券口座現金」で賄えなかった最初の予定を、
+// その月の入金予定額・投資購入予定額・必要な追加振替額とともに返す（無ければ null）。
+// 資金不足の判定は銀行残高ではなく証券口座現金のみを参照する。
+//   ・個別株の購入予定が現金不足 → 常に警告対象
+//   ・NISA積立の不足 → 毎月の構造的な不足（毎月の振替＜毎月の積立）があるときのみ警告対象
+//     （初月の入金前の一時的なズレは、振替が積立を上回っていれば以降解消するため除外する）
+export function securitiesShortfallReport(state, proj) {
+  const list = (proj && proj.shortfalls) || [];
+  if (!list.length) return null;
+  const plan = securitiesCashPlan(state);
+  const purchase = list.find((s) => s.kind === 'purchase') || null;
+  const accum = plan.monthlyShortfall > 0 ? list.find((s) => s.kind === 'accumulation') : null;
+  const first = [purchase, accum].filter(Boolean).sort((a, b) => a.date.localeCompare(b.date))[0] || null;
+  if (!first) return null;
+
+  const monthDeposit = n((proj.monthDeposit || {})[first.month]);
+  const monthInvest = n((proj.monthInvest || {})[first.month]);
+  // 必要な追加振替額: 当日の不足額と、その月の「投資額−入金額」の大きい方（少なくとも当日ぶんは必要）。
+  const requiredExtraTransfer = Math.max(first.deficit, Math.round(monthInvest - monthDeposit));
+  return {
+    date: first.date, month: first.month, deficit: first.deficit,
+    kind: first.kind, name: first.name,
+    monthDeposit, monthInvest, requiredExtraTransfer, plan,
+  };
 }
 
 // 系列から指定日以前で最も新しい点を取得(未来日付なら最終点)
