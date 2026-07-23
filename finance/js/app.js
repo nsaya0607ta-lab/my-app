@@ -1,17 +1,17 @@
 // app.js — ルーティング・画面描画・フォーム・操作の統合レイヤー
-import * as S from './store.js?v=20260723t';
-import * as C from './calc.js?v=20260723t';
-import * as CF from './cashflow.js?v=20260723t';
-import * as Sec from './securities.js?v=20260723t';
-import * as FS from './futureSim.js?v=20260723t';
-import * as Perf from './performance.js?v=20260723t';
-import { lineChart, barChart, groupedBarChart, donutChart, multiLineChart, fanChart, perfChart } from './charts.js?v=20260723t';
-import { iconHtml, icon } from './icons.js?v=20260723t';
+import * as S from './store.js?v=20260724a';
+import * as C from './calc.js?v=20260724a';
+import * as CF from './cashflow.js?v=20260724a';
+import * as Sec from './securities.js?v=20260724a';
+import * as FS from './futureSim.js?v=20260724a';
+import * as Perf from './performance.js?v=20260724a';
+import { lineChart, barChart, groupedBarChart, donutChart, multiLineChart, fanChart, perfChart } from './charts.js?v=20260724a';
+import { iconHtml, icon } from './icons.js?v=20260724a';
 import {
   el, qs, qsa, yen, yenMasked, num, today, toISO, parseISO, ym, fmtDate, fmtDateLong,
   fmtMonth, addMonths, resolveDay, pad, weekdayName, haptic, escapeHtml, uid,
-} from './utils.js?v=20260723t';
-import { nextRecurringDate, nextSettlementDate, isMonthEndDay } from './recurrence.js?v=20260723t';
+} from './utils.js?v=20260724a';
+import { nextRecurringDate, nextSettlementDate, isMonthEndDay } from './recurrence.js?v=20260724a';
 
 // ---- 画面ローカル状態（データではないUI状態） ----
 const ui = {
@@ -2225,14 +2225,24 @@ function futureSnapshotCard(fs, proj) {
 }
 
 // ---- 資産推移（任意の日付を選んで内訳を確認） ----
+// 選択日ごとに snapshotAt() で証券口座現金・元本・評価額・合計資産・利益率を日次で再計算する。
+// 口座の現在値をそのまま表示せず、選択日までの資金移動（振替・積立・購入・出金）を反映した結果で上書きする。
 function futureDateLookupCard(state, fs) {
   const secret = state.settings.secret;
-  const proj30 = FS.project(state, { years: Math.max(fs.years, 30) });
-  const dateInp = inputEl({ type: 'date', value: ui.futureCheckDate || proj30.series[Math.min(12, proj30.series.length - 1)].date, min: proj30.from, max: proj30.to });
+  const years = Math.max(fs.years, 30);
+  // 1回計算して from（現在）/to（最終日）を取得し、日付入力の範囲・既定日を決める（空文字はクランプで現在日になる）。
+  const meta = FS.snapshotAt(state, '', { years });
+  const from = meta.from, to = meta.to;
+  // 既定は現在から1年後（範囲内にクランプ）
+  const [fy, fm, fd] = from.split('-');
+  const oneYear = `${Number(fy) + 1}-${fm}-${fd}`;
+  const defaultDate = oneYear <= to ? oneYear : to;
+  const dateInp = inputEl({ type: 'date', value: ui.futureCheckDate || defaultDate, min: from, max: to });
   const result = el('div', {});
   const draw = () => {
-    const iso = dateInp.value || proj30.from;
-    const pt = FS.pointAt(proj30.series, iso);
+    const iso = dateInp.value || from;
+    // 選択日まで日次で再計算した精密スナップショット（積立履歴つき）
+    const pt = FS.snapshotAt(state, iso, { years, logAccruals: true });
     const profitRate = pt.principal > 0 ? ((pt.valuation - pt.principal) / pt.principal) * 100 : null;
     result.innerHTML = '';
     const dateLabel = fmtDateLong(pt.date);
@@ -2286,10 +2296,11 @@ function bankBreakdownModal(pt, dateLabel) {
   ]);
 }
 
-// 証券口座現金の内訳（初期残高＋振替入金＋その他入金−NISA購入−個別株購入−振替出金）
+// 証券口座現金の内訳（初期残高＋振替入金＋その他入金−NISA購入−個別株購入−振替出金）＋積立日ごとの履歴
 function secCashBreakdownModal(pt, dateLabel) {
-  balanceBreakdownModal(`証券口座現金の内訳（${dateLabel}）`, '選択日の証券口座現金', pt.secCash,
-    '銀行→証券の振替で入金し、NISA積立・個別株購入で投資元本へ移動します。振替や購入は資産間の移動のため合計資産は変わりません。', [
+  const secret = S.getState().settings.secret;
+  const money = (v) => (secret ? '＊＊＊' : yen(Math.abs(v)));
+  const rows = [
     ['現在残高', pt.secCashInitial, false],
     ['銀行からの振替累計', pt.secXferIn, false],
     ['その他の入金累計', pt.secDepositIn, false],
@@ -2297,7 +2308,31 @@ function secCashBreakdownModal(pt, dateLabel) {
     ['個別株購入累計', -pt.secStockBuy, true],
     ['証券→銀行の振替累計', -pt.secXferOut, true],
     ['その他の出金累計', -pt.secWithdraw, true],
-  ]);
+  ];
+  const shown = rows.filter(([, v]) => Math.abs(Number(v) || 0) > 0);
+  const hint = '銀行→証券の振替で入金し、NISA積立・個別株購入で投資元本へ移動します。振替や購入は資産間の移動のため合計資産は変わりません。';
+  // 積立日ごとの履歴（選択日までの発生順。件数が多い場合は直近を優先表示）
+  const log = pt.accrualLog || [];
+  const MAX = 60;
+  const shownLog = log.length > MAX ? log.slice(-MAX) : log;
+  const timeline = shownLog.length
+    ? el('div', {},
+        el('p', { class: 'fc-field-hint', text: log.length > MAX ? `積立・入出金の履歴（直近${MAX}件／全${log.length}件）` : '積立・入出金の履歴' }),
+        el('div', { class: 'fc-kv' }, ...shownLog.map((r) =>
+          el('div', { class: 'fc-kv-row' },
+            el('span', { text: `${fmtDate(r.date)}  ${r.name}` }),
+            el('b', { class: r.amount < 0 ? 'neg' : '', text: secret ? '＊＊＊' : (r.amount < 0 ? '−' : '+') + money(r.amount) + `（残高 ${money(r.secAfter)}）` })))))
+    : el('p', { class: 'fc-field-hint', text: '選択日までに発生した積立・入出金はありません。' });
+  const body = el('div', {},
+    el('div', { class: 'fc-perf-latest-rate' }, el('span', { text: '選択日の証券口座現金' }),
+      el('b', { class: pt.secCash < 0 ? 'neg' : '', text: secret ? '＊＊＊' : yen(pt.secCash) })),
+    el('p', { class: 'fc-field-hint', text: hint }),
+    el('div', { class: 'fc-kv' }, ...shown.map(([label, v, neg]) =>
+      el('div', { class: 'fc-kv-row' }, el('span', { text: label }),
+        el('b', { class: neg ? 'neg' : '', text: secret ? '＊＊＊' : (v < 0 ? '−' : '') + money(v) })))),
+    timeline,
+  );
+  modal(`証券口座現金の内訳（${dateLabel}）`, body, {});
 }
 
 // 元本の内訳（NISA元本＋個別株元本）。元本は評価額とは別の参考情報で、合計資産へは加算しない。

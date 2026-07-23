@@ -4,14 +4,14 @@
 // 証券口座の現金・元本・評価額（インデックス／個別株）を月次で前進させて一元的な将来資産を計算する。
 // ダミー値・外部APIは使わず、登録済みデータ（口座・保有銘柄・積立設定・購入予定・futureSim設定）のみから計算する。
 
-import { pad, toISO, parseISO, addMonths, daysInMonth } from './utils.js?v=20260723t';
-import { jstTodayISO } from './recurrence.js?v=20260723t';
-import { buildEvents } from './cashflow.js?v=20260723t';
+import { pad, toISO, parseISO, addMonths, daysInMonth } from './utils.js?v=20260724a';
+import { jstTodayISO } from './recurrence.js?v=20260724a';
+import { buildEvents } from './cashflow.js?v=20260724a';
 import {
   isSecurities, securitiesAccounts, accountHoldings, isIndex, contributionForDate,
   holdingCost, holdingValue,
-} from './securities.js?v=20260723t';
-import { SCENARIO_RATES } from './store.js?v=20260723t';
+} from './securities.js?v=20260724a';
+import { SCENARIO_RATES } from './store.js?v=20260724a';
 
 const n = (v) => Number(v) || 0;
 
@@ -99,6 +99,7 @@ function isSecAcc(state, id) {
 // opts.rateOverride: 指定するとシナリオ設定に関わらず全銘柄へこの年利(%)を一律適用(シナリオ比較・感度分析・目標探索用)
 // opts.extraMonthlyInvestment: 「積立を毎月+n円にしたら」という簡易What-Ifの追加投資額(証券口座現金の残高には影響させず、
 //   銀行資金からその場で追加投資する想定で bankCash を減らし、評価額(合成枠)へ積み上げる)
+// opts.logAccruals: 選択日内訳表示用に、NISA積立が発生した日の履歴(accrualLog)を1件ずつ記録する。
 //
 // 資金の流れ: 銀行口座 →(振替)→ 証券口座現金 →(NISA/個別株の購入)→ 投資元本。
 // 証券口座現金は日付順に、同日内は次の順で処理する（入金→購入→出金）:
@@ -106,32 +107,29 @@ function isSecAcc(state, id) {
 //   4) 個別株の購入予定      5) 証券→銀行の振替出金
 // これにより「入金後の残高から購入」でき、現金が足りなければ購入を実行せず不足として記録する
 // （証券口座現金はマイナスにしない）。実際の積立処理(securities.runAccrualForDate)と同じ資金判定。
-export function project(state, opts = {}) {
+//
+// createProjection は「1日進める(stepDay)」「月末処理(stepMonthEnd)」「スナップショット(snapshot)」を
+// 提供する内部エンジン。project(=月次系列)と snapshotAt(=選択日の精密計算)の両方がこのエンジンを共有し、
+// 証券口座現金・元本・評価額の計算元を一本化する（表示側は口座の現在値を直接使わない）。
+function createProjection(state, opts, from, to) {
   const fs = state.futureSim || {};
-  const years = Math.max(1, opts.years ?? fs.years ?? 10);
   const rateOverride = opts.rateOverride ?? null;
   const extra = n(opts.extraMonthlyInvestment);
   const useOverride = fs.useOverride !== false;
-
-  const from = jstTodayISO();
-  const base = parseISO(from);
-  const to = toISO(addMonths(base, years * 12));
+  const logAccruals = !!opts.logAccruals;
 
   // 収支・振替・単発収支を「日付ごと」に、証券口座現金の入金/出金と銀行増減へ分解する。
-  //   xin: 銀行→証券の振替入金 / din: 証券口座へのその他入金 /
-  //   xout: 証券→銀行の振替出金 / dout: 証券口座からのその他出金 / bank: 銀行残高の増減
-  const events = buildEvents(state, from, to);
-  const byDay = new Map();
   //   bank: 銀行残高の純増減 / binc: 銀行の収入 / bexp: 銀行の支出（内訳表示用に収入・支出を分離）
   //   xin: 銀行→証券の振替入金 / din: 証券口座へのその他入金 /
   //   xout: 証券→銀行の振替出金 / dout: 証券口座からのその他出金
+  const byDay = new Map();
   const addDay = (date, o) => {
     const d = byDay.get(date) || { bank: 0, binc: 0, bexp: 0, xin: 0, din: 0, xout: 0, dout: 0 };
     d.bank += o.bank || 0; d.binc += o.binc || 0; d.bexp += o.bexp || 0;
     d.xin += o.xin || 0; d.din += o.din || 0; d.xout += o.xout || 0; d.dout += o.dout || 0;
     byDay.set(date, d);
   };
-  for (const e of events) {
+  for (const e of buildEvents(state, from, to)) {
     if (e.kind === 'transfer') {
       const moved = n(e.meta?.moved);
       const fromSec = isSecAcc(state, e.meta?.fromAccountId);
@@ -162,6 +160,7 @@ export function project(state, opts = {}) {
   // 銀行残高の内訳（累計）。bankCash = 初期 + 収入 − 支出 − 証券への振替(cumXferIn) + 証券からの振替(cumXferOut)
   let cumBankIncome = 0, cumBankExpense = 0;
   const shortfalls = []; // 現金不足で実行できなかった購入 [{date, kind, name, amount, deficit}]
+  const accrualLog = []; // 積立・振替の日次履歴（選択日内訳のタイムライン用）
 
   const rateFor = (holdingRate) => (rateOverride != null ? rateOverride : (useOverride ? scenarioRate(fs) : holdingRate));
 
@@ -190,58 +189,57 @@ export function project(state, opts = {}) {
     };
   };
 
-  const series = [snapshot(from)];
-  const months = years * 12;
-  for (let k = 1; k <= months; k++) {
-    const dcur = addMonths(base, k);
-    const y = dcur.getFullYear(), mIdx = dcur.getMonth();
-    const dim = daysInMonth(y, mIdx);
-    const monthEndISO = toISO(new Date(y, mIdx + 1, 0));
-    const pointISO = monthEndISO > to ? to : monthEndISO;
+  // 1日分のキャッシュフローを反映（同日は 入金→積立→株購入→出金 の順）。呼び出し側で from<iso<=to を保証する。
+  const stepDay = (iso) => {
+    const dd = byDay.get(iso);
 
-    // --- 日付順にキャッシュフローを反映（同日は 入金→積立→株購入→出金 の順） ---
-    for (let day = 1; day <= dim; day++) {
-      const iso = `${y}-${pad(mIdx + 1)}-${pad(day)}`;
-      if (iso <= from || iso > to) continue;
-      const dd = byDay.get(iso);
+    // 1) 銀行→証券の振替入金 / 2) 証券口座へのその他入金
+    if (dd) {
+      if (dd.xin) { sec += dd.xin; cumXferIn += dd.xin; if (logAccruals) accrualLog.push({ date: iso, kind: 'transfer', name: '銀行→証券の振替', amount: dd.xin, secAfter: Math.round(sec) }); }
+      if (dd.din) { sec += dd.din; cumDepositIn += dd.din; if (logAccruals) accrualLog.push({ date: iso, kind: 'deposit', name: '証券口座への入金', amount: dd.din, secAfter: Math.round(sec) }); }
+    }
 
-      // 1) 銀行→証券の振替入金 / 2) 証券口座へのその他入金
-      if (dd) {
-        if (dd.xin) { sec += dd.xin; cumXferIn += dd.xin; }
-        if (dd.din) { sec += dd.din; cumDepositIn += dd.din; }
-      }
-
-      // 3) NISA積立購入（1日あたりの積立額のみ証券口座現金から減額。現金不足なら実行せず記録）
-      for (const l of indexLots) {
-        for (const a of l.accums) {
-          const amt = contributionForDate(a, iso);
-          if (amt <= 0) continue;
-          if (sec >= amt) { sec -= amt; l.principal += amt; l.value += amt; cumNisaBuy += amt; }
-          else shortfalls.push({ date: iso, kind: 'accumulation', name: l.name, amount: amt, deficit: Math.round(amt - sec) });
+    // 3) NISA積立購入（1日あたりの積立額のみ証券口座現金から減額。現金不足なら実行せず記録）
+    //    実行時は「証券口座現金を減らし」「NISA元本を同額増やし」「NISA評価額を更新」を同時に行う（資産は移動するだけ）。
+    for (const l of indexLots) {
+      for (const a of l.accums) {
+        const amt = contributionForDate(a, iso);
+        if (amt <= 0) continue;
+        if (sec >= amt) {
+          sec -= amt; l.principal += amt; l.value += amt; cumNisaBuy += amt;
+          if (logAccruals) accrualLog.push({ date: iso, kind: 'accumulation', name: l.name, amount: -amt, secAfter: Math.round(sec) });
+        } else {
+          shortfalls.push({ date: iso, kind: 'accumulation', name: l.name, amount: amt, deficit: Math.round(amt - sec) });
         }
-      }
-
-      // 4) 個別株の購入予定（現金不足なら実行せず記録）
-      for (const l of stockLots) {
-        for (const p of l.plannedPurchases) {
-          if (p._applied || !p.date || p.date !== iso || p.date <= from) continue;
-          const amt = n(p.amount);
-          if (amt <= 0) { p._applied = true; continue; }
-          if (sec >= amt) { sec -= amt; l.principal += amt; l.value += amt; cumStockBuy += amt; p._applied = true; }
-          else shortfalls.push({ date: iso, kind: 'purchase', name: l.name, amount: amt, deficit: Math.round(amt - sec) });
-        }
-      }
-
-      // 5) 証券→銀行の振替出金 / 証券口座からのその他出金・銀行残高の増減
-      if (dd) {
-        if (dd.xout) { sec -= dd.xout; cumXferOut += dd.xout; }
-        if (dd.dout) { sec -= dd.dout; cumWithdraw += dd.dout; }
-        bank += dd.bank;
-        cumBankIncome += dd.binc; cumBankExpense += dd.bexp;
       }
     }
 
-    // --- 月末処理: 配当・What-If・評価額の成長 ---
+    // 4) 個別株の購入予定（現金不足なら実行せず記録）
+    for (const l of stockLots) {
+      for (const p of l.plannedPurchases) {
+        if (p._applied || !p.date || p.date !== iso || p.date <= from) continue;
+        const amt = n(p.amount);
+        if (amt <= 0) { p._applied = true; continue; }
+        if (sec >= amt) {
+          sec -= amt; l.principal += amt; l.value += amt; cumStockBuy += amt; p._applied = true;
+          if (logAccruals) accrualLog.push({ date: iso, kind: 'purchase', name: l.name, amount: -amt, secAfter: Math.round(sec) });
+        } else {
+          shortfalls.push({ date: iso, kind: 'purchase', name: l.name, amount: amt, deficit: Math.round(amt - sec) });
+        }
+      }
+    }
+
+    // 5) 証券→銀行の振替出金 / 証券口座からのその他出金・銀行残高の増減
+    if (dd) {
+      if (dd.xout) { sec -= dd.xout; cumXferOut += dd.xout; if (logAccruals) accrualLog.push({ date: iso, kind: 'transfer', name: '証券→銀行の振替', amount: -dd.xout, secAfter: Math.round(sec) }); }
+      if (dd.dout) { sec -= dd.dout; cumWithdraw += dd.dout; if (logAccruals) accrualLog.push({ date: iso, kind: 'withdraw', name: '証券口座からの出金', amount: -dd.dout, secAfter: Math.round(sec) }); }
+      bank += dd.bank;
+      cumBankIncome += dd.binc; cumBankExpense += dd.bexp;
+    }
+  };
+
+  // 月末処理: 配当・What-If・評価額の成長
+  const stepMonthEnd = () => {
     // 4') 個別株の配当金(毎月按分)。再投資ONは評価額へ、OFFは銀行資金へ現金化する想定。
     for (const l of stockLots) {
       if (l.dividendYield > 0) {
@@ -257,11 +255,80 @@ export function project(state, opts = {}) {
     // 6') 評価額の成長(想定年利・単利/複利)
     for (const l of indexLots) growLot(l, rateFor(l.rate), l.mode);
     for (const l of stockLots) growLot(l, rateFor(l.rate), l.mode);
+  };
 
-    series.push(snapshot(pointISO));
+  return { snapshot, stepDay, stepMonthEnd, shortfalls, accrualLog };
+}
+
+export function project(state, opts = {}) {
+  const fs = state.futureSim || {};
+  const years = Math.max(1, opts.years ?? fs.years ?? 10);
+  const from = jstTodayISO();
+  const base = parseISO(from);
+  const to = toISO(addMonths(base, years * 12));
+
+  const sim = createProjection(state, opts, from, to);
+  const series = [sim.snapshot(from)];
+  const months = years * 12;
+  for (let k = 1; k <= months; k++) {
+    const dcur = addMonths(base, k);
+    const y = dcur.getFullYear(), mIdx = dcur.getMonth();
+    const dim = daysInMonth(y, mIdx);
+    const monthEndISO = toISO(new Date(y, mIdx + 1, 0));
+    const pointISO = monthEndISO > to ? to : monthEndISO;
+
+    // --- 日付順にキャッシュフローを反映 ---
+    for (let day = 1; day <= dim; day++) {
+      const iso = `${y}-${pad(mIdx + 1)}-${pad(day)}`;
+      if (iso <= from || iso > to) continue;
+      sim.stepDay(iso);
+    }
+    // --- 月末処理: 配当・What-If・評価額の成長 ---
+    sim.stepMonthEnd();
+    series.push(sim.snapshot(pointISO));
   }
 
-  return { from, to, years, series, shortfalls };
+  return { from, to, years, series, shortfalls: sim.shortfalls };
+}
+
+// ===== 選択日の精密スナップショット（日次で証券口座現金・元本・評価額を計算） =====
+// project() の月次系列（月末粒度）ではなく、選択された「その日」まで1日ずつ資金移動を反映して
+// 証券口座現金・NISA元本・個別株元本・評価額・合計資産・利益率を再計算する。
+// 表示側は口座の現在値を直接使わず、この計算結果で上書きする（日付変更で必ず再計算される）。
+// 評価額の成長（想定年利）は project() と同じく月末に発生する。到達済みの月末ぶんのみ反映する。
+// project() の月次ループは from を含む「途中の月」を飛ばして翌月から始まるため、成長の回数を合わせるべく
+// snapshotAt でも from と同じ年月の月末では成長を加えない（＝最初の丸ごと1ヶ月ぶんから成長を数える）。
+// これにより選択日がちょうど月末なら valuation・total・利益率が月次系列(project)と一致する。
+// 一方で積立・振替・購入などの資金移動は、from の翌日から選択日当日まで1日ずつ反映する（近日の積立も必ず反映される）。
+export function snapshotAt(state, targetISO, opts = {}) {
+  const fs = state.futureSim || {};
+  const years = Math.max(1, opts.years ?? Math.max(fs.years ?? 10, 30));
+  const from = jstTodayISO();
+  const base = parseISO(from);
+  const to = toISO(addMonths(base, years * 12));
+  const fromYM = from.slice(0, 7);
+  // 範囲外は端へクランプ（過去日→現在、遠い未来→シミュレーション最終日）
+  const target = targetISO < from ? from : (targetISO > to ? to : targetISO);
+
+  const sim = createProjection(state, opts, from, to);
+  if (target <= from) {
+    return { ...sim.snapshot(from), from, to, shortfalls: sim.shortfalls, accrualLog: sim.accrualLog };
+  }
+
+  // from の翌日から target まで1日ずつ資金移動を反映。丸ごと通過した月末ごとに評価額の成長を適用する。
+  const cur = new Date(base.getFullYear(), base.getMonth(), base.getDate());
+  let guard = 0;
+  while (guard++ < 20000) {
+    cur.setDate(cur.getDate() + 1);
+    const iso = toISO(cur);
+    if (iso > target) break;
+    sim.stepDay(iso);
+    const isMonthEnd = cur.getDate() === daysInMonth(cur.getFullYear(), cur.getMonth());
+    // from と同じ月の月末は成長を数えない（project の月次ループ開始に合わせる）
+    if (isMonthEnd && iso <= target && iso.slice(0, 7) !== fromYM) sim.stepMonthEnd();
+  }
+
+  return { ...sim.snapshot(target), from, to, shortfalls: sim.shortfalls, accrualLog: sim.accrualLog };
 }
 
 // ===== 証券口座現金の資金計画（毎月必要な振替額 vs 現在の振替設定額） =====
