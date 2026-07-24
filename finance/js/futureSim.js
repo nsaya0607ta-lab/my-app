@@ -198,6 +198,13 @@ function createProjection(state, opts, from, to) {
   let { bank, sec } = initialCash(state);
   const secInitial = sec;
   const bankInitial = bank;
+  // 仮想証券口座現金(vsec): 現金の有無に関わらず全予定購入を実行した前提の残高。
+  // sec と同じ入金・出金を受けつつ、購入は「予定額」を必ず差し引く（現実モードでも実行判定に関係なく）。
+  // その最小値 minVsec が最も深い不足を表し、必要な追加振替額 ＝ max(0, −最大不足額) を1円単位の整数で求める。
+  // 年利計算の小数はここに一切混ぜない（資金不足判定・追加振替額は整数キャッシュフローのみで計算する）。
+  let vsec = sec;
+  let minVsec = vsec;
+  const noteVsec = (delta) => { vsec += delta; if (vsec < minVsec) minVsec = vsec; };
   let synth = 0; // What-If追加投資の合成枠
   // 証券口座現金の内訳（累計）。secCash = 初期 + 振替入金 + その他入金 − NISA購入 − 個別株購入 − 振替出金 − その他出金
   let cumXferIn = 0, cumDepositIn = 0, cumNisaBuy = 0, cumStockBuy = 0, cumXferOut = 0, cumWithdraw = 0;
@@ -259,15 +266,15 @@ function createProjection(state, opts, from, to) {
       const y = Number(iso.slice(0, 4)), m0 = Number(iso.slice(5, 7)) - 1, dnum = Number(iso.slice(8, 10));
       for (const md of monthlyDeposits) {
         if (resolveDay(y, m0, md.day) !== dnum) continue;
-        sec += md.amount; cumDepositIn += md.amount; addMonth(monthDeposit, ym, md.amount);
+        sec += md.amount; noteVsec(md.amount); cumDepositIn += md.amount; addMonth(monthDeposit, ym, md.amount);
         if (logAccruals) accrualLog.push({ date: iso, kind: 'deposit', name: `${md.accountName}への毎月入金`, amount: md.amount, secAfter: Math.round(sec) });
       }
     }
 
     // 1) 銀行→証券の振替入金 / 2) 証券口座へのその他入金
     if (dd) {
-      if (dd.xin) { sec += dd.xin; cumXferIn += dd.xin; addMonth(monthDeposit, ym, dd.xin); if (logAccruals) accrualLog.push({ date: iso, kind: 'transfer', name: '銀行→証券の振替', amount: dd.xin, secAfter: Math.round(sec) }); }
-      if (dd.din) { sec += dd.din; cumDepositIn += dd.din; addMonth(monthDeposit, ym, dd.din); if (logAccruals) accrualLog.push({ date: iso, kind: 'deposit', name: '証券口座への入金', amount: dd.din, secAfter: Math.round(sec) }); }
+      if (dd.xin) { sec += dd.xin; noteVsec(dd.xin); cumXferIn += dd.xin; addMonth(monthDeposit, ym, dd.xin); if (logAccruals) accrualLog.push({ date: iso, kind: 'transfer', name: '銀行→証券の振替', amount: dd.xin, secAfter: Math.round(sec) }); }
+      if (dd.din) { sec += dd.din; noteVsec(dd.din); cumDepositIn += dd.din; addMonth(monthDeposit, ym, dd.din); if (logAccruals) accrualLog.push({ date: iso, kind: 'deposit', name: '証券口座への入金', amount: dd.din, secAfter: Math.round(sec) }); }
     }
 
     // 3) NISA積立購入（1日あたりの積立額のみ証券口座現金から減額。現金不足なら実行せず記録）
@@ -278,6 +285,7 @@ function createProjection(state, opts, from, to) {
         if (amt <= 0) continue;
         addMonth(monthInvest, ym, amt); // 資金の有無に関わらず「その月の投資予定額」として集計
         cumNisaPlanned += amt;          // 累計積立予定額（理想・現実共通）
+        noteVsec(-amt);                 // 予定購入は仮想現金から必ず差し引き、最大不足額を測る
         // 理想モードは現金不足でも実行（ignoreCash）。現実モードは現金が足りる日のみ実行し、
         // 不足日は購入せず未実行として記録する（現金はマイナスにしない・後日まとめ買いもしない）。
         if (ignoreCash || sec >= amt) {
@@ -298,6 +306,7 @@ function createProjection(state, opts, from, to) {
         if (amt <= 0) { p._applied = true; continue; }
         addMonth(monthInvest, ym, amt); // 資金の有無に関わらず「その月の投資予定額」として集計
         cumStockPlanned += amt;
+        noteVsec(-amt);                 // 予定購入は仮想現金から必ず差し引き、最大不足額を測る
         if (ignoreCash || sec >= amt) {
           sec -= amt; l.principal += amt; l.value += amt; cumStockBuy += amt; p._applied = true;
           if (logAccruals) accrualLog.push({ date: iso, kind: 'purchase', name: l.name, amount: -amt, secAfter: Math.round(sec) });
@@ -310,8 +319,8 @@ function createProjection(state, opts, from, to) {
 
     // 5) 証券→銀行の振替出金 / 証券口座からのその他出金・銀行残高の増減
     if (dd) {
-      if (dd.xout) { sec -= dd.xout; cumXferOut += dd.xout; if (logAccruals) accrualLog.push({ date: iso, kind: 'transfer', name: '証券→銀行の振替', amount: -dd.xout, secAfter: Math.round(sec) }); }
-      if (dd.dout) { sec -= dd.dout; cumWithdraw += dd.dout; if (logAccruals) accrualLog.push({ date: iso, kind: 'withdraw', name: '証券口座からの出金', amount: -dd.dout, secAfter: Math.round(sec) }); }
+      if (dd.xout) { sec -= dd.xout; noteVsec(-dd.xout); cumXferOut += dd.xout; if (logAccruals) accrualLog.push({ date: iso, kind: 'transfer', name: '証券→銀行の振替', amount: -dd.xout, secAfter: Math.round(sec) }); }
+      if (dd.dout) { sec -= dd.dout; noteVsec(-dd.dout); cumWithdraw += dd.dout; if (logAccruals) accrualLog.push({ date: iso, kind: 'withdraw', name: '証券口座からの出金', amount: -dd.dout, secAfter: Math.round(sec) }); }
       bank += dd.bank;
       cumBankIncome += dd.binc; cumBankExpense += dd.bexp;
     }
@@ -338,7 +347,10 @@ function createProjection(state, opts, from, to) {
     for (const l of stockLots) growLot(l, rateFor(l.rate), l.mode);
   };
 
-  return { snapshot, stepDay, stepMonthEnd, shortfalls, accrualLog, monthDeposit, monthInvest };
+  // requiredExtra: これまでに歩いた期間で発生した「証券口座現金の最大不足額」（1円単位の整数）。
+  // ＝ max(0, −minVsec)。日付順に計算した最大不足額そのもので、単純な月間合計ではない。
+  const requiredExtra = () => Math.max(0, Math.round(-minVsec));
+  return { snapshot, stepDay, stepMonthEnd, shortfalls, accrualLog, monthDeposit, monthInvest, requiredExtra };
 }
 
 export function project(state, opts = {}) {
@@ -351,6 +363,22 @@ export function project(state, opts = {}) {
   const sim = createProjection(state, opts, from, to);
   const series = [sim.snapshot(from)];
   const months = years * 12;
+
+  // from の当月（部分月）の残り日を先に反映する。
+  // 月次ループ(k=1..)は from の翌月から始まり当月の残り日を飛ばすため、ここで補う。
+  // snapshotAt も同じく当月の残り日を反映しており、両者の日次キャッシュフローを完全に一致させる
+  // （これが「現実シミュレーション結果」と「日付別の資産推移」で不足日がずれる不具合の原因だった）。
+  // 当月末では成長を加えない（成長回数は from の翌月からに揃え、snapshotAt と一致させる）。
+  {
+    const y0 = base.getFullYear(), m0 = base.getMonth();
+    const dim0 = daysInMonth(y0, m0);
+    for (let day = base.getDate() + 1; day <= dim0; day++) {
+      const iso = `${y0}-${pad(m0 + 1)}-${pad(day)}`;
+      if (iso > to) break;
+      sim.stepDay(iso);
+    }
+  }
+
   for (let k = 1; k <= months; k++) {
     const dcur = addMonths(base, k);
     const y = dcur.getFullYear(), mIdx = dcur.getMonth();
@@ -371,6 +399,7 @@ export function project(state, opts = {}) {
 
   return {
     from, to, years, series, shortfalls: sim.shortfalls,
+    requiredExtra: sim.requiredExtra(),
     monthDeposit: Object.fromEntries(sim.monthDeposit), monthInvest: Object.fromEntries(sim.monthInvest),
   };
 }
@@ -396,7 +425,7 @@ export function snapshotAt(state, targetISO, opts = {}) {
 
   const sim = createProjection(state, opts, from, to);
   if (target <= from) {
-    return { ...sim.snapshot(from), from, to, shortfalls: sim.shortfalls, accrualLog: sim.accrualLog };
+    return { ...sim.snapshot(from), from, to, shortfalls: sim.shortfalls, accrualLog: sim.accrualLog, requiredExtra: sim.requiredExtra() };
   }
 
   // from の翌日から target まで1日ずつ資金移動を反映。丸ごと通過した月末ごとに評価額の成長を適用する。
@@ -412,7 +441,7 @@ export function snapshotAt(state, targetISO, opts = {}) {
     if (isMonthEnd && iso <= target && iso.slice(0, 7) !== fromYM) sim.stepMonthEnd();
   }
 
-  return { ...sim.snapshot(target), from, to, shortfalls: sim.shortfalls, accrualLog: sim.accrualLog };
+  return { ...sim.snapshot(target), from, to, shortfalls: sim.shortfalls, accrualLog: sim.accrualLog, requiredExtra: sim.requiredExtra() };
 }
 
 // ===== 証券口座現金の資金計画（毎月必要な振替額 vs 現在の振替設定額） =====
@@ -432,9 +461,14 @@ export function securitiesCashPlan(state, opts = {}) {
     for (const a of acc.accumulations || []) {
       if (a.enabled === false) continue;
       const freq = a.frequency || 'daily';
-      if (freq === 'monthly') requiredMonthly += n(a.monthlyAmount);
-      else if (freq === 'weekly') requiredMonthly += n(a.dailyAmount) * (365 / 7 / 12);
-      else requiredMonthly += (dailyOverride != null ? dailyOverride : n(a.dailyAmount)) * (365 / 12);
+      if (freq === 'monthly') { requiredMonthly += n(a.monthlyAmount); continue; }
+      if (freq === 'weekly') { requiredMonthly += n(a.dailyAmount) * (52 / 12); continue; }
+      // 毎日: 土日祝日を実行しない設定なら営業日ぶん(年約245日)、含める設定なら暦日ぶん(365日)で概算する。
+      // 実際の日次シミュレーション(project)は営業日のみ積み立てるため、365/12 の暦日概算では
+      // 「毎月の不足見込み」が過大に出て、日付順の結果(資金不足なし)と矛盾していた。営業日基準に合わせる。
+      const amt = (dailyOverride != null ? dailyOverride : n(a.dailyAmount));
+      const daysPerYear = a.includeHolidays === false ? 245 : 365;
+      requiredMonthly += amt * (daysPerYear / 12);
     }
   }
   requiredMonthly = Math.round(requiredMonthly);
@@ -484,29 +518,28 @@ export function firstSecShortfall(proj) {
 }
 
 // 証券口座現金の不足レポート（警告表示用）。
-// NISA積立・個別株購入が「実行日時点の証券口座現金」で賄えなかった最初の予定を、
-// その月の入金予定額・投資購入予定額・必要な追加振替額とともに返す（無ければ null）。
-// 資金不足の判定は銀行残高ではなく証券口座現金のみを参照する。
-//   ・個別株の購入予定が現金不足 → 常に警告対象
-//   ・NISA積立の不足 → 毎月の構造的な不足（毎月の振替＜毎月の積立）があるときのみ警告対象
-//     （初月の入金前の一時的なズレは、振替が積立を上回っていれば以降解消するため除外する）
+// NISA積立・個別株購入が「購入直前の証券口座現金 ＜ 当日の購入予定額」で実行できなかった
+// 最初の予定を、その月の入金予定額・投資購入予定額・必要な追加振替額とともに返す（無ければ null）。
+// 資金不足の判定は銀行残高ではなく証券口座現金のみを参照する（proj.shortfalls と完全に一致）。
+// 判定式・不足日・必要な追加振替額はすべて共通シミュレーション(project)の結果だけから求め、
+// 画面ごとに別ロジックを持たせない。365/12 などの月間概算では判定・警告しない
+// （概算に由来する根拠のない不足額の表示を防ぐ）。
 export function securitiesShortfallReport(state, proj, opts = {}) {
   const list = (proj && proj.shortfalls) || [];
   if (!list.length) return null;
-  const plan = securitiesCashPlan(state, { dailyOverride: opts.dailyOverride });
-  const purchase = list.find((s) => s.kind === 'purchase') || null;
-  const accum = plan.monthlyShortfall > 0 ? list.find((s) => s.kind === 'accumulation') : null;
-  const first = [purchase, accum].filter(Boolean).sort((a, b) => a.date.localeCompare(b.date))[0] || null;
-  if (!first) return null;
-
+  // 実際に購入できなかった最初の予定（NISA積立・個別株購入のうち日付が最も早いもの）。
+  // 種類による除外はしない（現金不足で実行できなかった時点で、すべての画面で不足として扱う）。
+  const first = [...list].sort((a, b) => a.date.localeCompare(b.date))[0];
   const monthDeposit = n((proj.monthDeposit || {})[first.month]);
   const monthInvest = n((proj.monthInvest || {})[first.month]);
-  // 必要な追加振替額: 当日の不足額と、その月の「投資額−入金額」の大きい方（少なくとも当日ぶんは必要）。
-  const requiredExtraTransfer = Math.max(first.deficit, Math.round(monthInvest - monthDeposit));
+  // 必要な追加振替額 ＝ max(0, シミュレーション期間中に発生する最大不足額)。
+  // 日付順に計算した証券口座現金の最大不足額(proj.requiredExtra)そのもので、月間合計の差ではない。
+  const requiredExtraTransfer = Math.max(0, n(proj.requiredExtra));
   return {
     date: first.date, month: first.month, deficit: first.deficit,
     kind: first.kind, name: first.name,
-    monthDeposit, monthInvest, requiredExtraTransfer, plan,
+    monthDeposit, monthInvest, requiredExtraTransfer,
+    plan: securitiesCashPlan(state, { dailyOverride: opts.dailyOverride }),
   };
 }
 
