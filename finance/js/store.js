@@ -2,13 +2,13 @@
 // 設計方針: すべてのデータはこの1オブジェクトに集約し、mutate → save → emit。
 // 将来の証券口座連携などは accounts の type と外部同期モジュールを足すだけで拡張可能。
 
-import { uid, pad } from './utils.js?v=20260724c';
-import { settlementDate } from './calc.js?v=20260724c';
+import { uid, pad } from './utils.js?v=20260724d';
+import { settlementDate } from './calc.js?v=20260724d';
 import {
   recurringActiveOn, monthlyOccurrences, jstTodayISO, dedupeKey,
   nextRecurringDate, nextSettlementDate,
-} from './recurrence.js?v=20260724c';
-import { isSecurities, hasSecurities, recomputeAccount, performanceSnapshot, jstNowISO } from './securities.js?v=20260724c';
+} from './recurrence.js?v=20260724d';
+import { isSecurities, hasSecurities, recomputeAccount, performanceSnapshot, jstNowISO } from './securities.js?v=20260724d';
 
 const KEY = 'finance_app_v2';
 const SCHEMA = 1;
@@ -233,6 +233,7 @@ function migrate(data) {
   data.settings ||= { secret: false, theme: 'auto', monthlyBudget: 0, notifiedKeys: [] };
   data.settings.notifiedKeys ||= [];
   data.settings.lastUsed ||= {}; // 取引追加時に前回使用したカテゴリー・口座を記憶
+  if (data.settings.lastBackupAt === undefined) data.settings.lastBackupAt = null; // 最終バックアップ日時(JST ISO)
   if (data.settings.periodStartDay === undefined) data.settings.periodStartDay = 1;
   data.simulation ||= seed().simulation;
   data.assetHistory ||= [];

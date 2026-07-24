@@ -885,3 +885,41 @@ html.fc-modal-open, html.fc-modal-open body { overscroll-behavior: none; }
 
 /* 理想シミュレーション（自由設計）: 無効な入金・投資設定の行を淡色表示 */
 .fc-row-off { opacity: .5; }
+
+/* ========================================================================
+   追加スタイル（アクセシビリティ / バックアップ / 口座削除 / 投資タブ）
+   ======================================================================== */
+
+/* アクセシビリティ: タップ可能要素のキーボードフォーカスを可視化（デザインは維持） */
+.tap:focus-visible, [role="button"]:focus-visible, button:focus-visible,
+a:focus-visible, input:focus-visible, select:focus-visible, .fc-toggle:focus-visible {
+  outline: 2px solid var(--fc-accent); outline-offset: 2px; border-radius: 10px;
+}
+/* 非ボタン要素を button 化した場合のデフォルトスタイル打ち消し（デザイン維持用） */
+button.fc-btnreset { background: none; border: none; padding: 0; margin: 0; font: inherit; color: inherit; text-align: inherit; width: 100%; cursor: pointer; }
+
+/* タップ領域を最低44px確保（見た目のサイズは変えず、透明な当たり判定を広げる）。
+   周囲の要素と重なって誤タップにならないよう、独立して配置されるアイコンボタンのみに適用する。 */
+.fc-icobtn, .fc-back, .fc-secret, .fc-add-btn { position: relative; }
+.fc-icobtn::after, .fc-back::after, .fc-secret::after, .fc-add-btn::after {
+  content: ''; position: absolute; top: 50%; left: 50%;
+  transform: translate(-50%, -50%); min-width: 44px; min-height: 44px;
+}
+
+/* 最終バックアップ表示（データ管理の上部） */
+.fc-backup-status { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 12px 14px; margin-bottom: 12px; background: var(--fc-surface-2); border: 1px solid var(--fc-line); border-radius: 12px; }
+.fc-backup-lab { font-size: 12.5px; font-weight: 700; color: var(--fc-muted); }
+.fc-backup-val { font-size: 13.5px; font-weight: 800; font-variant-numeric: tabular-nums; }
+.fc-backup-val.none { color: var(--fc-neg); font-weight: 700; }
+
+/* ホームの控えめなバックアップ案内 */
+.fc-backup-nudge { display: flex; align-items: center; gap: 10px; margin-top: 14px; padding: 12px 14px; background: var(--fc-surface-2); border: 1px dashed var(--fc-line); border-radius: 12px; }
+.fc-backup-nudge-txt { flex: 1; font-size: 12.5px; line-height: 1.5; color: var(--fc-text-2); }
+.fc-btn.sm { padding: 8px 12px; font-size: 12.5px; border-radius: 10px; flex: none; margin-top: 0; }
+
+/* 口座削除の選択肢ブロック */
+.fc-optblock { margin-top: 16px; padding-top: 14px; border-top: 1px solid var(--fc-line); }
+
+/* 投資将来予測の3タブ切替（画面上部に固定しない＝通常フロー） */
+.fc-invest-tabs { margin-bottom: 12px; }
+.fc-invest-tabs .fc-seg-btn.on { color: var(--fc-accent); }
