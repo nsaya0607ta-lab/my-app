@@ -830,6 +830,29 @@ html.fc-modal-open, html.fc-modal-open body { overscroll-behavior: none; }
 .fc-slider::-moz-range-track { height: 6px; border-radius: 999px; background: var(--fc-line-2); }
 .fc-slider-val { flex: none; min-width: 78px; text-align: right; font-size: 14px; font-weight: 800; color: var(--fc-accent); font-variant-numeric: tabular-nums; }
 
+/* 積立変更シミュレーション（理想／現実／比較） */
+.fc-sim-curr { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; margin: 10px 0 2px; font-size: 13px; color: var(--fc-text-2); }
+.fc-sim-curr b { color: var(--fc-text); font-weight: 800; }
+.fc-sim-arrow { color: var(--fc-muted); font-weight: 800; }
+.fc-sim-new { color: var(--fc-accent) !important; }
+.fc-btn-row { display: flex; gap: 8px; margin-top: 12px; }
+.fc-btn-row .fc-btn { flex: 1; }
+.fc-btn[disabled] { opacity: 0.4; pointer-events: none; }
+.fc-subhead { font-size: 13px; font-weight: 800; color: var(--fc-text-2); margin: 16px 2px 6px; }
+.fc-field-hint.fc-warn { color: var(--fc-neg); font-weight: 600; }
+
+/* 理想と現実の比較テーブル */
+.fc-cmp-wrap { overflow-x: auto; -webkit-overflow-scrolling: touch; margin-top: 4px; }
+.fc-cmp-table { width: 100%; border-collapse: collapse; font-size: 13px; font-variant-numeric: tabular-nums; }
+.fc-cmp-table th, .fc-cmp-table td { padding: 9px 10px; border-top: 1px solid var(--fc-line); text-align: left; white-space: nowrap; }
+.fc-cmp-table thead th { border-top: none; font-size: 12px; color: var(--fc-text-2); font-weight: 700; }
+.fc-cmp-table thead th:not(:first-child) { text-align: right; }
+.fc-cmp-table td.num { text-align: right; font-weight: 700; }
+.fc-cmp-table tbody td:first-child { color: var(--fc-text-2); }
+.fc-cmp-diff { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-top: 12px; padding: 12px 14px; background: var(--fc-surface-2); border-radius: 12px; font-size: 13.5px; font-weight: 700; }
+.fc-cmp-diff b { font-size: 16px; font-weight: 800; font-variant-numeric: tabular-nums; }
+.fc-cmp-diff b.neg { color: var(--fc-neg); }
+
 /* グラフ表示項目の切替チップ */
 .fc-chipwrap { display: flex; flex-wrap: wrap; gap: 7px; margin-bottom: 6px; }
 .fc-serieschip { display: inline-flex; align-items: center; gap: 6px; border: 1px solid var(--fc-line); background: var(--fc-surface); border-radius: 999px; padding: 7px 13px 7px 10px; font-size: 12.5px; font-weight: 700; color: var(--fc-text-2); transition: 0.15s; }

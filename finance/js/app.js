@@ -1,17 +1,17 @@
 // app.js — ルーティング・画面描画・フォーム・操作の統合レイヤー
-import * as S from './store.js?v=20260724a';
-import * as C from './calc.js?v=20260724a';
-import * as CF from './cashflow.js?v=20260724a';
-import * as Sec from './securities.js?v=20260724a';
-import * as FS from './futureSim.js?v=20260724a';
-import * as Perf from './performance.js?v=20260724a';
-import { lineChart, barChart, groupedBarChart, donutChart, multiLineChart, fanChart, perfChart, perfDeltaChart } from './charts.js?v=20260724a';
-import { iconHtml, icon } from './icons.js?v=20260724a';
+import * as S from './store.js?v=20260724b';
+import * as C from './calc.js?v=20260724b';
+import * as CF from './cashflow.js?v=20260724b';
+import * as Sec from './securities.js?v=20260724b';
+import * as FS from './futureSim.js?v=20260724b';
+import * as Perf from './performance.js?v=20260724b';
+import { lineChart, barChart, groupedBarChart, donutChart, multiLineChart, fanChart, perfChart, perfDeltaChart } from './charts.js?v=20260724b';
+import { iconHtml, icon } from './icons.js?v=20260724b';
 import {
   el, qs, qsa, yen, yenMasked, num, today, toISO, parseISO, ym, fmtDate, fmtDateLong,
   fmtMonth, addMonths, resolveDay, pad, weekdayName, haptic, escapeHtml, uid,
-} from './utils.js?v=20260724a';
-import { nextRecurringDate, nextSettlementDate, isMonthEndDay } from './recurrence.js?v=20260724a';
+} from './utils.js?v=20260724b';
+import { nextRecurringDate, nextSettlementDate, isMonthEndDay } from './recurrence.js?v=20260724b';
 
 // ---- 画面ローカル状態（データではないUI状態） ----
 const ui = {
@@ -20,7 +20,7 @@ const ui = {
   simTab: 'cashflow',      // 「将来」タブ内の切替: 'cashflow'(収支) | 'invest'(投資将来予測)
   futureCheckDate: null,   // 投資予測: 資産推移を確認する日付
   futureCompare: false,    // 投資予測: シナリオ比較を表示するか
-  futureExtra: 0,          // 投資予測: 積立変更シミュレーション(What-If、円/月)
+  futureDailyOverride: null, // 投資予測: 毎日の積立額の仮変更(円/日、nullで実設定のまま)
   cal: { y: new Date().getFullYear(), m: new Date().getMonth() },
   plYm: ym(new Date()),
   anaYm: ym(new Date()),
@@ -2150,15 +2150,6 @@ function perfHistoryEditForm(state, rec) {
 }
 
 // ============ 投資将来予測（将来資産シミュレーションの投資予測タブ） ============
-const FUTURE_SERIES_DEFS = [
-  { key: 'total', label: '総資産', color: '#0a84ff', field: 'total' },
-  { key: 'cash', label: '現金', color: '#8e8e93', field: 'bankCash' },
-  { key: 'secCash', label: '証券口座現金', color: '#5ac8fa', field: 'secCash' },
-  { key: 'principal', label: '元本', color: '#ff9500', field: 'principal' },
-  { key: 'valuation', label: '評価額', color: '#34c759', field: 'valuation' },
-  { key: 'indexValuation', label: 'インデックス評価額', color: '#bf5af2', field: 'indexValuation' },
-  { key: 'stockValuation', label: '個別株評価額', color: '#ff375f', field: 'stockValuation' },
-];
 const FUTURE_EVENT_PRESETS = ['住宅購入', '車購入', '旅行', '結婚', '教育費', '大型家電'];
 
 function renderFutureSim() {
@@ -2169,12 +2160,20 @@ function renderFutureSim() {
   wrap.append(futurePerformanceCard(st, fs));
   wrap.append(futurePeriodCard(fs));
   wrap.append(futureRateCard(fs));
-  wrap.append(futureWhatIfCard());
 
-  const proj = FS.project(st, { years: fs.years, extraMonthlyInvestment: ui.futureExtra || 0 });
-  wrap.append(futureMainChartCard(st, fs, proj));
-  wrap.append(futureSnapshotCard(fs, proj));
-  wrap.append(futureDateLookupCard(st, fs));
+  // 積立変更シミュレーション（理想／現実／比較）。毎日の積立額を仮変更して両モードを即時再計算する。
+  const mode = fs.simMode || 'reality';
+  const dailyOverride = ui.futureDailyOverride; // null = 実設定のまま
+  wrap.append(futureSimControlCard(st, fs, mode, dailyOverride));
+
+  // 同じ積立額・年利・保有期間で理想と現実を計算（計算処理は futureSim 内で ignoreCash により明確に分岐）。
+  const iv = FS.idealVsReality(st, { years: fs.years, dailyOverride });
+  wrap.append(futureSimChartCard(st, fs, mode, iv));
+  if (mode === 'ideal') wrap.append(futureIdealCard(st, fs, iv, dailyOverride));
+  else if (mode === 'compare') wrap.append(futureCompareTableCard(st, fs, iv));
+  else wrap.append(futureRealityCard(st, fs, iv, dailyOverride));
+
+  wrap.append(futureDateLookupCard(st, fs, dailyOverride));
   wrap.append(futureCompareCard(st, fs));
   wrap.append(futureSensitivityCard(st, fs));
   wrap.append(futureGoalsCard(st, fs));
@@ -2234,102 +2233,264 @@ function futureCustomRateForm(fs) {
   });
 }
 
-// ---- 積立変更シミュレーション（What-If・実データは変更しない） ----
-function futureWhatIfCard() {
-  const val = ui.futureExtra || 0;
-  const slider = el('input', { type: 'range', class: 'fc-slider', min: '0', max: '300000', step: '5000', value: String(val) });
-  const label = el('span', { class: 'fc-slider-val', text: `+${yen(val)}/月` });
-  slider.addEventListener('input', () => { label.textContent = `+${yen(Number(slider.value))}/月`; });
-  slider.addEventListener('change', () => { ui.futureExtra = Number(slider.value); render(); });
+// ============ 積立変更シミュレーション（理想／現実／比較） ============
+// 「毎日この金額を投資できたら」を確認する理想モードと、証券口座現金の制約を反映する現実モードを
+// 同じ積立額・年利・保有期間で切り替え／比較する。毎日の積立額は「仮変更」で、実設定は変更しない。
+const FUTURE_MODE_DEFS = [
+  { key: 'ideal', label: '理想' },
+  { key: 'reality', label: '現実' },
+  { key: 'compare', label: '比較' },
+];
+const DAILY_PRESETS = [1000, 3000, 5000, 10000];
+// 理想・現実グラフの系列定義（src: どちらの系列から取るか、field: スナップショットのフィールド）
+const SIM_SERIES_DEFS = [
+  { key: 'idealValuation', label: '理想の評価額', color: '#34c759', src: 'ideal', field: 'valuation' },
+  { key: 'realityValuation', label: '現実の評価額', color: '#0a84ff', src: 'reality', field: 'valuation' },
+  { key: 'idealPrincipal', label: '理想の元本', color: '#ffd60a', src: 'ideal', field: 'principal', dashed: true },
+  { key: 'realityPrincipal', label: '現実の元本', color: '#ff9500', src: 'reality', field: 'principal', dashed: true },
+  { key: 'secCash', label: '証券口座現金', color: '#5ac8fa', src: 'reality', field: 'secCash' },
+  { key: 'missed', label: '購入できなかった累計額', color: '#ff375f', src: 'reality', field: 'missedContrib' },
+];
+
+// ---- 積立変更シミュレーションの操作（モード切替・毎日の積立額の仮変更） ----
+function futureSimControlCard(state, fs, mode, dailyOverride) {
+  const secret = state.settings.secret;
+  const cur = FS.currentDailyContribution(state);
+  const val = dailyOverride == null ? cur : dailyOverride;
+  const overriding = dailyOverride != null && dailyOverride !== cur;
+
+  // モード切替（理想／現実／比較）
+  const seg = el('div', { class: 'fc-seg fc-seg3' });
+  for (const m of FUTURE_MODE_DEFS)
+    seg.append(el('button', { class: 'fc-seg-btn' + (mode === m.key ? ' on' : ''), type: 'button', text: m.label, onclick: () => { S.update((s) => { s.futureSim.simMode = m.key; }); render(); } }));
+
+  // 毎日の積立額プリセット＋自由入力
+  const presets = el('div', { class: 'fc-period' });
+  for (const p of DAILY_PRESETS)
+    presets.append(el('button', { class: 'fc-period-btn' + (val === p ? ' on' : ''), type: 'button', text: yen(p), onclick: () => { ui.futureDailyOverride = p; render(); } }));
+  presets.append(el('button', { class: 'fc-period-btn', type: 'button', text: '自由入力', onclick: () => futureDailyOverrideForm(cur) }));
+
+  // スライダー＋数値表示
+  const slider = el('input', { type: 'range', class: 'fc-slider', min: '0', max: '30000', step: '500', value: String(val) });
+  const label = el('span', { class: 'fc-slider-val', text: secret ? '＊＊＊/日' : `${yen(val)}/日` });
+  slider.addEventListener('input', () => { label.textContent = secret ? '＊＊＊/日' : `${yen(Number(slider.value))}/日`; });
+  slider.addEventListener('change', () => { ui.futureDailyOverride = Number(slider.value); render(); });
+
+  // 反映（実設定へ保存）／リセット（仮変更を破棄）
+  const applyBtn = el('button', { class: 'fc-btn primary', type: 'button', text: '実際の設定へ反映', disabled: overriding ? null : '', onclick: () => applyDailyOverrideToSettings(dailyOverride) });
+  const resetBtn = el('button', { class: 'fc-btn ghost', type: 'button', text: '仮変更をリセット', disabled: dailyOverride == null ? '' : null, onclick: () => { ui.futureDailyOverride = null; render(); } });
+
+  const noDaily = !FS.hasDailyAccumulation(state);
   return card(
     sectionTitle('積立変更シミュレーション'),
-    el('p', { class: 'fc-field-hint', text: '実際の積立設定は変更せず、毎月の追加投資額を仮に変えた場合の効果だけをその場で試せます（下のグラフ・数値へ即反映）。' }),
+    seg,
+    el('p', { class: 'fc-field-hint', text: '「理想」は現金不足でも積立を続けた場合、「現実」は証券口座現金の制約を反映した場合を計算します。毎日の積立額を仮に変えても、実際の積立設定・残高・取引履歴・過去の実績は変更しません。' }),
+    el('div', { class: 'fc-sim-curr' },
+      el('span', { text: '現在は' }),
+      el('b', { text: secret ? '＊＊＊/日' : `毎日 ${yen(cur)}` }),
+      overriding ? el('span', { class: 'fc-sim-arrow', text: '→' }) : '',
+      overriding ? el('b', { class: 'fc-sim-new', text: secret ? '＊＊＊/日' : `仮に 毎日 ${yen(dailyOverride)}` }) : ''),
+    presets,
     el('div', { class: 'fc-slider-row' }, slider, label),
+    noDaily ? el('p', { class: 'fc-field-hint fc-warn', text: '※ 毎日の積立設定が未登録のため、金額の仮変更は反映されません。証券口座の積立設定を追加してください。' }) : '',
+    el('div', { class: 'fc-btn-row' }, resetBtn, applyBtn),
+    el('p', { class: 'fc-note', text: '仮変更した金額は、「実際の設定へ反映」を押さない限り保存されません。' }),
   );
 }
 
-// ---- 将来資産グラフ（表示項目を切替） ----
-function futureMainChartCard(state, fs, proj) {
+// 毎日の積立額を自由入力（仮変更）
+function futureDailyOverrideForm(cur) {
+  const inp = inputEl({ type: 'number', inputmode: 'numeric', placeholder: '例）5000', value: ui.futureDailyOverride != null ? ui.futureDailyOverride : cur });
+  modal('毎日の積立額（仮変更）', field('1日あたりの積立額（円）', inp), {
+    onSave: (close) => {
+      const v = Number(inp.value);
+      if (Number.isNaN(v) || v < 0) return toast('0以上の数値を入力してください', 'alert');
+      ui.futureDailyOverride = Math.round(v);
+      render(); close();
+    },
+  });
+}
+
+// 仮変更した毎日の積立額を、実際の積立設定へ保存する（毎日頻度の積立設定のみ日額を更新）。
+// 明示的な確認を経てのみ実データを書き換える。過去の実績・取引履歴・残高は変更しない。
+function applyDailyOverrideToSettings(dailyOverride) {
+  if (dailyOverride == null) return;
+  confirmDialog('実際の設定へ反映しますか？', `毎日の積立設定を「毎日 ${yen(dailyOverride)}」へ更新します。過去の積立実績・残高・取引履歴は変更しません。`, () => {
+    S.update((s) => {
+      for (const acc of s.accounts) {
+        if (acc.type !== 'securities') continue;
+        for (const a of acc.accumulations || []) {
+          if (a.enabled === false) continue;
+          if ((a.frequency || 'daily') === 'daily') a.dailyAmount = dailyOverride;
+        }
+      }
+    });
+    ui.futureDailyOverride = null;
+    render();
+    toast('実際の積立設定へ反映しました');
+  }, { yesLabel: '反映する', danger: false });
+}
+
+// ---- 理想・現実グラフ（表示系列を切替。比較時は理想と現実の線を同じグラフに表示） ----
+function futureSimChartCard(state, fs, mode, iv) {
   const secret = state.settings.secret;
-  const visible = fs.chartVisible || {};
+  const visible = fs.simChartVisible || {};
   const chips = el('div', { class: 'fc-chipwrap' });
-  for (const d of FUTURE_SERIES_DEFS) {
+  for (const d of SIM_SERIES_DEFS) {
     const on = !!visible[d.key];
     chips.append(el('button', {
       class: 'fc-serieschip' + (on ? ' on' : ''), type: 'button',
       style: on ? `background:${d.color}22;color:${d.color};border-color:${d.color}66` : '',
-      onclick: () => { S.update((s) => { s.futureSim.chartVisible[d.key] = !s.futureSim.chartVisible[d.key]; }); render(); },
+      onclick: () => { S.update((s) => { s.futureSim.simChartVisible[d.key] = !s.futureSim.simChartVisible[d.key]; }); render(); },
     }, el('i', { class: 'dot', style: `background:${d.color}` }), el('span', { text: d.label })));
   }
 
   const labelFor = (iso, i) => { if (i === 0) return '今'; const d = parseISO(iso); return `${d.getFullYear()}/${d.getMonth() + 1}`; };
-  const step = Math.max(1, Math.floor(proj.series.length / 60));
-  const sampled = proj.series.filter((_, i) => i % step === 0 || i === proj.series.length - 1);
-  const seriesList = FUTURE_SERIES_DEFS.filter((d) => visible[d.key]).map((d) => ({
-    label: d.label, color: d.color, data: sampled.map((p, i) => ({ label: labelFor(p.date, i), value: p[d.field] })),
-  }));
-  const money = (v) => (secret ? '＊＊＊' : yen(v));
-  // 証券口座現金の不足（投資購入の資金不足）。銀行残高ではなく「実行日時点の証券口座現金」で判定する。
-  //   ・NISA積立／個別株購入が証券口座現金で賄えない予定を計算元（proj.shortfalls）から検出
-  //   ・その月の入金予定額・投資購入予定額・必要な追加振替額もあわせて表示する
-  const secShort = FS.securitiesShortfallReport(state, proj);
-  // 銀行資金がマイナス（生活費・カード・銀行⇔証券の振替など、銀行口座の取引のみで判定）。
-  //   投資購入（NISA積立・個別株）は証券口座現金から支払うため、銀行残高には影響しない。
-  const bankShort = proj.series.find((p) => p.bankCash < 0) || null;
-  const causeLabel = (kind) => (kind === 'accumulation' ? 'NISA積立' : '個別株購入');
+  const srcSeries = { ideal: iv.ideal.series, reality: iv.reality.series };
+  const seriesList = SIM_SERIES_DEFS.filter((d) => visible[d.key]).map((d) => {
+    const src = srcSeries[d.src];
+    const step = Math.max(1, Math.floor(src.length / 60));
+    const sampled = src.filter((_, i) => i % step === 0 || i === src.length - 1);
+    return { label: d.label, color: d.color, dashed: d.dashed, data: sampled.map((p, i) => ({ label: labelFor(p.date, i), value: p[d.field] })) };
+  });
 
   return card(
-    sectionTitle('将来資産グラフ'),
+    sectionTitle('理想・現実グラフ'),
     chips,
     secret ? el('p', { class: 'fc-empty', text: 'シークレットモード中は非表示' })
       : (seriesList.length ? el('div', { class: 'fc-chart', html: multiLineChart(seriesList, { height: 240 }) })
-        : el('p', { class: 'fc-empty', text: '表示する項目を選択してください' })),
+        : el('p', { class: 'fc-empty', text: '表示する系列を選択してください' })),
+    el('p', { class: 'fc-field-hint', text: '実線＝評価額、破線＝元本。現実グラフは毎月の振替日に証券口座現金が増え、積立日に減る動きを反映します。' }),
+  );
+}
+
+// ---- 理想シミュレーションの結果 ----
+// 現金不足を無視し、設定した積立額が全期間実行された前提の元本・評価額・累計積立額・目標到達日。
+function futureIdealCard(state, fs, iv, dailyOverride) {
+  const secret = state.settings.secret;
+  const money = (v) => (secret ? '＊＊＊' : yen(v));
+  const series = iv.ideal.series;
+  const end = series.at(-1);
+  const profitRate = end.principal > 0 ? ((end.valuation - end.principal) / end.principal) * 100 : null;
+
+  // 年ごとの資産推移（元本・評価額）
+  const rows = [];
+  for (let y = 1; y <= fs.years; y++) {
+    const pt = series[Math.min(series.length - 1, y * 12)];
+    rows.push(el('div', { class: 'fc-kv-row' }, el('span', { text: `${y}年後` }),
+      el('b', { text: secret ? '＊＊＊' : `元本 ${yen(pt.principal)} / 評価額 ${yen(pt.valuation)}` })));
+  }
+  // 目標到達予定日（理想モード＝現金制約なしで探索）
+  const preds = FS.goalPredictions(state, { mode: 'ideal', dailyOverride }).filter((p) => p.reached)
+    .sort((a, b) => a.date.localeCompare(b.date));
+
+  return card(
+    sectionTitle(`理想シミュレーション（${fs.years}年後）`),
+    el('p', { class: 'fc-field-hint', text: '証券口座現金や銀行残高による購入制限を行わず、設定した積立額が全期間実行された前提です。' }),
+    el('div', { class: 'fc-sec-grid' },
+      secBox('将来の投資元本', money(end.principal)), secBox('将来の評価額', money(end.valuation)),
+      secBox('累計積立額', money(end.plannedContrib))),
+    el('div', { class: 'fc-sec-grid' },
+      secBox('評価損益', money(end.valuation - end.principal)),
+      secBox('利益率', profitRate == null ? '—' : `${profitRate >= 0 ? '+' : ''}${profitRate.toFixed(1)}%`)),
+    el('h3', { class: 'fc-subhead', text: '年ごとの資産推移' }),
+    el('div', { class: 'fc-kv' }, ...rows),
+    preds.length ? el('div', {},
+      el('h3', { class: 'fc-subhead', text: '目標金額への到達予定日' }),
+      el('div', { class: 'fc-kv' }, ...preds.map((p) => kv(p.goal.name, `${fmtDateLong(p.date)}（${money(p.goal.targetAmount)}）`)))) : '',
+  );
+}
+
+// ---- 現実シミュレーションの結果（証券口座現金の制約を反映） ----
+function futureRealityCard(state, fs, iv, dailyOverride) {
+  const secret = state.settings.secret;
+  const money = (v) => (secret ? '＊＊＊' : yen(v));
+  const proj = iv.reality;
+  const end = proj.series.at(-1);
+  const profitRate = end.principal > 0 ? ((end.valuation - end.principal) / end.principal) * 100 : null;
+  const dailyAmt = dailyOverride == null ? FS.currentDailyContribution(state) : dailyOverride;
+  const first = FS.firstSecShortfall(proj);
+  const plan = FS.securitiesCashPlan(state, { dailyOverride });
+  const secShort = FS.securitiesShortfallReport(state, proj, { dailyOverride });
+  const causeLabel = (kind) => (kind === 'accumulation' ? 'NISA積立' : '個別株購入');
+
+  return card(
+    sectionTitle(`現実シミュレーション（${fs.years}年後）`),
+    el('p', { class: 'fc-field-hint', text: '現在の証券口座現金・振替・入金・積立設定・購入予定を日付順に処理します。購入日に現金が不足した日は積立を未実行とし、未実行分は元本・評価額へ加算しません（後日まとめ買いもしません）。' }),
+    el('div', { class: 'fc-kv' },
+      kv('設定した1日あたりの積立額', money(dailyAmt)),
+      kv('実際に購入できた累計額', money(end.boughtContrib)),
+      kv('現金不足で購入できなかった累計額', money(end.missedContrib)),
+      kv('積立実行回数', `${end.nisaExec.toLocaleString('ja-JP')}回`),
+      kv('積立未実行回数', `${end.nisaMiss.toLocaleString('ja-JP')}回`),
+      kv('最初に資金不足となる日', first ? fmtDateLong(first.date) : 'なし'),
+      kv('最初の不足額', first ? money(first.deficit) : '—'),
+      kv('毎月必要な証券口座への入金額', money(plan.requiredMonthly)),
+      kv('現在の毎月の振替額', money(plan.currentMonthlyTransfer)),
+      kv('振替額との差額（毎月の不足見込み）', money(plan.monthlyShortfall))),
+    el('h3', { class: 'fc-subhead', text: `${fs.years}年後の予測` }),
+    el('div', { class: 'fc-sec-grid' },
+      secBox('将来の証券口座現金', money(end.secCash)), secBox('将来の元本', money(end.principal)),
+      secBox('将来の評価額', money(end.valuation))),
+    el('div', { class: 'fc-sec-grid' },
+      secBox('評価損益', money(end.valuation - end.principal)),
+      secBox('利益率', profitRate == null ? '—' : `${profitRate >= 0 ? '+' : ''}${profitRate.toFixed(1)}%`),
+      secBox('将来の総資産', money(end.total))),
     secShort ? el('div', { class: 'fc-shortage' },
       el('div', { class: 'fc-shortage-top' }, el('span', { class: 'fc-shortage-ic', html: iconHtml('alert', { size: 18 }) }),
         el('b', { text: `${fmtDateLong(secShort.date)}頃に証券口座現金が不足する見込みです` })),
       el('div', { class: 'fc-shortage-sub', text: 'NISA積立・個別株購入・銀行から証券口座への振替設定を確認してください。' }),
       el('div', { class: 'fc-kv fc-shortage-plan' },
-        kv('不足予定額', money(secShort.deficit)),
         kv('不足の原因', `${causeLabel(secShort.kind)}「${secShort.name}」`),
         kv('その月の証券口座への入金予定額', money(secShort.monthDeposit)),
         kv('その月の投資購入予定額', money(secShort.monthInvest)),
-        kv('必要な追加振替額', money(secShort.requiredExtraTransfer))),
-      secShort.plan ? el('div', { class: 'fc-kv fc-shortage-plan' },
-        kv('毎月必要な積立額', money(secShort.plan.requiredMonthly)),
-        kv('現在の毎月の振替額', money(secShort.plan.currentMonthlyTransfer)),
-        kv('毎月の不足見込み', money(secShort.plan.monthlyShortfall))) : '') : '',
-    bankShort ? el('div', { class: 'fc-shortage' },
-      el('div', { class: 'fc-shortage-top' }, el('span', { class: 'fc-shortage-ic', html: iconHtml('alert', { size: 18 }) }),
-        el('b', { text: `${fmtDateLong(bankShort.date)}頃に銀行資金がマイナスになる見込みです` })),
-      el('div', { class: 'fc-shortage-sub', text: '固定収支・カード引落・銀行から証券口座への振替設定を見直してください。' })) : '',
+        kv('必要な追加振替額', money(secShort.requiredExtraTransfer)))) : '',
   );
 }
 
-// ---- 期間後スナップショット ----
-function futureSnapshotCard(fs, proj) {
-  const secret = S.getState().settings.secret;
+// ---- 理想と現実の比較（同じ積立額・年利・保有期間） ----
+function futureCompareTableCard(state, fs, iv) {
+  const secret = state.settings.secret;
   const money = (v) => (secret ? '＊＊＊' : yen(v));
-  const start = proj.series[0], end = proj.series.at(-1);
-  const profitRate = end.principal > 0 ? ((end.valuation - end.principal) / end.principal) * 100 : null;
+  const ie = iv.ideal.series.at(-1), re = iv.reality.series.at(-1);
+  const rows = [
+    ['累計積立予定額', ie.plannedContrib, re.plannedContrib],
+    ['実際に購入できる金額', ie.boughtContrib, re.boughtContrib],
+    ['購入できない金額', 0, re.missedContrib],
+    ['将来元本', ie.principal, re.principal],
+    ['将来評価額', ie.valuation, re.valuation],
+    ['評価損益', ie.valuation - ie.principal, re.valuation - re.principal],
+  ];
+  const table = el('table', { class: 'fc-cmp-table' });
+  const thead = el('tr', {}, el('th', { text: '項目' }), el('th', { text: '理想' }), el('th', { text: '現実' }));
+  table.append(el('thead', {}, thead));
+  const tbody = el('tbody', {});
+  for (const [label, ideal, reality] of rows)
+    tbody.append(el('tr', {}, el('td', { text: label }), el('td', { class: 'num', text: money(ideal) }), el('td', { class: 'num', text: money(reality) })));
+  table.append(tbody);
+
+  const diff = ie.valuation - re.valuation; // 理想と現実の将来評価額の差
   return card(
-    sectionTitle(`${fs.years}年後の予測`),
-    el('div', { class: 'fc-sec-grid' },
-      secBox('総資産', money(end.total)), secBox('現金合計', money(end.bankCash + end.secCash)), secBox('評価額', money(end.valuation))),
-    el('div', { class: 'fc-sec-grid' },
-      secBox('元本', money(end.principal)), secBox('評価損益', money(end.valuation - end.principal)),
-      secBox('利益率', profitRate == null ? '—' : `${profitRate >= 0 ? '+' : ''}${profitRate.toFixed(1)}%`)),
-    el('p', { class: 'fc-field-hint', text: `現在（${fmtDate(start.date)}）の総資産 ${money(start.total)} から ${fs.years}年後は ${money(end.total)}（${secret ? '＊＊＊' : yen(end.total - start.total, { sign: end.total - start.total > 0 })}）の見込みです。` }),
+    sectionTitle(`理想と現実の比較（${fs.years}年後）`),
+    el('p', { class: 'fc-field-hint', text: '同じ積立額・年利・保有期間で、現金制約を無視した理想と、証券口座現金の制約を反映した現実を並べて比較します。' }),
+    el('div', { class: 'fc-cmp-wrap' }, table),
+    el('div', { class: 'fc-cmp-diff' },
+      el('span', { text: '理想と現実の将来評価額の差' }),
+      el('b', { class: diff > 0 ? 'neg' : '', text: secret ? '＊＊＊' : yen(diff) })),
+    diff > 0 ? el('p', { class: 'fc-field-hint', text: '証券口座現金の不足で購入できない積立があるため、現実の評価額は理想より小さくなります。毎月の振替額を増やすと差が縮まります。' }) : '',
   );
 }
 
 // ---- 資産推移（任意の日付を選んで内訳を確認） ----
 // 選択日ごとに snapshotAt() で証券口座現金・元本・評価額・合計資産・利益率を日次で再計算する。
 // 口座の現在値をそのまま表示せず、選択日までの資金移動（振替・積立・購入・出金）を反映した結果で上書きする。
-function futureDateLookupCard(state, fs) {
+function futureDateLookupCard(state, fs, dailyOverride) {
   const secret = state.settings.secret;
   const years = Math.max(fs.years, 30);
+  // 証券口座現金の内訳を確認するため、現実モード（現金制約あり）＋仮変更した積立額で計算する。
+  const snapOpts = { years, mode: 'reality', dailyOverride };
   // 1回計算して from（現在）/to（最終日）を取得し、日付入力の範囲・既定日を決める（空文字はクランプで現在日になる）。
-  const meta = FS.snapshotAt(state, '', { years });
+  const meta = FS.snapshotAt(state, '', snapOpts);
   const from = meta.from, to = meta.to;
   // 既定は現在から1年後（範囲内にクランプ）
   const [fy, fm, fd] = from.split('-');
@@ -2340,7 +2501,7 @@ function futureDateLookupCard(state, fs) {
   const draw = () => {
     const iso = dateInp.value || from;
     // 選択日まで日次で再計算した精密スナップショット（積立履歴つき）
-    const pt = FS.snapshotAt(state, iso, { years, logAccruals: true });
+    const pt = FS.snapshotAt(state, iso, { ...snapOpts, logAccruals: true });
     const profitRate = pt.principal > 0 ? ((pt.valuation - pt.principal) / pt.principal) * 100 : null;
     result.innerHTML = '';
     const dateLabel = fmtDateLong(pt.date);
