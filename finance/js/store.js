@@ -2,13 +2,13 @@
 // 設計方針: すべてのデータはこの1オブジェクトに集約し、mutate → save → emit。
 // 将来の証券口座連携などは accounts の type と外部同期モジュールを足すだけで拡張可能。
 
-import { uid, pad } from './utils.js?v=20260724b';
-import { settlementDate } from './calc.js?v=20260724b';
+import { uid, pad } from './utils.js?v=20260724c';
+import { settlementDate } from './calc.js?v=20260724c';
 import {
   recurringActiveOn, monthlyOccurrences, jstTodayISO, dedupeKey,
   nextRecurringDate, nextSettlementDate,
-} from './recurrence.js?v=20260724b';
-import { isSecurities, hasSecurities, recomputeAccount, performanceSnapshot, jstNowISO } from './securities.js?v=20260724b';
+} from './recurrence.js?v=20260724c';
+import { isSecurities, hasSecurities, recomputeAccount, performanceSnapshot, jstNowISO } from './securities.js?v=20260724c';
 
 const KEY = 'finance_app_v2';
 const SCHEMA = 1;
@@ -119,8 +119,28 @@ function seedFutureSim() {
     goals: [],   // 投資達成目標 {id, name, targetAmount, metric:'total'|'valuation', createdAt}
     events: [],  // 将来イベント {id, name, date, amount, memo}
     plans: [],   // 保存済みシミュレーションプラン {id, name, savedAt, config}
+    // 理想シミュレーション（自由設計）: 実際の口座残高・積立設定とは完全に分離した独立データ。
+    // idealPlan = 現在編集中のプラン、idealPlans = 保存済みプラン一覧。
+    idealPlan: seedIdealPlan(),
+    idealPlans: [],
     // 投資実績グラフ（実績＋将来予測の連結表示）の設定
     perf: seedPerf(),
+  };
+}
+
+// ---- 理想シミュレーション（自由設計）の初期プラン ----
+// 実際の証券口座・積立設定とは無関係の、まっさらな資金計画。金額・入金・投資は未登録から始める。
+function seedIdealPlan() {
+  return {
+    startDate: todayISO(),
+    initialSecCash: 0,      // 初期証券口座現金
+    annualReturn: 10,       // 想定年利(%)
+    returnMode: 'compound', // 'compound'（複利）| 'simple'（単利）
+    years: 5,               // 保有期間
+    shortageMode: 'strict', // 現金不足時: 'strict'（資金計画を厳密に再現）| 'continue'（不足を無視して継続）
+    targetAmount: 0,        // 目標金額（評価額。0なら未設定）
+    deposits: [],           // 証券口座への自動入金 [{id,amount,frequency,day,weekday,startDate,endDate,enabled,memo}]
+    investments: [],        // 投資設定 [{id,name,kind,nisaFrame,frequency,amount,day,weekday,startDate,endDate,includeHolidays,nonBusinessDay,enabled}]
   };
 }
 
@@ -230,6 +250,13 @@ function migrate(data) {
   data.futureSim.goals ||= [];
   data.futureSim.events ||= [];
   data.futureSim.plans ||= [];
+  // 理想シミュレーション（自由設計）のデータを補完（実際の口座データとは分離）
+  data.futureSim.idealPlan ||= seedIdealPlan();
+  const ipDefault = seedIdealPlan();
+  for (const k of Object.keys(ipDefault)) if (data.futureSim.idealPlan[k] === undefined) data.futureSim.idealPlan[k] = ipDefault[k];
+  data.futureSim.idealPlan.deposits ||= [];
+  data.futureSim.idealPlan.investments ||= [];
+  data.futureSim.idealPlans ||= [];
   // 投資実績グラフの設定を補完
   const perfDefault = seedPerf();
   data.futureSim.perf ||= perfDefault;
