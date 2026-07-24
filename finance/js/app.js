@@ -2269,16 +2269,14 @@ function futureMainChartCard(state, fs, proj) {
     label: d.label, color: d.color, data: sampled.map((p, i) => ({ label: labelFor(p.date, i), value: p[d.field] })),
   }));
   const money = (v) => (secret ? '＊＊＊' : yen(v));
-  // 銀行資金がマイナス（生活費・カード等で使いすぎ）
+  // 証券口座現金の不足（投資購入の資金不足）。銀行残高ではなく「実行日時点の証券口座現金」で判定する。
+  //   ・NISA積立／個別株購入が証券口座現金で賄えない予定を計算元（proj.shortfalls）から検出
+  //   ・その月の入金予定額・投資購入予定額・必要な追加振替額もあわせて表示する
+  const secShort = FS.securitiesShortfallReport(state, proj);
+  // 銀行資金がマイナス（生活費・カード・銀行⇔証券の振替など、銀行口座の取引のみで判定）。
+  //   投資購入（NISA積立・個別株）は証券口座現金から支払うため、銀行残高には影響しない。
   const bankShort = proj.series.find((p) => p.bankCash < 0) || null;
-  // 証券口座現金の不足。適切な振替設定（毎月の振替≧毎月の積立）なら警告しない。
-  //   ・個別株の購入予定が現金不足で実行できない → 常に警告
-  //   ・NISA積立の不足 → 毎月の構造的な不足（monthlyShortfall>0）があるときのみ警告
-  //     （初月の入金前の一時的なズレは、振替が積立を上回っていれば以降解消するため除外）
-  const plan = FS.securitiesCashPlan(state);
-  const purchaseShort = (proj.shortfalls || []).find((s) => s.kind === 'purchase') || null;
-  const accumShort = plan.monthlyShortfall > 0 ? (proj.shortfalls || []).find((s) => s.kind === 'accumulation') : null;
-  const secShort = [purchaseShort, accumShort].filter(Boolean).sort((a, b) => a.date.localeCompare(b.date))[0] || null;
+  const causeLabel = (kind) => (kind === 'accumulation' ? 'NISA積立' : '個別株購入');
 
   return card(
     sectionTitle('将来資産グラフ'),
@@ -2286,18 +2284,24 @@ function futureMainChartCard(state, fs, proj) {
     secret ? el('p', { class: 'fc-empty', text: 'シークレットモード中は非表示' })
       : (seriesList.length ? el('div', { class: 'fc-chart', html: multiLineChart(seriesList, { height: 240 }) })
         : el('p', { class: 'fc-empty', text: '表示する項目を選択してください' })),
-    bankShort ? el('div', { class: 'fc-shortage' },
-      el('div', { class: 'fc-shortage-top' }, el('span', { class: 'fc-shortage-ic', html: iconHtml('alert', { size: 18 }) }),
-        el('b', { text: `${fmtDateLong(bankShort.date)}頃に銀行資金がマイナスになる見込みです` })),
-      el('div', { class: 'fc-shortage-sub', text: '固定収支・カード引落・銀行⇔証券の振替設定を見直してください。' })) : '',
     secShort ? el('div', { class: 'fc-shortage' },
       el('div', { class: 'fc-shortage-top' }, el('span', { class: 'fc-shortage-ic', html: iconHtml('alert', { size: 18 }) }),
         el('b', { text: `${fmtDateLong(secShort.date)}頃に証券口座現金が不足する見込みです` })),
-      el('div', { class: 'fc-shortage-sub', text: `不足予定額 約${money(secShort.deficit)}・原因: ${secShort.kind === 'accumulation' ? 'NISA積立' : '個別株購入'}「${secShort.name}」` }),
-      plan ? el('div', { class: 'fc-kv fc-shortage-plan' },
-        kv('毎月必要な振替額', money(plan.requiredMonthly)),
-        kv('現在の振替額', money(plan.currentMonthlyTransfer)),
-        kv('毎月の不足見込み', money(plan.monthlyShortfall))) : '') : '',
+      el('div', { class: 'fc-shortage-sub', text: 'NISA積立・個別株購入・銀行から証券口座への振替設定を確認してください。' }),
+      el('div', { class: 'fc-kv fc-shortage-plan' },
+        kv('不足予定額', money(secShort.deficit)),
+        kv('不足の原因', `${causeLabel(secShort.kind)}「${secShort.name}」`),
+        kv('その月の証券口座への入金予定額', money(secShort.monthDeposit)),
+        kv('その月の投資購入予定額', money(secShort.monthInvest)),
+        kv('必要な追加振替額', money(secShort.requiredExtraTransfer))),
+      secShort.plan ? el('div', { class: 'fc-kv fc-shortage-plan' },
+        kv('毎月必要な積立額', money(secShort.plan.requiredMonthly)),
+        kv('現在の毎月の振替額', money(secShort.plan.currentMonthlyTransfer)),
+        kv('毎月の不足見込み', money(secShort.plan.monthlyShortfall))) : '') : '',
+    bankShort ? el('div', { class: 'fc-shortage' },
+      el('div', { class: 'fc-shortage-top' }, el('span', { class: 'fc-shortage-ic', html: iconHtml('alert', { size: 18 }) }),
+        el('b', { text: `${fmtDateLong(bankShort.date)}頃に銀行資金がマイナスになる見込みです` })),
+      el('div', { class: 'fc-shortage-sub', text: '固定収支・カード引落・銀行から証券口座への振替設定を見直してください。' })) : '',
   );
 }
 
