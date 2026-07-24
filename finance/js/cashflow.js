@@ -9,10 +9,10 @@
 // これにより 投資・配当・積立NISA・ローン返済・住宅/車購入 などは
 // 新しい kind のイベント生成器を足すだけで追加できる。
 
-import { toISO, parseISO, addMonths, daysInMonth } from './utils.js?v=20260724b';
-import { settlements, settlementDate, totalAssets } from './calc.js?v=20260724b';
-import { monthlyOccurrences, recurringActiveOn, jstTodayISO } from './recurrence.js?v=20260724b';
-import { version as storeVersion } from './store.js?v=20260724b';
+import { toISO, parseISO, addMonths, daysInMonth } from './utils.js?v=20260724c';
+import { settlements, settlementDate, totalAssets } from './calc.js?v=20260724c';
+import { monthlyOccurrences, recurringActiveOn, jstTodayISO } from './recurrence.js?v=20260724c';
+import { version as storeVersion } from './store.js?v=20260724c';
 
 // 日次処理順（⑫）: 収入→固定収入→固定支出→カード引落→振替→その他支出
 export const PRIORITY = { income: 1, 'fixed-income': 2, 'fixed-expense': 3, card: 4, transfer: 5, expense: 6 };

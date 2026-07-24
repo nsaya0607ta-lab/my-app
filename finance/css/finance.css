@@ -882,3 +882,6 @@ html.fc-modal-open, html.fc-modal-open body { overscroll-behavior: none; }
 .fc-insight-list { display: flex; flex-direction: column; gap: 10px; }
 .fc-insight-row { display: flex; align-items: flex-start; gap: 9px; font-size: 13.5px; line-height: 1.55; padding: 10px 12px; background: var(--fc-surface-2); border-radius: 12px; }
 .fc-insight-ic { flex: none; color: var(--fc-accent); margin-top: 1px; }
+
+/* 理想シミュレーション（自由設計）: 無効な入金・投資設定の行を淡色表示 */
+.fc-row-off { opacity: .5; }
