@@ -4,14 +4,14 @@
 // 証券口座の現金・元本・評価額（インデックス／個別株）を月次で前進させて一元的な将来資産を計算する。
 // ダミー値・外部APIは使わず、登録済みデータ（口座・保有銘柄・積立設定・購入予定・futureSim設定）のみから計算する。
 
-import { pad, toISO, parseISO, addMonths, daysInMonth } from './utils.js?v=20260724e';
-import { jstTodayISO } from './recurrence.js?v=20260724e';
-import { buildEvents } from './cashflow.js?v=20260724e';
+import { pad, toISO, parseISO, addMonths, daysInMonth, resolveDay } from './utils.js?v=20260724f';
+import { jstTodayISO } from './recurrence.js?v=20260724f';
+import { buildEvents } from './cashflow.js?v=20260724f';
 import {
   isSecurities, securitiesAccounts, accountHoldings, isIndex, contributionForDate,
   holdingCost, holdingValue,
-} from './securities.js?v=20260724e';
-import { SCENARIO_RATES } from './store.js?v=20260724e';
+} from './securities.js?v=20260724f';
+import { SCENARIO_RATES } from './store.js?v=20260724f';
 
 const n = (v) => Number(v) || 0;
 
@@ -28,6 +28,23 @@ export function scenarioRate(fs) {
   if (!fs) return SCENARIO_RATES.normal;
   if (fs.scenario === 'custom') return n(fs.customReturn);
   return SCENARIO_RATES[fs.scenario] ?? SCENARIO_RATES.normal;
+}
+
+// ===== 証券口座への毎月入金（ユーザー設定）のヘルパー =====
+// 有効・入金額>0・登録済み証券口座のみを「実際にシミュレーションへ反映する入金」として返す。
+// 未設定・無効・0円・存在しない口座は対象外（＝入金なしとして扱う）。表示側とも判定を共有する。
+export function validMonthlyBrokerageDeposits(state) {
+  const out = [];
+  for (const md of state.monthlyBrokerageDeposits || []) {
+    if (!md || md.enabled === false) continue;
+    const amount = n(md.amount);
+    const day = Number(md.day);
+    if (amount <= 0 || !(day >= 1 && day <= 31)) continue;
+    const acc = (state.accounts || []).find((a) => a.id === md.accountId);
+    if (!acc || !isSecurities(acc)) continue;
+    out.push({ id: md.id, accountId: md.accountId, accountName: acc.name || '証券口座', day, amount });
+  }
+  return out;
 }
 
 // ===== 内部ヘルパー =====
@@ -116,8 +133,9 @@ function isSecAcc(state, id) {
 //
 // 資金の流れ: 銀行口座 →(振替)→ 証券口座現金 →(NISA/個別株の購入)→ 投資元本。
 // 証券口座現金は日付順に、同日内は次の順で処理する（入金→購入→出金）:
-//   1) 銀行→証券の振替入金  2) 証券口座へのその他入金  3) NISA積立購入
-//   4) 個別株の購入予定      5) 証券→銀行の振替出金
+//   0) 証券口座への毎月入金（ユーザー設定）  1) 銀行→証券の振替入金  2) 証券口座へのその他入金
+//   3) NISA積立購入  4) 個別株の購入予定  5) 証券→銀行の振替出金
+// 毎月入金を最初に処理することで、入金日と積立日が同じ場合でも入金後の現金で積立購入できる。
 // これにより「入金後の残高から購入」でき、現金が足りなければ購入を実行せず不足として記録する
 // （証券口座現金はマイナスにしない）。実際の積立処理(securities.runAccrualForDate)と同じ資金判定。
 //
@@ -171,6 +189,10 @@ function createProjection(state, opts, from, to) {
     if (!ev.date || ev.date <= from || ev.date > to) continue;
     addDay(ev.date, { bank: -n(ev.amount), bexp: n(ev.amount) });
   }
+
+  // 証券口座への毎月入金（ユーザー設定）。有効・入金額>0・登録済み証券口座のみを対象に前計算する。
+  // 未設定（配列が空 / 無効 / 0円）の場合は何も加算しない（毎月1日などの自動補完はしない）。
+  const monthlyDeposits = validMonthlyBrokerageDeposits(state);
 
   const { indexLots, stockLots } = cloneHoldingsState(state, dailyOverride);
   let { bank, sec } = initialCash(state);
@@ -230,6 +252,17 @@ function createProjection(state, opts, from, to) {
   const stepDay = (iso) => {
     const dd = byDay.get(iso);
     const ym = iso.slice(0, 7);
+
+    // 0) 証券口座への毎月入金（ユーザー設定）。同日内で最初に処理し、入金後の現金で積立購入できるようにする。
+    //    29/30/31日を指定した月にその日が無い場合は、resolveDay がその月の最終日へ丸める（入金をスキップしない）。
+    if (monthlyDeposits.length) {
+      const y = Number(iso.slice(0, 4)), m0 = Number(iso.slice(5, 7)) - 1, dnum = Number(iso.slice(8, 10));
+      for (const md of monthlyDeposits) {
+        if (resolveDay(y, m0, md.day) !== dnum) continue;
+        sec += md.amount; cumDepositIn += md.amount; addMonth(monthDeposit, ym, md.amount);
+        if (logAccruals) accrualLog.push({ date: iso, kind: 'deposit', name: `${md.accountName}への毎月入金`, amount: md.amount, secAfter: Math.round(sec) });
+      }
+    }
 
     // 1) 銀行→証券の振替入金 / 2) 証券口座へのその他入金
     if (dd) {
@@ -392,6 +425,8 @@ export function securitiesCashPlan(state, opts = {}) {
   for (const rt of state.recurringTransfers || []) {
     if (isSecAcc(state, rt.toAccountId) && !isSecAcc(state, rt.fromAccountId)) currentMonthlyTransfer += n(rt.amount);
   }
+  // 証券口座への毎月入金（ユーザー設定）も毎月の入金額として合算する。
+  for (const md of validMonthlyBrokerageDeposits(state)) currentMonthlyTransfer += md.amount;
   let requiredMonthly = 0;
   for (const acc of securitiesAccounts(state)) {
     for (const a of acc.accumulations || []) {

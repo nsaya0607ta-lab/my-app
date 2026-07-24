@@ -2,13 +2,13 @@
 // 設計方針: すべてのデータはこの1オブジェクトに集約し、mutate → save → emit。
 // 将来の証券口座連携などは accounts の type と外部同期モジュールを足すだけで拡張可能。
 
-import { uid, pad } from './utils.js?v=20260724e';
-import { settlementDate } from './calc.js?v=20260724e';
+import { uid, pad } from './utils.js?v=20260724f';
+import { settlementDate } from './calc.js?v=20260724f';
 import {
   recurringActiveOn, monthlyOccurrences, jstTodayISO, dedupeKey,
   nextRecurringDate, nextSettlementDate,
-} from './recurrence.js?v=20260724e';
-import { isSecurities, hasSecurities, recomputeAccount, performanceSnapshot, jstNowISO } from './securities.js?v=20260724e';
+} from './recurrence.js?v=20260724f';
+import { isSecurities, hasSecurities, recomputeAccount, performanceSnapshot, jstNowISO } from './securities.js?v=20260724f';
 
 const KEY = 'finance_app_v2';
 const SCHEMA = 1;
@@ -73,6 +73,10 @@ function seed() {
     cardTransactions: [],
     transfers: [],
     recurringTransfers: [], // 固定振替（毎月の定期的な資産移動）
+    // 証券口座への毎月入金（将来シミュレーション用）。口座ごとに「毎月何日にいくら」を登録する。
+    // 実際の口座残高・取引履歴には自動反映しない（将来予測にのみ加算する）。
+    // [{ id, accountId, day(1-31), amount, enabled }]
+    monthlyBrokerageDeposits: [],
     simulation: {
       startAsset: null, // null の場合は総資産に連動
       monthlyIncome: 0,
@@ -229,6 +233,9 @@ function migrate(data) {
   data.cardTransactions ||= [];
   data.transfers ||= []; // 振替履歴（資産の移動。収入・支出とは別概念）
   data.recurringTransfers ||= []; // 固定振替
+  // 証券口座への毎月入金（将来シミュレーション用）。既存データに無ければ「未設定」で開始する。
+  // 過去に毎月1日を自動補完するような処理はなく、ここで勝手に既定の入金日を作らない。
+  data.monthlyBrokerageDeposits ||= [];
   data.categories ||= { income: [], expense: [] };
   data.settings ||= { secret: false, theme: 'auto', monthlyBudget: 0, notifiedKeys: [] };
   data.settings.notifiedKeys ||= [];

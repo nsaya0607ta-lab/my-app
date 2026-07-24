@@ -1,18 +1,18 @@
 // app.js — ルーティング・画面描画・フォーム・操作の統合レイヤー
-import * as S from './store.js?v=20260724e';
-import * as C from './calc.js?v=20260724e';
-import * as CF from './cashflow.js?v=20260724e';
-import * as Sec from './securities.js?v=20260724e';
-import * as FS from './futureSim.js?v=20260724e';
-import * as IS from './idealSim.js?v=20260724e';
-import * as Perf from './performance.js?v=20260724e';
-import { lineChart, barChart, groupedBarChart, donutChart, multiLineChart, fanChart, perfChart, perfDeltaChart } from './charts.js?v=20260724e';
-import { iconHtml, icon } from './icons.js?v=20260724e';
+import * as S from './store.js?v=20260724f';
+import * as C from './calc.js?v=20260724f';
+import * as CF from './cashflow.js?v=20260724f';
+import * as Sec from './securities.js?v=20260724f';
+import * as FS from './futureSim.js?v=20260724f';
+import * as IS from './idealSim.js?v=20260724f';
+import * as Perf from './performance.js?v=20260724f';
+import { lineChart, barChart, groupedBarChart, donutChart, multiLineChart, fanChart, perfChart, perfDeltaChart } from './charts.js?v=20260724f';
+import { iconHtml, icon } from './icons.js?v=20260724f';
 import {
   el, qs, qsa, yen, yenMasked, num, today, toISO, parseISO, ym, fmtDate, fmtDateLong,
   fmtMonth, addMonths, resolveDay, pad, weekdayName, haptic, escapeHtml, uid,
-} from './utils.js?v=20260724e';
-import { nextRecurringDate, nextSettlementDate, isMonthEndDay } from './recurrence.js?v=20260724e';
+} from './utils.js?v=20260724f';
+import { nextRecurringDate, nextSettlementDate, isMonthEndDay } from './recurrence.js?v=20260724f';
 
 // ---- 画面ローカル状態（データではないUI状態） ----
 const ui = {
@@ -2456,9 +2456,10 @@ function renderFutureSim() {
       // STEP 1: 前提条件（保有期間・想定年利）
       stepSection(1, 'まず条件を決める', '将来予測の前提になる「保有期間」と「想定年利」を決めます。', null,
         futureConditionsCard(fs)),
-      // STEP 2: 積立額の仮変更（理想／現実／比較）
+      // STEP 2: 積立額の仮変更（理想／現実／比較）＋ 証券口座への毎月入金の設定内容
       stepSection(2, '積立額を変えてみる', '毎日いくら積み立てるかを仮に変えて、結果の変化を試します。', null,
-        futureSimControlCard(st, fs, mode, dailyOverride)),
+        futureSimControlCard(st, fs, mode, dailyOverride),
+        monthlyDepositSummaryCard(st)),
       // STEP 3: 結果（重要な数値を上に、グラフは下に）
       stepSection(3, '結果を見る', 'いま選んだ条件だと将来どうなるかを確認します。', pill(`表示中：${modeLabel}`, 'accent'),
         resultCard,
@@ -2471,7 +2472,8 @@ function renderFutureSim() {
         collapsible('scenario', 'シナリオ（プラン）比較', futureCompareCard(st, fs))),
     );
   } else {
-    // 詳細設定: 将来イベント・目標・配当・購入予定・モンテカルロ・保存プラン・自動分析・実績履歴編集
+    // 詳細設定: 証券口座への毎月入金・将来イベント・目標・配当・購入予定・モンテカルロ・保存プラン・自動分析・実績履歴編集
+    wrap.append(futureMonthlyDepositCard(st));
     wrap.append(futureEventsCard(fs));
     wrap.append(futureGoalsCard(st, fs));
     wrap.append(futureDividendCard(st, fs));
@@ -2533,6 +2535,130 @@ function perfHistoryEntryCard(st) {
     el('p', { class: 'fc-field-hint', text: '過去の評価額・元本の記録を修正できます（誤登録の訂正用）。' }),
     btnIcon('ghost block', 'file', '投資実績履歴を編集', () => perfHistoryModal(st)),
   );
+}
+
+// ============================================================================
+// 証券口座への毎月入金（将来シミュレーション用）
+// 口座ごとに「毎月何日にいくら」を登録し、将来予測の証券口座現金へ毎月加算する。
+// 実際の口座残高・取引履歴には自動反映しない（振替・入金はユーザーが取引画面から登録する既存仕様を維持）。
+// データは state.monthlyBrokerageDeposits に保存する。
+// ============================================================================
+
+// ---- 詳細設定タブ: 毎月入金の一覧・追加・編集・削除 ----
+function futureMonthlyDepositCard(st) {
+  const secAccounts = Sec.securitiesAccounts(st);
+  const list = st.monthlyBrokerageDeposits || [];
+  const addBtn = secAccounts.length
+    ? el('button', { class: 'fc-link', type: 'button', onclick: () => monthlyDepositForm(st, null) },
+      el('span', { class: 'fc-add-ic sm', html: iconHtml('plus', { size: 14 }) }), el('span', { text: '入金を追加' }))
+    : null;
+
+  let body;
+  if (!secAccounts.length) {
+    body = el('p', { class: 'fc-empty', text: '証券口座を登録すると、毎月の入金を設定できます。' });
+  } else if (!list.length) {
+    body = el('p', { class: 'fc-empty', text: '毎月の入金設定はありません。「入金を追加」から、対象の証券口座・入金日・入金額を設定してください。' });
+  } else {
+    body = el('div', { class: 'fc-list' }, ...list.map((d) => {
+      const acc = st.accounts.find((a) => a.id === d.accountId);
+      const off = d.enabled === false || !acc || !(Number(d.amount) > 0);
+      return el('div', { class: 'fc-row tap' + (off ? ' fc-row-off' : ''), onclick: () => monthlyDepositForm(st, d) },
+        el('div', { class: 'fc-row-ic', html: iconHtml('coins', { size: 18 }) }),
+        el('div', { class: 'fc-row-main' },
+          el('div', { class: 'fc-row-title', text: acc ? acc.name : '（削除された口座）' }),
+          el('div', { class: 'fc-row-sub', text: `毎月${d.day ?? '—'}日 ${yen(d.amount)}${d.enabled === false ? '・無効' : ''}` })),
+        el('span', { class: 'fc-link-arrow', html: iconHtml('chevronRight', { size: 16 }) }));
+    }));
+  }
+
+  const c = card(
+    sectionTitle('証券口座への毎月入金', addBtn),
+    el('p', { class: 'fc-field-hint', text: '毎月、証券口座の現金残高へ追加される金額と日付を設定します。' }),
+    body,
+    el('p', { class: 'fc-field-hint', text: '※ この設定は将来シミュレーション用です。実際の口座残高・取引履歴へは自動登録しません（振替・入金は取引画面から登録してください）。29〜31日を指定した月にその日が無い場合は、その月の最終日に入金します。' }),
+  );
+  c.id = 'fc-monthly-deposit';
+  return c;
+}
+
+// ---- シミュレーションタブ STEP 2: 現在の毎月入金設定を簡潔に表示 ----
+function monthlyDepositSummaryCard(st) {
+  const money = (v) => (st.settings.secret ? '＊＊＊' : yen(v));
+  const active = FS.validMonthlyBrokerageDeposits(st); // 有効・入金額>0・登録済み口座のみ
+  const goDetail = () => {
+    ui.investTab = 'detail';
+    render();
+    scrollTop();
+    requestAnimationFrame(() => document.getElementById('fc-monthly-deposit')?.scrollIntoView({ behavior: 'smooth', block: 'start' }));
+  };
+
+  const body = active.length
+    ? el('div', { class: 'fc-list' }, ...active.map((d) => el('div', { class: 'fc-mdep-item' },
+        el('div', { class: 'fc-mdep-acc', text: d.accountName }),
+        el('div', { class: 'fc-mdep-line', text: `毎月${d.day}日に${money(d.amount)}を入金` }))))
+    : el('div', { class: 'fc-mdep-empty' },
+        el('p', { class: 'fc-mdep-unset', text: '未設定' }),
+        el('button', { class: 'fc-btn ghost', type: 'button', text: '詳細設定で設定する', onclick: goDetail }));
+
+  return card(sectionTitle('証券口座への毎月入金'), body);
+}
+
+// ---- 毎月入金の追加・編集フォーム ----
+function monthlyDepositForm(st, dep) {
+  const isNew = !dep;
+  const d = dep || {};
+  const secAccounts = Sec.securitiesAccounts(st);
+  if (!secAccounts.length) return toast('先に証券口座を登録してください', 'alert');
+
+  const accSel = selectEl(secAccounts.map((a) => ({ value: a.id, label: a.name })),
+    d.accountId ?? secAccounts[0].id);
+  const dayOpts = [{ value: '', label: '選択してください' }, ...Array.from({ length: 31 }, (_, i) => ({ value: i + 1, label: `毎月${i + 1}日` }))];
+  const daySel = selectEl(dayOpts, d.day != null ? d.day : '');
+  const amount = amountInput(d.amount); // 入金額（円・3桁区切り）
+  let enabled = dep ? dep.enabled !== false : true;
+  const enRow = el('div', { class: 'fc-field-toggle' });
+  const drawEn = () => {
+    enRow.innerHTML = '';
+    enRow.append(el('div', {},
+      el('div', { class: 'fc-field-lab', text: '毎月入金をシミュレーションに反映' }),
+      el('div', { class: 'fc-field-hint', text: 'OFFにすると、この入金は将来予測へ加算されません。' })),
+      toggle(enabled, () => { enabled = !enabled; drawEn(); }));
+  };
+  drawEn();
+
+  const body = el('div', {},
+    field('対象の証券口座', accSel),
+    field('毎月の入金日', daySel),
+    field('毎月の入金額（円）', amount),
+    el('p', { class: 'fc-field-hint', text: '29・30・31日を指定した月にその日が無い場合は、その月の最終日に入金します。' }),
+    enRow,
+    !isNew && el('button', { class: 'fc-btn danger block', type: 'button', text: 'この入金設定を削除',
+      onclick: () => confirmDialog('入金設定を削除', 'この毎月入金設定を削除しますか？', () => {
+        S.update((s) => { s.monthlyBrokerageDeposits = (s.monthlyBrokerageDeposits || []).filter((x) => x.id !== dep.id); });
+        closeAllModals(); render(); toast('削除しました');
+      }) }),
+  );
+
+  modal(isNew ? '毎月入金を追加' : '毎月入金を編集', body, {
+    onSave: (close) => {
+      const accountId = accSel.value;
+      const day = Number(daySel.value);
+      const amt = amountValue(amount);
+      // 有効にする場合は対象口座・入金日・入金額が必須。
+      if (!accountId) return toast('対象の証券口座を選択してください', 'alert');
+      if (!(day >= 1 && day <= 31)) return toast('毎月の入金日を選択してください', 'alert');
+      if (!(amt >= 1)) return toast('1円以上の入金額を入力してください', 'alert');
+      // 同じ証券口座に複数の毎月入金設定を登録しない（重複防止）。
+      const dup = (st.monthlyBrokerageDeposits || []).some((x) => x.id !== dep?.id && x.accountId === accountId);
+      if (dup) return toast('この証券口座には既に毎月入金設定があります', 'alert');
+      S.update((s) => {
+        s.monthlyBrokerageDeposits ||= [];
+        if (isNew) s.monthlyBrokerageDeposits.push({ id: uid('mdep'), accountId, day, amount: amt, enabled });
+        else Object.assign(s.monthlyBrokerageDeposits.find((x) => x.id === dep.id), { accountId, day, amount: amt, enabled });
+      });
+      render(); toast('保存しました'); close();
+    },
+  });
 }
 
 // ============================================================================

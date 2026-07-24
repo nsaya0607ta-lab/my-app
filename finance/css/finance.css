@@ -887,6 +887,15 @@ html.fc-modal-open, html.fc-modal-open body { overscroll-behavior: none; }
 /* 理想シミュレーション（自由設計）: 無効な入金・投資設定の行を淡色表示 */
 .fc-row-off { opacity: .5; }
 
+/* 証券口座への毎月入金: シミュレーションタブ STEP 2 の設定内容サマリー */
+.fc-mdep-item { padding: 10px 12px; background: var(--fc-surface-2); border: 1px solid var(--fc-line); border-radius: 12px; }
+.fc-mdep-item + .fc-mdep-item { margin-top: 8px; }
+.fc-mdep-acc { font-size: 13px; font-weight: 700; color: var(--fc-text); }
+.fc-mdep-line { font-size: 13.5px; color: var(--fc-text-2); margin-top: 2px; }
+.fc-mdep-empty { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 12px; background: var(--fc-surface-2); border: 1px solid var(--fc-line); border-radius: 12px; }
+.fc-mdep-unset { font-size: 14px; font-weight: 600; color: var(--fc-muted); margin: 0; }
+.fc-mdep-empty .fc-btn { flex: none; width: auto; padding: 8px 14px; }
+
 /* ========================================================================
    追加スタイル（アクセシビリティ / バックアップ / 口座削除 / 投資タブ）
    ======================================================================== */
