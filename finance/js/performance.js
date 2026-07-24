@@ -3,8 +3,8 @@
 // 実データ（performanceHistory）と将来予測（futureSim.project の系列）だけから描画用データを組み立てる。
 // 過去の実績は一切書き換えない（将来予測の設定変更は今日以降の予測のみに影響する）。
 
-import { pad, parseISO, toISO } from './utils.js?v=20260724d';
-import { jstTodayISO } from './securities.js?v=20260724d';
+import { pad, parseISO, toISO } from './utils.js?v=20260724e';
+import { jstTodayISO } from './securities.js?v=20260724e';
 
 // 表示対象タブ
 export const PERF_TARGETS = [

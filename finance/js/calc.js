@@ -2,11 +2,11 @@
 // 最重要3機能: ①クレジットカード引落管理 ②将来資産シミュレーション ③可処分資金の自動計算
 // 純粋関数の集合として実装し、UIから独立させることでテスト・拡張を容易にする。
 
-import { ym, pad, addMonths, toISO, parseISO, daysInMonth } from './utils.js?v=20260724d';
+import { ym, pad, addMonths, toISO, parseISO, daysInMonth } from './utils.js?v=20260724e';
 import {
   recurringActiveOn, settlementDateFor, occurrenceInMonth,
   nextRecurringDate, nextSettlementDate, jstTodayISO,
-} from './recurrence.js?v=20260724d';
+} from './recurrence.js?v=20260724e';
 
 // 定期処理の日付計算は recurrence.js に集約。ここでは後方互換のため再輸出する。
 export { recurringActiveOn, nextRecurringDate, nextSettlementDate, jstTodayISO };
