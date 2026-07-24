@@ -27,8 +27,8 @@
 //     ],
 //   }
 
-import { pad, toISO, parseISO, addMonths, daysInMonth, resolveDay, uid } from './utils.js?v=20260724d';
-import { isBusinessDay, prevISO } from './holidays.js?v=20260724d';
+import { pad, toISO, parseISO, addMonths, daysInMonth, resolveDay, uid } from './utils.js?v=20260724e';
+import { isBusinessDay, prevISO } from './holidays.js?v=20260724e';
 
 const n = (v) => Number(v) || 0;
 

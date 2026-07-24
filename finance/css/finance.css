@@ -336,7 +336,8 @@ input[type='color'].fc-input { height: 46px; padding: 4px; }
   max-height: 92vh; overflow-y: auto; box-shadow: 0 -10px 40px rgba(0, 0, 0, 0.22);
 }
 .fc-modal-back.show .fc-modal-sheet { transform: translateY(0); }
-.fc-modal-grip { width: 38px; height: 5px; border-radius: 3px; background: var(--fc-line-2); margin: 6px auto 12px; }
+.fc-modal-grip { width: 40px; height: 5px; border-radius: 3px; background: var(--fc-line-2); margin: 8px auto 12px; cursor: grab; transition: background 0.15s, width 0.15s; touch-action: none; }
+.fc-modal-grip:active { cursor: grabbing; background: var(--fc-muted); width: 52px; }
 .fc-modal-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 16px; }
 .fc-modal-head h3 { font-size: 18px; font-weight: 800; margin: 0; }
 .fc-modal-x { background: var(--fc-surface-2); border: none; width: 30px; height: 30px; border-radius: 50%; color: var(--fc-text-2); display: inline-flex; align-items: center; justify-content: center; }
@@ -923,3 +924,50 @@ button.fc-btnreset { background: none; border: none; padding: 0; margin: 0; font
 /* 投資将来予測の3タブ切替（画面上部に固定しない＝通常フロー） */
 .fc-invest-tabs { margin-bottom: 12px; }
 .fc-invest-tabs .fc-seg-btn.on { color: var(--fc-accent); }
+
+/* 投資将来予測の全体レイアウト（カード間の余白を確保し、詰め込み感を減らす） */
+.fc-futuresim { display: flex; flex-direction: column; gap: var(--fc-gap); }
+
+/* STEP セクション（順番に設定して結果を見る流れを見出しで明示） */
+.fc-step { display: flex; flex-direction: column; gap: 10px; }
+.fc-futuresim > .fc-step + .fc-step { margin-top: 6px; }
+.fc-step-head { display: flex; align-items: flex-start; gap: 11px; padding: 2px 2px 0; }
+.fc-step-badge {
+  flex: none; display: inline-flex; align-items: center; justify-content: center;
+  font-size: 11px; font-weight: 800; letter-spacing: 0.03em; color: #fff;
+  background: linear-gradient(135deg, var(--fc-accent), color-mix(in srgb, var(--fc-accent) 78%, #6f4bff));
+  border-radius: 999px; padding: 5px 11px; box-shadow: var(--fc-elev-sm); white-space: nowrap; margin-top: 1px;
+}
+.fc-step-textwrap { flex: 1; min-width: 0; }
+.fc-step-titlerow { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.fc-step-title { font-size: 16px; font-weight: 800; margin: 0; letter-spacing: 0.01em; }
+.fc-step-desc { font-size: 12px; color: var(--fc-text-2); line-height: 1.5; margin: 3px 0 0; }
+
+/* 折りたたみ（詳細を隠して初見の情報量を減らす） */
+.fc-collapse { border: 1px solid var(--fc-line); border-radius: var(--fc-radius-sm); background: var(--fc-surface-2); overflow: hidden; }
+.fc-collapse + .fc-collapse { margin-top: 10px; }
+.fc-collapse-sum {
+  display: flex; align-items: center; justify-content: space-between; gap: 8px;
+  padding: 12px 14px; font-size: 13.5px; font-weight: 700; color: var(--fc-text);
+  cursor: pointer; list-style: none; -webkit-tap-highlight-color: transparent;
+}
+.fc-collapse-sum::-webkit-details-marker { display: none; }
+.fc-collapse-label { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.fc-collapse-chev { display: inline-flex; color: var(--fc-muted); transition: transform 0.2s; flex: none; }
+.fc-collapse[open] > .fc-collapse-sum .fc-collapse-chev { transform: rotate(90deg); }
+.fc-collapse-body { display: flex; flex-direction: column; gap: 10px; padding: 2px 12px 12px; }
+.fc-collapse-body > .fc-card { box-shadow: none; }
+
+/* 理想／現実／比較の短い説明（選択中を強調） */
+.fc-modehint { display: flex; flex-direction: column; gap: 6px; margin: 10px 0 2px; }
+.fc-modehint-row { display: flex; align-items: baseline; gap: 8px; font-size: 12.5px; color: var(--fc-text-2); padding: 6px 10px; border-radius: 10px; border: 1px solid transparent; }
+.fc-modehint-row.on { background: var(--fc-accent-soft); border-color: color-mix(in srgb, var(--fc-accent) 30%, transparent); color: var(--fc-text); }
+.fc-modehint-key { flex: none; width: 34px; font-weight: 800; color: var(--fc-text); }
+.fc-modehint-row.on .fc-modehint-key { color: var(--fc-accent); }
+.fc-modehint-desc { flex: 1; line-height: 1.45; }
+
+/* STEP見出し内の「表示中：○○」ピル */
+.fc-pill.accent { color: var(--fc-accent); background: var(--fc-accent-soft); border-color: color-mix(in srgb, var(--fc-accent) 30%, transparent); }
+
+/* カード先頭の小見出しは上余白を詰める */
+.fc-subhead.first { margin-top: 2px; }
