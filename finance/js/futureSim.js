@@ -4,14 +4,14 @@
 // 証券口座の現金・元本・評価額（インデックス／個別株）を月次で前進させて一元的な将来資産を計算する。
 // ダミー値・外部APIは使わず、登録済みデータ（口座・保有銘柄・積立設定・購入予定・futureSim設定）のみから計算する。
 
-import { pad, toISO, parseISO, addMonths, daysInMonth } from './utils.js?v=20260724a';
-import { jstTodayISO } from './recurrence.js?v=20260724a';
-import { buildEvents } from './cashflow.js?v=20260724a';
+import { pad, toISO, parseISO, addMonths, daysInMonth } from './utils.js?v=20260724b';
+import { jstTodayISO } from './recurrence.js?v=20260724b';
+import { buildEvents } from './cashflow.js?v=20260724b';
 import {
   isSecurities, securitiesAccounts, accountHoldings, isIndex, contributionForDate,
   holdingCost, holdingValue,
-} from './securities.js?v=20260724a';
-import { SCENARIO_RATES } from './store.js?v=20260724a';
+} from './securities.js?v=20260724b';
+import { SCENARIO_RATES } from './store.js?v=20260724b';
 
 const n = (v) => Number(v) || 0;
 
@@ -42,14 +42,26 @@ function initialCash(state) {
   return { bank, sec };
 }
 
-// 保有銘柄をシミュレーション用に複製(実データは一切書き換えない)
-function cloneHoldingsState(state) {
+// 積立設定に「毎日の積立額の仮変更（dailyOverride）」を適用したコピーを返す。
+// 実データ(state)は書き換えず、シミュレーション内でのみ使う一時的な差し替え。
+//   ・対象は「毎日」頻度の積立設定のみ（毎週・毎月は対象外＝「毎日の積立額」の変更のため）。
+//   ・enabled/startDate/endDate/停止期間などの他条件はそのまま（無効な設定を勝手に有効化しない）。
+function applyDailyOverride(a, override) {
+  if (override == null) return a;
+  if ((a.frequency || 'daily') !== 'daily') return a;
+  return { ...a, dailyAmount: override };
+}
+
+// 保有銘柄をシミュレーション用に複製(実データは一切書き換えない)。
+// dailyOverride が指定されると、毎日の積立設定の日額だけを仮の金額へ差し替える（実設定は不変）。
+function cloneHoldingsState(state, dailyOverride = null) {
   const indexLots = [];
   const stockLots = [];
   for (const acc of securitiesAccounts(state)) {
     for (const h of accountHoldings(acc)) {
       if (isIndex(h)) {
-        const accums = (acc.accumulations || []).filter((a) => a.holdingId === h.id);
+        const accums = (acc.accumulations || []).filter((a) => a.holdingId === h.id)
+          .map((a) => applyDailyOverride(a, dailyOverride));
         indexLots.push({
           holdingId: h.id, name: h.name, principal: holdingCost(h), value: holdingValue(h),
           rate: n(h.simAnnualReturn) || 5, mode: h.returnMode || 'compound', accums,
@@ -112,12 +124,21 @@ function isSecAcc(state, id) {
 // createProjection は「1日進める(stepDay)」「月末処理(stepMonthEnd)」「スナップショット(snapshot)」を
 // 提供する内部エンジン。project(=月次系列)と snapshotAt(=選択日の精密計算)の両方がこのエンジンを共有し、
 // 証券口座現金・元本・評価額の計算元を一本化する（表示側は口座の現在値を直接使わない）。
+// opts.mode: 'reality'（既定）| 'ideal'
+//   'reality': 証券口座現金を日付順に処理し、購入日時点で現金が不足していればその日の購入は実行せず不足として記録する。
+//              現金はマイナスにしない。入金後は以降の積立を再開し、過去の未実行分を後日まとめて購入しない。
+//   'ideal'  : 「もし毎日この金額を投資できたら」を確認するモード。証券口座現金・銀行残高による購入制限を行わず、
+//              設定した積立額（＋購入予定）が全期間実行された前提で元本・評価額・累計積立額を計算する。
+//              この2モードは同じ createProjection 内で ignoreCash で明確に分岐し、計算処理を混在させない。
+// opts.dailyOverride: 「毎日の積立額を仮変更」する金額（円）。null なら実設定のまま。理想・現実どちらにも同じ値を適用する。
 function createProjection(state, opts, from, to) {
   const fs = state.futureSim || {};
   const rateOverride = opts.rateOverride ?? null;
   const extra = n(opts.extraMonthlyInvestment);
   const useOverride = fs.useOverride !== false;
   const logAccruals = !!opts.logAccruals;
+  const ignoreCash = opts.mode === 'ideal';                       // 理想モード: 現金不足でも購入を実行する
+  const dailyOverride = opts.dailyOverride == null ? null : n(opts.dailyOverride);
 
   // 収支・振替・単発収支を「日付ごと」に、証券口座現金の入金/出金と銀行増減へ分解する。
   //   bank: 銀行残高の純増減 / binc: 銀行の収入 / bexp: 銀行の支出（内訳表示用に収入・支出を分離）
@@ -151,13 +172,17 @@ function createProjection(state, opts, from, to) {
     addDay(ev.date, { bank: -n(ev.amount), bexp: n(ev.amount) });
   }
 
-  const { indexLots, stockLots } = cloneHoldingsState(state);
+  const { indexLots, stockLots } = cloneHoldingsState(state, dailyOverride);
   let { bank, sec } = initialCash(state);
   const secInitial = sec;
   const bankInitial = bank;
   let synth = 0; // What-If追加投資の合成枠
   // 証券口座現金の内訳（累計）。secCash = 初期 + 振替入金 + その他入金 − NISA購入 − 個別株購入 − 振替出金 − その他出金
   let cumXferIn = 0, cumDepositIn = 0, cumNisaBuy = 0, cumStockBuy = 0, cumXferOut = 0, cumWithdraw = 0;
+  // 積立・購入の「予定額（現金の有無に関わらず発生する額）」と「未実行額（現金不足で購入できなかった額）」の累計。
+  //   理想モードでは全額が実行されるため missed は常に0・bought は planned と一致する。
+  let cumNisaPlanned = 0, cumStockPlanned = 0, cumNisaMissed = 0, cumStockMissed = 0;
+  let nisaExec = 0, nisaMiss = 0; // NISA積立の実行回数・未実行回数（毎日の積立の実績カウント）
   // 銀行残高の内訳（累計）。bankCash = 初期 + 収入 − 支出 − 証券への振替(cumXferIn) + 証券からの振替(cumXferOut)
   let cumBankIncome = 0, cumBankExpense = 0;
   const shortfalls = []; // 現金不足で実行できなかった購入 [{date, month, kind, name, amount, deficit}]
@@ -193,6 +218,11 @@ function createProjection(state, opts, from, to) {
       bankInitial: Math.round(bankInitial),
       bankIncome: Math.round(cumBankIncome), bankExpense: Math.round(cumBankExpense),
       bankXferToSec: Math.round(cumXferIn), bankXferFromSec: Math.round(cumXferOut),
+      // 積立・購入の実績（理想・現実の比較用）
+      plannedContrib: Math.round(cumNisaPlanned + cumStockPlanned), // 累計積立予定額（現金の有無に関わらず）
+      boughtContrib: Math.round(cumNisaBuy + cumStockBuy),          // 実際に購入できた累計額
+      missedContrib: Math.round(cumNisaMissed + cumStockMissed),    // 現金不足で購入できなかった累計額
+      nisaExec, nisaMiss,                                           // NISA積立の実行回数・未実行回数
     };
   };
 
@@ -214,10 +244,14 @@ function createProjection(state, opts, from, to) {
         const amt = contributionForDate(a, iso);
         if (amt <= 0) continue;
         addMonth(monthInvest, ym, amt); // 資金の有無に関わらず「その月の投資予定額」として集計
-        if (sec >= amt) {
-          sec -= amt; l.principal += amt; l.value += amt; cumNisaBuy += amt;
+        cumNisaPlanned += amt;          // 累計積立予定額（理想・現実共通）
+        // 理想モードは現金不足でも実行（ignoreCash）。現実モードは現金が足りる日のみ実行し、
+        // 不足日は購入せず未実行として記録する（現金はマイナスにしない・後日まとめ買いもしない）。
+        if (ignoreCash || sec >= amt) {
+          sec -= amt; l.principal += amt; l.value += amt; cumNisaBuy += amt; nisaExec++;
           if (logAccruals) accrualLog.push({ date: iso, kind: 'accumulation', name: l.name, amount: -amt, secAfter: Math.round(sec) });
         } else {
+          cumNisaMissed += amt; nisaMiss++;
           shortfalls.push({ date: iso, month: ym, kind: 'accumulation', name: l.name, amount: amt, deficit: Math.round(amt - sec) });
         }
       }
@@ -230,10 +264,12 @@ function createProjection(state, opts, from, to) {
         const amt = n(p.amount);
         if (amt <= 0) { p._applied = true; continue; }
         addMonth(monthInvest, ym, amt); // 資金の有無に関わらず「その月の投資予定額」として集計
-        if (sec >= amt) {
+        cumStockPlanned += amt;
+        if (ignoreCash || sec >= amt) {
           sec -= amt; l.principal += amt; l.value += amt; cumStockBuy += amt; p._applied = true;
           if (logAccruals) accrualLog.push({ date: iso, kind: 'purchase', name: l.name, amount: -amt, secAfter: Math.round(sec) });
         } else {
+          cumStockMissed += amt;
           shortfalls.push({ date: iso, month: ym, kind: 'purchase', name: l.name, amount: amt, deficit: Math.round(amt - sec) });
         }
       }
@@ -349,7 +385,9 @@ export function snapshotAt(state, targetISO, opts = {}) {
 // ===== 証券口座現金の資金計画（毎月必要な振替額 vs 現在の振替設定額） =====
 // requiredMonthly: 毎月の投資（NISA積立）に必要な概算額（毎日=日額×約30.4／毎週=日額×約4.35／毎月=月額）。
 // currentMonthlyTransfer: 現在の「銀行→証券」固定振替の月合計。
-export function securitiesCashPlan(state) {
+// opts.dailyOverride: 「毎日の積立額を仮変更」した場合の必要額を計算する（毎日の積立設定のみ日額を置換）。
+export function securitiesCashPlan(state, opts = {}) {
+  const dailyOverride = opts.dailyOverride == null ? null : n(opts.dailyOverride);
   let currentMonthlyTransfer = 0;
   for (const rt of state.recurringTransfers || []) {
     if (isSecAcc(state, rt.toAccountId) && !isSecAcc(state, rt.fromAccountId)) currentMonthlyTransfer += n(rt.amount);
@@ -361,12 +399,48 @@ export function securitiesCashPlan(state) {
       const freq = a.frequency || 'daily';
       if (freq === 'monthly') requiredMonthly += n(a.monthlyAmount);
       else if (freq === 'weekly') requiredMonthly += n(a.dailyAmount) * (365 / 7 / 12);
-      else requiredMonthly += n(a.dailyAmount) * (365 / 12);
+      else requiredMonthly += (dailyOverride != null ? dailyOverride : n(a.dailyAmount)) * (365 / 12);
     }
   }
   requiredMonthly = Math.round(requiredMonthly);
   currentMonthlyTransfer = Math.round(currentMonthlyTransfer);
   return { currentMonthlyTransfer, requiredMonthly, monthlyShortfall: Math.max(0, requiredMonthly - currentMonthlyTransfer) };
+}
+
+// 現在の「毎日の積立額」の合計（毎日頻度の有効な積立設定の日額合計）。
+// 積立変更シミュレーションのスライダー初期値・「現在は毎日X円」の表示に使う。
+export function currentDailyContribution(state) {
+  let total = 0;
+  for (const acc of securitiesAccounts(state)) {
+    for (const a of acc.accumulations || []) {
+      if (a.enabled === false) continue;
+      if ((a.frequency || 'daily') === 'daily') total += n(a.dailyAmount);
+    }
+  }
+  return Math.round(total);
+}
+
+// 「毎日の積立設定」があるか（積立変更シミュレーションが有効に機能するか）。
+export function hasDailyAccumulation(state) {
+  for (const acc of securitiesAccounts(state)) {
+    for (const a of acc.accumulations || []) {
+      if (a.enabled === false) continue;
+      if ((a.frequency || 'daily') === 'daily') return true;
+    }
+  }
+  return false;
+}
+
+// ===== 理想 vs 現実（同じ積立額・年利・保有期間で両モードを計算） =====
+// dailyOverride を両モードへ同じ値で適用し、比較表・比較グラフのデータをまとめて返す。
+export function idealVsReality(state, opts = {}) {
+  const fs = state.futureSim || {};
+  const years = Math.max(1, opts.years ?? fs.years ?? 10);
+  const dailyOverride = opts.dailyOverride == null ? null : n(opts.dailyOverride);
+  const common = { years, dailyOverride };
+  const ideal = project(state, { ...common, mode: 'ideal' });
+  const reality = project(state, { ...common, mode: 'reality' });
+  return { years, dailyOverride, ideal, reality };
 }
 
 // 証券口座現金の不足（購入を実行できなかった最初の予定）。無ければ null。
@@ -381,10 +455,10 @@ export function firstSecShortfall(proj) {
 //   ・個別株の購入予定が現金不足 → 常に警告対象
 //   ・NISA積立の不足 → 毎月の構造的な不足（毎月の振替＜毎月の積立）があるときのみ警告対象
 //     （初月の入金前の一時的なズレは、振替が積立を上回っていれば以降解消するため除外する）
-export function securitiesShortfallReport(state, proj) {
+export function securitiesShortfallReport(state, proj, opts = {}) {
   const list = (proj && proj.shortfalls) || [];
   if (!list.length) return null;
-  const plan = securitiesCashPlan(state);
+  const plan = securitiesCashPlan(state, { dailyOverride: opts.dailyOverride });
   const purchase = list.find((s) => s.kind === 'purchase') || null;
   const accum = plan.monthlyShortfall > 0 ? list.find((s) => s.kind === 'accumulation') : null;
   const first = [purchase, accum].filter(Boolean).sort((a, b) => a.date.localeCompare(b.date))[0] || null;
@@ -439,7 +513,10 @@ export function firstShortfall(series) {
 // 目標は選択中の保有期間に関わらず最大30年先まで探索する。
 export function goalPredictions(state, opts = {}) {
   const fs = state.futureSim || {};
-  const p = project(state, { years: 30, rateOverride: opts.rateOverride, extraMonthlyInvestment: opts.extraMonthlyInvestment });
+  const p = project(state, {
+    years: 30, rateOverride: opts.rateOverride, extraMonthlyInvestment: opts.extraMonthlyInvestment,
+    mode: opts.mode, dailyOverride: opts.dailyOverride,
+  });
   return (fs.goals || []).map((g) => {
     const metric = g.metric === 'valuation' ? (pt) => pt.valuation : (pt) => pt.total;
     const target = n(g.targetAmount);

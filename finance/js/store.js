@@ -2,13 +2,13 @@
 // 設計方針: すべてのデータはこの1オブジェクトに集約し、mutate → save → emit。
 // 将来の証券口座連携などは accounts の type と外部同期モジュールを足すだけで拡張可能。
 
-import { uid, pad } from './utils.js?v=20260724a';
-import { settlementDate } from './calc.js?v=20260724a';
+import { uid, pad } from './utils.js?v=20260724b';
+import { settlementDate } from './calc.js?v=20260724b';
 import {
   recurringActiveOn, monthlyOccurrences, jstTodayISO, dedupeKey,
   nextRecurringDate, nextSettlementDate,
-} from './recurrence.js?v=20260724a';
-import { isSecurities, hasSecurities, recomputeAccount, performanceSnapshot, jstNowISO } from './securities.js?v=20260724a';
+} from './recurrence.js?v=20260724b';
+import { isSecurities, hasSecurities, recomputeAccount, performanceSnapshot, jstNowISO } from './securities.js?v=20260724b';
 
 const KEY = 'finance_app_v2';
 const SCHEMA = 1;
@@ -112,6 +112,10 @@ function seedFutureSim() {
     useOverride: true,         // true: シナリオの年利を全銘柄へ一律適用／false: 銘柄ごとの想定年利を使用
     monteCarlo: { enabled: false, runs: 300, volatility: 15 }, // volatility: 年率リターンの標準偏差(%)
     chartVisible: { total: true, cash: true, secCash: false, principal: false, valuation: true, indexValuation: false, stockValuation: false },
+    // 積立変更シミュレーション（理想・現実）の設定
+    simMode: 'reality',        // 'ideal'（理想）| 'reality'（現実）| 'compare'（比較）
+    // 理想・現実グラフの表示系列切替
+    simChartVisible: { idealValuation: true, realityValuation: true, idealPrincipal: false, realityPrincipal: false, secCash: false, missed: false },
     goals: [],   // 投資達成目標 {id, name, targetAmount, metric:'total'|'valuation', createdAt}
     events: [],  // 将来イベント {id, name, date, amount, memo}
     plans: [],   // 保存済みシミュレーションプラン {id, name, savedAt, config}
@@ -220,6 +224,9 @@ function migrate(data) {
   for (const k of Object.keys(fsDefault.monteCarlo)) if (data.futureSim.monteCarlo[k] === undefined) data.futureSim.monteCarlo[k] = fsDefault.monteCarlo[k];
   data.futureSim.chartVisible ||= fsDefault.chartVisible;
   for (const k of Object.keys(fsDefault.chartVisible)) if (data.futureSim.chartVisible[k] === undefined) data.futureSim.chartVisible[k] = fsDefault.chartVisible[k];
+  if (data.futureSim.simMode === undefined) data.futureSim.simMode = fsDefault.simMode;
+  data.futureSim.simChartVisible ||= fsDefault.simChartVisible;
+  for (const k of Object.keys(fsDefault.simChartVisible)) if (data.futureSim.simChartVisible[k] === undefined) data.futureSim.simChartVisible[k] = fsDefault.simChartVisible[k];
   data.futureSim.goals ||= [];
   data.futureSim.events ||= [];
   data.futureSim.plans ||= [];
