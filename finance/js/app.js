@@ -1,24 +1,25 @@
 // app.js — ルーティング・画面描画・フォーム・操作の統合レイヤー
-import * as S from './store.js?v=20260724c';
-import * as C from './calc.js?v=20260724c';
-import * as CF from './cashflow.js?v=20260724c';
-import * as Sec from './securities.js?v=20260724c';
-import * as FS from './futureSim.js?v=20260724c';
-import * as IS from './idealSim.js?v=20260724c';
-import * as Perf from './performance.js?v=20260724c';
-import { lineChart, barChart, groupedBarChart, donutChart, multiLineChart, fanChart, perfChart, perfDeltaChart } from './charts.js?v=20260724c';
-import { iconHtml, icon } from './icons.js?v=20260724c';
+import * as S from './store.js?v=20260724d';
+import * as C from './calc.js?v=20260724d';
+import * as CF from './cashflow.js?v=20260724d';
+import * as Sec from './securities.js?v=20260724d';
+import * as FS from './futureSim.js?v=20260724d';
+import * as IS from './idealSim.js?v=20260724d';
+import * as Perf from './performance.js?v=20260724d';
+import { lineChart, barChart, groupedBarChart, donutChart, multiLineChart, fanChart, perfChart, perfDeltaChart } from './charts.js?v=20260724d';
+import { iconHtml, icon } from './icons.js?v=20260724d';
 import {
   el, qs, qsa, yen, yenMasked, num, today, toISO, parseISO, ym, fmtDate, fmtDateLong,
   fmtMonth, addMonths, resolveDay, pad, weekdayName, haptic, escapeHtml, uid,
-} from './utils.js?v=20260724c';
-import { nextRecurringDate, nextSettlementDate, isMonthEndDay } from './recurrence.js?v=20260724c';
+} from './utils.js?v=20260724d';
+import { nextRecurringDate, nextSettlementDate, isMonthEndDay } from './recurrence.js?v=20260724d';
 
 // ---- 画面ローカル状態（データではないUI状態） ----
 const ui = {
   route: 'dashboard',
   simMonths: 12,           // 将来シミュレーションの表示期間
   simTab: 'cashflow',      // 「将来」タブ内の切替: 'cashflow'(収支) | 'invest'(投資将来予測)
+  investTab: 'overview',   // 投資将来予測の3タブ: 'overview'(概要) | 'simulation' | 'detail'(詳細設定)
   futureCheckDate: null,   // 投資予測: 資産推移を確認する日付
   futureCompare: false,    // 投資予測: シナリオ比較を表示するか
   futureDailyOverride: null, // 投資予測: 毎日の積立額の仮変更(円/日、nullで実設定のまま)
@@ -70,23 +71,39 @@ const ROUTES = {
 // 下部ナビにある主画面。これ以外（各種メニュー配下の詳細画面）には戻るボタンを出す。
 const PRIMARY_ROUTES = ['dashboard', 'transactions', 'cards', 'simulate', 'menu'];
 const isSecondaryRoute = (r) => !PRIMARY_ROUTES.includes(r);
-const navStack = []; // アプリ内ナビゲーション履歴（ブラウザ履歴ではなく独自管理）
+const navStack = []; // アプリ内ナビゲーション履歴（画面遷移の実体はこの配列で管理）
+const scrollTop = () => window.scrollTo({ top: 0, behavior: 'instant' in window ? 'instant' : 'auto' });
+
+// 画面遷移をブラウザ履歴へ積む。ページ全体のURLは分割せず、状態としてルートを持つ。
+function pushRoute(route) { try { history.pushState({ fcRoute: route }, ''); } catch {} }
 
 function go(route) {
-  if (route !== ui.route) { navStack.push(ui.route); if (navStack.length > 30) navStack.shift(); }
+  const same = route === ui.route;
+  // 同じ画面は履歴（navStack・ブラウザ履歴）へ連続して積まない
+  if (!same) { navStack.push(ui.route); if (navStack.length > 30) navStack.shift(); }
   ui.route = route;
   haptic();
   render();
-  window.scrollTo({ top: 0, behavior: 'instant' in window ? 'instant' : 'auto' });
+  scrollTop();
+  if (!same) pushRoute(route); // 下部ナビ・画面内リンクのいずれもブラウザ履歴に追加
 }
 
-// 1つ前の画面へ戻る（履歴が無ければホームへ）。ブラウザバックは使わない。
-function goBack() {
+// 1つ前の画面へ戻る。ブラウザ履歴と連携するため history.back() 経由（popstate で処理）。
+function goBack() { history.back(); }
+
+// ブラウザバック / iPhoneのスワイプバックを受け取る。
+// モーダル表示中は画面遷移せず、まずモーダルを閉じる。それ以外はアプリ内の前画面へ戻す。
+function handlePopState() {
+  if (_openModals.size) {
+    closeAllModals();
+    pushRoute(ui.route); // 消費した履歴を復元し、画面自体は変えない
+    return;
+  }
   const prev = navStack.pop();
-  ui.route = prev || 'dashboard';
+  ui.route = prev || 'dashboard'; // 履歴が無ければホームへ
   haptic();
   render();
-  window.scrollTo({ top: 0, behavior: 'instant' in window ? 'instant' : 'auto' });
+  scrollTop();
 }
 
 function render() {
@@ -95,8 +112,24 @@ function render() {
   const v = app();
   v.innerHTML = '';
   v.append(node);
+  enhanceTapAccessibility(v);
   v.classList.remove('fc-fade'); void v.offsetWidth; v.classList.add('fc-fade');
   updateNav();
+}
+
+// タップ可能な div（.tap など）を、キーボードでも操作できるよう role/tabindex/aria-label を補う。
+// Enter/Space の発火はグローバル keydown ハンドラで処理する。デザインは変更しない。
+function enhanceTapAccessibility(root) {
+  for (const elm of root.querySelectorAll('.tap, .fc-dg-head')) {
+    if (elm.tagName === 'BUTTON') continue;
+    if (!elm.getAttribute('role')) elm.setAttribute('role', 'button');
+    if (elm.getAttribute('tabindex') == null) elm.setAttribute('tabindex', '0');
+    if (!elm.getAttribute('aria-label')) {
+      const title = elm.querySelector('.fc-row-title, .fc-dg-date, .fc-menu-title');
+      const label = title?.textContent?.trim();
+      if (label) elm.setAttribute('aria-label', label);
+    }
+  }
 }
 
 function updateNav() {
@@ -178,11 +211,19 @@ function toast(msg, iconName = 'check') {
 // モーダル（下からせり上がるシート）
 // options.dirty(): 未保存の入力があるか。true のとき閉じる操作で破棄確認を出す。
 // options.saveDisabled: 保存ボタンの初期無効状態。返り値の setSaveDisabled で動的に切替可能。
+// 開いているモーダルの close ハンドラ集合。直接 remove() する旧処理を廃止し、
+// 常にここ経由で閉じることで unlockBodyScroll と _modalCount の整合を保つ。
+const _openModals = new Set();
+// すべての開いているモーダル（ネストした確認ダイアログ含む）を安全に閉じる。
+// スクロール固定の解除・元位置への復帰・カウンタ更新を必ず通す（iOS/PWA/通常ブラウザ共通）。
+function closeAllModals() { [..._openModals].forEach((m) => m.close()); }
+
 function modal(title, bodyNode, { onSave, saveLabel = '保存', danger, wide, dirty, saveDisabled } = {}) {
   const back = el('div', { class: 'fc-modal-back' });
   let closed = false;
   const closeAll = () => {
     if (closed) return; closed = true;
+    _openModals.delete(api); // レジストリから除去
     back.classList.remove('show');
     unlockBodyScroll();
     setTimeout(() => back.remove(), 260);
@@ -215,11 +256,13 @@ function modal(title, bodyNode, { onSave, saveLabel = '保存', danger, wide, di
   lockBodyScroll();
   document.body.append(back);
   requestAnimationFrame(() => back.classList.add('show'));
-  return {
+  const api = {
     close: closeAll,
     saveBtn,
     setSaveDisabled: (d) => { if (saveBtn) saveBtn.disabled = !!d; },
   };
+  _openModals.add(api); // レジストリへ登録（一括クローズ・ブラウザバック連携で使用）
+  return api;
 }
 
 function confirmDialog(title, message, onYes, { yesLabel = '削除', danger = true } = {}) {
@@ -260,17 +303,26 @@ function selectEl(options, value) {
 function accountOptions() { return S.getState().accounts.map((a) => ({ value: a.id, label: a.name })); }
 
 // 金額入力（3桁区切りで表示・数字キーボード）。value は円の整数。読み取りは amountValue()。
-function amountInput(initial) {
-  const has = initial != null && initial !== '' && !Number.isNaN(Number(initial));
+// opts.allowNegative: マイナス入力を許可する（残高・将来イベントなど）。既定は不可。
+function amountInput(initial, { allowNegative = false } = {}) {
+  const n = Number(initial);
+  const has = initial != null && initial !== '' && !Number.isNaN(n);
   const inp = inputEl({ type: 'text', inputmode: 'numeric', autocomplete: 'off',
-    placeholder: '0', value: has ? Number(initial).toLocaleString('ja-JP') : '' });
+    placeholder: '0', value: has ? n.toLocaleString('ja-JP') : '' });
+  if (allowNegative) inp.dataset.allowNeg = '1';
   inp.addEventListener('input', () => {
+    const neg = allowNegative && /-/.test(inp.value); // マイナス符号の有無（許可時のみ）
     const digits = inp.value.replace(/[^\d]/g, '');
-    inp.value = digits ? Number(digits).toLocaleString('ja-JP') : '';
+    inp.value = (digits ? (neg ? '-' : '') + Number(digits).toLocaleString('ja-JP') : (neg ? '-' : ''));
   });
   return inp;
 }
-const amountValue = (inp) => Number(String(inp.value).replace(/[^\d]/g, '')) || 0;
+// 入力欄の円整数を読む。マイナス許可欄では先頭の符号を反映する。
+const amountValue = (inp) => {
+  const neg = inp.dataset?.allowNeg === '1' && /-/.test(inp.value);
+  const v = Number(String(inp.value).replace(/[^\d]/g, '')) || 0;
+  return neg ? -v : v;
+};
 
 // 口座残高へ増減を反映するヘルパー。証券口座は「現金」を増減し、残高（現金＋評価額）を再計算する。
 // これにより 銀行→証券 の振替は証券口座の現金へ入金され、株購入で現金が減る設計と整合する。
@@ -408,6 +460,14 @@ function renderDashboard() {
         )
       : el('p', { class: 'fc-empty', text: 'カード利用の登録がありません' }),
   ));
+
+  // バックアップの控えめな案内: 口座があり、未実施 or 30日以上経過のときのみ表示。
+  const days = daysSinceBackup(st);
+  if (st.accounts.length >= 1 && (days == null || days >= 30)) {
+    wrap.append(el('div', { class: 'fc-backup-nudge' },
+      el('span', { class: 'fc-backup-nudge-txt', text: '大切な資産データを保護するため、バックアップを作成してください。' }),
+      el('button', { class: 'fc-btn ghost sm', type: 'button', text: 'バックアップを作成', onclick: exportBackup })));
+  }
 
   return wrap;
 }
@@ -574,9 +634,10 @@ function accountForm(acc) {
     { value: 'cash', label: '現金' }, { value: 'bank', label: '銀行口座' },
     { value: 'securities', label: '証券口座' }, { value: 'other', label: 'その他' },
   ], acc?.type || 'bank');
-  const bal = inputEl({ type: 'number', inputmode: 'numeric', placeholder: '0', value: acc?.balance ?? '' });
+  // 円入力は3桁区切り表示に統一。残高はマイナス（当座借越等）も許可する。
+  const bal = amountInput(acc?.balance, { allowNegative: true });
   // 証券口座は「残高」ではなく 現金 を管理（元本＝取得額合計、評価額は保有銘柄から自動計算）
-  const cash = inputEl({ type: 'number', inputmode: 'numeric', placeholder: '0', value: acc?.cash ?? '' });
+  const cash = amountInput(acc?.cash);
   let include = acc ? acc.includeInDisposable !== false : (acc?.type !== 'securities');
 
   // 種別に応じて金額入力欄を切り替える
@@ -605,12 +666,7 @@ function accountForm(acc) {
     field('口座名', name), field('種別', type), amountWrap, incRow,
     !isNew && el('button', {
       class: 'fc-btn danger block', type: 'button', text: 'この口座を削除',
-      onclick: () => confirmDialog('口座を削除', `「${acc.name}」を削除しますか？`, () => {
-        S.update((s) => { s.accounts = s.accounts.filter((x) => x.id !== acc.id); S.recordAssetSnapshot(s); });
-        render(); toast('削除しました', 'trash');
-        qs('.fc-modal-back')?.classList.remove('show');
-        setTimeout(() => qs('.fc-modal-back')?.remove(), 260);
-      }),
+      onclick: () => accountDeleteFlow(acc), // 関連データを確認してから削除・移行
     }),
   );
   modal(isNew ? '口座を追加' : '口座を編集', body, {
@@ -621,24 +677,134 @@ function accountForm(acc) {
         if (isNew) {
           const rec = { id: uid('acc'), name: name.value.trim(), type: type.value, includeInDisposable: include };
           if (isSec) {
-            Object.assign(rec, { cash: Number(cash.value) || 0, holdings: [], accumulations: [], accumHistory: [], purchases: [], lastAccumDate: null, balance: 0 });
+            Object.assign(rec, { cash: amountValue(cash), holdings: [], accumulations: [], accumHistory: [], purchases: [], lastAccumDate: null, balance: 0 });
             Sec.recomputeAccount(rec);
-          } else rec.balance = Number(bal.value) || 0;
+          } else rec.balance = amountValue(bal);
           s.accounts.push(rec);
         } else {
           const a = s.accounts.find((x) => x.id === acc.id);
           a.name = name.value.trim(); a.type = type.value; a.includeInDisposable = include;
           if (isSec) {
-            a.cash = Number(cash.value) || 0;
+            a.cash = amountValue(cash);
             a.holdings ||= []; a.accumulations ||= []; a.accumHistory ||= []; a.purchases ||= [];
             Sec.recomputeAccount(a);
-          } else a.balance = Number(bal.value) || 0;
+          } else a.balance = amountValue(bal);
         }
         S.recordAssetSnapshot(s);
       });
       render(); toast('保存しました'); close();
     },
   });
+}
+
+// 口座に紐付く関連データ件数を数える（削除前の確認・移行に使用）。
+function accountUsage(st, accId) {
+  const tx = st.transactions.filter((t) => t.accountId === accId).length;
+  const transfers = st.transfers.filter((t) => t.fromAccountId === accId || t.toAccountId === accId).length;
+  const recurring = st.recurring.filter((r) => r.accountId === accId).length;
+  const recTransfers = st.recurringTransfers.filter((r) => r.fromAccountId === accId || r.toAccountId === accId).length;
+  const cards = st.cards.filter((c) => c.payAccountId === accId).length;
+  return { tx, transfers, recurring, recTransfers, cards, total: tx + transfers + recurring + recTransfers + cards };
+}
+
+// 口座削除の入口。関連データが無ければ通常確認、あれば移行/削除の選択肢を提示する。
+function accountDeleteFlow(acc) {
+  const st = S.getState();
+  const u = accountUsage(st, acc.id);
+  if (u.total === 0) {
+    confirmDialog('口座を削除', `「${acc.name}」を削除しますか？`, () => {
+      S.update((s) => { s.accounts = s.accounts.filter((x) => x.id !== acc.id); S.recordAssetSnapshot(s); });
+      render(); toast('削除しました', 'trash'); closeAllModals();
+    });
+    return;
+  }
+  accountDeleteOptions(acc, u);
+}
+
+// 関連データがある口座の削除確認（移行 / 関連データごと削除 / キャンセル）。
+function accountDeleteOptions(acc, u) {
+  const st = S.getState();
+  const others = st.accounts.filter((a) => a.id !== acc.id);
+
+  // 移行: 参照先の口座IDを一括で付け替える。既定では残高を加算しない（二重計上防止）。
+  const doMigrate = (targetId, mergeBalance) => {
+    S.update((s) => {
+      const del = s.accounts.find((a) => a.id === acc.id);
+      const target = s.accounts.find((a) => a.id === targetId);
+      for (const t of s.transactions) if (t.accountId === acc.id) t.accountId = targetId;
+      for (const r of s.recurring) if (r.accountId === acc.id) r.accountId = targetId;
+      for (const t of s.transfers) { if (t.fromAccountId === acc.id) t.fromAccountId = targetId; if (t.toAccountId === acc.id) t.toAccountId = targetId; }
+      for (const r of s.recurringTransfers) { if (r.fromAccountId === acc.id) r.fromAccountId = targetId; if (r.toAccountId === acc.id) r.toAccountId = targetId; }
+      for (const c of s.cards) if (c.payAccountId === acc.id) c.payAccountId = targetId;
+      // 残高は「統合する」を選んだ場合のみ削除口座の残高を移行先へ加算する。
+      if (mergeBalance) adjustBalance(target, Number(del.balance) || 0);
+      // 移行により振替元＝振替先となった自己振替を除去（実効ゼロの履歴を残さない）。
+      s.transfers = s.transfers.filter((t) => t.fromAccountId !== t.toAccountId);
+      s.recurringTransfers = s.recurringTransfers.filter((t) => t.fromAccountId !== t.toAccountId);
+      s.accounts = s.accounts.filter((a) => a.id !== acc.id);
+      S.recordAssetSnapshot(s);
+    });
+    render(); toast('移行して削除しました', 'trash'); closeAllModals();
+  };
+
+  // 関連データごと削除: 口座に紐付く履歴・設定・カード（と利用履歴）をすべて削除する。
+  const doDeleteWithData = () => {
+    S.update((s) => {
+      const cardIds = s.cards.filter((c) => c.payAccountId === acc.id).map((c) => c.id);
+      s.transactions = s.transactions.filter((t) => t.accountId !== acc.id);
+      s.recurring = s.recurring.filter((r) => r.accountId !== acc.id);
+      s.transfers = s.transfers.filter((t) => t.fromAccountId !== acc.id && t.toAccountId !== acc.id);
+      s.recurringTransfers = s.recurringTransfers.filter((t) => t.fromAccountId !== acc.id && t.toAccountId !== acc.id);
+      s.cards = s.cards.filter((c) => c.payAccountId !== acc.id);
+      s.cardTransactions = s.cardTransactions.filter((t) => !cardIds.includes(t.cardId));
+      s.accounts = s.accounts.filter((a) => a.id !== acc.id);
+      S.recordAssetSnapshot(s);
+    });
+    render(); toast('口座と関連データを削除しました', 'trash'); closeAllModals();
+  };
+
+  const body = el('div', {});
+  body.append(el('p', { class: 'fc-field-hint', text: `「${acc.name}」は以下のデータで使用されています。` }));
+  const lines = [];
+  const addLine = (label, n) => { if (n > 0) lines.push(el('div', { class: 'fc-kv-row' }, el('span', { text: label }), el('b', { text: `${n}件` }))); };
+  addLine('取引履歴', u.tx); addLine('振替履歴', u.transfers); addLine('固定収支', u.recurring);
+  addLine('固定振替', u.recTransfers); addLine('カード引落口座', u.cards);
+  body.append(el('div', { class: 'fc-kv' }, ...lines));
+
+  // 選択肢1: 別の口座へ移行する
+  if (others.length) {
+    const target = selectEl(others.map((a) => ({ value: a.id, label: a.name })), others[0].id);
+    let mergeBalance = false;
+    const mergeRow = el('div', { class: 'fc-field-toggle' });
+    const drawMerge = () => {
+      mergeRow.innerHTML = '';
+      mergeRow.append(
+        el('div', {}, el('div', { class: 'fc-field-lab', text: '残高も統合する' }),
+          el('div', { class: 'fc-field-hint', text: mergeBalance
+            ? `削除する口座の残高（${yen(Number(acc.balance) || 0)}）を移行先へ加算します。`
+            : '履歴の参照先のみ移し、残高は加算しません（二重計上を防ぎます）。' })),
+        toggle(mergeBalance, () => { mergeBalance = !mergeBalance; drawMerge(); }));
+    };
+    drawMerge();
+    body.append(el('div', { class: 'fc-optblock' },
+      el('h3', { class: 'fc-subhead', text: '別の口座へ移行する' }),
+      field('移行先口座', target), mergeRow,
+      el('button', { class: 'fc-btn primary block', type: 'button', text: '移行して口座を削除', onclick: () => doMigrate(target.value, mergeBalance) })));
+  }
+
+  // 選択肢2: 関連データも削除する（強い確認）
+  body.append(el('div', { class: 'fc-optblock' },
+    el('h3', { class: 'fc-subhead', text: '関連データも削除する' }),
+    el('p', { class: 'fc-field-hint', text: '取引履歴・振替・固定収支・カードなど、この口座に紐付くデータもすべて削除します。' }),
+    el('button', {
+      class: 'fc-btn danger block', type: 'button', text: '関連データごと削除する',
+      onclick: () => confirmDialog('本当に削除しますか？',
+        'この操作では口座だけでなく、関連する取引履歴や設定も削除されます。この操作は元に戻せません。',
+        doDeleteWithData, { yesLabel: '口座と関連データを削除する' }),
+    })));
+
+  // 選択肢3: キャンセル（モーダル既定の「キャンセル」ボタンで何も変更せず閉じる）
+  modal('口座の削除', body, {});
 }
 
 // ============ 収支（口座別の取引履歴） ============
@@ -874,8 +1040,8 @@ function holdingForm(acc, h) {
   const fx = inputEl({ type: 'number', inputmode: 'decimal', placeholder: '例）157.5', value: h?.fxRate ?? '' });
   // インデックス（円建て）
   const nisaSel = selectEl(Sec.NISA_FRAMES, h?.nisaFrame || 'growth');
-  const cost = inputEl({ type: 'number', inputmode: 'numeric', placeholder: '0', value: h?.cost ?? '' });
-  const value = inputEl({ type: 'number', inputmode: 'numeric', placeholder: '0', value: h?.value ?? '' });
+  const cost = amountInput(h?.cost);   // 取得額（円・3桁区切り）
+  const value = amountInput(h?.value); // 評価額（円・3桁区切り）
   const memo = inputEl({ placeholder: 'メモ（任意）', value: h?.memo || '' });
   // 将来資産シミュレーション用（想定年利・計算方式・配当）
   const simReturn = inputEl({ type: 'number', inputmode: 'decimal', placeholder: kindVal === 'index' ? '例）5' : '例）7', value: h?.simAnnualReturn ?? '' });
@@ -927,7 +1093,7 @@ function holdingForm(acc, h) {
       class: 'fc-btn danger block', type: 'button', text: 'この銘柄を削除',
       onclick: () => confirmDialog('銘柄を削除', `「${h.name}」を削除しますか？`, () => {
         S.update((s) => { const a = s.accounts.find((x) => x.id === acc.id); a.holdings = a.holdings.filter((x) => x.id !== h.id); a.accumulations = (a.accumulations || []).filter((x) => x.holdingId !== h.id); Sec.recomputeAccount(a); S.recordAssetSnapshot(s); });
-        render(); toast('削除しました', 'trash'); qs('.fc-modal-back')?.classList.remove('show'); setTimeout(() => qs('.fc-modal-back')?.remove(), 260);
+        render(); toast('削除しました', 'trash'); closeAllModals();
       }),
     }),
   );
@@ -946,7 +1112,7 @@ function holdingForm(acc, h) {
           if (isNew) rec.plannedPurchases = [];
         } else {
           rec = {
-            kind: 'index', name: name.value.trim(), nisaFrame: nisaSel.value, cost: Number(cost.value) || 0, value: Number(value.value) || 0, memo: memo.value.trim(),
+            kind: 'index', name: name.value.trim(), nisaFrame: nisaSel.value, cost: amountValue(cost), value: amountValue(value), memo: memo.value.trim(),
             simAnnualReturn: Number(simReturn.value) || 0, returnMode: returnModeSel.value,
           };
         }
@@ -1034,7 +1200,7 @@ function priceUpdateForm(acc) {
     if (!items.length) continue;
     sections.push(groupHead('index', frame.label, items.length));
     for (const h of items) {
-      const valueInp = inputEl({ type: 'number', inputmode: 'numeric', placeholder: '0', value: h.value ?? '' });
+      const valueInp = amountInput(h.value); // 現在保有額（円・3桁区切り）
       rows.push({ h, kind: 'index', valueInp });
       sections.push(el('div', { class: 'fc-priceupd-row' },
         el('div', { class: 'fc-priceupd-head' },
@@ -1057,7 +1223,7 @@ function priceUpdateForm(acc) {
             if (r.priceInp.value !== '') hh.priceUsd = Number(r.priceInp.value) || 0;
             if (r.fxInp.value !== '') hh.fxRate = Number(r.fxInp.value) || 0;
           } else if (r.valueInp.value !== '') {
-            hh.value = Number(r.valueInp.value) || 0;
+            hh.value = amountValue(r.valueInp);
           }
         }
         Sec.recomputeAccount(a);
@@ -1077,8 +1243,8 @@ function accumulationForm(acc, a) {
   const sel = selectEl(indexHoldings.map((h) => ({ value: h.id, label: `${h.name}（${Sec.nisaLabel(h.nisaFrame || 'growth')}）` })), a?.holdingId || indexHoldings[0].id);
   let freq = a?.frequency || 'daily';
   const freqSeg = el('div', { class: 'fc-seg' });
-  const amount = inputEl({ type: 'number', inputmode: 'numeric', placeholder: '例）1000', value: a?.dailyAmount ?? '' });
-  const monthlyAmount = inputEl({ type: 'number', inputmode: 'numeric', placeholder: '例）30000', value: a?.monthlyAmount ?? '' });
+  const amount = amountInput(a?.dailyAmount);          // 毎日の積立額（円・3桁区切り）
+  const monthlyAmount = amountInput(a?.monthlyAmount); // 毎月の積立額（円・3桁区切り）
   const startDate = inputEl({ type: 'date', value: a?.startDate || today() });
   const endDate = inputEl({ type: 'date', value: a?.endDate || '' });
   const pauseStart = inputEl({ type: 'date', value: a?.pauseStart || '' });
@@ -1137,13 +1303,13 @@ function accumulationForm(acc, a) {
       class: 'fc-btn danger block', type: 'button', text: 'この積立設定を削除',
       onclick: () => confirmDialog('積立設定を削除', '削除しますか？', () => {
         S.update((s) => { const ac = s.accounts.find((x) => x.id === acc.id); ac.accumulations = ac.accumulations.filter((x) => x.id !== a.id); });
-        render(); toast('削除しました', 'trash'); qs('.fc-modal-back')?.classList.remove('show'); setTimeout(() => qs('.fc-modal-back')?.remove(), 260);
+        render(); toast('削除しました', 'trash'); closeAllModals();
       }),
     }),
   );
   modal(isNew ? '積立設定を追加' : '積立設定を編集', body, {
     onSave: (close) => {
-      const amt = freq === 'monthly' ? Number(monthlyAmount.value) : Number(amount.value);
+      const amt = freq === 'monthly' ? amountValue(monthlyAmount) : amountValue(amount);
       if (!amt || amt <= 0) return toast('積立金額を入力してください', 'alert');
       if (startDate.value && endDate.value && endDate.value < startDate.value) return toast('終了日は開始日より後にしてください', 'alert');
       if (pauseStart.value && pauseEnd.value && pauseEnd.value < pauseStart.value) return toast('積立再開日は積立停止日より後にしてください', 'alert');
@@ -1159,8 +1325,8 @@ function accumulationForm(acc, a) {
         const ac = s.accounts.find((x) => x.id === acc.id);
         const rec = {
           holdingId: sel.value, frequency: freq,
-          dailyAmount: freq === 'monthly' ? (Number(amount.value) || 0) : amt,
-          monthlyAmount: freq === 'monthly' ? amt : (Number(monthlyAmount.value) || 0),
+          dailyAmount: freq === 'monthly' ? amountValue(amount) : amt,
+          monthlyAmount: freq === 'monthly' ? amt : amountValue(monthlyAmount),
           startDate: startDate.value || null, endDate: endDate.value || null,
           pauseStart: pauseStart.value || null, pauseEnd: pauseEnd.value || null,
           includeHolidays, nonBusinessDay: nonBiz,
@@ -1330,7 +1496,7 @@ function txForm(tx, initialType, defaultAccountId) {
           S.recordAssetSnapshot(s);
         });
         render(); toast('削除しました', 'trash');
-        qs('.fc-modal-back')?.classList.remove('show'); setTimeout(() => qs('.fc-modal-back')?.remove(), 260);
+        closeAllModals();
       }),
     }),
   );
@@ -1423,7 +1589,7 @@ function recurringTransferForm(rt) {
   }
   const fromSel = selectEl(accountOptions(), rt?.fromAccountId || st.accounts[0]?.id);
   const toSel = selectEl(accountOptions(), rt?.toAccountId || st.accounts[1]?.id || st.accounts[0]?.id);
-  const amount = inputEl({ type: 'number', inputmode: 'numeric', placeholder: '0', value: rt?.amount ?? '' });
+  const amount = amountInput(rt?.amount); // 固定振替金額（円・3桁区切り）
   const day = selectEl([{ value: 'end', label: '毎月末' }, ...Array.from({ length: 31 }, (_, i) => ({ value: i + 1, label: `毎月${i + 1}日` }))], rt?.day ?? 15);
   const startDate = inputEl({ type: 'date', value: rt?.startDate || '' });
   const endDate = inputEl({ type: 'date', value: rt?.endDate || '' });
@@ -1449,13 +1615,13 @@ function recurringTransferForm(rt) {
       class: 'fc-btn danger block', type: 'button', text: 'この固定振替を削除',
       onclick: () => confirmDialog('固定振替を削除', '削除しますか？', () => {
         S.update((s) => { s.recurringTransfers = s.recurringTransfers.filter((x) => x.id !== rt.id); });
-        render(); toast('削除しました', 'trash'); qs('.fc-modal-back')?.classList.remove('show'); setTimeout(() => qs('.fc-modal-back')?.remove(), 260);
+        render(); toast('削除しました', 'trash'); closeAllModals();
       }),
     }),
   );
   modal(isNew ? '固定振替を追加' : '固定振替を編集', body, {
     onSave: (close) => {
-      const amt = Number(amount.value);
+      const amt = amountValue(amount);
       if (!amt || amt <= 0) return toast('金額を入力してください', 'alert');
       if (fromSel.value === toSel.value) return toast('振替元と振替先を別々に選んでください', 'alert');
       S.update((s) => {
@@ -1473,7 +1639,7 @@ function transferForm(tr) {
   const st = S.getState();
   const fromSel = selectEl(accountOptions(), tr.fromAccountId);
   const toSel = selectEl(accountOptions(), tr.toAccountId);
-  const amount = inputEl({ type: 'number', inputmode: 'numeric', value: tr.amount });
+  const amount = amountInput(tr.amount); // 振替金額（円・3桁区切り）
   const date = inputEl({ type: 'date', value: tr.date });
   const memo = inputEl({ placeholder: 'メモ（任意）', value: tr.memo || '' });
   const body = el('div', {},
@@ -1482,13 +1648,13 @@ function transferForm(tr) {
       class: 'fc-btn danger block', type: 'button', text: 'この振替を削除',
       onclick: () => confirmDialog('振替を削除', '削除して口座残高を元に戻しますか？', () => {
         S.update((s) => { reverseTransfer(s, tr.fromAccountId, tr.toAccountId, tr.amount); s.transfers = s.transfers.filter((x) => x.id !== tr.id); S.recordAssetSnapshot(s); });
-        render(); toast('削除しました', 'trash'); qs('.fc-modal-back')?.classList.remove('show'); setTimeout(() => qs('.fc-modal-back')?.remove(), 260);
+        render(); toast('削除しました', 'trash'); closeAllModals();
       }),
     }),
   );
   modal('振替を編集', body, {
     onSave: (close) => {
-      const amt = Number(amount.value);
+      const amt = amountValue(amount);
       if (!amt || amt <= 0) return toast('金額を入力してください', 'alert');
       if (fromSel.value === toSel.value) return toast('振替元と振替先を別々に選んでください', 'alert');
       S.update((s) => {
@@ -1568,7 +1734,7 @@ function cardForm(c) {
   const payDay = selectEl([{ value: 'end', label: '末日' }, ...Array.from({ length: 31 }, (_, i) => ({ value: i + 1, label: `${i + 1}日` }))], c?.payDay ?? 27);
   const acc = selectEl([{ value: '', label: '（口座を先に追加してください）' }, ...accountOptions()], c?.payAccountId || S.getState().accounts[0]?.id || '');
   const color = inputEl({ type: 'color', value: c?.color || '#0a84ff' });
-  const estBill = inputEl({ type: 'number', inputmode: 'numeric', placeholder: '任意（例）84200', value: c?.estimatedBill ?? '' });
+  const estBill = amountInput(c?.estimatedBill); // 請求予定額（円・3桁区切り・任意）
   const body = el('div', {},
     field('カード名', name), field('締日', closing),
     field('引落タイミング', offset), field('引落日', payDay), field('引落口座', acc), field('カラー', color),
@@ -1578,7 +1744,7 @@ function cardForm(c) {
       onclick: () => confirmDialog('カードを削除', `「${c.name}」と利用履歴を削除しますか？`, () => {
         S.update((s) => { s.cards = s.cards.filter((x) => x.id !== c.id); s.cardTransactions = s.cardTransactions.filter((x) => x.cardId !== c.id); });
         render(); toast('削除しました', 'trash');
-        qs('.fc-modal-back')?.classList.remove('show'); setTimeout(() => qs('.fc-modal-back')?.remove(), 260);
+        closeAllModals();
       }),
     }),
   );
@@ -1588,7 +1754,7 @@ function cardForm(c) {
       const cd = closing.value === 'end' ? 'end' : Number(closing.value);
       const pd = payDay.value === 'end' ? 'end' : Number(payDay.value);
       S.update((s) => {
-        const rec = { name: name.value.trim(), closingDay: cd, payMonthOffset: Number(offset.value), payDay: pd, payAccountId: acc.value, color: color.value, estimatedBill: estBill.value === '' ? null : Number(estBill.value) };
+        const rec = { name: name.value.trim(), closingDay: cd, payMonthOffset: Number(offset.value), payDay: pd, payAccountId: acc.value, color: color.value, estimatedBill: estBill.value.trim() === '' ? null : amountValue(estBill) };
         if (isNew) s.cards.push({ id: uid('card'), ...rec });
         else Object.assign(s.cards.find((x) => x.id === c.id), rec);
       });
@@ -1601,7 +1767,7 @@ function cardTxForm(cardObj, tx) {
   const isNew = !tx;
   const st = S.getState();
   const date = inputEl({ type: 'date', value: tx?.date || today() });
-  const amount = inputEl({ type: 'number', inputmode: 'numeric', placeholder: '0', value: tx?.amount ?? '' });
+  const amount = amountInput(tx?.amount); // カード利用額（円・3桁区切り）
   const cats = st.categories.expense;
   const cat = selectEl([{ value: '', label: '（カテゴリーなし）' }, ...cats.map((c) => ({ value: c.id, label: c.name }))], tx?.categoryId || '');
   const memo = inputEl({ placeholder: '例）Amazon', value: tx?.memo || '' });
@@ -1618,13 +1784,13 @@ function cardTxForm(cardObj, tx) {
       onclick: () => confirmDialog('利用を削除', '削除しますか？', () => {
         S.update((s) => { s.cardTransactions = s.cardTransactions.filter((x) => x.id !== tx.id); });
         render(); toast('削除しました', 'trash');
-        qs('.fc-modal-back')?.classList.remove('show'); setTimeout(() => qs('.fc-modal-back')?.remove(), 260);
+        closeAllModals();
       }),
     }),
   );
   modal(isNew ? `${cardObj.name}・利用登録` : 'カード利用を編集', body, {
     onSave: (close) => {
-      const amt = Number(amount.value);
+      const amt = amountValue(amount);
       if (!amt || amt <= 0) return toast('金額を入力してください', 'alert');
       S.update((s) => {
         const rec = { cardId: cardObj.id, date: date.value, amount: amt, memo: memo.value.trim(), categoryId: cat.value || null };
@@ -2105,11 +2271,11 @@ function perfHistoryModal(state) {
 
 // 1件の実績履歴を編集（評価額・元本・現金）。保存で損益・利益率を再計算。
 function perfHistoryEditForm(state, rec) {
-  const nisaVal = inputEl({ type: 'number', inputmode: 'numeric', value: rec.nisaValue ?? '' });
-  const nisaPri = inputEl({ type: 'number', inputmode: 'numeric', value: rec.nisaPrincipal ?? '' });
-  const stockVal = inputEl({ type: 'number', inputmode: 'numeric', value: rec.stockValue ?? '' });
-  const stockPri = inputEl({ type: 'number', inputmode: 'numeric', value: rec.stockPrincipal ?? '' });
-  const secCash = inputEl({ type: 'number', inputmode: 'numeric', value: rec.secCash ?? '' });
+  const nisaVal = amountInput(rec.nisaValue);       // NISA評価額（円）
+  const nisaPri = amountInput(rec.nisaPrincipal);   // NISA元本（円）
+  const stockVal = amountInput(rec.stockValue);     // 個別株評価額（円）
+  const stockPri = amountInput(rec.stockPrincipal); // 個別株元本（円）
+  const secCash = amountInput(rec.secCash);         // 証券口座現金（円）
   const body = el('div', {},
     el('p', { class: 'fc-field-hint', text: `${fmtDateLong(rec.date)} の実績を修正します。元本・評価額を直すと損益・利益率とグラフが再計算されます。` }),
     field('NISA評価額（円）', nisaVal), field('NISA元本（円）', nisaPri),
@@ -2124,7 +2290,7 @@ function perfHistoryEditForm(state, rec) {
         });
         render();
         toast('削除しました', 'trash');
-        qsa('.fc-modal-back').forEach((b) => { b.classList.remove('show'); setTimeout(() => b.remove(), 260); });
+        closeAllModals();
       }),
     }),
   );
@@ -2133,11 +2299,11 @@ function perfHistoryEditForm(state, rec) {
       S.update((s) => {
         const r = (s.performanceHistory || []).find((x) => x.date === rec.date);
         if (!r) return;
-        r.nisaValue = Math.round(Number(nisaVal.value) || 0);
-        r.nisaPrincipal = Math.round(Number(nisaPri.value) || 0);
-        r.stockValue = Math.round(Number(stockVal.value) || 0);
-        r.stockPrincipal = Math.round(Number(stockPri.value) || 0);
-        r.secCash = Math.round(Number(secCash.value) || 0);
+        r.nisaValue = amountValue(nisaVal);
+        r.nisaPrincipal = amountValue(nisaPri);
+        r.stockValue = amountValue(stockVal);
+        r.stockPrincipal = amountValue(stockPri);
+        r.secCash = amountValue(secCash);
         r.valuation = r.nisaValue + r.stockValue;
         r.principal = r.nisaPrincipal + r.stockPrincipal;
         r.profit = r.valuation - r.principal;
@@ -2155,43 +2321,110 @@ function perfHistoryEditForm(state, rec) {
 // ============ 投資将来予測（将来資産シミュレーションの投資予測タブ） ============
 const FUTURE_EVENT_PRESETS = ['住宅購入', '車購入', '旅行', '結婚', '教育費', '大型家電'];
 
+// 投資将来予測を3タブ（概要／シミュレーション／詳細設定）に整理して表示する。
+// 既存の計算ロジック・各カードには手を加えず、表示先タブだけを振り分ける。
 function renderFutureSim() {
   const st = S.getState();
   const fs = st.futureSim;
   const wrap = el('div', {});
 
-  wrap.append(futurePerformanceCard(st, fs));
+  const tab = ['overview', 'simulation', 'detail'].includes(ui.investTab) ? ui.investTab : 'overview';
+  // タブ切替（画面上部に固定せず通常フロー。切替時は先頭へスクロールし、選択状態を明確化）
+  const tabBar = el('div', { class: 'fc-seg fc-invest-tabs' });
+  for (const [v, l] of [['overview', '概要'], ['simulation', 'シミュレーション'], ['detail', '詳細設定']])
+    tabBar.append(el('button', {
+      class: 'fc-seg-btn' + (tab === v ? ' on' : ''), type: 'button', text: l,
+      'aria-pressed': tab === v ? 'true' : 'false',
+      onclick: () => { ui.investTab = v; render(); scrollTop(); },
+    }));
+  wrap.append(tabBar);
 
-  // 理想シミュレーション（自由設計）: 実際の口座残高・積立設定とは分離した、自由な資金計画。
-  wrap.append(...renderIdealSim(st, fs));
-
-  wrap.append(futurePeriodCard(fs));
-  wrap.append(futureRateCard(fs));
-
-  // 積立変更シミュレーション（理想／現実／比較）。毎日の積立額を仮変更して両モードを即時再計算する。
   const mode = fs.simMode || 'reality';
   const dailyOverride = ui.futureDailyOverride; // null = 実設定のまま
-  wrap.append(futureSimControlCard(st, fs, mode, dailyOverride));
-
-  // 同じ積立額・年利・保有期間で理想と現実を計算（計算処理は futureSim 内で ignoreCash により明確に分岐）。
+  // 同じ積立額・年利・保有期間で理想と現実を計算（複数タブで共用）。
   const iv = FS.idealVsReality(st, { years: fs.years, dailyOverride });
-  wrap.append(futureSimChartCard(st, fs, mode, iv));
-  if (mode === 'ideal') wrap.append(futureIdealCard(st, fs, iv, dailyOverride));
-  else if (mode === 'compare') wrap.append(futureCompareTableCard(st, fs, iv));
-  else wrap.append(futureRealityCard(st, fs, iv, dailyOverride));
 
-  wrap.append(futureDateLookupCard(st, fs, dailyOverride));
-  wrap.append(futureCompareCard(st, fs));
-  wrap.append(futureSensitivityCard(st, fs));
-  wrap.append(futureGoalsCard(st, fs));
-  wrap.append(futureEventsCard(fs));
-  wrap.append(futureDividendCard(st, fs));
-  wrap.append(futureStockPlansCard(st));
-  wrap.append(futureMonteCarloCard(st, fs));
-  wrap.append(futureInsightsCard(st));
-  wrap.append(futurePlansCard(st, fs));
+  if (tab === 'overview') {
+    // 概要: 現在と将来の状態が一目で分かる。主要指標＋実績と予測を連結したメイングラフ。
+    wrap.append(futureOverviewCard(st, fs, iv));
+    wrap.append(futurePerformanceCard(st, fs));
+  } else if (tab === 'simulation') {
+    wrap.append(futurePeriodCard(fs));
+    wrap.append(futureRateCard(fs));
+    // 積立変更シミュレーション（理想／現実／比較）
+    wrap.append(futureSimControlCard(st, fs, mode, dailyOverride));
+    wrap.append(futureSimChartCard(st, fs, mode, iv));
+    if (mode === 'ideal') wrap.append(futureIdealCard(st, fs, iv, dailyOverride));
+    else if (mode === 'compare') wrap.append(futureCompareTableCard(st, fs, iv));
+    else wrap.append(futureRealityCard(st, fs, iv, dailyOverride));
+    // 理想シミュレーション（自由設計）: 実データと分離した資金計画
+    wrap.append(...renderIdealSim(st, fs));
+    wrap.append(futureSensitivityCard(st, fs));
+    wrap.append(futureDateLookupCard(st, fs, dailyOverride));
+    wrap.append(futureCompareCard(st, fs)); // シナリオ（プラン）比較
+  } else {
+    // 詳細設定: 将来イベント・目標・配当・購入予定・モンテカルロ・保存プラン・自動分析・実績履歴編集
+    wrap.append(futureEventsCard(fs));
+    wrap.append(futureGoalsCard(st, fs));
+    wrap.append(futureDividendCard(st, fs));
+    wrap.append(futureStockPlansCard(st));
+    wrap.append(futureMonteCarloCard(st, fs));
+    wrap.append(futurePlansCard(st, fs));
+    wrap.append(futureInsightsCard(st));
+    wrap.append(perfHistoryEntryCard(st)); // 投資実績履歴の編集への入口
+  }
+
   wrap.append(el('p', { class: 'fc-note', text: '※ 登録済みの証券口座・保有銘柄・積立設定・購入予定・将来イベントから計算しています。想定年利は将来の運用成果を保証するものではありません。' }));
   return wrap;
+}
+
+// 概要タブ: 現在の元本・評価額・評価損益・利益率と、設定期間後の予想評価額・目標達成状況・資金不足警告。
+function futureOverviewCard(st, fs, iv) {
+  const secret = st.settings.secret;
+  const money = (v) => (secret ? '＊＊＊' : yen(v));
+  const p = Sec.portfolio(st); // 現在の元本・評価額・評価損益・利益率
+  const end = iv.reality.series.at(-1) || {};
+  const endVal = end.valuation || 0;
+  const rateText = p.profitRate == null ? '—' : `${p.profitRate >= 0 ? '+' : ''}${p.profitRate.toFixed(2)}%`;
+  const cls = p.profit === 0 ? 'flat' : p.profit > 0 ? 'pos' : 'neg';
+
+  // 目標達成状況（設定されていれば、将来予想評価額に対する達成度を表示）
+  const goals = (fs.goals || []);
+  const goalBlocks = goals.map((g) => {
+    const cur = g.metric === 'total' ? (end.total || 0) : endVal;
+    const pct = g.targetAmount > 0 ? Math.min(100, Math.round((cur / g.targetAmount) * 100)) : 0;
+    return el('div', { class: 'fc-kv-row' }, el('span', { text: `目標「${g.name}」` }),
+      el('b', { text: secret ? '＊＊＊' : `${pct}%（${yen(g.targetAmount)}）` }));
+  });
+
+  // 資金不足の警告（現実シミュレーションで証券口座現金が不足する見込みのとき）
+  const secShort = FS.securitiesShortfallReport(st, iv.reality, { dailyOverride: ui.futureDailyOverride });
+
+  return card(
+    sectionTitle('概要'),
+    el('div', { class: 'fc-sec-grid' },
+      secBox('現在の投資元本', money(p.principal)),
+      secBox('現在の評価額', money(p.valuation)),
+      secBox('評価損益', secret ? '＊＊＊' : yen(p.profit, { sign: p.profit > 0 }))),
+    el('div', { class: 'fc-sec-grid' },
+      secBox('利益率', secret ? '＊＊' : rateText),
+      secBox(`${fs.years}年後の予想評価額`, money(endVal))),
+    goalBlocks.length ? el('div', {}, el('h3', { class: 'fc-subhead', text: '目標達成状況' }), el('div', { class: 'fc-kv' }, ...goalBlocks)) : '',
+    secShort ? el('div', { class: 'fc-shortage' },
+      el('div', { class: 'fc-shortage-top' }, el('span', { class: 'fc-shortage-ic', html: iconHtml('alert', { size: 18 }) }),
+        el('b', { text: `${fmtDateLong(secShort.date)}頃に証券口座現金が不足する見込みです` })),
+      el('div', { class: 'fc-shortage-sub', text: 'シミュレーションタブで積立・振替・購入予定を確認できます。' })) : '',
+    el('p', { class: 'fc-field-hint', text: '下のグラフは、これまでの実績と今後の予測を1本につないだ資産推移です。' }),
+  );
+}
+
+// 詳細設定タブ: 投資実績履歴の編集への入口カード。
+function perfHistoryEntryCard(st) {
+  return card(
+    sectionTitle('投資実績履歴'),
+    el('p', { class: 'fc-field-hint', text: '過去の評価額・元本の記録を修正できます（誤登録の訂正用）。' }),
+    btnIcon('ghost block', 'file', '投資実績履歴を編集', () => perfHistoryModal(st)),
+  );
 }
 
 // ============================================================================
@@ -2240,8 +2473,8 @@ function idealBasicsCard(plan) {
   const startInp = inputEl({ type: 'date', value: plan.startDate });
   startInp.addEventListener('change', () => updateIdeal((p) => { p.startDate = startInp.value || p.startDate; }));
 
-  const cashInp = inputEl({ type: 'number', inputmode: 'numeric', placeholder: '例）100000', value: plan.initialSecCash || '' });
-  cashInp.addEventListener('change', () => updateIdeal((p) => { p.initialSecCash = Number(cashInp.value) || 0; }));
+  const cashInp = amountInput(plan.initialSecCash); // 初期証券口座現金（円・3桁区切り）
+  cashInp.addEventListener('change', () => updateIdeal((p) => { p.initialSecCash = amountValue(cashInp); }));
 
   const rateInp = inputEl({ type: 'number', inputmode: 'decimal', placeholder: '例）10', value: plan.annualReturn ?? '' });
   rateInp.addEventListener('change', () => updateIdeal((p) => { p.annualReturn = Number(rateInp.value) || 0; }));
@@ -2261,8 +2494,8 @@ function idealBasicsCard(plan) {
   for (const [v, l] of [['strict', '資金計画を厳密に再現'], ['continue', '不足を無視して継続']])
     shortSeg.append(el('button', { class: 'fc-seg-btn' + ((plan.shortageMode || 'strict') === v ? ' on' : ''), type: 'button', text: l, onclick: () => updateIdeal((p) => { p.shortageMode = v; }) }));
 
-  const targetInp = inputEl({ type: 'number', inputmode: 'numeric', placeholder: '例）10000000（任意）', value: plan.targetAmount || '' });
-  targetInp.addEventListener('change', () => updateIdeal((p) => { p.targetAmount = Number(targetInp.value) || 0; }));
+  const targetInp = amountInput(plan.targetAmount); // 目標金額（円・3桁区切り・任意）
+  targetInp.addEventListener('change', () => updateIdeal((p) => { p.targetAmount = amountValue(targetInp); }));
 
   return card(
     sectionTitle('理想シミュレーション', pill('自由設計')),
@@ -2301,7 +2534,7 @@ function idealDepositsCard(plan) {
 function idealDepositForm(plan, dep) {
   const isNew = !dep;
   const d = dep || {};
-  const amount = inputEl({ type: 'number', inputmode: 'numeric', placeholder: '例）70000', value: d.amount ?? '' });
+  const amount = amountInput(d.amount); // 入金額（円・3桁区切り）
   let freq = d.frequency || 'monthly';
   const freqSeg = el('div', { class: 'fc-seg' });
   const day = selectEl(Array.from({ length: 31 }, (_, i) => ({ value: i + 1, label: `${i + 1}日` })), d.day ?? 15);
@@ -2339,7 +2572,7 @@ function idealDepositForm(plan, dep) {
   );
   modal(isNew ? '自動入金を追加' : '自動入金を編集', body, {
     onSave: (close) => {
-      const amt = Number(amount.value);
+      const amt = amountValue(amount);
       if (!amt || amt <= 0) return toast('入金金額を入力してください', 'alert');
       if (startDate.value && endDate.value && endDate.value < startDate.value) return toast('終了日は開始日より後にしてください', 'alert');
       const rec = {
@@ -2393,7 +2626,7 @@ function idealInvestmentForm(plan, inv) {
   let kind = v.kind === 'stock' ? 'stock' : 'nisa';
   let nisaFrame = v.nisaFrame === 'tsumitate' ? 'tsumitate' : 'growth';
   let freq = v.frequency || 'daily';
-  const amount = inputEl({ type: 'number', inputmode: 'numeric', placeholder: '例）3000', value: v.amount ?? '' });
+  const amount = amountInput(v.amount); // 投資額（円・3桁区切り）
   const day = selectEl(Array.from({ length: 31 }, (_, i) => ({ value: i + 1, label: `${i + 1}日` })), v.day ?? 15);
   const weekday = selectEl(WEEKDAY_OPTS.map(([wv, l]) => ({ value: wv, label: `${l}曜` })), String(v.weekday ?? 1));
   const startDate = inputEl({ type: 'date', value: v.startDate || plan.startDate });
@@ -2464,7 +2697,7 @@ function idealInvestmentForm(plan, inv) {
   );
   modal(isNew ? '投資設定を追加' : '投資設定を編集', body, {
     onSave: (close) => {
-      const amt = Number(amount.value);
+      const amt = amountValue(amount);
       if (!amt || amt <= 0) return toast('投資金額を入力してください', 'alert');
       if (startDate.value && endDate.value && endDate.value < startDate.value) return toast('終了日は開始日より後にしてください', 'alert');
       const rec = {
@@ -2727,11 +2960,9 @@ function idealApplyToReal(plan) {
   });
 }
 
-// モーダルを閉じる共通ヘルパー
-function closeModal() {
-  qs('.fc-modal-back')?.classList.remove('show');
-  setTimeout(() => qs('.fc-modal-back')?.remove(), 260);
-}
+// モーダルを閉じる共通ヘルパー。直接DOM削除を廃止し、必ず安全な一括クローズを通す
+// （unlockBodyScroll・スクロール位置復帰・カウンタ整合を保証）。
+function closeModal() { closeAllModals(); }
 
 // ---- 保有期間シミュレーション（ワンタップ切替） ----
 function futurePeriodCard(fs) {
@@ -2846,12 +3077,12 @@ function futureSimControlCard(state, fs, mode, dailyOverride) {
 
 // 毎日の積立額を自由入力（仮変更）
 function futureDailyOverrideForm(cur) {
-  const inp = inputEl({ type: 'number', inputmode: 'numeric', placeholder: '例）5000', value: ui.futureDailyOverride != null ? ui.futureDailyOverride : cur });
+  const inp = amountInput(ui.futureDailyOverride != null ? ui.futureDailyOverride : cur); // 1日あたりの積立額（円）
   modal('毎日の積立額（仮変更）', field('1日あたりの積立額（円）', inp), {
     onSave: (close) => {
-      const v = Number(inp.value);
-      if (Number.isNaN(v) || v < 0) return toast('0以上の数値を入力してください', 'alert');
-      ui.futureDailyOverride = Math.round(v);
+      const v = amountValue(inp);
+      if (v < 0) return toast('0以上の数値を入力してください', 'alert');
+      ui.futureDailyOverride = v;
       render(); close();
     },
   });
@@ -3232,7 +3463,7 @@ function futureGoalForm(goal) {
       class: 'fc-btn danger block', type: 'button', text: 'この目標を削除',
       onclick: () => confirmDialog('目標を削除', `「${goal.name}」を削除しますか？`, () => {
         S.update((s) => { s.futureSim.goals = s.futureSim.goals.filter((g) => g.id !== goal.id); });
-        render(); toast('削除しました', 'trash'); qs('.fc-modal-back')?.classList.remove('show'); setTimeout(() => qs('.fc-modal-back')?.remove(), 260);
+        render(); toast('削除しました', 'trash'); closeAllModals();
       }),
     }),
   );
@@ -3280,7 +3511,7 @@ function futureEventForm(ev) {
       class: 'fc-btn danger block', type: 'button', text: 'このイベントを削除',
       onclick: () => confirmDialog('イベントを削除', `「${ev.name}」を削除しますか？`, () => {
         S.update((s) => { s.futureSim.events = s.futureSim.events.filter((x) => x.id !== ev.id); });
-        render(); toast('削除しました', 'trash'); qs('.fc-modal-back')?.classList.remove('show'); setTimeout(() => qs('.fc-modal-back')?.remove(), 260);
+        render(); toast('削除しました', 'trash'); closeAllModals();
       }),
     }),
   );
@@ -3349,7 +3580,7 @@ function futureStockPlansCard(state) {
 }
 function futureStockPlanPicker(stocks) {
   if (stocks.length === 1) return futureStockPlanForm(stocks[0].acc, stocks[0].h);
-  const closeCur = () => { qs('.fc-modal-back')?.classList.remove('show'); setTimeout(() => qs('.fc-modal-back')?.remove(), 260); };
+  const closeCur = () => closeAllModals(); // 選択モーダルを安全に閉じてから編集フォームを開く
   const body = el('div', { class: 'fc-list' }, ...stocks.map(({ acc, h }) =>
     el('div', { class: 'fc-row tap', onclick: () => { closeCur(); futureStockPlanForm(acc, h); } },
       el('div', { class: 'fc-row-main' }, el('div', { class: 'fc-row-title', text: `${h.name}${h.ticker ? '（' + h.ticker + '）' : ''}` })))));
@@ -3376,7 +3607,7 @@ function futureStockPlanForm(acc, h, p) {
       class: 'fc-btn danger block', type: 'button', text: 'この購入予定を削除',
       onclick: () => confirmDialog('購入予定を削除', '削除しますか？', () => {
         S.update((s) => { const a = s.accounts.find((x) => x.id === acc.id); const hh = a.holdings.find((x) => x.id === h.id); hh.plannedPurchases = (hh.plannedPurchases || []).filter((x) => x.id !== p.id); });
-        render(); toast('削除しました', 'trash'); qs('.fc-modal-back')?.classList.remove('show'); setTimeout(() => qs('.fc-modal-back')?.remove(), 260);
+        render(); toast('削除しました', 'trash'); closeAllModals();
       }),
     }),
   );
@@ -3480,14 +3711,14 @@ function futurePlanDetail(p) {
       onclick: () => {
         S.update((s) => { Object.assign(s.futureSim, { years: p.config.years, scenario: p.config.scenario, customReturn: p.config.customReturn, useOverride: p.config.useOverride, monteCarlo: { ...p.config.monteCarlo } }); });
         render(); toast('読み込みました');
-        qs('.fc-modal-back')?.classList.remove('show'); setTimeout(() => qs('.fc-modal-back')?.remove(), 260);
+        closeAllModals();
       },
     }),
     el('button', {
       class: 'fc-btn danger block', type: 'button', text: 'このプランを削除',
       onclick: () => confirmDialog('プランを削除', `「${p.name}」を削除しますか？`, () => {
         S.update((s) => { s.futureSim.plans = s.futureSim.plans.filter((x) => x.id !== p.id); });
-        render(); toast('削除しました', 'trash'); qs('.fc-modal-back')?.classList.remove('show'); setTimeout(() => qs('.fc-modal-back')?.remove(), 260);
+        render(); toast('削除しました', 'trash'); closeAllModals();
       }),
     }),
   );
@@ -3628,8 +3859,8 @@ function toggle(on, onClick) {
   return el('button', { class: 'fc-toggle' + (on ? ' on' : ''), type: 'button', onclick: onClick }, el('span', { class: 'fc-toggle-knob' }));
 }
 function budgetForm() {
-  const b = inputEl({ type: 'number', value: S.getState().settings.monthlyBudget });
-  modal('月の予算', field('予算（円）', b), { onSave: (close) => { S.update((s) => { s.settings.monthlyBudget = Number(b.value) || 0; }); render(); toast('保存しました'); close(); } });
+  const b = amountInput(S.getState().settings.monthlyBudget); // 月の予算（円・3桁区切り）
+  modal('月の予算', field('予算（円）', b), { onSave: (close) => { S.update((s) => { s.settings.monthlyBudget = amountValue(b); }); render(); toast('保存しました'); close(); } });
 }
 function periodForm() {
   const st = S.getState();
@@ -3693,7 +3924,7 @@ function recurringForm(r) {
   };
   const name = inputEl({ placeholder: '例）家賃', value: r?.name || '' });
   const day = selectEl([{ value: 'end', label: '毎月末' }, ...Array.from({ length: 31 }, (_, i) => ({ value: i + 1, label: `毎月${i + 1}日` }))], r?.day ?? 25);
-  const amount = inputEl({ type: 'number', value: r?.amount ?? '' });
+  const amount = amountInput(r?.amount); // 固定収支金額（円・3桁区切り）
   const acc = st.accounts.length
     ? selectEl(accountOptions(), r?.accountId || st.accounts[0]?.id)
     : selectEl([{ value: '', label: '（先に口座を追加）' }], '');
@@ -3747,10 +3978,10 @@ function recurringForm(r) {
     el('p', { class: 'fc-field-hint', text: '29〜31日・毎月末を選ぶと、その日が無い月（例：2月）は自動的にその月の最終日に処理されます。' }),
     el('p', { class: 'fc-field-hint', text: '開始日は「この日以降から有効」。最初の実行日は開始日以降で、設定した発生日に一致する最初の日になります（登録日・今日は使いません）。' }),
     el('p', { class: 'fc-field-hint', text: '終了日を設定すると、その日を過ぎた月は固定収支・損益・可処分資金・将来シミュレーションから除外されます。未設定は無期限です。' }),
-    !isNew && el('button', { class: 'fc-btn danger block', type: 'button', text: '削除', onclick: () => confirmDialog('固定収支を削除', '削除しますか？', () => { S.update((s) => { s.recurring = s.recurring.filter((x) => x.id !== r.id); }); render(); toast('削除しました', 'trash'); qs('.fc-modal-back')?.remove(); }) }));
+    !isNew && el('button', { class: 'fc-btn danger block', type: 'button', text: '削除', onclick: () => confirmDialog('固定収支を削除', '削除しますか？', () => { S.update((s) => { s.recurring = s.recurring.filter((x) => x.id !== r.id); }); render(); toast('削除しました', 'trash'); closeAllModals(); }) }));
   modal(isNew ? '固定収支を追加' : '固定収支を編集', body, {
     onSave: (close) => {
-      if (!name.value.trim() || !Number(amount.value)) return toast('名称と金額を入力してください', 'alert');
+      if (!name.value.trim() || !amountValue(amount)) return toast('名称と金額を入力してください', 'alert');
       if (startDate.value && endDate.value && endDate.value < startDate.value) return toast('終了日は開始日より後にしてください', 'alert');
       let accountId = null, cardId = null, pm = 'bank';
       if (type === 'income') {
@@ -3765,7 +3996,7 @@ function recurringForm(r) {
       }
       const catId = catWrap.querySelector('select').value;
       S.update((s) => {
-        const rec = { type, name: name.value.trim(), day: day.value === 'end' ? 'end' : Number(day.value), amount: Number(amount.value), categoryId: catId, accountId, paymentMethod: type === 'expense' ? pm : 'bank', cardId, startDate: startDate.value || null, endDate: endDate.value || null };
+        const rec = { type, name: name.value.trim(), day: day.value === 'end' ? 'end' : Number(day.value), amount: amountValue(amount), categoryId: catId, accountId, paymentMethod: type === 'expense' ? pm : 'bank', cardId, startDate: startDate.value || null, endDate: endDate.value || null };
         if (isNew) s.recurring.push({ id: uid('rec'), createdAt: today(), ...rec });
         else { const ex = s.recurring.find((x) => x.id === r.id); Object.assign(ex, rec); if (!ex.createdAt) ex.createdAt = today(); }
         S.materializeRecurringCardUsage(s);
@@ -3800,7 +4031,7 @@ function categoryForm(kind, c) {
   const draw = () => { sw.innerHTML = ''; palette.forEach((p) => sw.append(el('button', { class: 'fc-swatch' + (p === color ? ' on' : ''), type: 'button', style: `background:${p}`, onclick: () => { color = p; draw(); } }))); };
   draw();
   const body = el('div', {}, field('名称', name), field('カラー', sw),
-    !isNew && el('button', { class: 'fc-btn danger block', type: 'button', text: '削除', onclick: () => confirmDialog('カテゴリーを削除', `「${c.name}」を削除しますか？関連取引は「未分類」になります。`, () => { S.update((s) => { s.categories[kind] = s.categories[kind].filter((x) => x.id !== c.id); }); render(); toast('削除しました', 'trash'); qs('.fc-modal-back')?.remove(); }) }));
+    !isNew && el('button', { class: 'fc-btn danger block', type: 'button', text: '削除', onclick: () => confirmDialog('カテゴリーを削除', `「${c.name}」を削除しますか？関連取引は「未分類」になります。`, () => { S.update((s) => { s.categories[kind] = s.categories[kind].filter((x) => x.id !== c.id); }); render(); toast('削除しました', 'trash'); closeAllModals(); }) }));
   modal(isNew ? 'カテゴリーを追加' : 'カテゴリーを編集', body, {
     onSave: (close) => {
       if (!name.value.trim()) return toast('名称を入力してください', 'alert');
@@ -3815,14 +4046,20 @@ function categoryForm(kind, c) {
 
 // ============ データ管理 ============
 function renderData() {
+  const st = S.getState();
   const wrap = el('div', { class: 'fc-view' });
   wrap.append(headTitle('データ管理'));
+  // 最終バックアップ日時（データ管理の上部に表示）
+  const backupAt = fmtBackupTime(st.settings.lastBackupAt);
+  wrap.append(el('div', { class: 'fc-backup-status' },
+    el('span', { class: 'fc-backup-lab', text: '最終バックアップ' }),
+    el('span', { class: 'fc-backup-val' + (backupAt ? '' : ' none'), text: backupAt || 'バックアップが作成されていません' })));
   wrap.append(card(sectionTitle('バックアップ・復元'),
     el('p', { class: 'fc-note', text: 'すべてのデータをJSONファイルとして書き出し／読み込みできます。' }),
     btnIcon('primary block', 'down', 'バックアップを書き出す', exportBackup),
     btnIcon('ghost block', 'up', 'バックアップから復元', () => importFile('json'))));
   wrap.append(card(sectionTitle('CSV'),
-    el('p', { class: 'fc-note', text: '取引履歴（収入・支出）をCSVで入出力できます。列: 日付,種別,金額,カテゴリー,メモ' }),
+    el('p', { class: 'fc-note', text: '取引履歴（収入・支出）をCSVで入出力できます。列: 日付,種別,金額,カテゴリー,口座,メモ（旧形式の口座なしCSVも取り込めます）' }),
     btnIcon('ghost block', 'down', '取引をCSVエクスポート', exportCSV),
     btnIcon('ghost block', 'up', 'CSVインポート', () => importFile('csv'))));
   wrap.append(card(sectionTitle('リセット'),
@@ -3837,14 +4074,37 @@ function download(filename, text, mime = 'application/json') {
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 function exportBackup() {
+  // 最終バックアップ日時（日本時間ISO）を設定に記録してから書き出す。
+  S.update((s) => { s.settings.lastBackupAt = Sec.jstNowISO(); }, { silent: true });
   download(`finance-backup-${today()}.json`, JSON.stringify(S.getState(), null, 2));
+  render(); // 「最終バックアップ」表示・ホームの案内を更新
   toast('バックアップを書き出しました', 'database');
 }
+
+// 保存済みのISO(例 2026-07-24T21:30:00+09:00)を「2026年7月24日 21:30」形式で表示する。
+function fmtBackupTime(iso) {
+  if (!iso) return null;
+  const m = String(iso).match(/^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})/);
+  if (!m) return null;
+  const [, y, mo, d, h, mi] = m;
+  return `${Number(y)}年${Number(mo)}月${Number(d)}日 ${h}:${mi}`;
+}
+// 最終バックアップからの経過日数（未実施なら null）。ホームの案内表示に使用。
+function daysSinceBackup(st) {
+  const iso = st.settings?.lastBackupAt;
+  if (!iso) return null;
+  const then = Date.parse(iso);
+  if (Number.isNaN(then)) return null;
+  return (Date.now() - then) / 86400000;
+}
 function exportCSV() {
+  // 口座ベース設計に合わせ、各取引の口座名も出力する（列: 日付,種別,金額,カテゴリー,口座,メモ）
   const st = S.getState();
-  const rows = [['日付', '種別', '金額', 'カテゴリー', 'メモ']];
+  const rows = [['日付', '種別', '金額', 'カテゴリー', '口座', 'メモ']];
   for (const t of st.transactions.slice().sort((a, b) => a.date.localeCompare(b.date)))
-    rows.push([t.date, t.type === 'income' ? '収入' : '支出', t.amount, S.findCategory(t.categoryId).name, (t.memo || '').replace(/"/g, '""')]);
+    rows.push([t.date, t.type === 'income' ? '収入' : '支出', t.amount,
+      S.findCategory(t.categoryId).name, S.findAccount(t.accountId)?.name || '',
+      (t.memo || '').replace(/"/g, '""')]);
   const csv = '﻿' + rows.map((r) => r.map((c) => `"${c}"`).join(',')).join('\n');
   download(`finance-transactions-${today()}.csv`, csv, 'text/csv');
   toast('CSVを書き出しました', 'file');
@@ -3866,24 +4126,180 @@ function doImportJSON(text) {
     confirmDialog('復元', '現在のデータを、選択したバックアップで置き換えますか？', () => { S.replaceState(data); applyTheme(); go('dashboard'); toast('復元しました', 'repeat'); }, { yesLabel: '復元する', danger: false });
   } catch (e) { toast('読み込みに失敗しました: ' + e.message, 'alert'); }
 }
+// CSV解析: 新形式(日付,種別,金額,カテゴリー,口座,メモ)と旧形式(日付,種別,金額,カテゴリー,メモ)の両対応。
+// すぐには保存せず、確認画面のための構造化データ（行・エラー行番号・形式）を返す。
+function parseCsvTransactions(text) {
+  const lines = text.replace(/^﻿/, '').split(/\r?\n/);
+  let hi = 0;
+  while (hi < lines.length && !lines[hi].trim()) hi++;
+  const header = parseCsvLine(lines[hi] || '').map((h) => h.trim());
+  const hasAccountCol = header.includes('口座'); // 口座列の有無で新旧を判定
+  const rows = [], errorLines = [];
+  for (let i = hi + 1; i < lines.length; i++) {
+    if (!lines[i].trim()) continue;
+    const cols = parseCsvLine(lines[i]);
+    const lineNo = i + 1; // 1始まりの行番号
+    if (cols.length < (hasAccountCol ? 4 : 3)) { errorLines.push(lineNo); continue; }
+    const date = (cols[0] || '').trim().slice(0, 10);
+    const typeJa = (cols[1] || '').trim();
+    const amount = Math.round(Number(String(cols[2] ?? '').replace(/[^\d.-]/g, '')) || 0);
+    const catName = (cols[3] || '').trim();
+    const accName = hasAccountCol ? (cols[4] || '').trim() : null;
+    const memo = hasAccountCol ? (cols[5] || '') : (cols[4] || '');
+    const type = typeJa.includes('収') ? 'income' : (typeJa.includes('支') ? 'expense' : null);
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || !type || !amount) { errorLines.push(lineNo); continue; }
+    rows.push({ lineNo, date, type, amount, catName, accName, memo });
+  }
+  return { format: hasAccountCol ? 'new' : 'old', rows, errorLines };
+}
+
 function doImportCSV(text) {
-  try {
-    const lines = text.replace(/^﻿/, '').split(/\r?\n/).filter((l) => l.trim());
-    let added = 0;
-    S.update((s) => {
-      for (let i = 1; i < lines.length; i++) {
-        const cols = parseCsvLine(lines[i]);
-        if (cols.length < 3) continue;
-        const [date, typeJa, amount, catName, memo] = cols;
-        const type = typeJa.includes('収') ? 'income' : 'expense';
-        let cat = s.categories[type].find((c) => c.name === catName);
-        if (!cat && catName) { cat = { id: uid('cat'), name: catName, color: '#8e8e93' }; s.categories[type].push(cat); }
-        s.transactions.push({ id: uid('tx'), date: (date || today()).slice(0, 10), amount: Number(String(amount).replace(/[^\d.-]/g, '')) || 0, type, categoryId: cat?.id || null, memo: memo || '' });
-        added++;
+  let parsed;
+  try { parsed = parseCsvTransactions(text); }
+  catch (e) { toast('CSVの読み込みに失敗しました', 'alert'); return; }
+  if (!parsed.rows.length && !parsed.errorLines.length) { toast('取り込める取引がありません', 'alert'); return; }
+  csvImportModal(parsed);
+}
+
+// インポート確認画面。件数・収支合計・口座ごとの残高増減・不明カテゴリー/口座・エラー行を表示し、
+// 口座の割り当て（登録済みへ割当／除外／新規作成）を選んでから確定する。
+function csvImportModal(parsed) {
+  const st = S.getState();
+  const accByName = new Map(st.accounts.map((a) => [a.name, a.id]));
+  const knownCats = new Set(S.allCategories().map((c) => c.name));
+
+  // 旧形式: すべての取引を割り当てる登録先口座を1つ選ぶ
+  let oldTargetId = st.accounts[0]?.id || '';
+  // 新形式: 不明な口座名 → 'exclude' | 'create' | <accountId>
+  const distinctAcc = [...new Set(parsed.rows.map((r) => r.accName ?? ''))];
+  const unknownNames = parsed.format === 'new'
+    ? distinctAcc.filter((n) => !accByName.has(n)) : [];
+  const resolution = new Map(); // accName -> 'exclude'|'create'|accountId
+  for (const n of unknownNames) resolution.set(n, 'exclude'); // 既定は誤登録防止のため除外
+
+  // 現在の設定から「実際にインポートされる行＋割当先口座ID」を算出
+  const computePlan = () => {
+    const items = []; // {row, accountId}
+    for (const r of parsed.rows) {
+      let accountId;
+      if (parsed.format === 'old') { if (!oldTargetId) continue; accountId = oldTargetId; }
+      else if (accByName.has(r.accName ?? '')) accountId = accByName.get(r.accName ?? '');
+      else {
+        const res = resolution.get(r.accName ?? '');
+        if (res === 'exclude' || res == null) continue;      // 除外
+        if (res === 'create') { accountId = '__create__:' + (r.accName ?? ''); }
+        else accountId = res;                                 // 既存口座へ割当
       }
+      items.push({ row: r, accountId });
+    }
+    return items;
+  };
+
+  const body = el('div', {});
+  const rebuild = () => {
+    body.innerHTML = '';
+    const items = computePlan();
+    const incomeTotal = items.filter((i) => i.row.type === 'income').reduce((s, i) => s + i.row.amount, 0);
+    const expenseTotal = items.filter((i) => i.row.type === 'expense').reduce((s, i) => s + i.row.amount, 0);
+    // 口座ごとの残高増減
+    const deltaByAcc = new Map();
+    for (const i of items) {
+      const d = (i.row.type === 'income' ? 1 : -1) * i.row.amount;
+      deltaByAcc.set(i.accountId, (deltaByAcc.get(i.accountId) || 0) + d);
+    }
+    const newCats = new Set(parsed.rows.map((r) => r.catName).filter((c) => c && !knownCats.has(c)));
+
+    // 形式の案内
+    body.append(el('p', { class: 'fc-field-hint', text: parsed.format === 'new'
+      ? '新形式（口座列あり）のCSVです。' : '旧形式（口座列なし）のCSVです。すべての取引を1つの口座へ割り当てます。' }));
+
+    // 旧形式: 登録先口座の選択
+    if (parsed.format === 'old') {
+      if (!st.accounts.length) {
+        body.append(el('p', { class: 'fc-empty', text: '先に口座を登録してください。' }));
+      } else {
+        const sel = selectEl(accountOptions(), oldTargetId);
+        sel.addEventListener('change', () => { oldTargetId = sel.value; rebuild(); });
+        body.append(field('登録先口座', sel));
+      }
+    }
+
+    // 新形式: 不明な口座の割り当て
+    if (parsed.format === 'new' && unknownNames.length) {
+      body.append(el('h3', { class: 'fc-subhead', text: `未登録の口座（${unknownNames.length}件）の扱い` }));
+      for (const n of unknownNames) {
+        const opts = [
+          { value: 'exclude', label: '取り込まない（除外）' },
+          ...st.accounts.map((a) => ({ value: a.id, label: `→ ${a.name} へ割り当て` })),
+        ];
+        if (n) opts.push({ value: 'create', label: `新規口座「${n}」を作成` });
+        const sel = selectEl(opts, resolution.get(n));
+        sel.addEventListener('change', () => { resolution.set(n, sel.value); rebuild(); });
+        body.append(field(n ? `「${n}」` : '（口座名なし）', sel));
+      }
+    }
+
+    // 集計プレビュー
+    const kv = (k, v) => el('div', { class: 'fc-kv-row' }, el('span', { text: k }), el('b', { text: v }));
+    const deltaRows = [...deltaByAcc.entries()].map(([id, d]) => {
+      const name = id.startsWith('__create__:') ? `${id.slice(11) || '（口座名なし）'}（新規）` : (S.findAccount(id)?.name || id);
+      return kv(name, yen(d, { sign: d > 0 }));
     });
-    go('transactions'); toast(`${added}件をインポートしました`, 'down');
-  } catch (e) { toast('CSVの読み込みに失敗しました', 'alert'); }
+    body.append(el('div', { class: 'fc-kv' },
+      kv('読み込む取引件数', `${items.length}件`),
+      kv('収入合計', yen(incomeTotal)),
+      kv('支出合計', yen(expenseTotal)),
+      kv('存在しないカテゴリー', `${newCats.size}件（自動作成）`),
+      kv('存在しない口座', `${unknownNames.length}件`),
+      kv('読み込みエラーの行', parsed.errorLines.length ? parsed.errorLines.join(', ') + ' 行目' : 'なし')));
+    if (deltaRows.length) {
+      body.append(el('h3', { class: 'fc-subhead', text: '口座ごとの残高増減' }));
+      body.append(el('div', { class: 'fc-kv' }, ...deltaRows));
+    }
+    if (!items.length) body.append(el('p', { class: 'fc-empty', text: 'このままでは取り込む取引がありません。上の割り当てを見直してください。' }));
+    ctrl?.setSaveDisabled(!items.length);
+  };
+
+  // 確定処理（一括・アトミック）: 取引追加＋accountId設定＋残高反映＋資産/実績履歴更新を同時に行う。
+  const applyImport = (close) => {
+    const items = computePlan();
+    if (!items.length) return;
+    const needCreate = parsed.format === 'new' && [...resolution.values()].includes('create');
+    const run = () => {
+      S.update((s) => {
+        // 事前に新規作成する口座を用意し、名前→IDを確定
+        const nameToId = new Map(s.accounts.map((a) => [a.name, a.id]));
+        for (const [n, res] of resolution.entries()) {
+          if (res === 'create') {
+            const rec = { id: uid('acc'), name: n, type: 'bank', includeInDisposable: true, balance: 0 };
+            s.accounts.push(rec); nameToId.set(n, rec.id);
+          }
+        }
+        for (const it of items) {
+          const r = it.row;
+          let accountId = it.accountId;
+          if (accountId.startsWith('__create__:')) accountId = nameToId.get(accountId.slice(11)) || null;
+          // カテゴリー: 無ければ自動作成
+          let cat = s.categories[r.type].find((c) => c.name === r.catName);
+          if (!cat && r.catName) { cat = { id: uid('cat'), name: r.catName, color: '#8e8e93' }; s.categories[r.type].push(cat); }
+          s.transactions.push({ id: uid('tx'), date: r.date, amount: r.amount, type: r.type, categoryId: cat?.id || null, accountId, memo: r.memo || '' });
+          // 残高反映（収入は+、支出は-。証券口座は adjustBalance が現金を増減し再計算する）
+          adjustBalance(s.accounts.find((a) => a.id === accountId), r.type === 'income' ? r.amount : -r.amount);
+        }
+        S.recordAssetSnapshot(s); // 資産履歴・投資実績履歴を更新
+      });
+      close(); go('transactions'); toast(`${items.length}件をインポートしました`, 'down');
+    };
+    if (needCreate) {
+      // 口座の自動作成は誤作成を防ぐため確認する
+      confirmDialog('口座を自動作成', 'CSV内の未登録口座を新しい口座として作成します。よろしいですか？', run, { yesLabel: '作成して取り込む', danger: false });
+    } else run();
+  };
+
+  const ctrl = modal('CSVインポートの確認', body, {
+    saveLabel: 'この内容で取り込む', danger: false, onSave: applyImport, wide: true,
+  });
+  rebuild();
 }
 function parseCsvLine(line) {
   const out = []; let cur = '', inQ = false;
@@ -3974,6 +4390,19 @@ export function init() {
   root.append(buildNav());
   render();
   setTimeout(checkNotifications, 400);
+  // ブラウザ履歴との連携: 起点状態を用意し、戻る操作(popstate)を受け取る。
+  // 再読み込み後はホームから始まる（URLを画面ごとに分割しないため）。
+  try { history.replaceState({ fcRoute: ui.route }, ''); } catch {}
+  window.addEventListener('popstate', handlePopState);
+  // アクセシビリティ: role="button" の要素を Enter / Space でも操作可能にする。
+  document.addEventListener('keydown', (e) => {
+    if (e.key !== 'Enter' && e.key !== ' ' && e.key !== 'Spacebar') return;
+    const t = e.target;
+    if (t && t.getAttribute && t.getAttribute('role') === 'button' && t.tagName !== 'BUTTON') {
+      e.preventDefault(); // Space によるスクロールを抑止
+      t.click();
+    }
+  });
   // OSテーマ変更に追随（auto時）
   window.matchMedia?.('(prefers-color-scheme: dark)')?.addEventListener?.('change', () => { if (S.getState().settings.theme === 'auto') render(); });
 }

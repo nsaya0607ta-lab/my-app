@@ -5,7 +5,7 @@
 //   ・外部API・ダミー値は使わず、暦の計算のみで判定する。
 // 春分・秋分の近似式は概ね1980〜2099年で有効。
 
-import { pad } from './utils.js?v=20260724c';
+import { pad } from './utils.js?v=20260724d';
 
 const cache = new Map(); // year -> Map<iso, name>
 

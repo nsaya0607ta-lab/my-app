@@ -69,6 +69,9 @@ export const el = (tag, attrs = {}, ...children) => {
     else if (k === 'dataset') Object.assign(node.dataset, v);
     else node.setAttribute(k, v);
   }
+  // アクセシビリティ: role="button" の非ボタン要素はキーボード操作できるよう
+  // tabindex を自動付与する（Enter/Space の発火はグローバルハンドラで処理）。
+  if (attrs.role === 'button' && tag !== 'button' && attrs.tabindex == null) node.setAttribute('tabindex', '0');
   for (const c of children.flat()) {
     if (c == null || c === false) continue;
     node.append(c.nodeType ? c : document.createTextNode(c));
