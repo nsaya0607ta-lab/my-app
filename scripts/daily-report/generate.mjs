@@ -33,6 +33,44 @@ const KEEP_HTML = argv.has('--html');
 
 /* ------------------------------------------------------------------ */
 
+/** 必要な環境変数が揃っているかを最初にまとめて確認する。 */
+const REQUIRED_ENV = [
+  ['GEMINI_API_KEY', 'レポート本文の生成'],
+  ['FIREBASE_PROJECT_ID', '学習履歴の読み取り'],
+  ['FIREBASE_CLIENT_EMAIL', '学習履歴の読み取り'],
+  ['FIREBASE_PRIVATE_KEY', '学習履歴の読み取り'],
+  ['LEARNING_UID', '対象ユーザーの Firebase UID'],
+];
+
+function preflight() {
+  if (DRY_RUN) return;
+
+  const missing = REQUIRED_ENV.filter(([name]) => !process.env[name]);
+  if (missing.length === 0) return;
+
+  // 途中で1つずつ例外を投げるとログがスタックトレースだけになって原因が
+  // 分かりにくいため、足りないものを最初にまとめて提示して終了する
+  console.error('必要な環境変数が設定されていないため実行できません。\n');
+  console.error('不足しているもの:');
+  for (const [name, purpose] of missing) {
+    console.error(`  - ${name}  （${purpose}）`);
+  }
+  console.error(
+    [
+      '',
+      'GitHub Actions から実行している場合は、リポジトリの',
+      '  Settings → Secrets and variables → Actions → New repository secret',
+      'で上記を登録してください。',
+      '',
+      'API を使わずレイアウトだけ確認したい場合は --dry-run を付けてください:',
+      '  node scripts/daily-report/generate.mjs --dry-run --html',
+    ].join('\n'),
+  );
+  process.exit(1);
+}
+
+/* ------------------------------------------------------------------ */
+
 async function collectInput() {
   if (DRY_RUN) {
     return {
@@ -151,6 +189,8 @@ async function pruneOld(reports) {
 /* ------------------------------------------------------------------ */
 
 async function main() {
+  preflight();
+
   const input = await collectInput();
   if (!input) return;
 
