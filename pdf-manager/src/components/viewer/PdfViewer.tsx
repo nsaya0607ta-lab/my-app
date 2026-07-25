@@ -62,7 +62,6 @@ export function PdfViewer({
   const [pageCount, setPageCount] = useState(file.pageCount ?? 0);
   const [page, setPage] = useState(1);
   const [scale, setScale] = useState(1);
-  const [fitWidthScale, setFitWidthScale] = useState(1);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [chromeVisible, setChromeVisible] = useState(true);
@@ -112,6 +111,35 @@ export function PdfViewer({
     };
   }, [blob]);
 
+  // ピンチ開始時の倍率を読むための控え (タッチ処理を毎回登録し直さないため)
+  const scaleRef = useRef(scale);
+  useEffect(() => {
+    scaleRef.current = scale;
+  }, [scale]);
+
+  /* 拡大時の表示位置 --------------------------------------------------- */
+  // 拡大縮小の前後で「画面中央に見えていた場所」を保つためのしおり。
+  // これがないと拡大した瞬間に左上へ飛び、左右に何もない位置へ移動してしまう。
+  const anchor = useRef<{ x: number; y: number } | null>(null);
+
+  const captureAnchor = useCallback(() => {
+    const el = containerRef.current;
+    if (!el) return;
+    anchor.current = {
+      x: (el.scrollLeft + el.clientWidth / 2) / Math.max(1, el.scrollWidth),
+      y: (el.scrollTop + el.clientHeight / 2) / Math.max(1, el.scrollHeight),
+    };
+  }, []);
+
+  const applyAnchor = useCallback(() => {
+    const el = containerRef.current;
+    const point = anchor.current;
+    if (!el || !point) return;
+    anchor.current = null;
+    el.scrollLeft = Math.max(0, point.x * el.scrollWidth - el.clientWidth / 2);
+    el.scrollTop = Math.max(0, point.y * el.scrollHeight - el.clientHeight / 2);
+  }, []);
+
   /* 描画 -------------------------------------------------------------- */
   const renderPage = useCallback(async () => {
     const doc = docRef.current;
@@ -137,9 +165,10 @@ export function PdfViewer({
       if (seq !== renderSeq.current) return;
 
       const base = target.getViewport({ scale: 1 });
+      // 余白 (本文の p-2 = 左右 8px ずつ) を差し引いた幅にページを合わせる。
+      // 等倍 (100%) では横スクロールが出ず、ページ全体の幅が自然に収まる。
       const available = container.clientWidth - 16;
       const fit = available > 0 ? available / base.width : 1;
-      setFitWidthScale(fit);
 
       const viewport = target.getViewport({ scale: fit * scale });
       const dpr = safePixelRatio(viewport.width, viewport.height);
@@ -147,6 +176,8 @@ export function PdfViewer({
       canvas.height = Math.max(1, Math.floor(viewport.height * dpr));
       canvas.style.width = `${Math.floor(viewport.width)}px`;
       canvas.style.height = `${Math.floor(viewport.height)}px`;
+      // 大きさが変わった直後にスクロール位置を戻す (拡大前に見ていた場所を維持する)
+      applyAnchor();
 
       drawnCanvas.current = canvas;
       const context = canvas.getContext('2d');
@@ -168,7 +199,7 @@ export function PdfViewer({
       const message = renderError instanceof Error ? renderError.message : '';
       if (seq === renderSeq.current && !/cancel/i.test(message)) setError(toMessage(renderError));
     }
-  }, [page, scale]);
+  }, [applyAnchor, page, scale]);
 
   useEffect(() => {
     if (loading || error) return;
@@ -189,37 +220,106 @@ export function PdfViewer({
     setPageInput(String(page));
   }, [page]);
 
-  /* ピンチズーム ------------------------------------------------------ */
+  /* ピンチズームと指の移動 --------------------------------------------- */
+  // 1本指 … ブラウザーの標準スクロールに任せる (touch-action: pan-x pan-y)。
+  //          拡大中は上下だけでなく左右にも動かせる。
+  // 2本指 … 拡大縮小。標準のスクロールと競合しないよう既定動作を止める。
   const pinch = useRef<{ distance: number; scale: number } | null>(null);
+  // 指を動かした直後のタップで、上下のバーが誤って開閉しないようにする
+  const gestured = useRef(false);
+  const moved = useRef(false);
+  const touchStart = useRef<{ x: number; y: number } | null>(null);
 
-  const onTouchStart = (event: React.TouchEvent) => {
-    if (event.touches.length !== 2) return;
-    const [a, b] = [event.touches[0], event.touches[1]];
-    pinch.current = {
-      distance: Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY),
-      scale,
+  useEffect(() => {
+    const el = containerRef.current;
+    if (!el) return;
+
+    const onStart = (event: TouchEvent) => {
+      if (event.touches.length === 1) {
+        // 新しい操作の始まり。前回のピンチ判定は持ち越さない
+        gestured.current = false;
+        moved.current = false;
+        touchStart.current = { x: event.touches[0].clientX, y: event.touches[0].clientY };
+        return;
+      }
+      if (event.touches.length === 2) {
+        gestured.current = true;
+        touchStart.current = null;
+        const [a, b] = [event.touches[0], event.touches[1]];
+        pinch.current = {
+          distance: Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY) || 1,
+          scale: scaleRef.current,
+        };
+        captureAnchor();
+      }
     };
-  };
 
-  const onTouchMove = (event: React.TouchEvent) => {
-    if (event.touches.length !== 2 || !pinch.current) return;
-    const [a, b] = [event.touches[0], event.touches[1]];
-    const distance = Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY);
-    const next = (pinch.current.scale * distance) / pinch.current.distance;
-    setScale(Math.min(MAX_SCALE, Math.max(MIN_SCALE, Number(next.toFixed(2)))));
-  };
+    const onMove = (event: TouchEvent) => {
+      if (event.touches.length === 1) {
+        const start = touchStart.current;
+        if (start) {
+          const dx = Math.abs(event.touches[0].clientX - start.x);
+          const dy = Math.abs(event.touches[0].clientY - start.y);
+          if (dx > 8 || dy > 8) moved.current = true;
+        }
+        return;
+      }
+      if (event.touches.length !== 2 || !pinch.current) return;
+      // ピンチ中はブラウザーのスクロール・ページ移動を止め、拡大縮小だけを行う
+      if (event.cancelable) event.preventDefault();
+      const [a, b] = [event.touches[0], event.touches[1]];
+      const distance = Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY);
+      const next = (pinch.current.scale * distance) / pinch.current.distance;
+      setScale((current) => {
+        const clamped = Math.min(MAX_SCALE, Math.max(MIN_SCALE, Number(next.toFixed(2))));
+        if (clamped !== current) captureAnchor();
+        return clamped;
+      });
+    };
 
-  const onTouchEnd = () => {
-    pinch.current = null;
+    const onEnd = (event: TouchEvent) => {
+      if (event.touches.length < 2) pinch.current = null;
+      if (event.touches.length === 0) touchStart.current = null;
+    };
+
+    // preventDefault を効かせるため passive: false で直接登録する
+    el.addEventListener('touchstart', onStart, { passive: false });
+    el.addEventListener('touchmove', onMove, { passive: false });
+    el.addEventListener('touchend', onEnd);
+    el.addEventListener('touchcancel', onEnd);
+    return () => {
+      el.removeEventListener('touchstart', onStart);
+      el.removeEventListener('touchmove', onMove);
+      el.removeEventListener('touchend', onEnd);
+      el.removeEventListener('touchcancel', onEnd);
+    };
+  }, [captureAnchor]);
+
+  /** 本文のタップ。指を動かした後やピンチ直後は開閉しない。 */
+  const onSurfaceClick = () => {
+    if (gestured.current || moved.current) {
+      gestured.current = false;
+      moved.current = false;
+      return;
+    }
+    setChromeVisible((value) => !value);
   };
 
   const changePage = (delta: number) => {
     setPage((current) => Math.min(pageCount || 1, Math.max(1, current + delta)));
-    containerRef.current?.scrollTo({ top: 0 });
+    anchor.current = null;
+    containerRef.current?.scrollTo({ top: 0, left: 0 });
   };
 
   const zoom = (delta: number) => {
+    captureAnchor();
     setScale((current) => Math.min(MAX_SCALE, Math.max(MIN_SCALE, Number((current + delta).toFixed(2)))));
+  };
+
+  const resetZoom = () => {
+    anchor.current = null;
+    setScale(1);
+    containerRef.current?.scrollTo({ top: 0, left: 0 });
   };
 
   useEffect(() => {
@@ -255,11 +355,8 @@ export function PdfViewer({
       {/* 本文 */}
       <div
         ref={containerRef}
-        onClick={() => setChromeVisible((value) => !value)}
-        onTouchStart={onTouchStart}
-        onTouchMove={onTouchMove}
-        onTouchEnd={onTouchEnd}
-        className="sheet-scroll flex-1 overflow-auto bg-[#20262d] p-2"
+        onClick={onSurfaceClick}
+        className="pdf-surface flex-1 overflow-auto bg-[#20262d]"
       >
         {loading ? (
           <div className="flex h-full items-center justify-center">
@@ -270,8 +367,11 @@ export function PdfViewer({
             <p className="text-base text-white">{error}</p>
           </div>
         ) : (
-          <div className="flex min-h-full justify-center">
-            <canvas ref={canvasRef} className="h-auto max-w-none shadow-pop" />
+          // w-max + min-w-full：PDF が画面より大きいときは内容の幅まで広がり、
+          // 左端まで確実にスクロールできる。小さいときは中央に置く。
+          // (justify-center だけだと、はみ出した左側へスクロールできなくなる)
+          <div className="flex min-h-full w-max min-w-full items-start justify-center p-2">
+            <canvas ref={canvasRef} className="block h-auto max-w-none shadow-pop" />
           </div>
         )}
       </div>
@@ -322,13 +422,11 @@ export function PdfViewer({
             </IconButton>
             <button
               type="button"
-              onClick={() => setScale(1)}
+              onClick={resetZoom}
               className="min-w-[52px] px-1 text-sm text-white"
               aria-label="表示倍率をリセット"
             >
-              {Math.round(scale * fitWidthScale * 100) > 0
-                ? `${Math.round(scale * 100)}%`
-                : '100%'}
+              {`${Math.round(scale * 100)}%`}
             </button>
             <IconButton label="拡大" onClick={() => zoom(0.25)} className="text-white">
               <Plus size={20} />

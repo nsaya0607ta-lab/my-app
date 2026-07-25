@@ -150,7 +150,7 @@ export function HomeView({
         フォルダー
       </SectionTitle>
 
-      <div className="grid grid-cols-1 gap-2 px-4 sm:grid-cols-2 lg:grid-cols-3">
+      <div className="no-h-swipe grid grid-cols-1 gap-2 px-4 sm:grid-cols-2 lg:grid-cols-3">
         {sortedFolders.map((folder) => (
           <FolderCard
             key={folder.id}
