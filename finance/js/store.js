@@ -137,6 +137,8 @@ function seedSimPlan() {
   return {
     startDate: todayISO(),
     initialSecCash: 0,      // 初期証券口座現金
+    initialValuation: 0,    // 初期評価額（開始時点ですでに保有している投資の時価。0なら投資ゼロから開始）
+    initialPrincipal: 0,    // 初期投資元本（初期評価額の取得金額。0なら初期評価額と同額＝開始時の評価損益0）
     annualReturn: 10,       // 想定年利(%)
     returnMode: 'compound', // 'compound'（複利）| 'simple'（単利）
     years: 5,               // 保有期間

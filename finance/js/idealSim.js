@@ -6,6 +6,8 @@
 // 方針:
 //   ・プランオブジェクトだけを入力にする純粋関数。実データには読み書きしない。
 //   ・証券口座現金は「初期証券口座現金＋シミュレーション専用入金−シミュレーション専用購入」を日付順に前進。
+//   ・元本・評価額は「初期投資元本／初期評価額」から前進する。すでにある程度投資している状態を
+//     起点にしたい場合に使う（初期評価額は開始日から想定年利で成長し、購入ぶんが積み上がる）。
 //   ・毎月の入金日・投資日はユーザー設定の日付をそのまま使う（1日固定にしない）。
 //     31日など存在しない日はその月の月末へ丸める（resolveDay）。
 //   ・すべて日本時間(Asia/Tokyo)の暦日(YYYY-MM-DD)で計算し、UTC変換で前後にずらさない。
@@ -15,6 +17,8 @@
 //   {
 //     startDate: 'YYYY-MM-DD',   // シミュレーション開始日
 //     initialSecCash: number,    // 初期証券口座現金
+//     initialValuation: number,  // 初期評価額（開始時点ですでに保有している投資の時価。0なら投資ゼロから開始）
+//     initialPrincipal: number,  // 初期投資元本（初期評価額の取得金額。0なら初期評価額と同額＝開始時の評価損益0）
 //     annualReturn: number,      // 想定年利(%)
 //     returnMode: 'compound'|'simple',
 //     years: number,             // 保有期間
@@ -87,6 +91,8 @@ export function defaultIdealPlan(startISO) {
   return {
     startDate: start,
     initialSecCash: 0,
+    initialValuation: 0,
+    initialPrincipal: 0,
     annualReturn: 10,
     returnMode: 'compound',
     years: 5,
@@ -138,7 +144,9 @@ export function runIdealPlan(plan, opts = {}) {
   // ---- 状態 ----
   let sec = p.initialSecCash;      // 証券口座現金（選択モードに従う。厳密モードでは0未満にしない）
   let vsec = p.initialSecCash;     // 仮想現金（全投資を実行した前提。不足額の算出に使う）
-  let principal = 0, valuation = 0;
+  // 元本・評価額は「すでに投資している状態」を起点にできる（未入力なら0＝投資ゼロから開始）。
+  // 初期評価額も開始日以降は他の購入ぶんと同じく想定年利で成長する。
+  let principal = p.initialPrincipal, valuation = p.initialValuation;
   let cumDeposit = 0, cumInvestPlanned = 0, cumInvestExec = 0, cumMissed = 0;
   let execCount = 0, missCount = 0;
   let minVsec = vsec;              // 仮想現金の最小値（負なら不足）
@@ -147,6 +155,8 @@ export function runIdealPlan(plan, opts = {}) {
   let firstShortageDate = null, firstShortageDeficit = 0, firstShortageName = '';
   let targetReachDate = null;
   const target = n(p.targetAmount);
+  // 初期評価額だけで目標へ達している場合は開始日を到達日とする
+  if (target > 0 && valuation >= target) targetReachDate = from;
   const dailyLog = [];
   const shortfalls = [];
   const series = [];
@@ -252,6 +262,8 @@ export function runIdealPlan(plan, opts = {}) {
     series, dailyLog, shortfalls, monthDeposit, monthInvest, daySnap,
     summary: {
       initialSecCash: Math.round(p.initialSecCash),
+      initialValuation: Math.round(p.initialValuation),
+      initialPrincipal: Math.round(p.initialPrincipal),
       cumDeposit: Math.round(cumDeposit),
       cumInvestPlanned: Math.round(cumInvestPlanned),
       cumInvestExec: Math.round(cumInvestExec),
@@ -275,6 +287,10 @@ export function normalizePlan(plan) {
   const base = defaultIdealPlan(plan && plan.startDate);
   const p = { ...base, ...(plan || {}) };
   p.initialSecCash = n(p.initialSecCash);
+  // 初期評価額・初期投資元本はマイナスにしない。元本が未入力(0)なら評価額と同額とみなし、
+  // 開始時点の評価損益を0円にする（取得金額が分からなくても損益が過大に出ないようにする）。
+  p.initialValuation = Math.max(0, n(p.initialValuation));
+  p.initialPrincipal = Math.max(0, n(p.initialPrincipal)) || p.initialValuation;
   p.annualReturn = n(p.annualReturn);
   p.years = Math.max(1, Math.round(n(p.years) || 5));
   p.returnMode = p.returnMode === 'simple' ? 'simple' : 'compound';
