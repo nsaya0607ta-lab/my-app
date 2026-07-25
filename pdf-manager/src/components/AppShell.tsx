@@ -22,6 +22,7 @@ import { ensurePdfExtension, nextAvailableName, sanitizeName, stripPdfExtension 
 import { getPageCount } from '@/lib/pdf';
 import * as repo from '@/lib/repository';
 import { clearSharedFlag, hasSharedFlag, takeSharedFiles } from '@/lib/shareTarget';
+import { fetchPendingReports } from '@/lib/dailyReport';
 import { collectTags } from '@/lib/search';
 import { ROOT_ID, UNSORTED_ID, type ExplorerItem, type FolderColor, type Importance, type PdfFileMeta } from '@/lib/types';
 import { ROOT_NAME, pathString, toParentKey } from '@/lib/tree';
@@ -65,6 +66,8 @@ export function AppShell() {
 
   const pdfInput = useRef<HTMLInputElement | null>(null);
   const importDest = useRef<string>(UNSORTED_ID);
+  /** 毎朝のレポート取り込みを 1 起動につき 1 回に制限するフラグ。 */
+  const dailySyncDone = useRef(false);
 
   const [menuItem, setMenuItem] = useState<ExplorerItem | null>(null);
   const [addSheet, setAddSheet] = useState(false);
@@ -214,6 +217,76 @@ export function AppShell() {
       cancelled = true;
     };
   }, [app.fatalError, app.ready]);
+
+  /* 毎朝の学習レポートを自動で取り込む -------------------------------- */
+  useEffect(() => {
+    if (!app.ready || app.fatalError) return;
+    if (!settings.dailyReportEnabled) return;
+
+    const destId = settings.dailyReportFolderId;
+    if (!destId) return;
+    // 取り込み先が削除・ごみ箱送りになっている場合は何もしない
+    // (設定画面で選び直してもらう)
+    if (destId !== ROOT_ID && !folders.some((f) => f.id === destId && !f.deletedAt)) return;
+
+    // 1 起動につき 1 回だけ。await より先に立てて開発時の二重実行も防ぐ
+    if (dailySyncDone.current) return;
+    dailySyncDone.current = true;
+
+    let cancelled = false;
+    (async () => {
+      const pending = await fetchPendingReports(settings.importedReports);
+      if (cancelled || pending.length === 0) return;
+
+      const imported: string[] = [];
+      let added = 0;
+      for (const report of pending) {
+        try {
+          const pageCount = await getPageCount(report.blob);
+          await repo.addPdf(report.blob, report.name, {
+            parentId: destId,
+            onDuplicate: 'skip',
+            pageCount,
+          });
+          imported.push(report.id);
+          added += 1;
+        } catch (error) {
+          // すでに同名で存在する場合 (再インストール後など) も取り込み済みとして
+          // 記録し、毎回ダウンロードし直さないようにする。
+          // それ以外の失敗は記録せず、次回の起動で再試行させる
+          if (error instanceof AppError && error.code === 'DUPLICATE_NAME') {
+            imported.push(report.id);
+          }
+        }
+      }
+
+      if (cancelled || imported.length === 0) return;
+      await updateSettings({
+        // 上限を設けないと設定が際限なく膨らむため、直近 180 件だけ残す
+        importedReports: [...settings.importedReports, ...imported].slice(-180),
+      });
+      await reload();
+      void refreshStorage();
+      if (added > 0) {
+        notify(`毎朝の学習レポートを ${added} 件取り込みました`, 'success');
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    app.fatalError,
+    app.ready,
+    folders,
+    notify,
+    refreshStorage,
+    reload,
+    settings.dailyReportEnabled,
+    settings.dailyReportFolderId,
+    settings.importedReports,
+    updateSettings,
+  ]);
 
   /* Service Worker 登録 --------------------------------------------- */
   useEffect(() => {

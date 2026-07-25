@@ -89,6 +89,12 @@ export type Settings = {
   onboardingDone: boolean;
   /** データ構造のバージョン (将来のマイグレーション用)。 */
   schemaVersion: number;
+  /** 毎朝の学習レポートを自動で取り込むか。 */
+  dailyReportEnabled: boolean;
+  /** 自動取り込み先フォルダー ID。未設定なら取り込まない。 */
+  dailyReportFolderId?: string;
+  /** 取り込み済みレポートの ID (日付) 一覧。二重取り込みの防止に使う。 */
+  importedReports: string[];
 };
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -99,6 +105,8 @@ export const DEFAULT_SETTINGS: Settings = {
   trashRetentionDays: 30,
   onboardingDone: false,
   schemaVersion: 1,
+  dailyReportEnabled: false,
+  importedReports: [],
 };
 
 /** 一覧に並べるための共通表現。 */
