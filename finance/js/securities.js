@@ -59,6 +59,8 @@ export function holdingPL(h) {
 // ===== 受渡（決済）の既定値 =====
 // 米国株・米国指数の積立は、通常 購入（約定）から2営業日後に預り金へ正式反映される。
 export const SETTLE_BUSINESS_DAYS = 2;
+// インデックス積立が約定する日本時間の時刻。
+export const ACCRUAL_HOUR_JST = 11;
 // 受渡が反映される日本時間の時刻（この時刻を過ぎた受渡日ぶんを預り金へ反映する）
 export const SETTLE_HOUR_JST = 10;
 
@@ -228,7 +230,7 @@ export function removePending(state, accountId, pendingId) {
 }
 
 // ===================================================================
-// 積立処理（日本時間23:00・ONのインデックスのみ・任意のオプトイン機能）
+// 積立処理（日本時間11:00・ONのインデックスのみ・任意のオプトイン機能）
 // ===================================================================
 // クライアントアプリのため真のサーバーcronは持てない。アプリ起動時に
 // 「前回処理日の翌日〜直近の実行対象日」まで日ごとに追いかけて実行する（キャッチアップ方式）。
@@ -289,11 +291,11 @@ export function performanceSnapshot(state) {
     holdings,
   };
 }
-// 23:00 を過ぎて確定済みとみなせる「最新の対象日」。JST23時以降なら今日、未満なら昨日。
+// 積立時刻を過ぎて確定済みとみなせる「最新の対象日」。JST11時以降なら今日、未満なら昨日。
 export function lastAccrualISO() {
   const d = jstDate();
   const y = d.getUTCFullYear(), m = d.getUTCMonth(), day = d.getUTCDate();
-  if (d.getUTCHours() >= 23) return `${y}-${pad(m + 1)}-${pad(day)}`;
+  if (d.getUTCHours() >= ACCRUAL_HOUR_JST) return `${y}-${pad(m + 1)}-${pad(day)}`;
   const prev = new Date(Date.UTC(y, m, day - 1));
   return `${prev.getUTCFullYear()}-${pad(prev.getUTCMonth() + 1)}-${pad(prev.getUTCDate())}`;
 }
@@ -376,7 +378,7 @@ function runAccrualForDate(acc, iso) {
     if (!h || !isIndex(h)) { pushHistory(acc, { date: iso, holdingId: a.holdingId, holdingName, amount, status: 'failed', reason: '対象ファンドなし' }); continue; }
     // 判定は預り金ではなく出金余力（＝すでに使用予定の決済待ちを除いた金額）で行う。
     if (accountWithdrawable(acc) < amount) { pushHistory(acc, { date: iso, holdingId: a.holdingId, holdingName, amount, status: 'failed', reason: '出金余力不足' }); continue; }
-    h.cost = n(h.cost) + amount;            // ① 総元本へ加算（毎晩23時の積立はここに積み上がる）
+    h.cost = n(h.cost) + amount;            // ① 総元本へ加算（毎朝11時の積立はここに積み上がる）
     h.value = n(h.value) + amount;          // ② 現在保有額へ同額を反映（総資産の整合性維持。実評価額は手入力で上書き可）
     // ③ 代金は決済待ちへ。預り金は受渡日（既定で2営業日後の日本時間10時ごろ）に減る。
     const pend = addPending(acc, { kind: 'index', holdingId: a.holdingId, holdingName, amount, tradeDate: iso });
