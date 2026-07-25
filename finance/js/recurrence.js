@@ -6,7 +6,7 @@
 //   ・月末指定(29/30/31・末)は、その日が存在しない月では自動的に月末へ丸める。
 // この1モジュールに集約し、画面ごとの個別実装をなくす（calc/cashflow/store/app はここを import する）。
 
-import { pad, resolveDay, toISO } from './utils.js?v=20260724f';
+import { pad, resolveDay, toISO } from './utils.js?v=20260725a';
 
 // ===== 日本時間の「今日」 =====
 // サーバー・端末のタイムゾーンに依存せず、常に Asia/Tokyo(UTC+9) の暦日を返す。
