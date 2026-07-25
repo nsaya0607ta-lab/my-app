@@ -5,12 +5,14 @@
  *  2. 他アプリの共有メニューから送られた PDF を IndexedDB へ預かる
  *
  * キャッシュ戦略:
- *  - ナビゲーション: ネットワーク優先 → 失敗したらキャッシュ (オフライン起動)
- *  - 静的アセット: キャッシュ優先 → 無ければ取得して保存
+ *  - ナビゲーション: ネットワーク優先 → 失敗したらキャッシュ
+ *  - Next.js のハッシュ付き静的アセット: キャッシュ優先
+ *  - 同じ URL で更新される可能性があるファイル: ネットワーク優先
  */
 
-const CACHE_VERSION = 'v2';
+const CACHE_VERSION = 'v3';
 const CACHE_NAME = `pdf-folder-${CACHE_VERSION}`;
+const CACHE_PREFIX = 'pdf-folder-';
 
 // 日本語 PDF が使う定義済み CMap。これが無いと文字が描画されないため、
 // オフラインでも閲覧できるようにアプリシェルと一緒に先読みしておく (計 130KB 程度)。
@@ -44,9 +46,7 @@ self.addEventListener('install', (event) => {
       .open(CACHE_NAME)
       .then((cache) =>
         // 1 つでも失敗するとインストール全体が止まるため、個別に握りつぶす
-        Promise.all(
-          APP_SHELL.map((url) => cache.add(url).catch(() => undefined)),
-        ),
+        Promise.all(APP_SHELL.map((url) => cache.add(url).catch(() => undefined))),
       )
       .then(() => self.skipWaiting()),
   );
@@ -57,10 +57,18 @@ self.addEventListener('activate', (event) => {
     caches
       .keys()
       .then((keys) =>
-        Promise.all(keys.filter((key) => key !== CACHE_NAME).map((key) => caches.delete(key))),
+        Promise.all(
+          keys
+            .filter((key) => key.startsWith(CACHE_PREFIX) && key !== CACHE_NAME)
+            .map((key) => caches.delete(key)),
+        ),
       )
       .then(() => self.clients.claim()),
   );
+});
+
+self.addEventListener('message', (event) => {
+  if (event.data?.type === 'SKIP_WAITING') self.skipWaiting();
 });
 
 /* ------------------------------------------------------------------ */
@@ -134,6 +142,45 @@ async function handleShareTarget(event) {
 }
 
 /* ------------------------------------------------------------------ */
+/* キャッシュ処理                                                       */
+/* ------------------------------------------------------------------ */
+
+function canCache(response) {
+  return response.ok && response.status === 200 && response.type === 'basic';
+}
+
+async function saveToCache(request, response) {
+  if (!canCache(response)) return;
+  try {
+    const cache = await caches.open(CACHE_NAME);
+    await cache.put(request, response.clone());
+  } catch {
+    // 容量不足やキャッシュ非対応のレスポンスでも、取得結果自体はそのまま返す
+  }
+}
+
+async function cacheFirst(request) {
+  const cached = await caches.match(request);
+  if (cached) return cached;
+
+  const response = await fetch(request);
+  await saveToCache(request, response);
+  return response;
+}
+
+async function networkFirst(request, fallbackRequest = request) {
+  try {
+    const response = await fetch(request, { cache: 'no-store' });
+    await saveToCache(fallbackRequest, response);
+    return response;
+  } catch {
+    const cached = await caches.match(fallbackRequest);
+    if (cached) return cached;
+    throw new Error('Network unavailable and no cached response exists.');
+  }
+}
+
+/* ------------------------------------------------------------------ */
 /* fetch                                                               */
 /* ------------------------------------------------------------------ */
 
@@ -149,30 +196,19 @@ self.addEventListener('fetch', (event) => {
   if (request.method !== 'GET' || url.origin !== self.location.origin) return;
 
   if (request.mode === 'navigate') {
-    event.respondWith(
-      fetch(request)
-        .then((response) => {
-          const clone = response.clone();
-          caches.open(CACHE_NAME).then((cache) => cache.put('/', clone));
-          return response;
-        })
-        .catch(() => caches.match('/').then((cached) => cached ?? caches.match(request))),
-    );
+    // ページ本体は必ずネットワークを先に確認する。
+    // オフライン時だけ、最後に取得できたトップページを使用する。
+    event.respondWith(networkFirst(request, '/'));
     return;
   }
 
-  event.respondWith(
-    caches.match(request).then((cached) => {
-      if (cached) return cached;
-      return fetch(request)
-        .then((response) => {
-          if (response.ok && response.type === 'basic') {
-            const clone = response.clone();
-            caches.open(CACHE_NAME).then((cache) => cache.put(request, clone));
-          }
-          return response;
-        })
-        .catch(() => cached);
-    }),
-  );
+  if (url.pathname.startsWith('/_next/static/')) {
+    // Next.js のビルドハッシュ付きファイルは URL が変わるため、キャッシュ優先で安全。
+    event.respondWith(cacheFirst(request));
+    return;
+  }
+
+  // manifest・アイコン・PDF Worker など、同じ URL のまま内容が変わるファイルは
+  // ネットワーク優先にし、ホーム画面版でも最新版へ追従させる。
+  event.respondWith(networkFirst(request));
 });
