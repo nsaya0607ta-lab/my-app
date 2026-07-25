@@ -11,6 +11,7 @@ import type { ExplorerItem, Folder, PdfFileMeta } from '@/lib/types';
 import { useApp } from '@/store/AppStore';
 import { FolderIcon, PdfIcon } from '@/components/ui/FileIcons';
 import { cx } from '@/components/ui/Primitives';
+import { CloudBadge, CloudProgressBar } from '@/components/cloud/CloudBadge';
 import { useLongPress } from '@/components/useLongPress';
 
 export type ItemHandlers = {
@@ -121,6 +122,7 @@ export function ListRow({
               {expanded ? name : middleEllipsis(name, 30)}
             </p>
             <FavoriteMark on={favorite} />
+            {item.kind === 'file' ? <CloudBadge file={item.file} /> : null}
           </div>
           <p className="mt-0.5 truncate text-xs text-ink-sub dark:text-[#98a3b0]">
             {subtitle ??
@@ -144,6 +146,7 @@ export function ListRow({
               {item.file.tags.map((tag) => `#${tag}`).join(' ')}
             </p>
           ) : null}
+          {item.kind === 'file' ? <CloudProgressBar file={item.file} /> : null}
         </div>
         {item.kind === 'folder' ? (
           <ChevronRight size={18} className="shrink-0 text-ink-faint" aria-hidden="true" />
@@ -186,8 +189,9 @@ export function GridCell({ item, handlers }: { item: ExplorerItem; handlers: Ite
         <p className="line-clamp-2 w-full break-all text-sm text-ink dark:text-[#e6eaef]">
           {middleEllipsis(name, 24)}
         </p>
-        <p className="text-xs text-ink-sub dark:text-[#98a3b0]">
+        <p className="flex items-center gap-1 text-xs text-ink-sub dark:text-[#98a3b0]">
           {item.kind === 'folder' ? '' : formatBytes(item.file.size)}
+          {item.kind === 'file' ? <CloudBadge file={item.file} /> : null}
         </p>
       </div>
       <div className="pointer-events-none absolute left-1.5 top-1.5">
@@ -234,10 +238,11 @@ export function ThumbCell({ item, handlers }: { item: ExplorerItem; handlers: It
         <p className="line-clamp-2 w-full break-all text-center text-sm text-ink dark:text-[#e6eaef]">
           {middleEllipsis(name, 24)}
         </p>
-        <p className="text-xs text-ink-sub dark:text-[#98a3b0]">
+        <p className="flex items-center gap-1 text-xs text-ink-sub dark:text-[#98a3b0]">
           {item.kind === 'folder'
             ? ''
             : `${formatBytes(item.file.size)}${item.file.pageCount ? ` ・ ${item.file.pageCount}p` : ''}`}
+          {item.kind === 'file' ? <CloudBadge file={item.file} /> : null}
         </p>
       </div>
       <button

@@ -38,6 +38,30 @@ export type Folder = {
 export type Importance = 0 | 1 | 2 | 3;
 
 /**
+ * PDF 本体 (Blob) がどこにあるか。
+ *
+ * - `local`       … 端末内だけにある (既定。クラウド保管を使わない場合は常にこれ)
+ * - `uploading`   … クラウドへ送信中。端末内の Blob はまだ残っている
+ * - `cloud`       … クラウドに検証済みのコピーがある
+ *                   (`localCachedAt` が入っていれば端末内にもキャッシュがある)
+ * - `downloading` … クラウドから取得中
+ * - `error`       … 直前の処理に失敗した。端末内の Blob は必ず残っている
+ *
+ * 端末内 Blob を削除するのは「`cloud` へ確定したあと」だけに限定する。
+ */
+export type StorageState = 'local' | 'uploading' | 'cloud' | 'downloading' | 'error';
+
+/** 旧データ (storageState を持たない PDF) は `local` として扱う。 */
+export function storageStateOf(file: Pick<PdfFileMeta, 'storageState'>): StorageState {
+  return file.storageState ?? 'local';
+}
+
+/** クラウドにコピーがあるか (端末内キャッシュの有無は問わない)。 */
+export function isInCloud(file: Pick<PdfFileMeta, 'storageState' | 'cloudPath'>): boolean {
+  return storageStateOf(file) === 'cloud' && Boolean(file.cloudPath);
+}
+
+/**
  * PDF のメタデータ。
  * 一覧表示のたびに数十 MB の Blob を読み込まないよう、実体 (Blob) は
  * 別のオブジェクトストアに分離して保存する。
@@ -62,6 +86,20 @@ export type PdfFileMeta = {
   restoreParentId?: string;
   /** サムネイル生成を試みたか (失敗した PDF を毎回再試行しないため)。 */
   thumbState?: 'none' | 'ready' | 'failed';
+
+  /* --- クラウド保管 (省略時は local 扱い。既存データとの互換性のため任意) --- */
+  /** PDF 本体の所在。 */
+  storageState?: StorageState;
+  /** クラウド上の保存先 (`users/<uid>/pdf-cloud/<fileId>.pdf`)。 */
+  cloudPath?: string;
+  /** クラウドへの保存が完了し、存在確認まで通った日時。 */
+  cloudUploadedAt?: string;
+  /** クラウド上の実バイト数 (整合性確認に使う)。 */
+  cloudSize?: number;
+  /** 直近の失敗理由 (日本語)。成功したら消す。 */
+  cloudError?: string;
+  /** クラウドから取得した本体を端末へキャッシュした日時。 */
+  localCachedAt?: string;
 };
 
 /** 仕様どおりの「Blob を含む PDF レコード」。読み書きの境界で組み立てる。 */
@@ -95,7 +133,23 @@ export type Settings = {
   dailyReportFolderId?: string;
   /** 取り込み済みレポートの ID (日付) 一覧。二重取り込みの防止に使う。 */
   importedReports: string[];
+
+  /* --- クラウド保管 --- */
+  /**
+   * クラウド保管機能を使うか。
+   * 既定は OFF。ユーザーが明示的に ON にするまでアップロードは一切行わない。
+   */
+  cloudEnabled: boolean;
+  /** この日数だけ開かれていない PDF を自動でクラウドへ移す。0 = 自動移動しない。 */
+  cloudIdleDays: number;
+  /** Wi-Fi (非従量制) 接続のときだけアップロードする。 */
+  cloudWifiOnly: boolean;
+  /** 最後に自動同期を実行した日時。 */
+  cloudLastSyncAt?: string;
 };
+
+/** 未使用期間の選択肢 (0 = 自動移動しない)。 */
+export const CLOUD_IDLE_OPTIONS = [1, 3, 7, 30, 0] as const;
 
 export const DEFAULT_SETTINGS: Settings = {
   viewMode: 'list',
@@ -107,6 +161,9 @@ export const DEFAULT_SETTINGS: Settings = {
   schemaVersion: 1,
   dailyReportEnabled: false,
   importedReports: [],
+  cloudEnabled: false,
+  cloudIdleDays: 1,
+  cloudWifiOnly: true,
 };
 
 /** 一覧に並べるための共通表現。 */

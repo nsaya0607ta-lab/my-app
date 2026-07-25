@@ -30,7 +30,13 @@ pdf-manager/
 │
 ├── scripts/
 │   ├── prepare-assets.mjs           ビルド前にアイコン・スプラッシュ・pdf.js worker を生成
+│   ├── test-cloud-storage.cjs       クラウド保管の動作検証（npm run test:cloud）
 │   └── lib/png.mjs                  依存なしの PNG エンコーダ／簡易ラスタライザ
+│
+├── firebase/
+│   ├── pdf-cloud-storage.storage.rules   クラウド保管の Storage セキュリティルール
+│   ├── pdf-cloud-storage.cors.json       クラウド保管の CORS 設定
+│   └── README-cloud-storage.md           Firebase 側で必要な設定と料金の説明
 │
 ├── public/
 │   ├── manifest.webmanifest         PWA マニフェスト（standalone / share_target / file_handlers）
@@ -57,10 +63,15 @@ pdf-manager/
 │   ├── imageToPdf.ts                画像 → PDF（pdf-lib）
 │   ├── device.ts                    共有・保存・印刷・クリップボード・振動
 │   ├── backup.ts                    バックアップ ZIP の書き出し／読み込み
-│   └── shareTarget.ts               共有メニューから届いた PDF の回収
+│   ├── shareTarget.ts               共有メニューから届いた PDF の回収
+│   ├── firebaseCloud.ts             クラウド保管の認証／Storage クライアント（必要時のみ読み込む）
+│   ├── cloudStorage.ts              クラウド保管の中核（保存・取得・キャッシュ整理・削除）
+│   ├── cloudSync.ts                 クラウドへ移す対象の判定と接続状態の判定
+│   └── cloudQueue.ts                クラウド側の削除待ち行列（完全削除の後始末）
 │
 ├── src/store/
-│   └── AppStore.tsx                 アプリ全体の状態（React Context）
+│   ├── AppStore.tsx                 アプリ全体の状態（React Context）
+│   └── CloudStore.tsx               クラウド保管の実行制御（ログイン状態・進捗・実行タイミング）
 │
 └── src/components/
     ├── AppShell.tsx                 画面切替・ダイアログ制御・取り込み処理・下部ナビ
@@ -79,7 +90,10 @@ pdf-manager/
     │   ├── FolderView.tsx           フォルダー画面（パンくず・フォルダー内検索・FAB）
     │   ├── CollectionViews.tsx      最近使った項目 / お気に入り / ごみ箱
     │   ├── SearchView.tsx           全体検索（詳細条件つき）
-    │   └── SettingsView.tsx         設定（表示・ごみ箱・バックアップ・全削除）
+    │   └── SettingsView.tsx         設定（表示・クラウド保管・ごみ箱・バックアップ・全削除）
+    ├── cloud/
+    │   ├── CloudBadge.tsx           一覧のクラウド状態表示（アイコン・進捗・再試行）
+    │   └── CloudSettings.tsx        設定画面の「クラウド保管」セクション
     ├── dialogs/
     │   ├── FolderPicker.tsx         移動先・保存先のツリー選択「ここに移動」
     │   ├── ItemMenu.tsx             長押し／「…」の操作メニュー
@@ -224,6 +238,10 @@ vercel --prod   # 本番環境へデプロイ
 
 ## 7. 今後クラウド同期を追加する場合の実装方針
 
+> フォルダー構成やタグまで含めた「端末間の同期」の話です。
+> PDF 本体だけをクラウドへ預けて端末容量を空ける **クラウド保管** は実装済みで、
+> 「9. クラウド保管（端末容量の節約）」を参照してください。
+
 現在の構造は、**UI → `repository.ts` → `db.ts`（IndexedDB）** の一方向で、UI から IndexedDB を直接触っている箇所はありません。この境界をそのまま同期の差し込み口として使えます。
 
 ### ステップ1：同期用のメタ情報を足す
@@ -351,6 +369,117 @@ npm run daily-report:verify-import --prefix ..
 - PDF は `public/` 配下に置かれるため、**URL を知っていれば第三者もアクセスできます。**
 - 保持期間は60日です。それより古い PDF はワークフローが自動で削除します。
 - GitHub Actions のスケジュールは混雑時に5〜60分ほど遅れます。時刻を厳密にしたい場合は Cloud Scheduler から `workflow_dispatch` を叩く形に変更してください。
+
+---
+
+## 9. クラウド保管（端末容量の節約）
+
+しばらく開いていない PDF の **本体だけ**をクラウドへ預け、端末には
+ファイル名・フォルダー・タグ・メモ・お気に入り・サムネイルを残す機能です。
+クラウドへ移した PDF も一覧から消えず、タップすれば取得して通常どおり開けます。
+
+**既定は OFF です。** 設定画面で自分でオンにし、ログインするまで
+クラウドへは何も送信しません（Firebase SDK の読み込みすら行いません）。
+
+### 保存の流れ
+
+```
+[端末内だけの PDF]  storageState: local
+   │  最後に開いてから N 日経過（未閲覧なら追加から N 日）
+   │  かつ ごみ箱に入っていない／処理中でない／本体が端末内にある
+   ↓
+[アップロード中]    storageState: uploading   ← 端末内の PDF はそのまま
+   │  1. アップロード完了
+   │  2. クラウド上に存在するか確認
+   │  3. サイズが一致するか確認
+   │  4. 保存先を IndexedDB へ記録
+   ↓  ★ここまで全部成功して初めて
+[クラウド保管]      storageState: cloud       ← 端末内の本体だけを削除
+   │  タップ = ダウンロード → 内容とサイズを検証 → 端末へキャッシュ
+   ↓
+[キャッシュあり]    storageState: cloud + localCachedAt
+   │  また N 日使われなければ、クラウド上の実体を再確認してからキャッシュだけ削除
+   ↓
+[クラウド保管]
+```
+
+処理を始めるタイミングは **アプリ起動時 / オンライン復帰時 / 画面表示の復帰時**の 3 つです
+（PWA はアプリを閉じている間に処理を続けられないため）。
+
+### データが消えないための仕組み
+
+| 状況 | 動作 |
+| --- | --- |
+| アップロード中にアプリ終了・通信断 | 端末内の PDF はそのまま。次回起動時に `local` へ戻して再試行 |
+| アップロードは成功、サイズが合わない | クラウド保管済みにせず、端末内の PDF を残す |
+| 保存先の記録後・本体削除前に終了 | 端末内のコピーを「キャッシュ」として扱う（消失なし） |
+| ダウンロード中に通信断 | クラウド上の実体はそのまま。状態も `cloud` のまま |
+| 取得した内容が壊れている | 端末へ保存しない。クラウド上の実体もそのまま |
+| ごみ箱へ移動 | クラウド上の PDF は保持（復元すればまた開ける） |
+| 完全削除・保持期間切れ | 端末から消えたあとに、待ち行列経由でクラウドを削除 |
+| クラウド削除に失敗 | 待ち行列に残り、次回オンライン時に再試行 |
+| 「すべて端末へ戻す」 | 端末へ保存できたことを確認してからクラウド側を削除 |
+| コピー | コピー先は独立した保存先を持つ（片方の削除で両方消えない） |
+| ログアウト | 端末内のデータには一切触れない |
+
+同じ処理を何度実行しても壊れません。保存先は `users/<UID>/pdf-cloud/<ファイルID>.pdf`
+とファイル ID から一意に決まり、実行中の処理は 1 ファイルにつき 1 つに束ねられます。
+
+### データ構造
+
+`PdfFileMeta` へ次の任意項目が増えます。既存の PDF は `storageState` を持たないため、
+`local`（端末内だけにある）として扱われます。マイグレーションは不要です。
+
+| 項目 | 内容 |
+| --- | --- |
+| `storageState` | `local` / `uploading` / `cloud` / `downloading` / `error` |
+| `cloudPath` | クラウド上の保存先 |
+| `cloudUploadedAt` | 保存と検証が完了した日時 |
+| `cloudSize` | クラウド上の実バイト数（整合性確認用） |
+| `cloudError` | 直近の失敗理由 |
+| `localCachedAt` | 端末へキャッシュした日時 |
+
+設定には `cloudEnabled`(既定 false) / `cloudIdleDays`(既定 1) /
+`cloudWifiOnly`(既定 true) / `cloudLastSyncAt` が増えます。
+
+### 一覧での表示
+
+- 端末内にある PDF … 表示なし
+- クラウド保管済み … クラウドアイコン（端末内キャッシュがある場合は塗りつぶし）
+- アップロード中／ダウンロード中 … アイコンと進捗（％）＋進捗バー
+- エラー … 警告アイコン付きの「再試行」ボタン
+
+### Wi-Fi 判定について
+
+「Wi-Fi 接続時のみアップロード」は Network Information API を使います。
+**iPhone の Safari はこの API を持たない**ため接続の種類を判別できません。
+判別できない環境で厳密に適用すると永久にアップロードできなくなるため、
+その場合は制限を適用せず、設定画面にその旨を表示します。
+
+### Service Worker との関係
+
+Service Worker のキャッシュ（アプリの HTML/JS/アイコン）と、PDF 本体を保存する
+IndexedDB は完全に別物です。Service Worker は同一オリジンの GET しか扱わないため、
+Firebase Storage への通信には一切関与しません。オフライン起動とアプリ更新の
+動作はこれまでどおりです。
+
+### Firebase 側の設定と料金
+
+`firebase/README-cloud-storage.md` を参照してください。
+認証（メール／パスワード）の有効化、Storage の有効化、**セキュリティルール**、
+**CORS 設定**が必要です。**Cloud Storage の有効化には従量課金プランへの変更を
+求められる場合があります。** このリポジトリのコードは課金設定を一切変更しません。
+
+### 動作確認
+
+```bash
+npm run test:cloud
+```
+
+IndexedDB を `fake-indexeddb`、Firebase Storage をメモリ実装に差し替えて、
+実際の `repository` / `cloudStorage` / `cloudSync` を動かします。
+アップロード失敗・サイズ不一致・オフライン・通信断・中断からの復帰・
+二重実行・完全削除といった経路まで含めて検証します。
 
 ---
 

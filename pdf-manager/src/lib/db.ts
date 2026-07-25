@@ -178,6 +178,45 @@ export async function readBlob(id: string): Promise<Blob | undefined> {
   });
 }
 
+/** PDF 本体が端末内に存在するか (Blob 全体を読まずに判定する)。 */
+export async function hasBlob(id: string): Promise<boolean> {
+  return tx(STORE.blobs, 'readonly', async (t) => {
+    const key = await promisify(t.objectStore(STORE.blobs).getKey(id));
+    return key !== undefined;
+  });
+}
+
+export async function writeBlob(id: string, blob: Blob): Promise<void> {
+  await tx(STORE.blobs, 'readwrite', async (t) => {
+    await idb.put(t.objectStore(STORE.blobs), { id, blob });
+  });
+}
+
+export async function deleteBlob(id: string): Promise<void> {
+  await tx(STORE.blobs, 'readwrite', async (t) => {
+    await idb.delete(t.objectStore(STORE.blobs), id);
+  });
+}
+
+/**
+ * 設定ストアの任意キーを読み書きする。
+ * クラウド保管の「削除待ちキュー」など、設定本体とは別に更新したいデータに使う。
+ * (別ストアを足すと DB バージョンが上がり、Service Worker 側の openDb と
+ *  食い違って古い版が VersionError で止まるため、既存ストアに相乗りさせる)
+ */
+export async function readKeyed<T>(key: string): Promise<T | undefined> {
+  return tx(STORE.settings, 'readonly', async (t) => {
+    const record = await idb.get<{ key: string; value: T }>(t.objectStore(STORE.settings), key);
+    return record?.value;
+  });
+}
+
+export async function writeKeyed<T>(key: string, value: T): Promise<void> {
+  await tx(STORE.settings, 'readwrite', async (t) => {
+    await idb.put(t.objectStore(STORE.settings), { key, value });
+  });
+}
+
 export async function readThumb(id: string): Promise<Blob | undefined> {
   return tx(STORE.thumbs, 'readonly', async (t) => {
     const record = await idb.get<{ id: string; blob: Blob }>(t.objectStore(STORE.thumbs), id);

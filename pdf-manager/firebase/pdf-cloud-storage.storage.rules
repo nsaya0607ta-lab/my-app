@@ -1,0 +1,35 @@
+rules_version = '2';
+
+// PDFフォルダーの「クラウド保管」で使う Cloud Storage セキュリティルール。
+//
+// ・本人 (ログイン中の UID) の配下だけ読み書きできる
+// ・ほかのユーザーのフォルダーは一覧も取得もできない
+// ・PDF 以外のファイル形式や、極端に大きいファイルは拒否する
+// ・公開 URL では読めない (ダウンロードは認証付きの SDK 経由のみ)
+//
+// すでに別のルールを運用している場合は、下の match ブロックだけを
+// 既存の `match /b/{bucket}/o` の中へ追加してください。
+
+service firebase.storage {
+  match /b/{bucket}/o {
+
+    // 本人の PDF 保管領域
+    match /users/{userId}/pdf-cloud/{fileName} {
+      allow read: if request.auth != null
+                  && request.auth.uid == userId;
+
+      allow write: if request.auth != null
+                   && request.auth.uid == userId
+                   && request.resource != null
+                   && request.resource.contentType == 'application/pdf'
+                   // 1 ファイル 200MB まで
+                   && request.resource.size < 200 * 1024 * 1024;
+
+      // 完全削除のときだけ本人が削除できる
+      allow delete: if request.auth != null
+                    && request.auth.uid == userId;
+    }
+
+    // 上記以外は既定で拒否される (ここに何も書かない = 拒否)
+  }
+}

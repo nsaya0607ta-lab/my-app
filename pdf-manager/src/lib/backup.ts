@@ -55,10 +55,12 @@ export async function createBackup(
 
   const total = files.length;
   let done = 0;
+  const stored = new Set<string>();
   for (const file of files) {
     const blob = await readBlob(file.id);
     if (blob) {
       entries[`files/${file.id}.pdf`] = new Uint8Array(await blob.arrayBuffer());
+      stored.add(file.id);
     }
     done += 1;
     onProgress?.(done, total);
@@ -70,7 +72,12 @@ export async function createBackup(
     exportedAt: nowIso(),
     settings,
     folders,
-    files: files.map((file) => ({ ...file, blobPath: `files/${file.id}.pdf` })),
+    // クラウド保管中で端末内に本体が無い PDF は、ZIP に本体を含められない。
+    // フォルダー・タグ・メモ・クラウド上の保存先は残すので、復元後もクラウドから開ける。
+    files: files.map((file) => ({
+      ...file,
+      blobPath: stored.has(file.id) ? `files/${file.id}.pdf` : undefined,
+    })),
   };
   entries['backup.json'] = new TextEncoder().encode(JSON.stringify(manifest, null, 2));
 
@@ -141,14 +148,22 @@ export async function restoreBackup(
         if (mode === 'merge' && existingFileIds.has(meta.id)) continue;
         const { blobPath, ...rest } = meta;
         const bytes = entries[blobPath ?? `files/${meta.id}.pdf`];
-        if (!bytes) continue;
+        // 本体が入っていない = クラウド保管中の PDF。メタデータだけを復元する。
+        // それ以外 (本体も保存先も無い) は復元しても開けないため取り込まない。
+        const cloudOnly = !bytes && rest.storageState === 'cloud' && Boolean(rest.cloudPath);
+        if (!bytes && !cloudOnly) continue;
+
         await idb.put(fileStore, {
           ...rest,
           parentId: toParentKey(rest.parentId) === ROOT_ID ? ROOT_ID : rest.parentId,
           tags: Array.isArray(rest.tags) ? rest.tags : [],
           mimeType: 'application/pdf',
           thumbState: 'none',
+          // 端末内キャッシュは持ち越さない (本体は ZIP に入っていないため)
+          ...(cloudOnly ? { localCachedAt: undefined } : {}),
         });
+
+        if (!bytes) continue;
         const buffer = new ArrayBuffer(bytes.byteLength);
         new Uint8Array(buffer).set(bytes);
         await idb.put(blobStore, {

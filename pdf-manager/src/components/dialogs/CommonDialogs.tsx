@@ -6,7 +6,15 @@ import { formatBytes, formatDateTime } from '@/lib/format';
 import { stripPdfExtension } from '@/lib/naming';
 import { SORT_LABELS } from '@/lib/tree';
 import { SUGGESTED_TAGS } from '@/lib/search';
-import type { FolderColor, Importance, PdfFileMeta, SortKey, ViewMode } from '@/lib/types';
+import { storageStateOf } from '@/lib/types';
+import type {
+  FolderColor,
+  Importance,
+  PdfFileMeta,
+  SortKey,
+  StorageState,
+  ViewMode,
+} from '@/lib/types';
 import { Button, Switch, cx } from '@/components/ui/Primitives';
 import { BottomSheet, Dialog, MenuRow } from '@/components/ui/Sheet';
 import { FOLDER_COLORS, FolderIcon } from '@/components/ui/FileIcons';
@@ -490,6 +498,14 @@ export function TagMemoSheet({
 /* 詳細情報                                                            */
 /* ------------------------------------------------------------------ */
 
+const STORAGE_STATE_LABELS: Record<StorageState, string> = {
+  local: 'この端末',
+  uploading: 'クラウドへ保存中（端末内にもあります）',
+  cloud: 'クラウド',
+  downloading: 'クラウドから取得中',
+  error: 'クラウド保管に失敗（端末内にあります）',
+};
+
 export function DetailsSheet({
   open,
   file,
@@ -516,6 +532,14 @@ export function DetailsSheet({
     ['更新日時', formatDateTime(file.updatedAt)],
     ['最終閲覧', file.lastOpenedAt ? formatDateTime(file.lastOpenedAt) : '未閲覧'],
     ['メモ', file.memo?.trim() ? file.memo : 'なし'],
+    ['PDF本体の保存先', STORAGE_STATE_LABELS[storageStateOf(file)]],
+    ...(file.cloudUploadedAt
+      ? ([['クラウドへ保存', formatDateTime(file.cloudUploadedAt)]] as [string, string][])
+      : []),
+    ...(file.localCachedAt
+      ? ([['端末内キャッシュ', formatDateTime(file.localCachedAt)]] as [string, string][])
+      : []),
+    ...(file.cloudError ? ([['クラウドの状態', file.cloudError]] as [string, string][]) : []),
     ['内部ID', file.id],
   ];
 

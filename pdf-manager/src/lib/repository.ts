@@ -7,14 +7,18 @@
  */
 import {
   STORE,
+  deleteBlob,
+  hasBlob,
   idb,
   loadAll,
   readBlob,
   readSettings,
   tx,
   wipeAll,
+  writeBlob,
   writeSettings,
 } from './db';
+import { enqueueCloudDeletes, uidFromCloudPath } from './cloudQueue';
 import { AppError } from './errors';
 import { createId, ensurePdfExtension, nextAvailableName, nowIso, sanitizeName } from './naming';
 import {
@@ -26,6 +30,7 @@ import {
   type Importance,
   type PdfFileMeta,
   type Settings,
+  type StorageState,
 } from './types';
 import { descendantFolderIds, toParentKey } from './tree';
 
@@ -105,15 +110,25 @@ export async function saveSettings(settings: Settings): Promise<void> {
 /* フォルダー操作                                                      */
 /* ------------------------------------------------------------------ */
 
+/**
+ * コピーで作った PDF はクラウドの保存先を引き継がない。
+ *
+ * 同じ `cloudPath` を 2 件が共有すると、片方を完全削除したときに
+ * もう片方の実体まで消えてしまう。コピーは必ず「端末内だけにある PDF」として作り、
+ * 条件を満たせば後から独立した保存先へアップロードされる。
+ */
+const LOCAL_COPY_FIELDS = {
+  storageState: 'local' as StorageState,
+  cloudPath: undefined,
+  cloudUploadedAt: undefined,
+  cloudSize: undefined,
+  cloudError: undefined,
+  localCachedAt: undefined,
+} satisfies CloudPatch;
+
 async function putFolder(folder: Folder): Promise<void> {
   await tx(STORE.folders, 'readwrite', async (t) => {
     await idb.put(t.objectStore(STORE.folders), folder);
-  });
-}
-
-async function putFile(file: PdfFileMeta): Promise<void> {
-  await tx(STORE.files, 'readwrite', async (t) => {
-    await idb.put(t.objectStore(STORE.files), file);
   });
 }
 
@@ -211,7 +226,10 @@ export async function moveFolder(folderId: string, destId: string): Promise<void
 }
 
 /** フォルダーを配下ごと複製する。 */
-export async function copyFolder(folderId: string, destId: string): Promise<void> {
+export async function copyFolder(
+  folderId: string,
+  destId: string,
+): Promise<{ copied: number; skipped: number }> {
   const { folders, files } = await loadAll();
   const source = folders.find((folder) => folder.id === folderId);
   if (!source) throw new AppError('NOT_FOUND');
@@ -250,6 +268,7 @@ export async function copyFolder(folderId: string, destId: string): Promise<void
         newFiles.push({
           meta: {
             ...file,
+            ...LOCAL_COPY_FIELDS,
             id: createId('file'),
             parentId: cloneId,
             createdAt: timestamp,
@@ -273,17 +292,23 @@ export async function copyFolder(folderId: string, destId: string): Promise<void
     }
   }
 
+  // 本体が端末内に無い PDF (クラウドのみ) は中身のないコピーを作らずに見送る。
+  // 呼び出し側であらかじめ端末へ取り戻しておけば、この分岐には入らない。
+  const copyable = newFiles.filter((entry) => blobs.has(entry.sourceId));
+  const skipped = newFiles.length - copyable.length;
+
   await tx([STORE.folders, STORE.files, STORE.blobs], 'readwrite', async (t) => {
     const folderStore = t.objectStore(STORE.folders);
     const fileStore = t.objectStore(STORE.files);
     const blobStore = t.objectStore(STORE.blobs);
     for (const folder of newFolders) await idb.put(folderStore, folder);
-    for (const entry of newFiles) {
+    for (const entry of copyable) {
       await idb.put(fileStore, entry.meta);
-      const blob = blobs.get(entry.sourceId);
-      if (blob) await idb.put(blobStore, { id: entry.meta.id, blob });
+      await idb.put(blobStore, { id: entry.meta.id, blob: blobs.get(entry.sourceId) as Blob });
     }
   });
+
+  return { copied: copyable.length, skipped };
 }
 
 /** フォルダーを配下ごとごみ箱へ移す。 */
@@ -313,7 +338,10 @@ export async function trashFolder(folderId: string): Promise<void> {
     }
     for (const file of files) {
       if (file.deletedAt || !ids.has(toParentKey(file.parentId))) continue;
-      await idb.put(fileStore, { ...file, deletedAt: timestamp, updatedAt: timestamp });
+      // クラウド保管の処理と並行しても状態を巻き戻さないよう、最新を読み直して更新する
+      const current = await idb.get<PdfFileMeta>(fileStore, file.id);
+      if (!current || current.deletedAt) continue;
+      await idb.put(fileStore, { ...current, deletedAt: timestamp, updatedAt: timestamp });
     }
   });
 }
@@ -354,7 +382,9 @@ export async function restoreFolder(folderId: string): Promise<void> {
     }
     for (const file of files) {
       if (file.deletedAt !== deletedAt || !ids.has(toParentKey(file.parentId))) continue;
-      await idb.put(fileStore, { ...file, deletedAt: undefined, updatedAt: nowIso() });
+      const current = await idb.get<PdfFileMeta>(fileStore, file.id);
+      if (!current) continue;
+      await idb.put(fileStore, { ...current, deletedAt: undefined, updatedAt: nowIso() });
     }
   });
 }
@@ -363,9 +393,12 @@ export async function restoreFolder(folderId: string): Promise<void> {
 export async function purgeFolder(folderId: string): Promise<void> {
   const { folders, files } = await loadAll();
   const ids = descendantFolderIds(folders, folderId);
-  const fileIds = files
-    .filter((file) => ids.has(toParentKey(file.parentId)))
-    .map((file) => file.id);
+  const targets = files.filter((file) => ids.has(toParentKey(file.parentId)));
+  const fileIds = targets.map((file) => file.id);
+
+  // クラウド側は「端末から消えたあと」に削除する。
+  // 予約だけ先に積み、実際の削除はオンライン時にまとめて行う。
+  await scheduleCloudDeletes(targets);
 
   await tx([STORE.folders, STORE.files, STORE.blobs, STORE.thumbs], 'readwrite', async (t) => {
     const folderStore = t.objectStore(STORE.folders);
@@ -480,13 +513,35 @@ export async function renameFile(fileId: string, rawName: string): Promise<PdfFi
   if (!sanitizeName(rawName)) throw new AppError('EMPTY_FILE_NAME');
 
   const siblings = siblingFileNames(files, toParentKey(target.parentId), fileId);
-  const updated: PdfFileMeta = {
-    ...target,
-    name: nextAvailableName(name, siblings),
-    updatedAt: nowIso(),
-  };
-  await putFile(updated);
+  const updated = await mergeFile(fileId, { name: nextAvailableName(name, siblings) });
+  if (!updated) throw new AppError('NOT_FOUND');
   return updated;
+}
+
+/**
+ * 1 つのトランザクション内で読み → 併合 → 書き戻しを行う。
+ *
+ * クラウド保管の処理はユーザー操作と並行して動くため、
+ * 「読み出したときの古い全体像」で上書きするとタグや名前の変更が巻き戻ってしまう。
+ * 必ず最新のレコードへ差分だけを当てる。
+ */
+async function mergeFile(
+  fileId: string,
+  patch: Partial<PdfFileMeta>,
+  options: { touch?: boolean } = {},
+): Promise<PdfFileMeta | undefined> {
+  return tx(STORE.files, 'readwrite', async (t) => {
+    const store = t.objectStore(STORE.files);
+    const current = await idb.get<PdfFileMeta>(store, fileId);
+    if (!current) return undefined;
+    const updated: PdfFileMeta = {
+      ...current,
+      ...patch,
+      updatedAt: options.touch === false ? current.updatedAt : nowIso(),
+    };
+    await idb.put(store, updated);
+    return updated;
+  });
 }
 
 export async function updateFile(
@@ -499,25 +554,86 @@ export async function updateFile(
   >,
   options: { touch?: boolean } = {},
 ): Promise<PdfFileMeta> {
-  const { files } = await loadAll();
-  const target = files.find((file) => file.id === fileId);
-  if (!target) throw new AppError('NOT_FOUND');
-  const updated: PdfFileMeta = {
-    ...target,
-    ...patch,
-    updatedAt: options.touch === false ? target.updatedAt : nowIso(),
-  };
-  await putFile(updated);
+  const updated = await mergeFile(fileId, patch, options);
+  if (!updated) throw new AppError('NOT_FOUND');
   return updated;
 }
 
 export async function markOpened(fileId: string): Promise<PdfFileMeta | undefined> {
-  const { files } = await loadAll();
-  const target = files.find((file) => file.id === fileId);
-  if (!target) return undefined;
-  const updated: PdfFileMeta = { ...target, isRead: true, lastOpenedAt: nowIso() };
-  await putFile(updated);
-  return updated;
+  // 閲覧しただけで更新日時は動かさない (並べ替えの見え方を変えないため)
+  return mergeFile(fileId, { isRead: true, lastOpenedAt: nowIso() }, { touch: false });
+}
+
+/* ------------------------------------------------------------------ */
+/* クラウド保管                                                        */
+/* ------------------------------------------------------------------ */
+
+/** クラウド保管の状態としてだけ書き換えてよいフィールド。 */
+export type CloudPatch = Partial<
+  Pick<
+    PdfFileMeta,
+    'storageState' | 'cloudPath' | 'cloudUploadedAt' | 'cloudSize' | 'cloudError' | 'localCachedAt'
+  >
+>;
+
+/**
+ * クラウド保管に関する項目だけを更新する。
+ * 名前・フォルダー・タグ・メモ・お気に入り・重要度・更新日時には触れない。
+ */
+export async function patchCloudState(
+  fileId: string,
+  patch: CloudPatch,
+): Promise<PdfFileMeta | undefined> {
+  return mergeFile(fileId, patch, { touch: false });
+}
+
+/** 単票を最新の状態で読み直す (処理直前の再確認用)。 */
+export async function readFileMeta(fileId: string): Promise<PdfFileMeta | undefined> {
+  return tx(STORE.files, 'readonly', async (t) =>
+    idb.get<PdfFileMeta>(t.objectStore(STORE.files), fileId),
+  );
+}
+
+/**
+ * 端末内の PDF 本体だけを削除する。
+ *
+ * 呼び出し側で「クラウドへの保存と存在確認が完了し、その事実が IndexedDB へ
+ * 書き込まれた」ことを確認してから使う。ここでは最後の安全確認として、
+ * 保存済みメタデータが本当に `cloud` になっているかをもう一度読み直す。
+ * サムネイル・メタデータ・タグ・メモは残すため、一覧の見た目は変わらない。
+ */
+export async function dropLocalBlob(fileId: string): Promise<boolean> {
+  const meta = await readFileMeta(fileId);
+  if (!meta) return false;
+  if (meta.storageState !== 'cloud' || !meta.cloudPath || !meta.cloudUploadedAt) return false;
+  await deleteBlob(fileId);
+  return true;
+}
+
+/** クラウドから取得した PDF 本体を端末へキャッシュする。 */
+export async function cacheLocalBlob(fileId: string, blob: Blob): Promise<void> {
+  await writeBlob(fileId, blob);
+}
+
+export { hasBlob };
+
+/** 完全削除するファイル群について、クラウド側の削除予約を積む。 */
+async function scheduleCloudDeletes(targets: PdfFileMeta[]): Promise<void> {
+  const entries = targets
+    .filter((file) => Boolean(file.cloudPath))
+    .map((file) => ({
+      path: file.cloudPath as string,
+      uid: uidFromCloudPath(file.cloudPath),
+      name: file.name,
+    }))
+    .filter((entry) => entry.uid !== '');
+  if (entries.length === 0) return;
+  // 予約に失敗しても端末側の削除は続行する (クラウドのファイルが残るだけで、消失はしない)
+  try {
+    await enqueueCloudDeletes(entries);
+  } catch {
+    /* 次回の完全削除時に再度積まれる */
+  }
 }
 
 export async function moveFile(fileId: string, destId: string): Promise<PdfFileMeta> {
@@ -525,13 +641,11 @@ export async function moveFile(fileId: string, destId: string): Promise<PdfFileM
   const target = files.find((file) => file.id === fileId);
   if (!target) throw new AppError('NOT_FOUND');
   const siblings = siblingFileNames(files, destId, fileId);
-  const updated: PdfFileMeta = {
-    ...target,
+  const updated = await mergeFile(fileId, {
     parentId: destId,
     name: nextAvailableName(target.name, siblings),
-    updatedAt: nowIso(),
-  };
-  await putFile(updated);
+  });
+  if (!updated) throw new AppError('NOT_FOUND');
   return updated;
 }
 
@@ -546,6 +660,7 @@ export async function copyFile(fileId: string, destId: string): Promise<PdfFileM
   const timestamp = nowIso();
   const copy: PdfFileMeta = {
     ...target,
+    ...LOCAL_COPY_FIELDS,
     id: createId('file'),
     parentId: destId,
     name: nextAvailableName(target.name, siblings),
@@ -566,12 +681,9 @@ export async function trashFile(fileId: string): Promise<void> {
   const { files } = await loadAll();
   const target = files.find((file) => file.id === fileId);
   if (!target) throw new AppError('NOT_FOUND');
-  const timestamp = nowIso();
-  await putFile({
-    ...target,
-    deletedAt: timestamp,
+  await mergeFile(fileId, {
+    deletedAt: nowIso(),
     restoreParentId: toParentKey(target.parentId),
-    updatedAt: timestamp,
   });
 }
 
@@ -586,17 +698,18 @@ export async function restoreFile(fileId: string): Promise<void> {
   const parentId = parentAlive ? desired : UNSORTED_ID;
   const siblings = siblingFileNames(files, parentId, fileId);
 
-  await putFile({
-    ...target,
+  await mergeFile(fileId, {
     parentId,
     name: nextAvailableName(target.name, siblings),
     deletedAt: undefined,
     restoreParentId: undefined,
-    updatedAt: nowIso(),
   });
 }
 
 export async function purgeFile(fileId: string): Promise<void> {
+  const meta = await readFileMeta(fileId);
+  if (meta) await scheduleCloudDeletes([meta]);
+
   await tx([STORE.files, STORE.blobs, STORE.thumbs], 'readwrite', async (t) => {
     await idb.delete(t.objectStore(STORE.files), fileId);
     await idb.delete(t.objectStore(STORE.blobs), fileId);
@@ -611,7 +724,10 @@ export async function purgeFile(fileId: string): Promise<void> {
 export async function emptyTrash(): Promise<void> {
   const { folders, files } = await loadAll();
   const folderIds = folders.filter((folder) => folder.deletedAt).map((folder) => folder.id);
-  const fileIds = files.filter((file) => file.deletedAt).map((file) => file.id);
+  const targets = files.filter((file) => file.deletedAt);
+  const fileIds = targets.map((file) => file.id);
+
+  await scheduleCloudDeletes(targets);
 
   await tx([STORE.folders, STORE.files, STORE.blobs, STORE.thumbs], 'readwrite', async (t) => {
     const folderStore = t.objectStore(STORE.folders);
@@ -636,8 +752,12 @@ export async function purgeExpiredTrash(retentionDays: number): Promise<number> 
     Boolean(deletedAt) && new Date(deletedAt as string).getTime() < limit;
 
   const folderIds = folders.filter((folder) => expired(folder.deletedAt)).map((f) => f.id);
-  const fileIds = files.filter((file) => expired(file.deletedAt)).map((f) => f.id);
+  const targets = files.filter((file) => expired(file.deletedAt));
+  const fileIds = targets.map((f) => f.id);
   if (folderIds.length === 0 && fileIds.length === 0) return 0;
+
+  // 保持期間が終了したものはクラウド上のPDFも削除対象にする
+  await scheduleCloudDeletes(targets);
 
   await tx([STORE.folders, STORE.files, STORE.blobs, STORE.thumbs], 'readwrite', async (t) => {
     const folderStore = t.objectStore(STORE.folders);

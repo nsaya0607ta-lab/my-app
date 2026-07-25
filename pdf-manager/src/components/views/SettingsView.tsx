@@ -22,6 +22,7 @@ import { ROOT_ID, type SortKey, type ThemeMode, type ViewMode } from '@/lib/type
 import { useApp } from '@/store/AppStore';
 import { Button, IconButton, SectionTitle, Spinner, Switch, cx } from '@/components/ui/Primitives';
 import { ConfirmDialog } from '@/components/dialogs/CommonDialogs';
+import { CloudSettings } from '@/components/cloud/CloudSettings';
 import { FolderPicker } from '@/components/dialogs/FolderPicker';
 import { BottomSheet, MenuRow } from '@/components/ui/Sheet';
 import { Header } from './Header';
@@ -178,6 +179,8 @@ export function SettingsView() {
           </Row>
         </button>
       </div>
+
+      <CloudSettings />
 
       <SectionTitle>ごみ箱</SectionTitle>
       <div className="bg-surface dark:bg-[#181e26]">
