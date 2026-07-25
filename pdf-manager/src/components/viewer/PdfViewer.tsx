@@ -14,6 +14,7 @@ import {
   Plus,
   X,
 } from 'lucide-react';
+import { releaseCanvas } from '@/lib/device';
 import { openDocument, type PdfDocumentProxy } from '@/lib/pdf';
 import { toMessage } from '@/lib/errors';
 import type { PdfFileMeta } from '@/lib/types';
@@ -21,6 +22,22 @@ import { IconButton, Spinner, cx } from '@/components/ui/Primitives';
 
 const MIN_SCALE = 0.5;
 const MAX_SCALE = 5;
+
+/**
+ * canvas の上限。iOS Safari は 1 辺 4096px / 総面積 16.7M px を超えると
+ * 描画結果を捨てて「真っ白なページ」になる。拡大時に静かに消えるのを防ぐため、
+ * 上限を超えない範囲まで解像度 (ピクセル比) を落として必ず描画する。
+ */
+const MAX_CANVAS_SIDE = 4096;
+const MAX_CANVAS_AREA = 16_777_216;
+
+/** CSS サイズ (width x height) を描画できる最大のピクセル比を返す。 */
+function safePixelRatio(width: number, height: number) {
+  const ratio = Math.min(2, window.devicePixelRatio || 1);
+  const bySide = Math.min(MAX_CANVAS_SIDE / width, MAX_CANVAS_SIDE / height);
+  const byArea = Math.sqrt(MAX_CANVAS_AREA / (width * height));
+  return Math.max(0.1, Math.min(ratio, bySide, byArea));
+}
 
 export function PdfViewer({
   file,
@@ -36,7 +53,11 @@ export function PdfViewer({
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const containerRef = useRef<HTMLDivElement | null>(null);
   const docRef = useRef<PdfDocumentProxy | null>(null);
-  const renderTask = useRef<{ cancel: () => void } | null>(null);
+  const renderTask = useRef<{ promise: Promise<void>; cancel: () => void } | null>(null);
+  // 最後に開始した描画だけを有効にするための世代番号
+  const renderSeq = useRef(0);
+  // 破棄時に解放する canvas (アンマウント時は ref が外れているため保持しておく)
+  const drawnCanvas = useRef<HTMLCanvasElement | null>(null);
 
   const [pageCount, setPageCount] = useState(file.pageCount ?? 0);
   const [page, setPage] = useState(1);
@@ -71,9 +92,23 @@ export function PdfViewer({
     })();
     return () => {
       cancelled = true;
-      renderTask.current?.cancel();
-      void docRef.current?.destroy();
+      // 描画中に destroy するとワーカー側でエラーになるため、
+      // キャンセルの完了を待ってから破棄する。
+      renderSeq.current += 1;
+      const task = renderTask.current;
+      const doc = docRef.current;
+      renderTask.current = null;
       docRef.current = null;
+      task?.cancel();
+      void Promise.resolve(task?.promise)
+        .catch(() => undefined)
+        .then(() => {
+          // 拡大時の canvas は数十MBになる。iOS でメモリを抱えたままにしないよう明示的に解放する
+          if (drawnCanvas.current) releaseCanvas(drawnCanvas.current);
+          drawnCanvas.current = null;
+          return doc?.destroy();
+        })
+        .catch(() => undefined);
     };
   }, [blob]);
 
@@ -84,35 +119,54 @@ export function PdfViewer({
     const container = containerRef.current;
     if (!doc || !canvas || !container) return;
 
+    const seq = renderSeq.current + 1;
+    renderSeq.current = seq;
+
+    // 進行中の描画はキャンセルし、終了を待ってから次を始める。
+    // 待たずに同じ canvas へ描き始めると 2 つの描画が競合し、
+    // 先に描かれた図形だけが残った中途半端なページになることがある。
+    const previous = renderTask.current;
+    if (previous) {
+      previous.cancel();
+      await previous.promise.catch(() => undefined);
+      if (seq !== renderSeq.current) return;
+    }
+
     try {
-      renderTask.current?.cancel();
       const target = await doc.getPage(page);
+      if (seq !== renderSeq.current) return;
+
       const base = target.getViewport({ scale: 1 });
       const available = container.clientWidth - 16;
       const fit = available > 0 ? available / base.width : 1;
       setFitWidthScale(fit);
 
-      const dpr = Math.min(2, window.devicePixelRatio || 1);
       const viewport = target.getViewport({ scale: fit * scale });
-      canvas.width = Math.floor(viewport.width * dpr);
-      canvas.height = Math.floor(viewport.height * dpr);
+      const dpr = safePixelRatio(viewport.width, viewport.height);
+      canvas.width = Math.max(1, Math.floor(viewport.width * dpr));
+      canvas.height = Math.max(1, Math.floor(viewport.height * dpr));
       canvas.style.width = `${Math.floor(viewport.width)}px`;
       canvas.style.height = `${Math.floor(viewport.height)}px`;
 
+      drawnCanvas.current = canvas;
       const context = canvas.getContext('2d');
       if (!context) return;
-      context.setTransform(dpr, 0, 0, dpr, 0, 0);
-      context.fillStyle = '#ffffff';
-      context.fillRect(0, 0, viewport.width, viewport.height);
-
-      const task = target.render({ canvasContext: context, viewport });
+      // 背景 (白) の塗りつぶしは pdf.js が canvas 全体に対して行う。
+      // 解像度は ctx の変換ではなく render の transform で渡す。
+      // pdf.js は線幅や文字の描画方法の判断にこの値を使うため、
+      // 事前に ctx へ変換を仕込む方法では正しく伝わらない。
+      const task = target.render({
+        canvasContext: context,
+        viewport,
+        transform: [dpr, 0, 0, dpr, 0, 0],
+      });
       renderTask.current = task;
       await task.promise;
-      target.cleanup();
+      if (seq === renderSeq.current) target.cleanup();
     } catch (renderError) {
       // ページ切り替えによるキャンセルはエラーではない
       const message = renderError instanceof Error ? renderError.message : '';
-      if (!/cancel/i.test(message)) setError(toMessage(renderError));
+      if (seq === renderSeq.current && !/cancel/i.test(message)) setError(toMessage(renderError));
     }
   }, [page, scale]);
 
