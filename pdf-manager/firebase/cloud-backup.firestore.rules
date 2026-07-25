@@ -1,0 +1,5 @@
+// 既存の Cloud Firestore ルール内、match /databases/{database}/documents の配下へ追加してください。
+// バックアップの日時・Storage上の保存場所など、小さなメタデータだけを保存します。
+match /users/{userId}/pdfBackups/{document=**} {
+  allow read, write: if request.auth != null && request.auth.uid == userId;
+}
