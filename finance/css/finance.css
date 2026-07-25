@@ -980,3 +980,46 @@ button.fc-btnreset { background: none; border: none; padding: 0; margin: 0; font
 
 /* カード先頭の小見出しは上余白を詰める */
 .fc-subhead.first { margin-top: 2px; }
+
+/* ============================================================
+   投資シミュレーション: 将来資産グラフの長押し詳細表示
+   ============================================================ */
+/* 長押し中はページを動かさず、iPhoneの文字選択メニュー・拡大を抑止する */
+.fc-sim-chart {
+  position: relative;
+  touch-action: pan-y;              /* 通常は縦スクロールを許可（長押し確定でJSがnoneへ） */
+  -webkit-user-select: none; user-select: none;
+  -webkit-touch-callout: none;      /* iPhoneの長押しメニューを出さない */
+}
+.fc-sim-chart svg { -webkit-user-select: none; user-select: none; }
+/* 選択位置を示す縦線マーカー（詳細表示中に表示） */
+.fc-sim-marker {
+  position: absolute; top: 0; width: 2px; height: 0;
+  background: var(--fc-accent); border-radius: 2px;
+  pointer-events: none; opacity: 0; transform: translateX(-1px);
+  transition: opacity 0.12s;
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--fc-accent) 22%, transparent);
+}
+.fc-sim-marker.on { opacity: 1; }
+.fc-ml-marker { stroke: var(--fc-accent); stroke-width: 1.5; opacity: 0.9; }
+.fc-sim-taphint { font-size: 12px; color: var(--fc-accent); text-align: center; margin-top: 8px; font-weight: 600; }
+
+/* 日付別の詳細ボトムシート */
+.fc-sim-sheet {
+  position: fixed; left: 0; right: 0; bottom: 0; z-index: 480;
+  max-width: 480px; margin: 0 auto;
+  background: var(--fc-surface); border-top-left-radius: 20px; border-top-right-radius: 20px;
+  box-shadow: 0 -8px 30px rgba(0, 0, 0, 0.28);
+  padding: 16px 16px calc(16px + env(safe-area-inset-bottom));
+  animation: fc-sim-sheet-up 0.22s cubic-bezier(0.22, 1, 0.36, 1);
+  overscroll-behavior: contain;
+}
+@keyframes fc-sim-sheet-up { from { transform: translateY(24px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
+.fc-sim-sheet-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; }
+.fc-sim-sheet-date { font-size: 17px; font-weight: 800; }
+.fc-sim-sheet-close { background: var(--fc-surface-2); border: none; width: 30px; height: 30px; border-radius: 50%; color: var(--fc-text-2); display: inline-flex; align-items: center; justify-content: center; }
+.fc-sim-sheet-body .fc-kv { margin: 0; }
+.fc-sim-sheet-badge { display: flex; align-items: center; justify-content: space-between; margin-top: 12px; font-size: 13px; font-weight: 600; color: var(--fc-text-2); }
+.fc-sim-sheet-nav { display: flex; gap: 10px; margin-top: 14px; }
+.fc-sim-sheet-nav .fc-btn { flex: 1; }
+.fc-pill.neg { color: #fff; background: var(--fc-neg); border-color: var(--fc-neg); }

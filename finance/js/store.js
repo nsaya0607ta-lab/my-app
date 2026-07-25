@@ -2,13 +2,13 @@
 // 設計方針: すべてのデータはこの1オブジェクトに集約し、mutate → save → emit。
 // 将来の証券口座連携などは accounts の type と外部同期モジュールを足すだけで拡張可能。
 
-import { uid, pad } from './utils.js?v=20260724f';
-import { settlementDate } from './calc.js?v=20260724f';
+import { uid, pad } from './utils.js?v=20260725a';
+import { settlementDate } from './calc.js?v=20260725a';
 import {
   recurringActiveOn, monthlyOccurrences, jstTodayISO, dedupeKey,
   nextRecurringDate, nextSettlementDate,
-} from './recurrence.js?v=20260724f';
-import { isSecurities, hasSecurities, recomputeAccount, performanceSnapshot, jstNowISO } from './securities.js?v=20260724f';
+} from './recurrence.js?v=20260725a';
+import { isSecurities, hasSecurities, recomputeAccount, performanceSnapshot, jstNowISO } from './securities.js?v=20260725a';
 
 const KEY = 'finance_app_v2';
 const SCHEMA = 1;
@@ -116,25 +116,21 @@ function seedFutureSim() {
     useOverride: true,         // true: シナリオの年利を全銘柄へ一律適用／false: 銘柄ごとの想定年利を使用
     monteCarlo: { enabled: false, runs: 300, volatility: 15 }, // volatility: 年率リターンの標準偏差(%)
     chartVisible: { total: true, cash: true, secCash: false, principal: false, valuation: true, indexValuation: false, stockValuation: false },
-    // 積立変更シミュレーション（理想・現実）の設定
-    simMode: 'reality',        // 'ideal'（理想）| 'reality'（現実）| 'compare'（比較）
-    // 理想・現実グラフの表示系列切替
-    simChartVisible: { idealValuation: true, realityValuation: true, idealPrincipal: false, realityPrincipal: false, secCash: false, missed: false },
     goals: [],   // 投資達成目標 {id, name, targetAmount, metric:'total'|'valuation', createdAt}
     events: [],  // 将来イベント {id, name, date, amount, memo}
     plans: [],   // 保存済みシミュレーションプラン {id, name, savedAt, config}
-    // 理想シミュレーション（自由設計）: 実際の口座残高・積立設定とは完全に分離した独立データ。
-    // idealPlan = 現在編集中のプラン、idealPlans = 保存済みプラン一覧。
-    idealPlan: seedIdealPlan(),
-    idealPlans: [],
+    // 投資シミュレーション（InvestmentSimulationPlan）: 実際の資産管理設定とは完全に分離した独立データ。
+    // simPlan = 現在編集中のプラン、simPlans = 保存済みプラン一覧。実データ(固定振替・NISA積立設定等)は加算しない。
+    simPlan: seedSimPlan(),
+    simPlans: [],
     // 投資実績グラフ（実績＋将来予測の連結表示）の設定
     perf: seedPerf(),
   };
 }
 
-// ---- 理想シミュレーション（自由設計）の初期プラン ----
+// ---- 投資シミュレーション（InvestmentSimulationPlan）の初期プラン ----
 // 実際の証券口座・積立設定とは無関係の、まっさらな資金計画。金額・入金・投資は未登録から始める。
-function seedIdealPlan() {
+function seedSimPlan() {
   return {
     startDate: todayISO(),
     initialSecCash: 0,      // 初期証券口座現金
@@ -247,24 +243,30 @@ function migrate(data) {
   // 将来資産シミュレーション（投資予測）の設定を補完
   const fsDefault = seedFutureSim();
   data.futureSim ||= fsDefault;
+  // 旧「理想シミュレーション」(idealPlan / idealPlans) を新名称(simPlan / simPlans)へ引き継ぐ。
+  // 汎用の欠損補完ループより前に実行し、空のプランで上書きしないようにする（保存済み設定を保持）。
+  if (data.futureSim.simPlan === undefined && data.futureSim.idealPlan !== undefined) data.futureSim.simPlan = data.futureSim.idealPlan;
+  if (data.futureSim.simPlans === undefined && data.futureSim.idealPlans !== undefined) data.futureSim.simPlans = data.futureSim.idealPlans;
+  delete data.futureSim.idealPlan;
+  delete data.futureSim.idealPlans;
+  // 旧モード切替（理想/現実/比較）の設定は廃止したため削除する。
+  delete data.futureSim.simMode;
+  delete data.futureSim.simChartVisible;
   for (const k of Object.keys(fsDefault)) if (data.futureSim[k] === undefined) data.futureSim[k] = fsDefault[k];
   data.futureSim.monteCarlo ||= fsDefault.monteCarlo;
   for (const k of Object.keys(fsDefault.monteCarlo)) if (data.futureSim.monteCarlo[k] === undefined) data.futureSim.monteCarlo[k] = fsDefault.monteCarlo[k];
   data.futureSim.chartVisible ||= fsDefault.chartVisible;
   for (const k of Object.keys(fsDefault.chartVisible)) if (data.futureSim.chartVisible[k] === undefined) data.futureSim.chartVisible[k] = fsDefault.chartVisible[k];
-  if (data.futureSim.simMode === undefined) data.futureSim.simMode = fsDefault.simMode;
-  data.futureSim.simChartVisible ||= fsDefault.simChartVisible;
-  for (const k of Object.keys(fsDefault.simChartVisible)) if (data.futureSim.simChartVisible[k] === undefined) data.futureSim.simChartVisible[k] = fsDefault.simChartVisible[k];
   data.futureSim.goals ||= [];
   data.futureSim.events ||= [];
   data.futureSim.plans ||= [];
-  // 理想シミュレーション（自由設計）のデータを補完（実際の口座データとは分離）
-  data.futureSim.idealPlan ||= seedIdealPlan();
-  const ipDefault = seedIdealPlan();
-  for (const k of Object.keys(ipDefault)) if (data.futureSim.idealPlan[k] === undefined) data.futureSim.idealPlan[k] = ipDefault[k];
-  data.futureSim.idealPlan.deposits ||= [];
-  data.futureSim.idealPlan.investments ||= [];
-  data.futureSim.idealPlans ||= [];
+  // 投資シミュレーション（InvestmentSimulationPlan）のデータを補完（実際の資産管理設定とは分離）。
+  data.futureSim.simPlan ||= seedSimPlan();
+  const ipDefault = seedSimPlan();
+  for (const k of Object.keys(ipDefault)) if (data.futureSim.simPlan[k] === undefined) data.futureSim.simPlan[k] = ipDefault[k];
+  data.futureSim.simPlan.deposits ||= [];
+  data.futureSim.simPlan.investments ||= [];
+  data.futureSim.simPlans ||= [];
   // 投資実績グラフの設定を補完
   const perfDefault = seedPerf();
   data.futureSim.perf ||= perfDefault;

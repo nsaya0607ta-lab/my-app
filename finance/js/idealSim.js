@@ -1,13 +1,17 @@
-// idealSim.js — 理想シミュレーション専用の計算エンジン（自由に組み立てる資金計画）
+// idealSim.js — 投資シミュレーション専用の計算エンジン（InvestmentSimulationPlan）
+// このエンジンだけが「投資シミュレーション」画面の計算を担う。実際の資産管理設定
+// （口座残高・固定振替・NISA積立設定・将来振替予定・個別株購入予定）は一切参照・変更しない。
+// 使うのはユーザーがシミュレーション画面で入力したプラン(InvestmentSimulationPlan)だけ。
+// これにより「実際の固定振替」と「シミュレーション専用入金」が二重計上されることがない。
 // 方針:
-//   ・実際の口座残高・積立設定・固定振替は一切参照・変更しない。プランオブジェクトだけを入力にする純粋関数。
-//   ・証券口座現金は「初期証券口座現金＋自動入金−投資購入」を日付順に前進させて独立計算する。
+//   ・プランオブジェクトだけを入力にする純粋関数。実データには読み書きしない。
+//   ・証券口座現金は「初期証券口座現金＋シミュレーション専用入金−シミュレーション専用購入」を日付順に前進。
 //   ・毎月の入金日・投資日はユーザー設定の日付をそのまま使う（1日固定にしない）。
 //     31日など存在しない日はその月の月末へ丸める（resolveDay）。
 //   ・すべて日本時間(Asia/Tokyo)の暦日(YYYY-MM-DD)で計算し、UTC変換で前後にずらさない。
-//   ・同じ日に入金と購入があれば「入金 → NISA積立 → 個別株購入」の順に処理する。
+//   ・同じ日は「入金 → NISA積立 → 個別株購入 → （手数料・税金・出金は未対応）」の順に処理する。
 //
-// プラン(plan)のデータ構造:
+// プラン(plan = InvestmentSimulationPlan)のデータ構造:
 //   {
 //     startDate: 'YYYY-MM-DD',   // シミュレーション開始日
 //     initialSecCash: number,    // 初期証券口座現金
@@ -27,8 +31,8 @@
 //     ],
 //   }
 
-import { pad, toISO, parseISO, addMonths, daysInMonth, resolveDay, uid } from './utils.js?v=20260724f';
-import { isBusinessDay, prevISO } from './holidays.js?v=20260724f';
+import { pad, toISO, parseISO, addMonths, daysInMonth, resolveDay, uid } from './utils.js?v=20260725a';
+import { isBusinessDay, prevISO } from './holidays.js?v=20260725a';
 
 const n = (v) => Number(v) || 0;
 
@@ -77,7 +81,7 @@ export function occursAmount(item, iso, { applyBusiness = false, defaultFreq = '
   return scheduledRaw(item, iso, defaultFreq);
 }
 
-// ===== 既定の理想プラン（新規作成時の初期値） =====
+// ===== 既定のシミュレーションプラン（新規作成時の初期値） =====
 export function defaultIdealPlan(startISO) {
   const start = startISO || jstToday();
   return {
@@ -118,7 +122,7 @@ export function findOverlaps(items, { byKind = false } = {}) {
 // ===== 投資設定の同日処理順（NISA積立 → 個別株購入） =====
 const investOrder = (inv) => ((inv.kind || 'nisa') === 'stock' ? 1 : 0);
 
-// ===== 理想プランのシミュレーション本体 =====
+// ===== シミュレーションプランの計算本体 =====
 // opts.logDays: true なら日次の入出金履歴(dailyLog)を全期間ぶん記録する（日付別詳細・タイムライン用）。
 //   件数が多くなるため、既定(false)では最初の資金不足の周辺のみ最小限に記録する。
 export function runIdealPlan(plan, opts = {}) {
@@ -146,6 +150,12 @@ export function runIdealPlan(plan, opts = {}) {
   const dailyLog = [];
   const shortfalls = [];
   const series = [];
+  // 月別の集計（資金不足の警告表示・資金繰り内訳用）。ym('YYYY-MM')ごとに
+  //   monthDeposit: その月のシミュレーション専用入金の合計
+  //   monthInvest : その月の投資購入予定額（NISA積立＋個別株購入、資金の有無に関わらず予定額）
+  const monthDeposit = {};
+  const monthInvest = {};
+  const addMonth = (map, ym, v) => { if (v) map[ym] = (map[ym] || 0) + v; };
 
   const pushLog = (date, kind, name, amount) => {
     if (logDays) dailyLog.push({ date, kind, name, amount, secAfter: Math.round(sec) });
@@ -169,6 +179,7 @@ export function runIdealPlan(plan, opts = {}) {
       const amt = occursAmount(dep, iso, { applyBusiness: false, defaultFreq: 'monthly' });
       if (amt <= 0) continue;
       sec += amt; vsec += amt; cumDeposit += amt;
+      addMonth(monthDeposit, iso.slice(0, 7), amt); // その月の入金予定額（シミュレーション専用入金のみ）
       pushLog(iso, 'deposit', dep.memo || '証券口座への入金', amt);
     }
     // 2) 投資（NISA積立 → 個別株購入）
@@ -176,6 +187,7 @@ export function runIdealPlan(plan, opts = {}) {
       const amt = occursAmount(inv, iso, { applyBusiness: true, defaultFreq: 'daily' });
       if (amt <= 0) continue;
       cumInvestPlanned += amt;
+      addMonth(monthInvest, iso.slice(0, 7), amt); // その月の購入予定額（資金の有無に関わらず）
       vsec -= amt;
       if (vsec < minVsec) { minVsec = vsec; if (-vsec > peakDeficit) { peakDeficit = -vsec; peakMonthIndex = monthsElapsed; } }
       const label = inv.name || ((inv.kind || 'nisa') === 'stock' ? '個別株購入' : 'NISA積立');
@@ -207,6 +219,10 @@ export function runIdealPlan(plan, opts = {}) {
   series.push(snapshot(from));
 
   // ---- 日付順に前進（from 当日から to まで。月末で成長＋スナップショット） ----
+  // opts.snapAt を指定すると、その日ちょうどの精密スナップショット(daySnap)を捕捉する
+  // （月次系列は月末粒度のため、月の途中の証券口座現金・元本・評価額を正しく返せない）。
+  const snapAt = opts.snapAt || null;
+  let daySnap = null;
   const cur = parseISO(from);
   let guard = 0;
   while (guard++ < 20000) {
@@ -216,6 +232,7 @@ export function runIdealPlan(plan, opts = {}) {
     const next = new Date(cur.getFullYear(), cur.getMonth(), cur.getDate() + 1);
     const isMonthEnd = next.getMonth() !== cur.getMonth();
     if (isMonthEnd) { stepMonthEnd(iso); series.push(snapshot(iso)); }
+    if (snapAt && iso === snapAt) daySnap = snapshot(iso); // 月末なら成長反映後の値
     cur.setTime(next.getTime());
   }
   // 末尾が月末でなければ最終日のスナップショットを追加
@@ -232,7 +249,7 @@ export function runIdealPlan(plan, opts = {}) {
 
   return {
     from, to, years, shortageMode: p.shortageMode,
-    series, dailyLog, shortfalls,
+    series, dailyLog, shortfalls, monthDeposit, monthInvest, daySnap,
     summary: {
       initialSecCash: Math.round(p.initialSecCash),
       cumDeposit: Math.round(cumDeposit),
@@ -307,11 +324,29 @@ export function idealGoalDate(plan) {
 // ===== 選択日までの日次詳細（証券口座現金の内訳・入出金タイムライン） =====
 // 指定日 targetISO までのスナップショット＋その日までの dailyLog を返す。
 export function idealSnapshotAt(plan, targetISO) {
-  const res = runIdealPlan(plan, { logDays: true });
-  const target = targetISO < res.from ? res.from : (targetISO > res.to ? res.to : targetISO);
-  // series から target 以前で最も新しい点
-  let pt = res.series[0];
-  for (const s of res.series) { if (s.date <= target) pt = s; else break; }
-  const log = res.dailyLog.filter((r) => r.date <= target);
-  return { ...pt, target, from: res.from, to: res.to, log };
+  const from0 = normalizePlan(plan).startDate;
+  const target = targetISO < from0 ? from0 : targetISO;
+  // snapAt でその日ちょうどの精密スナップショットを捕捉（月の途中でも証券口座現金・元本・評価額が正しい）
+  const res = runIdealPlan(plan, { logDays: true, snapAt: target });
+  const clamped = target > res.to ? res.to : target;
+  // 精密スナップショット（daySnap）を優先。範囲外などで無い場合は月次系列の最新点で代替。
+  let pt = res.daySnap;
+  if (!pt) { pt = res.series[0]; for (const s of res.series) { if (s.date <= clamped) pt = s; else break; } }
+  const log = res.dailyLog.filter((r) => r.date <= clamped);
+  // 当日(target)の内訳: 入金・NISA購入・個別株購入の金額（グラフ長押しの詳細表示・資金繰り内訳の一致確認用）
+  let dayDeposit = 0, dayNisa = 0, dayStock = 0;
+  for (const r of res.dailyLog) {
+    if (r.date !== clamped) continue;
+    if (r.kind === 'deposit') dayDeposit += r.amount;              // 入金は正の値
+    else if (r.kind === 'accumulation') dayNisa += -r.amount;      // 購入は負で記録 → 正へ
+    else if (r.kind === 'purchase') dayStock += -r.amount;
+  }
+  const shortfall = res.shortfalls.some((sf) => sf.date === clamped); // その日に資金不足が発生したか
+  const profitRate = pt.principal > 0 ? ((pt.valuation - pt.principal) / pt.principal) * 100 : null;
+  const total = pt.secCash + pt.valuation; // 合計資産＝証券口座現金＋評価額（シミュレーションは投資口座のみ）
+  return {
+    ...pt, target: clamped, from: res.from, to: res.to, log,
+    dayDeposit: Math.round(dayDeposit), dayNisa: Math.round(dayNisa), dayStock: Math.round(dayStock),
+    shortfall, profitRate, total: Math.round(total),
+  };
 }

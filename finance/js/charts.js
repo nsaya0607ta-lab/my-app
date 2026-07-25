@@ -219,7 +219,27 @@ export function multiLineChart(seriesList, opts = {}) {
     const pts = s.data.map((d, i) => `${x(i)},${y(d.value)}`).join(' ');
     lines += `<polyline points="${pts}" fill="none" stroke="${s.color}" stroke-width="${s.width || 2.5}" stroke-linecap="round" stroke-linejoin="round"${s.dashed ? ' stroke-dasharray="5 4"' : ''}/>`;
   }
-  return `<svg viewBox="0 0 ${w} ${h}" class="fc-svg fc-multiline" preserveAspectRatio="none">${grid}${zeroLine}${lines}${xl}</svg>`;
+
+  // 選択位置のマーカー（長押しで日付別詳細を表示するとき、選択中の点を縦線で示す）
+  let marker = '';
+  if (opts.markerIndex != null && opts.markerIndex >= 0 && opts.markerIndex < first.length) {
+    const mx = x(opts.markerIndex);
+    marker = `<line x1="${mx}" y1="${pad.t}" x2="${mx}" y2="${pad.t + ih}" class="fc-ml-marker"/>`;
+    for (const s of visible) {
+      const v = s.data[opts.markerIndex];
+      if (v && v.value != null) marker += `<circle cx="${mx}" cy="${y(v.value)}" r="3.6" fill="${s.color}"/>`;
+    }
+  }
+  // 長押し・タップ判定用の透明な当たり領域（各サンプル点にdata-i）。最前面に置く。
+  let hits = '';
+  if (opts.hit) {
+    const bw = first.length > 1 ? iw / (first.length - 1) : iw;
+    for (let i = 0; i < first.length; i++) {
+      const cx = x(i);
+      hits += `<rect class="fc-ml-hit" data-i="${i}" x="${cx - bw / 2}" y="${pad.t}" width="${bw}" height="${ih}" fill="transparent"/>`;
+    }
+  }
+  return `<svg viewBox="0 0 ${w} ${h}" class="fc-svg fc-multiline" preserveAspectRatio="none">${grid}${zeroLine}${marker}${lines}${xl}${hits}</svg>`;
 }
 
 // ===== モンテカルロ用ファンチャート（中央値・90%範囲・最悪/最高ケース） =====
