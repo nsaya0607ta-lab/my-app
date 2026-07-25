@@ -24,9 +24,18 @@ import * as repo from '@/lib/repository';
 import { clearSharedFlag, hasSharedFlag, takeSharedFiles } from '@/lib/shareTarget';
 import { fetchPendingReports } from '@/lib/dailyReport';
 import { collectTags } from '@/lib/search';
-import { ROOT_ID, UNSORTED_ID, type ExplorerItem, type FolderColor, type Importance, type PdfFileMeta } from '@/lib/types';
-import { ROOT_NAME, pathString, toParentKey } from '@/lib/tree';
+import {
+  ROOT_ID,
+  UNSORTED_ID,
+  isInCloud,
+  type ExplorerItem,
+  type FolderColor,
+  type Importance,
+  type PdfFileMeta,
+} from '@/lib/types';
+import { ROOT_NAME, descendantFolderIds, pathString, toParentKey } from '@/lib/tree';
 import { useApp } from '@/store/AppStore';
+import { useCloud } from '@/store/CloudStore';
 import { Button, IconButton, Spinner, cx } from '@/components/ui/Primitives';
 import { BottomSheet, MenuRow } from '@/components/ui/Sheet';
 import { ColorSheet, ConfirmDialog, DetailsSheet, DuplicateDialog, NameDialog, SortSheet, TagMemoSheet } from '@/components/dialogs/CommonDialogs';
@@ -51,6 +60,7 @@ type PickerState =
 
 export function AppShell() {
   const app = useApp();
+  const cloud = useCloud();
   const {
     files,
     folders,
@@ -303,26 +313,50 @@ export function AppShell() {
   /* 個々の操作                                                        */
   /* ---------------------------------------------------------------- */
 
+  /**
+   * PDF 本体を用意する。
+   * クラウド保管済みで端末内に無い場合はクラウドから取得する
+   * (取得済みのものは端末内キャッシュを使うので通信しない)。
+   */
+  const resolveBlob = useCallback(
+    async (file: PdfFileMeta): Promise<Blob> => {
+      const local = await repo.readBlob(file.id);
+      if (local) return local;
+      if (isInCloud(file)) {
+        if (!cloud) throw new AppError('CLOUD_OFFLINE');
+        return cloud.resolveBlob(file);
+      }
+      throw new AppError('NOT_FOUND');
+    },
+    [cloud],
+  );
+
   const withBlob = useCallback(
     async (file: PdfFileMeta, action: (blob: Blob) => Promise<void> | void) => {
+      const fetching = isInCloud(file) && !file.localCachedAt;
+      if (fetching) setBusy('クラウドからPDFを取得しています…');
       try {
-        const blob = await repo.readBlob(file.id);
-        if (!blob) throw new AppError('NOT_FOUND');
+        const blob = await resolveBlob(file);
         await action(blob);
       } catch (error) {
         notify(toMessage(error), 'error');
+      } finally {
+        if (fetching) setBusy(null);
       }
     },
-    [notify],
+    [notify, resolveBlob],
   );
 
   const openFile = useCallback(
     async (file: PdfFileMeta) => {
-      setBusy('PDFを開いています…');
+      // 1. クラウド保管済みなら、オンライン確認 → 取得 → 検証まで resolveBlob が行う
+      const fetching = isInCloud(file) && !file.localCachedAt;
+      setBusy(fetching ? 'クラウドからPDFを取得しています…' : 'PDFを開いています…');
       try {
-        const blob = await repo.readBlob(file.id);
-        if (!blob) throw new AppError('NOT_FOUND');
+        const blob = await resolveBlob(file);
+        // 2. 取得できたら通常どおりビューアーで開く
         setViewer({ file, blob });
+        // 3. 最終閲覧日時を更新する (次の自動移動の起点になる)
         await repo.markOpened(file.id);
         await reload();
       } catch (error) {
@@ -331,7 +365,65 @@ export function AppShell() {
         setBusy(null);
       }
     },
-    [notify, reload],
+    [notify, reload, resolveBlob],
+  );
+
+  /**
+   * コピーを実行する。
+   * クラウド保管済みの PDF は、コピー元の実体を端末へ取り戻してから複製する。
+   * (コピー先が同じクラウド保存先を指してしまうと、片方の削除でもう片方まで
+   *  消えてしまうため、コピーは必ず独立した「端末内の PDF」として作る)
+   */
+  const copyItem = useCallback(
+    async (item: ExplorerItem, destId: string) => {
+      try {
+        if (item.kind === 'file') {
+          if (isInCloud(item.file) && !item.file.localCachedAt) {
+            setBusy('クラウドからPDFを取得しています…');
+            await resolveBlob(item.file);
+          }
+          setBusy('コピーしています…');
+          await repo.copyFile(item.file.id, destId);
+          await reload();
+          notify('PDFをコピーしました。', 'success');
+          return;
+        }
+
+        const snapshot = await repo.refresh();
+        const insideIds = descendantFolderIds(
+          snapshot.folders.filter((folder) => !folder.deletedAt),
+          item.folder.id,
+        );
+        const cloudOnly = snapshot.files.filter(
+          (file) =>
+            !file.deletedAt &&
+            insideIds.has(toParentKey(file.parentId)) &&
+            isInCloud(file) &&
+            !file.localCachedAt,
+        );
+
+        for (let index = 0; index < cloudOnly.length; index += 1) {
+          setBusy(`クラウドからPDFを取得しています…（${index + 1} / ${cloudOnly.length}）`);
+          await resolveBlob(cloudOnly[index]);
+        }
+
+        setBusy('コピーしています…');
+        const result = await repo.copyFolder(item.folder.id, destId);
+        await reload();
+        notify(
+          result.skipped > 0
+            ? `フォルダーをコピーしました（PDF ${result.skipped} 件は本体を取得できずコピーしていません）`
+            : 'フォルダーをコピーしました。',
+          result.skipped > 0 ? 'info' : 'success',
+        );
+      } catch (error) {
+        notify(toMessage(error), 'error');
+      } finally {
+        setBusy(null);
+        void refreshStorage();
+      }
+    },
+    [notify, refreshStorage, reload, resolveBlob],
   );
 
   const handlers = useMemo(
@@ -692,11 +784,7 @@ export function AppShell() {
               void run(() => repo.moveFile(item.file.id, folderId), 'PDFを移動しました。');
             }
           } else {
-            if (item.kind === 'folder') {
-              void run(() => repo.copyFolder(item.folder.id, folderId), 'フォルダーをコピーしました。');
-            } else {
-              void run(() => repo.copyFile(item.file.id, folderId), 'PDFをコピーしました。');
-            }
+            void copyItem(item, folderId);
           }
         }}
       />
@@ -774,7 +862,11 @@ export function AppShell() {
         title="完全に削除しますか？"
         description={
           purgeTarget
-            ? `「${purgeTarget.kind === 'folder' ? purgeTarget.folder.name : purgeTarget.file.name}」を完全に削除します。この操作は取り消せません。`
+            ? `「${purgeTarget.kind === 'folder' ? purgeTarget.folder.name : purgeTarget.file.name}」を完全に削除します。この操作は取り消せません。${
+                purgeTarget.kind === 'file' && isInCloud(purgeTarget.file)
+                  ? 'このPDFはクラウドに保管されています。クラウド上のPDFも削除します。'
+                  : ''
+              }`
             : undefined
         }
         confirmLabel="完全に削除"
@@ -784,11 +876,12 @@ export function AppShell() {
           const target = purgeTarget;
           setPurgeTarget(null);
           if (!target) return;
-          if (target.kind === 'folder') {
-            void run(() => repo.purgeFolder(target.folder.id), '完全に削除しました。');
-          } else {
-            void run(() => repo.purgeFile(target.file.id), '完全に削除しました。');
-          }
+          const task =
+            target.kind === 'folder'
+              ? run(() => repo.purgeFolder(target.folder.id), '完全に削除しました。')
+              : run(() => repo.purgeFile(target.file.id), '完全に削除しました。');
+          // 端末から消えたあとで、クラウド上の実体も削除する
+          void task.then(() => cloud?.flushDeletes());
           void refreshStorage();
         }}
       />
@@ -802,7 +895,10 @@ export function AppShell() {
         onClose={() => setEmptyTrashConfirm(false)}
         onConfirm={() => {
           setEmptyTrashConfirm(false);
-          void run(() => repo.emptyTrash(), 'ごみ箱を空にしました。').then(() => refreshStorage());
+          void run(() => repo.emptyTrash(), 'ごみ箱を空にしました。').then(async () => {
+            await cloud?.flushDeletes();
+            await refreshStorage();
+          });
         }}
       />
 

@@ -1,0 +1,11 @@
+[
+  {
+    "origin": [
+      "https://my-az900-app.vercel.app",
+      "http://localhost:3000"
+    ],
+    "method": ["GET"],
+    "responseHeader": ["Content-Type", "Content-Length", "Content-Range"],
+    "maxAgeSeconds": 3600
+  }
+]

@@ -27,6 +27,14 @@ export type AppErrorCode =
   | 'RESTORE_FAILED'
   | 'IMAGE_CONVERT_FAILED'
   | 'PRINT_FAILED'
+  | 'CLOUD_OFFLINE'
+  | 'CLOUD_SIGNED_OUT'
+  | 'CLOUD_UPLOAD_FAILED'
+  | 'CLOUD_DOWNLOAD_FAILED'
+  | 'CLOUD_VERIFY_FAILED'
+  | 'CLOUD_NOT_FOUND'
+  | 'CLOUD_QUOTA_EXCEEDED'
+  | 'CLOUD_DISABLED'
   | 'UNKNOWN';
 
 export const ERROR_MESSAGES: Record<AppErrorCode, string> = {
@@ -47,6 +55,21 @@ export const ERROR_MESSAGES: Record<AppErrorCode, string> = {
   RESTORE_FAILED: 'バックアップファイルを読み込めませんでした。ファイルを確認してください。',
   IMAGE_CONVERT_FAILED: '画像からPDFを作成できませんでした。対応していない画像形式の可能性があります。',
   PRINT_FAILED: '印刷画面を開けませんでした。ポップアップがブロックされていないか確認してください。',
+  CLOUD_OFFLINE:
+    'このPDFはクラウドに保存されています。インターネットへ接続してから、もう一度開いてください。',
+  CLOUD_SIGNED_OUT:
+    'クラウド保管のログイン期限が切れました。設定画面からもう一度ログインしてください。',
+  CLOUD_UPLOAD_FAILED:
+    'クラウドへの保存に失敗しました。PDFは端末内にそのまま残しています。時間をおいて再試行します。',
+  CLOUD_DOWNLOAD_FAILED:
+    'クラウドからPDFを取得できませんでした。通信状況を確認して、もう一度お試しください。',
+  CLOUD_VERIFY_FAILED:
+    'クラウド上のPDFの内容を確認できませんでした。安全のため端末内のPDFはそのまま残しています。',
+  CLOUD_NOT_FOUND:
+    'クラウド上にPDFが見つかりませんでした。設定画面の「今すぐ対象ファイルをクラウドへ移動」で状態を確認してください。',
+  CLOUD_QUOTA_EXCEEDED:
+    'クラウドの保存容量が不足しています。不要なPDFを完全に削除するか、プランを確認してください。',
+  CLOUD_DISABLED: 'クラウド保管が無効です。設定画面から有効にしてください。',
   UNKNOWN: '処理に失敗しました。もう一度お試しください。',
 };
 
