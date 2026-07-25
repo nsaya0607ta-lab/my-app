@@ -83,6 +83,7 @@ export async function createBackupSignature(
       color: folder.color,
       favorite: folder.isFavorite,
       order: folder.sortOrder,
+      updatedAt: folder.updatedAt,
       deletedAt: folder.deletedAt,
     }))
     .sort((a, b) => a.id.localeCompare(b.id));
@@ -100,6 +101,7 @@ export async function createBackupSignature(
       favorite: file.isFavorite,
       read: file.isRead,
       order: file.sortOrder,
+      updatedAt: file.updatedAt,
       deletedAt: file.deletedAt,
     }))
     .sort((a, b) => a.id.localeCompare(b.id));
