@@ -1,7 +1,7 @@
 [
   {
     "origin": [
-      "https://my-az900-app.vercel.app",
+      "https://my-app-gllz.vercel.app",
       "http://localhost:3000"
     ],
     "method": ["GET"],

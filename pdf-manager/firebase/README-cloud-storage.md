@@ -47,7 +47,8 @@ firebase deploy --only storage
 ## 4. CORS（必須）
 
 PDF 本体をブラウザーで取得して IndexedDB へ保存するため、バケットに CORS 設定が必要です。
-`pdf-cloud-storage.cors.json` の `origin` を実際の公開ドメインに合わせてから適用します。
+`pdf-cloud-storage.cors.json` の `origin` は公開ドメイン（`https://my-app-gllz.vercel.app`）に合わせてあります。
+独自ドメインを足したときは、この配列へ追記してから再適用してください。
 
 ```bash
 # Google Cloud SDK が必要
