@@ -10,7 +10,7 @@
  *  - 同じ URL で更新される可能性があるファイル: ネットワーク優先
  */
 
-const CACHE_VERSION = 'v3';
+const CACHE_VERSION = 'v4';
 const CACHE_NAME = `pdf-folder-${CACHE_VERSION}`;
 const CACHE_PREFIX = 'pdf-folder-';
 
@@ -52,18 +52,42 @@ self.addEventListener('install', (event) => {
   );
 });
 
+async function refreshOpenClients() {
+  const clients = await self.clients.matchAll({
+    type: 'window',
+    includeUncontrolled: true,
+  });
+
+  await Promise.all(
+    clients.map(async (client) => {
+      try {
+        const url = new URL(client.url);
+        if (url.origin !== self.location.origin) return;
+
+        // iOS のホーム画面版はアプリ終了後も古い画面を復元する場合があるため、
+        // Service Worker の切り替え時に URL を変えて明示的な再ナビゲーションを行う。
+        url.searchParams.set('__pwa_update', CACHE_VERSION);
+        await client.navigate(url.toString());
+      } catch {
+        // WindowClient.navigate に未対応の環境でも更新処理自体は継続する
+      }
+    }),
+  );
+}
+
 self.addEventListener('activate', (event) => {
   event.waitUntil(
-    caches
-      .keys()
-      .then((keys) =>
-        Promise.all(
-          keys
-            .filter((key) => key.startsWith(CACHE_PREFIX) && key !== CACHE_NAME)
-            .map((key) => caches.delete(key)),
-        ),
-      )
-      .then(() => self.clients.claim()),
+    (async () => {
+      const keys = await caches.keys();
+      await Promise.all(
+        keys
+          .filter((key) => key.startsWith(CACHE_PREFIX) && key !== CACHE_NAME)
+          .map((key) => caches.delete(key)),
+      );
+
+      await self.clients.claim();
+      await refreshOpenClients();
+    })(),
   );
 });
 
