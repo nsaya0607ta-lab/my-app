@@ -298,6 +298,62 @@ PDF 本体（Blob）はメタデータと分けて `blobs` ストアに保存済
 
 ---
 
+## 8. 毎朝の学習レポートの自動取り込み
+
+毎朝5時に GitHub Actions が「前日の学習の振り返り」PDF を生成し、`public/daily/` へコミットします。
+アプリは起動時に `/daily/index.json` を読み、まだ取り込んでいないレポートを指定フォルダーへ自動で追加します。
+
+```
+[GitHub Actions] cron '0 20 * * *' (UTC) = JST 5:00
+   ↓ Firestore から前日の学習履歴を取得
+   ↓ Gemini でレポートを生成（構造化JSON）
+   ↓ HTML + CSS → Puppeteer で PDF 化
+   ↓ pdf-manager/public/daily/ へコミット
+[Vercel] 自動再デプロイ
+[アプリ] 起動時に index.json を確認 → 未取り込み分を指定フォルダーへ追加
+```
+
+バックエンドを持たない構成のため、**登録されるのは「アプリを次に開いたとき」**です。5時ちょうどに端末内へ書き込むことはできません。
+
+### 使いはじめる手順
+
+1. アプリの「設定」→「毎朝の学習レポート」で **自動で取り込む** をオンにする
+2. 同じ画面で **取り込み先フォルダー** を選ぶ（未設定のあいだは取り込みません）
+
+取り込み済みのレポートは設定内の `importedReports` に記録され、再起動しても二重に追加されません。
+
+### リポジトリ側の準備
+
+GitHub リポジトリの Secrets に次を登録してください（`GEMINI_API_KEY` 以下3つは Vercel と同じ値）。
+
+| Secret | 用途 |
+| --- | --- |
+| `GEMINI_API_KEY` | レポート本文の生成 |
+| `FIREBASE_PROJECT_ID` | 学習履歴の読み取り |
+| `FIREBASE_CLIENT_EMAIL` | 同上 |
+| `FIREBASE_PRIVATE_KEY` | 同上 |
+| `LEARNING_UID` | 対象ユーザーの Firebase UID |
+
+### ローカルでの確認
+
+```bash
+# API を使わずサンプルデータで PDF と HTML を生成（デザイン調整用）
+npm run daily-report:dry-run --prefix ..
+
+# 生成物がアプリへ取り込まれるかを実ブラウザーで検証
+npm run dev                              # 別ターミナルで起動しておく
+npm run daily-report:verify-import --prefix ..
+```
+
+### 注意点
+
+- **フォントは Noto Sans JP になります。** 「游ゴシック」は Microsoft / Apple のライセンスフォントで Linux ランナーには置けないためです。Windows / macOS 上でローカル生成した場合のみ游ゴシックが使われます。
+- PDF は `public/` 配下に置かれるため、**URL を知っていれば第三者もアクセスできます。**
+- 保持期間は60日です。それより古い PDF はワークフローが自動で削除します。
+- GitHub Actions のスケジュールは混雑時に5〜60分ほど遅れます。時刻を厳密にしたい場合は Cloud Scheduler から `workflow_dispatch` を叩く形に変更してください。
+
+---
+
 ## 補足：エラーメッセージ
 
 次の状況では日本語のメッセージを表示します（`src/lib/errors.ts` に集約）。

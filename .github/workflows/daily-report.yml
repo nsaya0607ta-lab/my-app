@@ -1,0 +1,62 @@
+name: 毎朝の学習レポートPDF
+
+on:
+  schedule:
+    # GitHub Actions の cron は UTC 固定。20:00 UTC = 翌朝 5:00 JST。
+    # 混雑時は数分〜1時間ほど遅れて起動することがある。
+    - cron: '0 20 * * *'
+  workflow_dispatch:
+
+# 同時実行されると index.json の更新が衝突するため直列化する
+concurrency:
+  group: daily-report
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      # 生成した PDF をリポジトリへコミットするために必要
+      contents: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+
+      # ubuntu-latest には日本語フォントが入っていない。
+      # これが無いと Puppeteer が描画する日本語がすべて豆腐 (□) になる。
+      - name: 日本語フォントを導入
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends fonts-noto-cjk
+
+      - name: 依存関係を導入
+        run: npm ci
+
+      - name: Chromium を導入
+        run: npx puppeteer browsers install chrome
+
+      - name: レポートを生成
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          FIREBASE_PROJECT_ID: ${{ secrets.FIREBASE_PROJECT_ID }}
+          FIREBASE_CLIENT_EMAIL: ${{ secrets.FIREBASE_CLIENT_EMAIL }}
+          FIREBASE_PRIVATE_KEY: ${{ secrets.FIREBASE_PRIVATE_KEY }}
+          LEARNING_UID: ${{ secrets.LEARNING_UID }}
+        run: node scripts/daily-report/generate.mjs
+
+      - name: 変更をコミット
+        run: |
+          if [ -z "$(git status --porcelain pdf-manager/public/daily)" ]; then
+            echo "生成物に変更がないためコミットしません（前日の学習記録が無い場合など）"
+            exit 0
+          fi
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add pdf-manager/public/daily
+          git commit -m "学習レポートを追加: $(date -u -d '+9 hours' +%Y-%m-%d)"
+          git push

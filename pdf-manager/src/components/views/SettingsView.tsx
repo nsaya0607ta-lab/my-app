@@ -8,6 +8,7 @@ import {
   HardDrive,
   Info,
   Moon,
+  Sunrise,
   Trash2,
   Upload,
 } from 'lucide-react';
@@ -16,11 +17,12 @@ import { downloadBlob, sharePdf } from '@/lib/device';
 import { wipeAll } from '@/lib/db';
 import { toMessage } from '@/lib/errors';
 import { formatBytes } from '@/lib/format';
-import { SORT_LABELS } from '@/lib/tree';
-import type { SortKey, ThemeMode, ViewMode } from '@/lib/types';
+import { ROOT_NAME, SORT_LABELS, pathString } from '@/lib/tree';
+import { ROOT_ID, type SortKey, type ThemeMode, type ViewMode } from '@/lib/types';
 import { useApp } from '@/store/AppStore';
 import { Button, IconButton, SectionTitle, Spinner, Switch, cx } from '@/components/ui/Primitives';
 import { ConfirmDialog } from '@/components/dialogs/CommonDialogs';
+import { FolderPicker } from '@/components/dialogs/FolderPicker';
 import { BottomSheet, MenuRow } from '@/components/ui/Sheet';
 import { Header } from './Header';
 
@@ -69,6 +71,16 @@ export function SettingsView() {
   const [confirmWipe, setConfirmWipe] = useState(false);
   const [restoreMode, setRestoreMode] = useState<RestoreMode>('merge');
   const [pendingRestore, setPendingRestore] = useState<File | null>(null);
+  const [reportPicker, setReportPicker] = useState(false);
+
+  const reportFolderId = settings.dailyReportFolderId;
+  const reportFolderLabel = !reportFolderId
+    ? '未設定（タップして選択）'
+    : reportFolderId === ROOT_ID
+      ? ROOT_NAME
+      : folders.some((folder) => folder.id === reportFolderId && !folder.deletedAt)
+        ? pathString(folders, reportFolderId)
+        : '選択したフォルダーは見つかりません（選び直してください）';
 
   useEffect(() => {
     void refreshStorage();
@@ -140,6 +152,29 @@ export function SettingsView() {
         <button type="button" className="w-full text-left" onClick={() => setSheet('theme')}>
           <Row label="ダークモード" description={THEME_LABELS[settings.theme]}>
             <Moon size={20} className="text-ink-sub" />
+          </Row>
+        </button>
+      </div>
+
+      <SectionTitle>毎朝の学習レポート</SectionTitle>
+      <div className="bg-surface dark:bg-[#181e26]">
+        <Row
+          label="自動で取り込む"
+          description="毎朝5時に作成される学習レポートPDFを、アプリを開いたときに自動で追加します。"
+        >
+          <Switch
+            checked={settings.dailyReportEnabled}
+            onChange={(value) => void updateSettings({ dailyReportEnabled: value })}
+            label="毎朝の学習レポートを自動で取り込む"
+          />
+        </Row>
+        <button
+          type="button"
+          className="w-full text-left"
+          onClick={() => setReportPicker(true)}
+        >
+          <Row label="取り込み先フォルダー" description={reportFolderLabel}>
+            <Sunrise size={20} className="text-ink-sub" />
           </Row>
         </button>
       </div>
@@ -229,6 +264,21 @@ export function SettingsView() {
           const file = event.target.files?.[0];
           event.target.value = '';
           if (file) setPendingRestore(file);
+        }}
+      />
+
+      {/* 毎朝の学習レポートの取り込み先 */}
+      <FolderPicker
+        open={reportPicker}
+        title="取り込み先フォルダー"
+        description="毎朝の学習レポートPDFを保存するフォルダーを選んでください。"
+        confirmLabel="ここに取り込む"
+        folders={folders}
+        initialFolderId={settings.dailyReportFolderId ?? ROOT_ID}
+        onClose={() => setReportPicker(false)}
+        onConfirm={(folderId) => {
+          void updateSettings({ dailyReportFolderId: folderId });
+          setReportPicker(false);
         }}
       />
 

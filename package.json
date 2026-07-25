@@ -7,7 +7,10 @@
   },
   "scripts": {
     "import:introquiz-songs": "node scripts/importIntroQuizSongs.js",
-    "fetch:youtube-playlist": "node scripts/fetchYouTubePlaylist.js"
+    "fetch:youtube-playlist": "node scripts/fetchYouTubePlaylist.js",
+    "daily-report": "node scripts/daily-report/generate.mjs",
+    "daily-report:dry-run": "node scripts/daily-report/generate.mjs --dry-run --html",
+    "daily-report:verify-import": "node scripts/daily-report/verify-import.mjs"
   },
   "dependencies": {
     "firebase-admin": "^14.1.0"
@@ -16,5 +19,8 @@
     "jwks-rsa": {
       "jose": "^5.10.0"
     }
+  },
+  "devDependencies": {
+    "puppeteer": "^25.3.0"
   }
 }
