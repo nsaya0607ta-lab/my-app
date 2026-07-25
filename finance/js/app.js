@@ -1222,7 +1222,7 @@ function accumulationCard(st, acc) {
         el('div', { class: 'fc-row-sub', text: `${freqLabel} ${yen(amt)}・${range}` }),
         el('div', { class: 'fc-row-sub', text: `${holInfo}${paused ? '・一時停止中' : ''}` })),
       el('span', { class: 'fc-accum-state ' + (a.enabled !== false && !paused ? 'on' : 'off'), text: a.enabled !== false ? (paused ? '停止中' : 'ON') : 'OFF' }));
-  })) : el('p', { class: 'fc-empty', text: 'インデックスの積立を登録できます（日本時間23:00に自動実行）。' });
+  })) : el('p', { class: 'fc-empty', text: 'インデックスの積立を登録できます（日本時間11:00に自動実行）。' });
   const settleNote = el('p', { class: 'fc-field-hint', text: `積立の代金は約定日には預り金から引かれず、${Sec.accountSettleDays(acc)}営業日後の受渡日（日本時間${Sec.SETTLE_HOUR_JST}時ごろ）に正式反映されます。それまでは「決済待ち」として出金余力から差し引かれます。` });
 
   const histRows = history.length ? el('div', { class: 'fc-list' }, ...history.map((h) =>
@@ -1293,7 +1293,7 @@ function holdingForm(acc, h) {
         field('ファンド名', name), field('NISA区分', nisaSel),
         field('総元本（円）', cost), field('現在保有額（円）', value),
         field('メモ（任意）', memo),
-        el('p', { class: 'fc-field-hint', text: 'インデックスは数量・基準価額の管理は不要です。毎晩23時の積立額はこの総元本に積み上がります。総元本と現在保有額の差額から損益・損益率を計算します。' }),
+        el('p', { class: 'fc-field-hint', text: 'インデックスは数量・基準価額の管理は不要です。毎朝11時の積立額はこの総元本に積み上がります。総元本と現在保有額の差額から損益・損益率を計算します。' }),
         el('p', { class: 'fc-field-sep', text: '将来資産シミュレーション用の設定' }),
         field('想定年利（%）', simReturn), field('年利の計算方式', returnModeSel));
     }
@@ -1479,7 +1479,7 @@ function accumulationForm(acc, a) {
   const pauseEnd = inputEl({ type: 'date', value: a?.pauseEnd || '' });
   let enabled = a ? a.enabled !== false : true;
   const enRow = el('div', { class: 'fc-field-toggle' });
-  const drawEn = () => { enRow.innerHTML = ''; enRow.append(el('div', {}, el('div', { class: 'fc-field-lab', text: '積立 ON/OFF' }), el('div', { class: 'fc-field-hint', text: 'ONの設定のみ実行されます（実際の自動積立は日本時間23:00に処理されます）' })), toggle(enabled, () => { enabled = !enabled; drawEn(); })); };
+  const drawEn = () => { enRow.innerHTML = ''; enRow.append(el('div', {}, el('div', { class: 'fc-field-lab', text: '積立 ON/OFF' }), el('div', { class: 'fc-field-hint', text: 'ONの設定のみ実行されます（実際の自動積立は日本時間11:00に処理されます）' })), toggle(enabled, () => { enabled = !enabled; drawEn(); })); };
   drawEn();
 
   // 土日祝日の実行設定（新規は既定OFF＝土日祝日は積立しない。既存は保存値を尊重）。
@@ -4559,7 +4559,7 @@ function buildNav() {
 export function init() {
   applyTheme();
   // 起動時: カード払いの固定支出を実カード利用に具体化 → 引落日を過ぎた分を確定（銀行減額）。
-  // あわせて、日本時間23:00の積立処理を前回処理日から追いかけて実行（キャッチアップ）し、
+  // あわせて、日本時間11:00の積立処理を前回処理日から追いかけて実行（キャッチアップ）し、
   // そのあとに受渡日（日本時間10時ごろ）を過ぎた決済待ちを預り金へ正式反映する。
   // 順序が重要: 先に積立で決済待ちを積み、そのうち受渡日を過ぎたものを同じ起動で反映する。
   S.update((s) => {
