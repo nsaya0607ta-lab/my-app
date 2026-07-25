@@ -3,6 +3,7 @@
  * 端末が対応している画像形式は canvas でデコードできるので、
  * 一度 canvas に描いてから JPEG に統一して PDF へ埋め込む。
  */
+import { releaseCanvas } from './device';
 import { AppError } from './errors';
 
 const A4_WIDTH = 595.28;
@@ -36,6 +37,8 @@ async function toJpegBitmap(file: Blob): Promise<{ data: Uint8Array; width: numb
     const blob = await new Promise<Blob | null>((resolve) => {
       canvas.toBlob((result) => resolve(result), 'image/jpeg', 0.85);
     });
+    // 複数枚をまとめて変換するため、iOS の canvas メモリ上限に達しないよう毎回解放する
+    releaseCanvas(canvas);
     if (!blob) throw new AppError('IMAGE_CONVERT_FAILED');
     return { data: new Uint8Array(await blob.arrayBuffer()), width, height };
   } finally {

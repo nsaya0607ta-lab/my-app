@@ -147,6 +147,18 @@ export async function copyToClipboard(text: string): Promise<boolean> {
   }
 }
 
+/**
+ * 使い捨ての canvas を解放する。
+ * iOS Safari はページ全体で確保できる canvas メモリに上限があり、
+ * 使い終わった canvas を放置したまま上限に達すると、それ以降の描画が
+ * 無視されて「真っ白なまま何も表示されない」状態になる。
+ * サイズを 0 にすると確保していたメモリが即座に解放される。
+ */
+export function releaseCanvas(canvas: HTMLCanvasElement): void {
+  canvas.width = 0;
+  canvas.height = 0;
+}
+
 /** 触覚フィードバック (対応端末のみ)。 */
 export function vibrate(pattern: number | number[] = 12): void {
   try {

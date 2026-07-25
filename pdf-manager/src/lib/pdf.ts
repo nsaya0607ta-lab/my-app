@@ -2,6 +2,7 @@
  * pdf.js のラッパー。
  * ブラウザーでのみ動くため、すべて動的 import 経由で読み込む。
  */
+import { releaseCanvas } from './device';
 import { AppError } from './errors';
 
 type PdfDocumentProxy = {
@@ -19,6 +20,8 @@ type PdfPageProxy = {
   render: (options: {
     canvasContext: CanvasRenderingContext2D;
     viewport: unknown;
+    /** 高解像度描画用のスケール。pdf.js へ明示的に伝える (詳細は PdfViewer)。 */
+    transform?: [number, number, number, number, number, number];
   }) => { promise: Promise<void>; cancel: () => void };
   cleanup: () => void;
 };
@@ -99,27 +102,31 @@ export async function getPageCount(blob: Blob): Promise<number | undefined> {
 /** 1 ページ目からサムネイル (JPEG Blob) を作る。 */
 export async function renderThumbnail(blob: Blob, maxWidth = 320): Promise<Blob | null> {
   let doc: PdfDocumentProxy | undefined;
+  let canvas: HTMLCanvasElement | undefined;
   try {
     doc = await openDocument(blob);
     const page = await doc.getPage(1);
     const base = page.getViewport({ scale: 1 });
     const scale = Math.min(2, maxWidth / base.width);
     const viewport = page.getViewport({ scale });
-    const canvas = document.createElement('canvas');
-    canvas.width = Math.max(1, Math.floor(viewport.width));
-    canvas.height = Math.max(1, Math.floor(viewport.height));
-    const context = canvas.getContext('2d');
+    const target = document.createElement('canvas');
+    canvas = target;
+    target.width = Math.max(1, Math.floor(viewport.width));
+    target.height = Math.max(1, Math.floor(viewport.height));
+    const context = target.getContext('2d');
     if (!context) return null;
     context.fillStyle = '#ffffff';
-    context.fillRect(0, 0, canvas.width, canvas.height);
+    context.fillRect(0, 0, target.width, target.height);
     await page.render({ canvasContext: context, viewport }).promise;
     page.cleanup();
     return await new Promise<Blob | null>((resolve) => {
-      canvas.toBlob((result) => resolve(result), 'image/jpeg', 0.72);
+      target.toBlob((result) => resolve(result), 'image/jpeg', 0.72);
     });
   } catch {
     return null;
   } finally {
+    // 取り込み時に何十枚も作るため、iOS の canvas メモリ上限に達しないよう毎回解放する
+    if (canvas) releaseCanvas(canvas);
     await doc?.destroy().catch(() => undefined);
   }
 }
