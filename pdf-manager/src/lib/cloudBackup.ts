@@ -9,6 +9,7 @@
  * - PDF本体はStorageだけに置き、Firestoreの1MiB上限へ入れない
  */
 import { createBackup } from './backup';
+import { loadAll } from './db';
 import { getFirebaseCloudServices, currentCloudUser } from './firebaseCloud';
 import type { Folder, PdfFileMeta, Settings } from './types';
 
@@ -153,15 +154,13 @@ async function performBackup(settings: Settings, signature?: string): Promise<Cl
     },
   });
 
-  const activeFiles = (await import('./db')).loadAll
-    ? await (await import('./db')).loadAll()
-    : { folders: [], files: [] };
+  const localData = await loadAll();
   const meta: CloudBackupMetadata = {
     latestPath: path,
     updatedAt,
     size: blob.size,
-    fileCount: activeFiles.files.length,
-    folderCount: activeFiles.folders.length,
+    fileCount: localData.files.length,
+    folderCount: localData.folders.length,
   };
 
   await metadataRef(firestore, user.uid).set(meta, { merge: true });
