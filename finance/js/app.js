@@ -784,6 +784,12 @@ function accountForm(acc) {
             Sec.recomputeAccount(a);
           } else a.balance = amountValue(bal);
         }
+        // 証券口座が1つだけなら、投資シミュレーションの「初期証券口座現金」を現在の預り金へ同期する
+        // （シミュレーション自体は実データと分離しているが、起点だけは口座保存のたびに最新化する）。
+        if (isSec) {
+          const secAccs = Sec.securitiesAccounts(s);
+          if (secAccs.length === 1) s.futureSim.simPlan.initialSecCash = Sec.accountDeposit(secAccs[0]);
+        }
         S.recordAssetSnapshot(s);
       });
       render(); toast('保存しました'); close();

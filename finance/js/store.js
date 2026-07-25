@@ -358,7 +358,7 @@ function migrate(data) {
         // 非営業日の扱い: 'skip'（その日はスキップ）| 'carryover'（次の営業日に繰り越す）
         if (acm.nonBusinessDay === undefined) acm.nonBusinessDay = 'skip';
       }
-      recomputeAccount(a);      // balance = 出金余力 + 評価額 に同期
+      recomputeAccount(a);      // balance = 預り金 + 評価額 に同期
     }
   }
   applySecuritiesBalanceFix(data);

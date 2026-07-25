@@ -95,12 +95,11 @@ export function accountValuationByKind(acc) {
   }
   return { index, stock };
 }
-// 合計残高（総資産への寄与）＝ 出金余力 ＋ 評価額。
-// 決済待ちの買付代金は「まだ預り金から引かれていないが、すでに保有銘柄の評価額に含まれている」ため、
-// 預り金をそのまま足すと二重計上になる。出金余力（＝預り金−決済待ち）を使って重複を避ける。
-export const accountTotal = (acc) => accountWithdrawable(acc) + accountValuation(acc);
+// 合計残高（総資産への寄与）＝ 預り金 ＋ 評価額（インデックス評価額＋個別株評価額）。
+// 証券会社の口座画面に表示される残高に合わせるため、預り金をそのまま使う（出金余力は使わない）。
+export const accountTotal = (acc) => accountDeposit(acc) + accountValuation(acc);
 
-// 証券口座の balance を「出金余力＋評価額」で再計算して同期する（総資産計算はbalanceを参照するため）
+// 証券口座の balance を「預り金＋評価額」で再計算して同期する（総資産計算はbalanceを参照するため）
 export function recomputeAccount(acc) {
   if (!isSecurities(acc)) return;
   acc.cash = Math.round(n(acc.cash));
@@ -131,7 +130,7 @@ export function portfolio(state) {
     deposit, pending, withdrawable,
     cash: withdrawable, // 資産計算に使う「現金」は二重計上を避けるため出金余力
     cost, principal: cost, valuation, index, stock, profit, profitRate,
-    total: withdrawable + valuation,
+    total: deposit + valuation,
   };
 }
 
