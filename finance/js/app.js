@@ -2724,6 +2724,12 @@ function idealBasicsCard(plan) {
   const cashInp = amountInput(plan.initialSecCash); // 初期証券口座現金（円・3桁区切り）
   cashInp.addEventListener('change', () => updateSimPlan((p) => { p.initialSecCash = amountValue(cashInp); }));
 
+  // 初期評価額・初期投資元本（すでにある程度投資している状態から始める場合の起点）
+  const valuationInp = amountInput(plan.initialValuation);
+  valuationInp.addEventListener('change', () => updateSimPlan((p) => { p.initialValuation = amountValue(valuationInp); }));
+  const principalInp = amountInput(plan.initialPrincipal);
+  principalInp.addEventListener('change', () => updateSimPlan((p) => { p.initialPrincipal = amountValue(principalInp); }));
+
   const rateInp = inputEl({ type: 'number', inputmode: 'decimal', placeholder: '例）10', value: plan.annualReturn ?? '' });
   rateInp.addEventListener('change', () => updateSimPlan((p) => { p.annualReturn = Number(rateInp.value) || 0; }));
 
@@ -2747,9 +2753,13 @@ function idealBasicsCard(plan) {
 
   return card(
     sectionTitle('シミュレーションの条件'),
-    el('p', { class: 'fc-field-hint', text: 'シミュレーション開始時の証券口座現金・想定年利・保有期間などを設定します。ここでの変更は実データを一切変更しません。入力するとその場で結果とグラフが更新されます。' }),
+    el('p', { class: 'fc-field-hint', text: 'シミュレーション開始時の証券口座現金・評価額・想定年利・保有期間などを設定します。ここでの変更は実データを一切変更しません。入力するとその場で結果とグラフが更新されます。' }),
     field('シミュレーション開始日', startInp),
     field('初期証券口座現金（円）', cashInp),
+    field('初期評価額（円）', valuationInp),
+    el('p', { class: 'fc-field-hint', text: 'すでにある程度投資している状態からシミュレーションしたい場合に、開始時点で保有している投資の評価額を入力します。0円なら投資ゼロから開始します。この評価額も開始日から想定年利で成長します。' }),
+    field('初期投資元本（円・任意）', principalInp),
+    el('p', { class: 'fc-field-hint', text: '初期評価額のうち、実際に投資した元本（取得金額）です。空欄（0円）のときは初期評価額と同額として扱い、開始時点の評価損益を0円にします。' }),
     field('想定年利（%）', rateInp),
     field('利回りの計算方式', modeSeg),
     field('保有期間', yearSeg),
@@ -2983,6 +2993,13 @@ function idealResultCard(plan, res, secret) {
     el('div', { class: 'fc-sec-grid' }, secBox('将来元本', money(s.principal)), secBox('将来評価額', money(s.valuation)), secBox('評価損益', money(s.profit))),
     el('div', { class: 'fc-sec-grid' }, secBox('利益率', s.profitRate == null ? '—' : `${s.profitRate >= 0 ? '+' : ''}${s.profitRate.toFixed(1)}%`), secBox('積立実行回数', `${s.execCount.toLocaleString('ja-JP')}回`), secBox('積立未実行回数', `${s.missCount.toLocaleString('ja-JP')}回`)),
   ];
+  // すでに投資している状態から始めた場合だけ、その起点（初期評価額・初期投資元本）を先頭に表示する
+  if (s.initialValuation > 0) {
+    grids.unshift(el('div', { class: 'fc-sec-grid' },
+      secBox('初期評価額', money(s.initialValuation)),
+      secBox('初期投資元本', money(s.initialPrincipal)),
+      secBox('開始時の評価損益', money(s.initialValuation - s.initialPrincipal))));
+  }
   // 資金不足の内訳（購入日時点で証券口座現金が不足する最初の予定）。仕様§5の各項目を表示する。
   // 必要な追加入金額は、重複した実際の振替額を含めず、このプランのみの最大不足額(requiredExtra)で計算する。
   const sf = (res.shortfalls || [])[0] || null;
@@ -3013,7 +3030,7 @@ function idealResultCard(plan, res, secret) {
     !sf ? '' : el('div', { class: 'fc-kv' },
       kv('未実行となった回数', `${s.missCount.toLocaleString('ja-JP')}回`),
       kv('未実行となった累計額', money(s.cumMissed))),
-    el('p', { class: 'fc-note', text: '証券口座現金＝開始時の証券口座現金＋シミュレーション専用の入金−NISA購入−個別株購入。同じ日は「入金 → NISA積立 → 個別株購入」の順に日付順で処理します。実際の残高・固定振替・積立設定は途中で加算しません。' }),
+    el('p', { class: 'fc-note', text: '証券口座現金＝開始時の証券口座現金＋シミュレーション専用の入金−NISA購入−個別株購入。同じ日は「入金 → NISA積立 → 個別株購入」の順に日付順で処理します。元本・評価額は初期投資元本・初期評価額を起点に、購入ぶんを積み上げて計算します。実際の残高・固定振替・積立設定は途中で加算しません。' }),
   );
 }
 
@@ -3325,7 +3342,8 @@ function idealPlanDetail(pl) {
   const body = el('div', {},
     el('div', { class: 'fc-kv' },
       kv('保有期間', `${pl.plan.years}年`), kv('想定年利', `年${(Number(pl.plan.annualReturn) || 0).toFixed(1)}%`),
-      kv('初期証券口座現金', money(pl.plan.initialSecCash)), kv('入金設定', `${(pl.plan.deposits || []).length}件`),
+      kv('初期証券口座現金', money(pl.plan.initialSecCash)), kv('初期評価額', money(s.initialValuation)),
+      kv('入金設定', `${(pl.plan.deposits || []).length}件`),
       kv('投資設定', `${(pl.plan.investments || []).length}件`), kv('将来評価額', money(s.valuation)),
       kv('現金不足時の処理', pl.plan.shortageMode === 'continue' ? '不足を無視して継続' : '厳密に再現'), kv('保存日', fmtDateLong(pl.savedAt))),
     el('button', { class: 'fc-btn primary block', type: 'button', text: 'このプランを編集用に読み込む', onclick: () => {
