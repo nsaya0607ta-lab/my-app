@@ -25,10 +25,38 @@ type PdfPageProxy = {
 
 type PdfJsModule = {
   GlobalWorkerOptions: { workerSrc: string };
-  getDocument: (options: { data: ArrayBuffer; disableAutoFetch?: boolean }) => {
+  getDocument: (options: {
+    data: ArrayBuffer;
+    disableAutoFetch?: boolean;
+    cMapUrl?: string;
+    cMapPacked?: boolean;
+    standardFontDataUrl?: string;
+    wasmUrl?: string;
+    iccUrl?: string;
+  }) => {
     promise: Promise<PdfDocumentProxy>;
   };
 };
+
+/**
+ * pdf.js が実行時に fetch する外部データの置き場所。
+ * scripts/prepare-assets.mjs が public/pdfjs/ 配下へコピーする。
+ * 末尾のスラッシュは pdf.js の必須要件 (無いと例外になる)。
+ */
+const PDFJS_ASSET_BASE = '/pdfjs/';
+
+/**
+ * CMap と標準フォントを渡さないと、日本語 PDF でよく使われる
+ * 定義済み CMap (UniJIS-UCS2-H など) や非埋め込みフォントを解決できず、
+ * 文字がまったく描画されない (罫線だけの PDF に見える)。
+ */
+const ASSET_OPTIONS = {
+  cMapUrl: `${PDFJS_ASSET_BASE}cmaps/`,
+  cMapPacked: true,
+  standardFontDataUrl: `${PDFJS_ASSET_BASE}standard_fonts/`,
+  wasmUrl: `${PDFJS_ASSET_BASE}wasm/`,
+  iccUrl: `${PDFJS_ASSET_BASE}iccs/`,
+} as const;
 
 let modulePromise: Promise<PdfJsModule> | null = null;
 
@@ -48,7 +76,7 @@ export async function openDocument(blob: Blob): Promise<PdfDocumentProxy> {
   try {
     const pdfjs = await loadPdfJs();
     const data = await blob.arrayBuffer();
-    return await pdfjs.getDocument({ data }).promise;
+    return await pdfjs.getDocument({ data, ...ASSET_OPTIONS }).promise;
   } catch (error) {
     if (error instanceof AppError) throw error;
     throw new AppError('PDF_READ_FAILED', error instanceof Error ? error.message : undefined);

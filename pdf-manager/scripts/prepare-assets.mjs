@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 /**
  * ビルド前に実行される資材生成スクリプト。
- *  1. pdf.js の worker を public/ へコピーする
+ *  1. pdf.js の worker と外部データ (CMap / 標準フォント ほか) を public/ へコピーする
  *  2. アプリアイコン (PNG) を生成する
  *  3. iOS 用スプラッシュ画像を生成する
  * 生成物はリポジトリに含めず、ビルドのたびに作り直す。
@@ -20,14 +20,42 @@ const FOLDER_DARK = [201, 143, 13, 255];
 const PAPER = [255, 255, 255, 255];
 const PDF_RED = [200, 52, 43, 255];
 
+const pdfjsDir = path.join(root, 'node_modules', 'pdfjs-dist');
+
 function copyPdfWorker() {
-  const src = path.join(root, 'node_modules', 'pdfjs-dist', 'legacy', 'build', 'pdf.worker.min.mjs');
+  const src = path.join(pdfjsDir, 'legacy', 'build', 'pdf.worker.min.mjs');
   if (!fs.existsSync(src)) {
     console.warn('[prepare-assets] pdf.worker.min.mjs が見つかりません。npm install を実行してください。');
     return;
   }
   fs.copyFileSync(src, path.join(publicDir, 'pdf.worker.min.mjs'));
   console.log('[prepare-assets] pdf.worker.min.mjs をコピーしました');
+}
+
+/**
+ * pdf.js が実行時に fetch する外部データを配信できるようにコピーする。
+ * これが無いと日本語 PDF (定義済み CMap を使う CID フォント) の文字が
+ * 描画されず、罫線などの図形だけが表示される。
+ * コピー先は src/lib/pdf.ts の PDFJS_ASSET_BASE と対応させること。
+ */
+function copyPdfAssets() {
+  const targets = [
+    ['cmaps', 'cmaps'], // 定義済み CMap (UniJIS-UCS2-H など)
+    ['standard_fonts', 'standard_fonts'], // 非埋め込みの標準 14 フォント
+    ['wasm', 'wasm'], // JPEG2000 / JBIG2 画像デコーダー
+    ['iccs', 'iccs'], // ICC カラープロファイル
+  ];
+  for (const [from, to] of targets) {
+    const src = path.join(pdfjsDir, from);
+    if (!fs.existsSync(src)) {
+      console.warn(`[prepare-assets] pdfjs-dist/${from} が見つかりません。npm install を実行してください。`);
+      continue;
+    }
+    const dest = path.join(publicDir, 'pdfjs', to);
+    fs.rmSync(dest, { recursive: true, force: true });
+    fs.cpSync(src, dest, { recursive: true });
+  }
+  console.log('[prepare-assets] pdf.js の外部データ (CMap/フォント ほか) をコピーしました');
 }
 
 /** ロゴ (フォルダー + PDF 用紙) を 0..1 の相対座標で描く。 */
@@ -152,5 +180,6 @@ function buildSplash() {
 
 fs.mkdirSync(publicDir, { recursive: true });
 copyPdfWorker();
+copyPdfAssets();
 buildIcons();
 buildSplash();
