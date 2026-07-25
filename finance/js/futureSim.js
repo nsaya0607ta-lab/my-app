@@ -4,14 +4,14 @@
 // 証券口座の現金・元本・評価額（インデックス／個別株）を月次で前進させて一元的な将来資産を計算する。
 // ダミー値・外部APIは使わず、登録済みデータ（口座・保有銘柄・積立設定・購入予定・futureSim設定）のみから計算する。
 
-import { pad, toISO, parseISO, addMonths, daysInMonth, resolveDay } from './utils.js?v=20260725a';
-import { jstTodayISO } from './recurrence.js?v=20260725a';
-import { buildEvents } from './cashflow.js?v=20260725a';
+import { pad, toISO, parseISO, addMonths, daysInMonth, resolveDay } from './utils.js?v=20260725b';
+import { jstTodayISO } from './recurrence.js?v=20260725b';
+import { buildEvents } from './cashflow.js?v=20260725b';
 import {
   isSecurities, securitiesAccounts, accountHoldings, isIndex, contributionForDate,
-  holdingCost, holdingValue,
-} from './securities.js?v=20260725a';
-import { SCENARIO_RATES } from './store.js?v=20260725a';
+  holdingCost, holdingValue, accountWithdrawable,
+} from './securities.js?v=20260725b';
+import { SCENARIO_RATES } from './store.js?v=20260725b';
 
 const n = (v) => Number(v) || 0;
 
@@ -49,11 +49,13 @@ export function validMonthlyBrokerageDeposits(state) {
 
 // ===== 内部ヘルパー =====
 
-// 証券口座以外(現金・銀行・その他)の残高合計と、証券口座の現金合計
+// 証券口座以外(現金・銀行・その他)の残高合計と、証券口座の現金合計。
+// 証券口座は預り金ではなく出金余力（預り金−決済待ち）を使う。決済待ちの買付代金は
+// すでに保有銘柄の評価額へ反映済みで、これから預り金が減るだけのため二重計上になる。
 function initialCash(state) {
   let bank = 0, sec = 0;
   for (const a of state.accounts) {
-    if (isSecurities(a)) sec += n(a.cash);
+    if (isSecurities(a)) sec += accountWithdrawable(a);
     else bank += n(a.balance);
   }
   return { bank, sec };

@@ -1,18 +1,19 @@
 // app.js — ルーティング・画面描画・フォーム・操作の統合レイヤー
-import * as S from './store.js?v=20260725a';
-import * as C from './calc.js?v=20260725a';
-import * as CF from './cashflow.js?v=20260725a';
-import * as Sec from './securities.js?v=20260725a';
-import * as FS from './futureSim.js?v=20260725a';
-import * as IS from './idealSim.js?v=20260725a';
-import * as Perf from './performance.js?v=20260725a';
-import { lineChart, barChart, groupedBarChart, donutChart, multiLineChart, fanChart, perfChart, perfDeltaChart } from './charts.js?v=20260725a';
-import { iconHtml, icon } from './icons.js?v=20260725a';
+import * as S from './store.js?v=20260725b';
+import * as C from './calc.js?v=20260725b';
+import * as CF from './cashflow.js?v=20260725b';
+import * as Sec from './securities.js?v=20260725b';
+import * as FS from './futureSim.js?v=20260725b';
+import * as IS from './idealSim.js?v=20260725b';
+import * as Perf from './performance.js?v=20260725b';
+import { lineChart, barChart, groupedBarChart, donutChart, multiLineChart, fanChart, perfChart, perfDeltaChart } from './charts.js?v=20260725b';
+import { iconHtml, icon } from './icons.js?v=20260725b';
 import {
   el, qs, qsa, yen, yenMasked, num, today, toISO, parseISO, ym, fmtDate, fmtDateLong,
   fmtMonth, addMonths, resolveDay, pad, weekdayName, haptic, escapeHtml, uid,
-} from './utils.js?v=20260725a';
-import { nextRecurringDate, nextSettlementDate, isMonthEndDay } from './recurrence.js?v=20260725a';
+} from './utils.js?v=20260725b';
+import { nextRecurringDate, nextSettlementDate, isMonthEndDay } from './recurrence.js?v=20260725b';
+import * as H from './holidays.js?v=20260725b';
 
 // ---- 画面ローカル状態（データではないUI状態） ----
 const ui = {
@@ -701,6 +702,13 @@ function renderAccounts() {
 }
 
 
+// 受渡日数の入力値を 0〜10 営業日へ丸める（未入力は既定の2営業日）。
+function settleDaysValue(inp) {
+  const v = Number(inp.value);
+  if (!Number.isFinite(v) || inp.value === '') return Sec.SETTLE_BUSINESS_DAYS;
+  return Math.min(10, Math.max(0, Math.round(v)));
+}
+
 function accountForm(acc) {
   const isNew = !acc;
   const name = inputEl({ placeholder: '例）三菱UFJ', value: acc?.name || '' });
@@ -710,8 +718,10 @@ function accountForm(acc) {
   ], acc?.type || 'bank');
   // 円入力は3桁区切り表示に統一。残高はマイナス（当座借越等）も許可する。
   const bal = amountInput(acc?.balance, { allowNegative: true });
-  // 証券口座は「残高」ではなく 現金 を管理（元本＝取得額合計、評価額は保有銘柄から自動計算）
+  // 証券口座は「残高」ではなく 預り金 を管理（元本＝取得額合計、評価額は保有銘柄から自動計算）
   const cash = amountInput(acc?.cash);
+  // 受渡日数（営業日）。米国株・米国指数の積立は通常2営業日後に預り金へ正式反映される。
+  const settleDays = inputEl({ type: 'number', inputmode: 'numeric', min: '0', max: '10', placeholder: '2', value: acc ? Sec.accountSettleDays(acc) : Sec.SETTLE_BUSINESS_DAYS });
   let include = acc ? acc.includeInDisposable !== false : (acc?.type !== 'securities');
 
   // 種別に応じて金額入力欄を切り替える
@@ -719,9 +729,14 @@ function accountForm(acc) {
   const drawAmount = () => {
     amountWrap.innerHTML = '';
     if (type.value === 'securities') {
+      const pending = acc ? Sec.accountPendingTotal(acc) : 0;
       amountWrap.append(
-        field('現金（未投資・円）', cash),
-        el('p', { class: 'fc-field-hint', text: '元本（取得額）と評価額は、登録した保有銘柄から自動計算されます。銀行→証券の振替は現金へ入金されます。' }));
+        field('預り金（円）', cash),
+        el('p', { class: 'fc-field-hint', text: '証券口座に表示されている現金残高を入力します。約定済みで受渡前の買付代金（決済待ち）はまだ引かれていない金額です。' }),
+        acc ? el('p', { class: 'fc-field-hint', text: `現在の決済待ち ${yen(pending)} ／ 出金余力 ${yen(Sec.accountDeposit(acc) - pending)}（決済待ちは口座画面の「決済待ち」から追加・修正できます）` }) : '',
+        field('受渡日数（営業日）', settleDays),
+        el('p', { class: 'fc-field-hint', text: '買付から預り金へ正式反映されるまでの営業日数です（米国株の積立は通常2営業日後）。日本・米国の祝日は日数に数えず、次の営業日へずれます。' }),
+        el('p', { class: 'fc-field-hint', text: '元本（取得額）と評価額は、登録した保有銘柄から自動計算されます。銀行→証券の振替は預り金へ入金されます。' }));
     } else {
       amountWrap.append(field('残高（円）', bal));
     }
@@ -751,7 +766,10 @@ function accountForm(acc) {
         if (isNew) {
           const rec = { id: uid('acc'), name: name.value.trim(), type: type.value, includeInDisposable: include };
           if (isSec) {
-            Object.assign(rec, { cash: amountValue(cash), holdings: [], accumulations: [], accumHistory: [], purchases: [], lastAccumDate: null, balance: 0 });
+            Object.assign(rec, {
+              cash: amountValue(cash), holdings: [], accumulations: [], accumHistory: [], purchases: [],
+              pending: [], settlements: [], settleDays: settleDaysValue(settleDays), lastAccumDate: null, balance: 0,
+            });
             Sec.recomputeAccount(rec);
           } else rec.balance = amountValue(bal);
           s.accounts.push(rec);
@@ -761,6 +779,8 @@ function accountForm(acc) {
           if (isSec) {
             a.cash = amountValue(cash);
             a.holdings ||= []; a.accumulations ||= []; a.accumHistory ||= []; a.purchases ||= [];
+            a.pending ||= []; a.settlements ||= [];
+            a.settleDays = settleDaysValue(settleDays);
             Sec.recomputeAccount(a);
           } else a.balance = amountValue(bal);
         }
@@ -924,7 +944,9 @@ function renderTransactions() {
 // ============ 証券口座パネル（資産内訳・保有割合・保有銘柄・積立・購入） ============
 function renderSecuritiesPanel(wrap, st, acc) {
   const secret = st.settings.secret;
-  const cash = Sec.accountCash(acc);
+  const deposit = Sec.accountDeposit(acc);          // 預り金＝証券口座に表示されている現金残高
+  const pending = Sec.accountPendingTotal(acc);     // 決済待ち＝受渡前の買付代金
+  const withdrawable = Sec.accountWithdrawable(acc); // 出金余力＝預り金−決済待ち
   const principal = Sec.accountCost(acc); // 元本＝取得額の合計（保有銘柄から自動計算）
   const kind = Sec.accountValuationByKind(acc);
   const valuation = kind.index + kind.stock;
@@ -934,10 +956,17 @@ function renderSecuritiesPanel(wrap, st, acc) {
   const money = (v, opts) => (secret ? '＊＊＊' : yen(v, opts));
 
   // --- 資産内訳 ---
+  // 現金は「預り金／出金余力／決済待ち」を分けて表示する。
+  // 購入・約定した時点で代金は決済待ちへ入り、出金余力から先に減る（預り金は受渡日に減る）。
   const breakdown = card(
     sectionTitle('資産内訳'),
     el('div', { class: 'fc-sec-grid' },
-      secBox('現金', money(cash)),
+      secBox('預り金', money(deposit)),
+      secBox('出金余力', money(withdrawable)),
+      secBox('決済待ち', money(pending)),
+    ),
+    el('p', { class: 'fc-field-hint', text: '預り金は証券口座に表示されている現金残高、出金余力はそのうち今すぐ銀行へ出金できる金額です。約定した買付代金は受渡日まで決済待ちとなり、出金できません。' }),
+    el('div', { class: 'fc-sec-grid' },
       secBox('元本', money(principal)),
       secBox('評価額', money(valuation)),
     ),
@@ -956,12 +985,13 @@ function renderSecuritiesPanel(wrap, st, acc) {
   wrap.append(breakdown);
 
   // --- 保有割合（インデックス / 個別株 / 現金） ---
-  const base = kind.index + kind.stock + cash;
+  // 現金は出金余力を使う。決済待ちの代金はすでに保有銘柄の評価額へ含まれているため二重に数えない。
+  const base = kind.index + kind.stock + withdrawable;
   const seg = (v) => (base > 0 ? (v / base) * 100 : 0);
   const parts = [
     { label: 'インデックス', value: kind.index, pct: seg(kind.index), color: 'var(--fc-accent)' },
     { label: '個別株', value: kind.stock, pct: seg(kind.stock), color: '#bf5af2' },
-    { label: '現金', value: cash, pct: seg(cash), color: '#98a2b3' },
+    { label: '現金（出金余力）', value: withdrawable, pct: seg(withdrawable), color: '#98a2b3' },
   ];
   wrap.append(card(
     sectionTitle('保有割合'),
@@ -997,8 +1027,115 @@ function renderSecuritiesPanel(wrap, st, acc) {
   );
   wrap.append(holdingsCard);
 
+  // --- 決済待ち（受渡前の買付代金） ---
+  wrap.append(pendingCard(st, acc));
+
   // --- 積立設定・履歴 ---
   wrap.append(accumulationCard(st, acc));
+}
+
+// 決済待ち一覧。約定日・受渡予定日・金額を表示し、行タップで受渡日の変更・即時反映・取消ができる。
+function pendingCard(st, acc) {
+  const secret = st.settings.secret;
+  const money = (v) => (secret ? '＊＊＊' : yen(v));
+  const pendings = Sec.accountPendings(acc).slice().sort((a, b) => (a.settleDate || '').localeCompare(b.settleDate || ''));
+  const total = Sec.accountPendingTotal(acc);
+  const settled = (acc.settlements || []).slice().sort((a, b) => (b.settledOn || '').localeCompare(a.settledOn || '')).slice(0, 8);
+  const d = (iso) => (iso ? fmtDate(iso).replace(/\(.\)/, '') : '—');
+
+  const rows = pendings.length ? el('div', { class: 'fc-list' }, ...pendings.map((p) =>
+    el('div', { class: 'fc-row tap', onclick: () => pendingForm(acc, p) },
+      el('div', { class: 'fc-row-ic', html: iconHtml('clock', { size: 18 }) }),
+      el('div', { class: 'fc-row-main' },
+        el('div', { class: 'fc-row-title' }, el('span', { text: p.holdingName || '買付' })),
+        el('div', { class: 'fc-row-sub', text: `約定 ${d(p.tradeDate)} → 受渡 ${d(p.settleDate)}` })),
+      el('span', { class: 'fc-row-amt', text: money(p.amount) })))
+  ) : el('p', { class: 'fc-empty', text: '受渡待ちの買付はありません（預り金＝出金余力）。' });
+
+  const settledRows = settled.length ? el('div', { class: 'fc-list' }, ...settled.map((p) =>
+    el('div', { class: 'fc-row' },
+      el('div', { class: 'fc-row-main' },
+        el('div', { class: 'fc-row-title' }, el('span', { text: p.holdingName || '買付' })),
+        el('div', { class: 'fc-row-sub', text: `約定 ${d(p.tradeDate)}・${money(p.amount)}` })),
+      el('span', { class: 'fc-accum-result ok', text: `${d(p.settledOn)} 反映済` })))
+  ) : '';
+
+  return card(
+    sectionTitle('決済待ち', el('button', { class: 'fc-link', type: 'button', onclick: () => pendingForm(acc) }, el('span', { class: 'fc-add-ic sm', html: iconHtml('plus', { size: 14 }) }), el('span', { text: '追加' }))),
+    el('div', { class: 'fc-sec-grid' },
+      secBox('決済待ち合計', money(total)),
+      secBox('出金余力', money(Sec.accountWithdrawable(acc)))),
+    rows,
+    el('p', { class: 'fc-field-hint', text: `受渡日の日本時間${Sec.SETTLE_HOUR_JST}時ごろに預り金から正式に引かれます。日本・米国の祝日は受渡日から除かれ、次の営業日へずれます。` }),
+    settledRows ? el('div', { class: 'fc-accum-histhead', text: '受渡済み' }) : '',
+    settledRows,
+  );
+}
+
+// 決済待ちの追加・編集（銘柄名・金額・約定日・受渡予定日）。実際の証券口座に合わせて調整できる。
+function pendingForm(acc, p) {
+  const isNew = !p;
+  const name = inputEl({ placeholder: '例）S&P500', value: p?.holdingName || '' });
+  const amount = amountInput(p?.amount);
+  const tradeDate = inputEl({ type: 'date', value: p?.tradeDate || today() });
+  const settleDate = inputEl({ type: 'date', value: p?.settleDate || Sec.settleDateFor(acc, today()) });
+  const note = el('p', { class: 'fc-field-hint' });
+  // 約定日を変えたら受渡予定日を自動で追従（手で直した場合はその値を尊重する）。
+  let settleTouched = false;
+  settleDate.addEventListener('input', () => { settleTouched = true; drawNote(); });
+  const drawNote = () => {
+    const shifts = H.tradeSettlementShiftNote(tradeDate.value, settleDate.value);
+    note.textContent = `約定日から${Sec.accountSettleDays(acc)}営業日後が受渡予定日です。`
+      + (shifts.length ? `期間中の休場日: ${shifts.join('、')}` : '');
+  };
+  tradeDate.addEventListener('change', () => {
+    if (!settleTouched) settleDate.value = Sec.settleDateFor(acc, tradeDate.value);
+    drawNote();
+  });
+  drawNote();
+
+  const body = el('div', {},
+    field('銘柄・内容', name), field('金額（円）', amount),
+    field('約定日', tradeDate), field('受渡予定日', settleDate), note,
+    el('p', { class: 'fc-field-hint', text: '決済待ちは預り金からはまだ引かれていない買付代金です。出金余力からは差し引かれ、受渡日に預り金へ正式反映されます。' }),
+    !isNew && el('button', {
+      class: 'fc-btn block', type: 'button', text: '今すぐ預り金へ反映する',
+      onclick: () => {
+        S.update((s) => { Sec.settlePendingNow(s, acc.id, p.id); S.recordAssetSnapshot(s); });
+        render(); toast('預り金へ反映しました', 'check'); closeAllModals();
+      },
+    }),
+    !isNew && el('button', {
+      class: 'fc-btn danger block', type: 'button', text: 'この決済待ちを取り消す',
+      onclick: () => confirmDialog('決済待ちを取り消す', '預り金は変えずに、この決済待ちだけを削除しますか？', () => {
+        S.update((s) => { Sec.removePending(s, acc.id, p.id); S.recordAssetSnapshot(s); });
+        render(); toast('取り消しました', 'trash'); closeAllModals();
+      }),
+    }),
+  );
+  modal(isNew ? '決済待ちを追加' : '決済待ちを編集', body, {
+    onSave: (close) => {
+      const amt = amountValue(amount);
+      if (amt <= 0) return toast('金額を入力してください', 'alert');
+      if (!tradeDate.value || !settleDate.value) return toast('約定日と受渡予定日を入力してください', 'alert');
+      S.update((s) => {
+        const a = s.accounts.find((x) => x.id === acc.id);
+        if (isNew) {
+          Sec.addPending(a, {
+            kind: 'stock', holdingId: null, holdingName: name.value.trim() || '買付',
+            amount: amt, tradeDate: tradeDate.value,
+          });
+          a.pending[a.pending.length - 1].settleDate = settleDate.value;
+        } else {
+          const rec = (a.pending || []).find((x) => x.id === p.id);
+          if (rec) Object.assign(rec, { holdingName: name.value.trim() || '買付', amount: amt, tradeDate: tradeDate.value, settleDate: settleDate.value });
+        }
+        Sec.recomputeAccount(a);
+        S.recordAssetSnapshot(s);
+      });
+      render(); toast('保存しました'); close();
+    },
+  });
 }
 
 function secBox(label, val) {
@@ -1080,6 +1217,7 @@ function accumulationCard(st, acc) {
         el('div', { class: 'fc-row-sub', text: `${holInfo}${paused ? '・一時停止中' : ''}` })),
       el('span', { class: 'fc-accum-state ' + (a.enabled !== false && !paused ? 'on' : 'off'), text: a.enabled !== false ? (paused ? '停止中' : 'ON') : 'OFF' }));
   })) : el('p', { class: 'fc-empty', text: 'インデックスの積立を登録できます（日本時間23:00に自動実行）。' });
+  const settleNote = el('p', { class: 'fc-field-hint', text: `積立の代金は約定日には預り金から引かれず、${Sec.accountSettleDays(acc)}営業日後の受渡日（日本時間${Sec.SETTLE_HOUR_JST}時ごろ）に正式反映されます。それまでは「決済待ち」として出金余力から差し引かれます。` });
 
   const histRows = history.length ? el('div', { class: 'fc-list' }, ...history.map((h) =>
     el('div', { class: 'fc-row' },
@@ -1087,13 +1225,14 @@ function accumulationCard(st, acc) {
         el('div', { class: 'fc-row-title' },
           el('span', { text: h.holdingName || '積立' }),
           frameOf(h.holdingId) ? el('span', { class: 'fc-frame-tag', text: frameOf(h.holdingId) }) : ''),
-        el('div', { class: 'fc-row-sub', text: `${fmtDate(h.date).replace(/\(.\)/, '')}・${yen(h.amount)}` })),
+        el('div', { class: 'fc-row-sub', text: `${fmtDate(h.date).replace(/\(.\)/, '')}・${yen(h.amount)}${h.settleDate ? `・受渡 ${fmtDate(h.settleDate).replace(/\(.\)/, '')}` : ''}` })),
       el('span', { class: 'fc-accum-result ' + (h.status === 'success' ? 'ok' : 'ng'), text: h.status === 'success' ? '成功' : `失敗${h.reason ? '（' + h.reason + '）' : ''}` })))
   ) : el('p', { class: 'fc-empty', text: 'まだ積立履歴はありません' });
 
   return card(
     sectionTitle('インデックス積立', el('button', { class: 'fc-link', type: 'button', onclick: () => accumulationForm(acc) }, el('span', { class: 'fc-add-ic sm', html: iconHtml('plus', { size: 14 }) }), el('span', { text: '追加' }))),
     setRows,
+    settleNote,
     el('div', { class: 'fc-accum-histhead', text: '積立履歴' }),
     histRows,
   );
@@ -1210,16 +1349,25 @@ function purchaseForm(acc) {
   const fx = inputEl({ type: 'number', inputmode: 'decimal', placeholder: '例）157.5', value: stocks[0]?.fxRate || '' });
   const date = inputEl({ type: 'date', value: today() });
   const preview = el('p', { class: 'fc-field-hint' });
+  const settleNote = el('p', { class: 'fc-field-hint' });
   const upd = () => {
     const amt = Math.round((Number(shares.value) || 0) * (Number(price.value) || 0) * (Number(fx.value) || 0));
-    preview.textContent = `購入金額 ${yen(amt)}（${num(Number(shares.value) || 0)}株 × $${num(Number(price.value) || 0)} × ${num(Number(fx.value) || 0)}）／購入後の現金 ${yen(Sec.accountCash(acc) - amt)}`;
+    const avail = Sec.accountWithdrawable(acc);
+    preview.textContent = `購入金額 ${yen(amt)}（${num(Number(shares.value) || 0)}株 × $${num(Number(price.value) || 0)} × ${num(Number(fx.value) || 0)}）`
+      + `／購入直後の出金余力 ${yen(avail - amt)}・決済待ち ${yen(Sec.accountPendingTotal(acc) + amt)}（預り金 ${yen(Sec.accountDeposit(acc))} は受渡日まで変わりません）`;
+    // 受渡予定日（日本・米国の休場日を除いた営業日で計算）
+    const settle = Sec.settleDateFor(acc, date.value || today());
+    const shifts = H.tradeSettlementShiftNote(date.value || today(), settle);
+    settleNote.textContent = `受渡予定日 ${fmtDateLong(settle)}（日本時間${Sec.SETTLE_HOUR_JST}時ごろに預り金へ正式反映）`
+      + (shifts.length ? `／期間中の休場日: ${shifts.join('、')}` : '');
   };
   // 選択銘柄が変わったらドル円の初期値を追従
   sel.addEventListener('change', () => { const h = stocks.find((x) => x.id === sel.value); if (h && !fx.value) fx.value = h.fxRate || ''; upd(); });
-  shares.addEventListener('input', upd); price.addEventListener('input', upd); fx.addEventListener('input', upd); upd();
+  shares.addEventListener('input', upd); price.addEventListener('input', upd); fx.addEventListener('input', upd);
+  date.addEventListener('change', upd); upd();
   const body = el('div', {},
-    field('銘柄', sel), field('購入株数', shares), field('購入価格（USD）', price), field('ドル円レート（USD/JPY）', fx), field('購入日', date), preview,
-    el('p', { class: 'fc-field-hint', text: '購入すると証券口座の現金が減り、購入金額が元本（取得額）へ反映されます。現金が不足している場合は購入できません。' }));
+    field('銘柄', sel), field('購入株数', shares), field('購入価格（USD）', price), field('ドル円レート（USD/JPY）', fx), field('購入日（約定日）', date), preview, settleNote,
+    el('p', { class: 'fc-field-hint', text: '約定した時点では預り金はまだ減りませんが、代金は使用予定のため出金余力から差し引かれ「決済待ち」になります。受渡日に預り金へ正式反映されます。出金余力が不足している場合は購入できません。' }));
   modal('個別株を購入', body, {
     saveLabel: '購入する',
     onSave: (close) => {
@@ -1229,10 +1377,10 @@ function purchaseForm(acc) {
       let result;
       S.update((s) => { result = Sec.purchaseStock(s, acc.id, sel.value, sh, pr, rate, date.value); if (result.ok) S.recordAssetSnapshot(s); });
       if (!result.ok) {
-        if (result.reason === 'cash') return toast(`現金が不足しています（購入額 ${yen(result.amount)}）`, 'alert');
+        if (result.reason === 'cash') return toast(`出金余力が不足しています（購入額 ${yen(result.amount)}／出金余力 ${yen(result.available)}）`, 'alert');
         return toast('購入できませんでした', 'alert');
       }
-      render(); toast('購入しました', 'coins'); close();
+      render(); toast(`購入しました（受渡 ${fmtDate(result.settleDate).replace(/\(.\)/, '')}）`, 'coins'); close();
     },
   });
 }
@@ -1583,6 +1731,11 @@ function txForm(tx, initialType, defaultAccountId) {
       if (type === 'transfer') {
         if (st.accounts.length < 2) return toast('口座を2つ以上登録してください', 'alert');
         if (!fromSel.value || !toSel.value || fromSel.value === toSel.value) return toast('振替元と振替先を別々に選んでください', 'alert');
+        // 証券口座からの出金は出金余力（預り金−決済待ち）が上限。決済待ちの代金は出金できない。
+        const fromAcc = S.findAccount(fromSel.value);
+        if (Sec.isSecurities(fromAcc) && amt > Sec.accountWithdrawable(fromAcc)) {
+          return toast(`出金余力が不足しています（出金余力 ${yen(Sec.accountWithdrawable(fromAcc))}／決済待ち ${yen(Sec.accountPendingTotal(fromAcc))}）`, 'alert');
+        }
         S.update((s) => {
           s.transfers.push({ id: uid('tr'), date: date.value, fromAccountId: fromSel.value, toAccountId: toSel.value, amount: amt, memo: memo.value.trim() });
           applyTransfer(s, fromSel.value, toSel.value, amt);
@@ -2349,12 +2502,13 @@ function perfHistoryEditForm(state, rec) {
   const nisaPri = amountInput(rec.nisaPrincipal);   // NISA元本（円）
   const stockVal = amountInput(rec.stockValue);     // 個別株評価額（円）
   const stockPri = amountInput(rec.stockPrincipal); // 個別株元本（円）
-  const secCash = amountInput(rec.secCash);         // 証券口座現金（円）
+  const secCash = amountInput(rec.secCash);         // 証券口座の出金余力（円）
   const body = el('div', {},
     el('p', { class: 'fc-field-hint', text: `${fmtDateLong(rec.date)} の実績を修正します。元本・評価額を直すと損益・利益率とグラフが再計算されます。` }),
     field('NISA評価額（円）', nisaVal), field('NISA元本（円）', nisaPri),
     field('個別株評価額（円）', stockVal), field('個別株元本（円）', stockPri),
-    field('証券口座現金（円）', secCash),
+    field('証券口座現金・出金余力（円）', secCash),
+    el('p', { class: 'fc-field-hint', text: '決済待ちの買付代金は保有銘柄の評価額側に含まれるため、ここは預り金ではなく出金余力（預り金−決済待ち）を記録します。' }),
     el('button', {
       class: 'fc-btn danger block', type: 'button', text: 'この履歴を削除',
       onclick: () => confirmDialog('履歴を削除', `${fmtDateLong(rec.date)} の実績履歴を削除しますか？この操作は元に戻せません。`, () => {
@@ -4399,14 +4553,17 @@ function buildNav() {
 export function init() {
   applyTheme();
   // 起動時: カード払いの固定支出を実カード利用に具体化 → 引落日を過ぎた分を確定（銀行減額）。
-  // あわせて、日本時間23:00の積立処理を前回処理日から追いかけて実行（キャッチアップ）。
+  // あわせて、日本時間23:00の積立処理を前回処理日から追いかけて実行（キャッチアップ）し、
+  // そのあとに受渡日（日本時間10時ごろ）を過ぎた決済待ちを預り金へ正式反映する。
+  // 順序が重要: 先に積立で決済待ちを積み、そのうち受渡日を過ぎたものを同じ起動で反映する。
   S.update((s) => {
     S.materializeRecurringCardUsage(s);
     const changed = S.settleDueCards(s);
     const accrued = Sec.runAccumulations(s);
+    const settled = Sec.runSettlements(s);
     Sec.recomputeAll(s);
     S.computeRecurringSchedule(s); // 次回実行予定日・次回引落予定日を最新化（日付が進んでも正しく表示）
-    if (changed || accrued) S.recordAssetSnapshot(s);
+    if (changed || accrued || settled) S.recordAssetSnapshot(s);
     // 起動時に当日の投資実績スナップショットを記録（証券口座があれば。同日は上書き）。
     // これで毎日の推移が残り、積立が実行された日も履歴・グラフへ反映される。
     S.recordPerformanceSnapshot(s);

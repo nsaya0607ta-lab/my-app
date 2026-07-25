@@ -2,13 +2,16 @@
 // 設計方針: すべてのデータはこの1オブジェクトに集約し、mutate → save → emit。
 // 将来の証券口座連携などは accounts の type と外部同期モジュールを足すだけで拡張可能。
 
-import { uid, pad } from './utils.js?v=20260725a';
-import { settlementDate } from './calc.js?v=20260725a';
+import { uid, pad } from './utils.js?v=20260725b';
+import { settlementDate } from './calc.js?v=20260725b';
 import {
   recurringActiveOn, monthlyOccurrences, jstTodayISO, dedupeKey,
   nextRecurringDate, nextSettlementDate,
-} from './recurrence.js?v=20260725a';
-import { isSecurities, hasSecurities, recomputeAccount, performanceSnapshot, jstNowISO } from './securities.js?v=20260725a';
+} from './recurrence.js?v=20260725b';
+import {
+  isSecurities, hasSecurities, recomputeAccount, performanceSnapshot, jstNowISO,
+  SETTLE_BUSINESS_DAYS, addPending,
+} from './securities.js?v=20260725b';
 
 const KEY = 'finance_app_v2';
 const SCHEMA = 1;
@@ -219,6 +222,32 @@ function load() {
   }
 }
 
+// 登録済み金額の一度きりの補正（預り金・出金余力・決済待ちの分離にあわせた実残高への合わせ込み）。
+// 旧データの「現金」は決済待ちを区別していなかったため、実際の証券口座の表示に合わせて
+//   預り金 47,918円 / 出金余力 41,918円 / 決済待ち 6,000円
+// へ揃える。証券口座が1つのときだけ・1回だけ実行する（フラグで再実行を防ぐ）。
+// 決済待ちの受渡日は補正した日から2営業日後を仮置きするため、実際の受渡日と違う場合は
+// 「決済待ち」欄から受渡日の変更・即時反映ができる。
+// 注意: この関数は load() 経由でモジュール評価の最初期に呼ばれるため、
+// 定数はモジュール直下の const ではなく関数内に置く（初期化前アクセスを避ける）。
+function applySecuritiesBalanceFix(data) {
+  const FIX = { key: 'secBalanceFixV1', deposit: 47918, pending: 6000 };
+  if (data.settings[FIX.key]) return;
+  data.settings[FIX.key] = true;
+  const secs = (data.accounts || []).filter(isSecurities);
+  if (secs.length !== 1) return; // 対象が特定できない場合は何もしない
+  const a = secs[0];
+  a.cash = FIX.deposit;
+  a.pending = [];
+  if (FIX.pending > 0) {
+    addPending(a, {
+      kind: 'index', holdingId: null, holdingName: '受渡前の買付',
+      amount: FIX.pending, tradeDate: jstTodayISO(), memo: '登録金額の修正',
+    });
+  }
+  recomputeAccount(a);
+}
+
 function migrate(data) {
   // 将来のスキーマ変更に備えた入れ物。今は欠損フィールドの補完のみ。
   const today = todayISO();
@@ -284,11 +313,16 @@ function migrate(data) {
     // 既存の証券口座は balance を「現金」として引き継ぎ、元本0・銘柄なしから開始する
     // （データを失わせない）。ユーザーが銘柄・元本を登録すると再計算される。
     if (isSecurities(a)) {
-      if (a.cash === undefined) a.cash = Number(a.balance) || 0;
+      if (a.cash === undefined) a.cash = Number(a.balance) || 0; // 預り金（証券口座に表示されている現金残高）
       a.holdings ||= [];        // 保有銘柄（個別株=USD建て / インデックス=円建て。kindで判別）
       a.accumulations ||= [];   // 積立設定 [{id,holdingId,dailyAmount,startDate,endDate,enabled}]
       a.accumHistory ||= [];    // 積立履歴 [{id,date,holdingId,holdingName,amount,status,reason}]
       a.purchases ||= [];       // 個別株の購入履歴
+      // 決済待ち（約定済み・受渡前の買付代金）[{id,kind,holdingId,holdingName,amount,tradeDate,settleDate}]
+      a.pending ||= [];
+      a.settlements ||= [];     // 受渡済みの履歴 [{...pending, settledOn}]
+      // 受渡日数（営業日）。米国株・米国指数の積立は通常2営業日後に預り金へ正式反映される。
+      if (a.settleDays === undefined) a.settleDays = SETTLE_BUSINESS_DAYS;
       if (a.lastAccumDate === undefined) a.lastAccumDate = null;
       // 保有銘柄を新スキーマへ補完（旧: quantity/avgPrice/price → 新: 個別株USD / インデックス円）
       for (const h of a.holdings) {
@@ -324,9 +358,10 @@ function migrate(data) {
         // 非営業日の扱い: 'skip'（その日はスキップ）| 'carryover'（次の営業日に繰り越す）
         if (acm.nonBusinessDay === undefined) acm.nonBusinessDay = 'skip';
       }
-      recomputeAccount(a);      // balance = 現金 + 評価額 に同期
+      recomputeAccount(a);      // balance = 出金余力 + 評価額 に同期
     }
   }
+  applySecuritiesBalanceFix(data);
   // 固定支出の支払方法（'bank' | 'card'）。既定は銀行口座。作成日は既存分を今日として
   // 過去分の遡及生成を防ぐ（現在残高に既に反映済みとみなす）。
   for (const r of data.recurring) {
