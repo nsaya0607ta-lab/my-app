@@ -95,6 +95,8 @@ export type Settings = {
   dailyReportFolderId?: string;
   /** 取り込み済みレポートの ID (日付) 一覧。二重取り込みの防止に使う。 */
   importedReports: string[];
+  /** 端末内データをFirebaseへ自動バックアップするか。 */
+  cloudBackupEnabled: boolean;
 };
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -107,6 +109,7 @@ export const DEFAULT_SETTINGS: Settings = {
   schemaVersion: 1,
   dailyReportEnabled: false,
   importedReports: [],
+  cloudBackupEnabled: false,
 };
 
 /** 一覧に並べるための共通表現。 */
