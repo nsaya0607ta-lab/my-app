@@ -2730,6 +2730,31 @@ function idealBasicsCard(plan) {
   const principalInp = amountInput(plan.initialPrincipal);
   principalInp.addEventListener('change', () => updateSimPlan((p) => { p.initialPrincipal = amountValue(principalInp); }));
 
+  // 「保存して反映」ボタン。入力欄の change を待たず、その場の入力値をそのまま保存する。
+  // iPhoneではボタンをタップした際に先に入力欄の change → 再描画が走り click が失われることが
+  // あるため、pointerdown で先に保存する（「初期証券口座現金を保存して反映」と同じ挙動）。
+  // pointerdown と click の二重実行は直前の保存時刻で抑止する。
+  let lastValuationSaveAt = 0;
+  const saveInitialValuation = () => {
+    if (Date.now() - lastValuationSaveAt < 600) return;
+    lastValuationSaveAt = Date.now();
+    const valuation = amountValue(valuationInp);
+    const principal = amountValue(principalInp);
+    updateSimPlan((p) => {
+      p.initialValuation = valuation;
+      p.initialPrincipal = principal;
+      p.initialValuationSavedAt = new Date().toISOString();
+    });
+    const shown = S.getState().settings.secret ? '＊＊＊' : yen(valuation);
+    toast(`初期評価額 ${shown} を保存して反映しました`);
+  };
+  const valuationSaveBtn = el('button', { class: 'fc-btn primary block', type: 'button', text: '初期評価額を保存して反映' });
+  valuationSaveBtn.addEventListener('pointerdown', (e) => { e.preventDefault(); saveInitialValuation(); });
+  valuationSaveBtn.addEventListener('click', saveInitialValuation);
+  // キーボード操作（入力欄でEnter）でも保存する
+  for (const inp of [valuationInp, principalInp])
+    inp.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); saveInitialValuation(); } });
+
   const rateInp = inputEl({ type: 'number', inputmode: 'decimal', placeholder: '例）10', value: plan.annualReturn ?? '' });
   rateInp.addEventListener('change', () => updateSimPlan((p) => { p.annualReturn = Number(rateInp.value) || 0; }));
 
@@ -2760,6 +2785,8 @@ function idealBasicsCard(plan) {
     el('p', { class: 'fc-field-hint', text: 'すでにある程度投資している状態からシミュレーションしたい場合に、開始時点で保有している投資の評価額を入力します。0円なら投資ゼロから開始します。この評価額も開始日から想定年利で成長します。' }),
     field('初期投資元本（円・任意）', principalInp),
     el('p', { class: 'fc-field-hint', text: '初期評価額のうち、実際に投資した元本（取得金額）です。空欄（0円）のときは初期評価額と同額として扱い、開始時点の評価損益を0円にします。' }),
+    el('div', { style: 'margin:4px 0 18px' }, valuationSaveBtn,
+      el('p', { class: 'fc-field-hint', style: 'margin-top:8px', text: '入力後にこのボタンを押すと、初期評価額と初期投資元本を保存してシミュレーションへ反映します。次回起動後も保存した金額が開始時点の評価額として使われます。' })),
     field('想定年利（%）', rateInp),
     field('利回りの計算方式', modeSeg),
     field('保有期間', yearSeg),
