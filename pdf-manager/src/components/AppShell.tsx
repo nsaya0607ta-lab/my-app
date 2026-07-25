@@ -470,11 +470,11 @@ export function AppShell() {
     );
   }
 
-  // フローティングボタンはフォルダー内でのみ表示する（ホームは下部中央の「PDF追加」を使う）
-  const showFab = route.view === 'folder';
+  // 「＋」は下部中央の「PDF追加」ボタン 1 つに統一する。
+  // 右下のフローティングボタンは廃止（同じ機能のボタンが 2 つ見える状態を解消）。
 
   return (
-    <div className="min-h-[100dvh]">
+    <div className="min-h-[100dvh] overflow-x-hidden">
       <main
         className="mx-auto w-full max-w-3xl"
         style={{ paddingBottom: 'calc(var(--bottom-nav-height) + var(--safe-bottom) + 16px)' }}
@@ -494,19 +494,6 @@ export function AppShell() {
           event.target.value = '';
         }}
       />
-
-      {/* フローティングボタン */}
-      {showFab ? (
-        <button
-          type="button"
-          aria-label="追加メニューを開く"
-          onClick={() => setAddSheet(true)}
-          className="fixed right-4 z-30 flex h-14 w-14 items-center justify-center rounded-full bg-brand-500 text-white shadow-fab active:bg-brand-600"
-          style={{ bottom: 'calc(var(--bottom-nav-height) + var(--safe-bottom) + 16px)' }}
-        >
-          <Plus size={26} />
-        </button>
-      ) : null}
 
       <BottomNav
         current={route.view}

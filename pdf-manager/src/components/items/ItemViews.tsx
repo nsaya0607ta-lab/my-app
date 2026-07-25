@@ -84,7 +84,11 @@ export function ListRow({
   const favorite = item.kind === 'folder' ? item.folder.isFavorite : item.file.isFavorite;
 
   return (
-    <div className="flex items-stretch border-b divider last:border-b-0">
+    // 行全体を折り返し不可の 2 カラム構成にする。
+    // 左 (タップ領域) は必ず縮み、右 (3点リーダー) は常に同じ幅で右端に残る。
+    // min-w-0 を付けないと長いファイル名の分だけ行が横に伸び、
+    // 3点リーダーの位置がファイル名ごとにズレて画面が横スクロールしてしまう。
+    <div className="flex w-full items-stretch overflow-hidden border-b divider last:border-b-0">
       <div
         {...press}
         role="button"
@@ -92,7 +96,7 @@ export function ListRow({
         onKeyDown={(event) => {
           if (event.key === 'Enter' || event.key === ' ') handlers.onOpen(item);
         }}
-        className="no-callout flex min-h-[60px] flex-1 items-center gap-3 px-4 py-2.5 text-left active:bg-surface-sub dark:active:bg-[#232b35]"
+        className="no-callout flex min-h-[60px] min-w-0 flex-1 items-center gap-3 py-2.5 pl-4 pr-2 text-left active:bg-surface-sub dark:active:bg-[#232b35]"
       >
         {item.kind === 'folder' ? (
           <FolderIcon color={item.folder.color} size={30} />
@@ -100,10 +104,10 @@ export function ListRow({
           <PdfIcon size={28} />
         )}
         <div className="min-w-0 flex-1">
-          <div className="flex items-center gap-1.5">
+          <div className="flex min-w-0 items-center gap-1.5">
             <p
               className={cx(
-                'text-base text-ink dark:text-[#e6eaef]',
+                'min-w-0 text-base text-ink dark:text-[#e6eaef]',
                 expanded ? 'break-all' : 'truncate',
                 item.kind === 'file' && !item.file.isRead ? 'font-semibold' : 'font-normal',
               )}
@@ -145,11 +149,12 @@ export function ListRow({
           <ChevronRight size={18} className="shrink-0 text-ink-faint" aria-hidden="true" />
         ) : null}
       </div>
+      {/* 3点リーダーは常に行の右端・縦中央。ファイル名の長さに影響されない固定幅にする */}
       <button
         type="button"
         aria-label={`${name} の操作メニュー`}
         onClick={() => handlers.onMenu(item)}
-        className="flex w-tap shrink-0 items-center justify-center text-ink-sub active:bg-surface-sub dark:text-[#98a3b0] dark:active:bg-[#232b35]"
+        className="flex w-tap shrink-0 items-center justify-center self-stretch text-ink-sub active:bg-surface-sub dark:text-[#98a3b0] dark:active:bg-[#232b35]"
       >
         <MoreVertical size={20} />
       </button>
@@ -277,7 +282,7 @@ export function FolderCard({
         className="no-callout card flex min-h-[92px] items-center gap-3 p-3 active:bg-surface-sub dark:active:bg-[#232b35]"
       >
         <FolderIcon color={folder.color} size={38} />
-        <div className="min-w-0 flex-1 pr-6">
+        <div className="min-w-0 flex-1 pr-10">
           <div className="flex items-center gap-1.5">
             <p className="truncate text-base font-medium text-ink dark:text-[#e6eaef]">
               {folder.name}
@@ -292,7 +297,7 @@ export function FolderCard({
         type="button"
         aria-label={`${folder.name} の操作メニュー`}
         onClick={onMenu}
-        className="absolute right-0 top-0 flex h-11 w-11 items-center justify-center text-ink-faint"
+        className="absolute right-0 top-1/2 flex h-11 w-11 -translate-y-1/2 items-center justify-center text-ink-faint"
       >
         <MoreVertical size={18} />
       </button>

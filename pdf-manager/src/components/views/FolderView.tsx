@@ -98,6 +98,8 @@ export function FolderView({
           </IconButton>
           <nav
             aria-label="現在の位置"
+            // パンくずリストは横に指で送れる必要があるため、横方向の操作を許可する
+            style={{ touchAction: 'pan-x' }}
             className="hide-scrollbar flex min-w-0 flex-1 items-center gap-0.5 overflow-x-auto whitespace-nowrap"
           >
             {trail.map((node, index) => (
@@ -157,7 +159,7 @@ export function FolderView({
           description={
             query
               ? '別のキーワードで検索してください。'
-              : '右下のボタンからPDFの追加やフォルダーの作成ができます。'
+              : '画面下中央の「PDF追加」ボタンから、PDFの追加やフォルダーの作成ができます。'
           }
           action={
             query ? null : (

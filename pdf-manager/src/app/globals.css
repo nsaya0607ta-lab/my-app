@@ -20,6 +20,11 @@
   html,
   body {
     height: 100%;
+    /* 画面全体が左右に動かないようにする。
+       長いファイル名などで内容がはみ出しても横スクロールを発生させない。 */
+    width: 100%;
+    max-width: 100%;
+    overflow-x: hidden;
   }
 
   body {
@@ -27,8 +32,10 @@
     font-family:
       -apple-system, BlinkMacSystemFont, 'Hiragino Sans', 'Hiragino Kaku Gothic ProN',
       'Noto Sans JP', 'Yu Gothic UI', Meiryo, system-ui, sans-serif;
-    /* 全画面アプリらしく、ページ全体のバウンススクロールを抑える */
+    /* 全画面アプリらしく、ページ全体のバウンススクロールを抑える。
+       横方向は、端からのスワイプで前後の画面へ移動してしまうのを防ぐ。 */
     overscroll-behavior-y: none;
+    overscroll-behavior-x: none;
     -webkit-tap-highlight-color: transparent;
   }
 
@@ -67,6 +74,20 @@
   .sheet-scroll {
     -webkit-overflow-scrolling: touch;
     overscroll-behavior: contain;
+  }
+
+  /* 一覧画面の本文。指の横移動で画面が動かないよう、縦スクロールだけを許可する。 */
+  .no-h-swipe {
+    touch-action: pan-y;
+    overscroll-behavior-x: none;
+  }
+
+  /* PDF 本文。拡大時に上下左右へ自由に動かせるようにする。
+     ブラウザーの横スワイプ (戻る/進む) には渡さない。 */
+  .pdf-surface {
+    touch-action: pan-x pan-y;
+    overscroll-behavior: none;
+    -webkit-overflow-scrolling: touch;
   }
 
   .hide-scrollbar {

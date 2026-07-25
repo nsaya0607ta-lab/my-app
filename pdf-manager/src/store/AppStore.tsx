@@ -18,6 +18,7 @@ import {
   type ReactNode,
 } from 'react';
 import { estimateStorage, isIndexedDbAvailable, readThumb, writeThumb } from '@/lib/db';
+import { isIos } from '@/lib/device';
 import { toMessage } from '@/lib/errors';
 import * as repo from '@/lib/repository';
 import { renderThumbnail } from '@/lib/pdf';
@@ -232,8 +233,12 @@ export function AppProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     window.history.replaceState({ app: true }, '');
     const onPopState = () => {
-      // 戻るジェスチャーでアプリが閉じないよう、履歴を積み直してから戻る
+      // 戻るジェスチャーでアプリが閉じないよう、履歴を積み直す
       window.history.pushState({ app: true }, '');
+      // iPhone / iPad では画面端の横スワイプが popstate になる。
+      // 意図しない画面移動になるため、履歴を積み直すだけで画面は動かさない。
+      // (画面の移動はヘッダーの戻る/進むボタンで行う)
+      if (isIos()) return;
       goBack();
     };
     window.history.pushState({ app: true }, '');
