@@ -11,7 +11,7 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="Asset">
 <meta name="description" content="今の可処分資金と、未来の資産を可視化する資産管理アプリ">
-<meta name="finance-build" content="20260725e">
+<meta name="finance-build" content="20260725f">
 <link rel="manifest" href="manifest.json">
 <link rel="icon" type="image/x-icon" href="assets/icon/favicon.ico">
 <link rel="icon" type="image/png" sizes="16x16" href="assets/icon/app-icon-16.png">
@@ -28,7 +28,7 @@
 <script type="importmap">
 {
   "imports": {
-    "./js/securities.js?v=20260725b": "./js/securities.js?v=20260725e"
+    "./js/securities.js?v=20260725b": "./js/securities.js?v=20260725f"
   }
 }
 </script>
@@ -36,28 +36,11 @@
 <body>
 <div id="fc-root"></div>
 <script type="module">
-  import { init } from './js/app.js?v=20260725e';
+  import { init } from './js/app.js?v=20260725f';
   import { initSimCashPersistence } from './js/simCashPersistence.js?v=20260725c';
-
-  const root = document.getElementById('fc-root');
-  const patchAccrualTimeText = () => {
-    if (!root) return;
-    const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
-    let node;
-    while ((node = walker.nextNode())) {
-      const next = node.nodeValue
-        ?.replaceAll('日本時間23:00', '日本時間11:00')
-        .replaceAll('毎晩23時', '毎朝11時');
-      if (next != null && next !== node.nodeValue) node.nodeValue = next;
-    }
-  };
-
-  const observer = new MutationObserver(patchAccrualTimeText);
-  if (root) observer.observe(root, { childList: true, subtree: true, characterData: true });
 
   init();
   initSimCashPersistence();
-  patchAccrualTimeText();
 </script>
 </body>
 </html>
