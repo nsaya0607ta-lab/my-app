@@ -20,7 +20,14 @@ export function CloudBackupAgent() {
   const [user, setUser] = useState<CloudUser | null>(null);
   const [onlineTick, setOnlineTick] = useState(0);
 
-  useEffect(() => subscribeCloudAuth(setUser), []);
+  // 自動バックアップがOFFの間はFirebase SDKを読み込まない。
+  useEffect(() => {
+    if (!settings.cloudBackupEnabled) {
+      setUser(null);
+      return;
+    }
+    return subscribeCloudAuth(setUser);
+  }, [settings.cloudBackupEnabled]);
 
   useEffect(() => {
     const onOnline = () => setOnlineTick((value) => value + 1);
