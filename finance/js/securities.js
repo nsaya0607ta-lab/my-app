@@ -1,6 +1,16 @@
-// securities.js — 証券口座（現金・元本・評価額・保有銘柄・積立）のロジック層。
+// securities.js — 証券口座（預り金・出金余力・決済待ち・元本・評価額・保有銘柄・積立）のロジック層。
 // 設計方針: store.js / calc.js と同じく「純粋関数の集合＋stateを受け取って書き換える処理」で構成し、
 // UI（app.js）から独立させる。すべての金額はユーザーが入力したデータのみから計算する（外部API・ダミー値は使わない）。
+//
+// 【現金まわりの3つの金額】証券会社の画面と同じ考え方で、次の3つを別々に管理する。
+//   ・預り金(acc.cash)     … 証券口座に表示されている現金残高。買付の受渡日に正式に減る。
+//   ・決済待ち(acc.pending) … 約定済みだがまだ受渡が済んでいない買付代金の合計。
+//   ・出金余力              … 預り金 − 決済待ち。いま銀行へ出金できる金額。
+// 株を購入・約定した時点では預り金はまだ減らないが、その代金は使用予定のため出金できない。
+//   例) 預り金10万円で3万円購入 → 直後: 預り金10万/出金余力7万/決済待ち3万
+//                                正式反映後: 預り金7万/出金余力7万/決済待ち0
+// 受渡日（＝預り金へ正式反映される日）は約定日の SETTLE_BUSINESS_DAYS 営業日後。
+// 日本または米国が休みの日は数えず、日本時間10時ごろに反映される想定で処理する。
 //
 // 保有銘柄は2種類を1つの holdings[] 配列に kind で判別して保持する:
 //   ・個別株(kind:'stock')  … 米国株。USD建て＋ドル円で円換算
@@ -8,8 +18,8 @@
 //   ・インデックス(kind:'index') … 円建て。数量・基準価額は管理しない
 //       { name, kind:'index', nisaFrame:'growth'|'tsumitate', cost, value, memo }
 
-import { pad, toISO } from './utils.js?v=20260725a';
-import { isBusinessDay, prevISO } from './holidays.js?v=20260725a';
+import { pad, toISO } from './utils.js?v=20260725b';
+import { isBusinessDay, prevISO, tradeSettlementDate } from './holidays.js?v=20260725b';
 
 // ===== 証券口座の判定・取得 =====
 export const isSecurities = (a) => a && a.type === 'securities';
@@ -46,9 +56,32 @@ export function holdingPL(h) {
   return { value, cost, diff, rate: cost > 0 ? (diff / cost) * 100 : null };
 }
 
+// ===== 受渡（決済）の既定値 =====
+// 米国株・米国指数の積立は、通常 購入（約定）から2営業日後に預り金へ正式反映される。
+export const SETTLE_BUSINESS_DAYS = 2;
+// 受渡が反映される日本時間の時刻（この時刻を過ぎた受渡日ぶんを預り金へ反映する）
+export const SETTLE_HOUR_JST = 10;
+
 // ===== 口座単位の集計 =====
 export const accountHoldings = (acc) => acc.holdings || [];
-export const accountCash = (acc) => n(acc.cash);
+// 決済待ち（約定済み・受渡前の買付代金）の明細 [{id,kind,holdingId,holdingName,amount,tradeDate,settleDate,memo}]
+export const accountPendings = (acc) => acc.pending || [];
+// 預り金＝証券口座に表示されている現金残高（受渡前の買付代金はまだ引かれていない）
+export const accountDeposit = (acc) => n(acc.cash);
+// 決済待ち＝受渡前の買付代金の合計
+export const accountPendingTotal = (acc) => accountPendings(acc).reduce((s, p) => s + n(p.amount), 0);
+// 出金余力＝預り金 − 決済待ち（いま銀行へ出金できる金額）
+export const accountWithdrawable = (acc) => accountDeposit(acc) - accountPendingTotal(acc);
+// ※ 旧 accountCash は廃止。「現金」は預り金(accountDeposit)と出金余力(accountWithdrawable)の
+//    どちらを指すかが曖昧なため、呼び出し側で必ずどちらかを明示する。
+// 口座ごとの受渡日数（営業日）。未設定なら既定の2営業日。
+export function accountSettleDays(acc) {
+  const v = Number(acc?.settleDays);
+  return Number.isFinite(v) && v >= 0 ? Math.round(v) : SETTLE_BUSINESS_DAYS;
+}
+// 約定日に対する受渡日（日本・米国の祝日を除いた営業日で数える）
+export const settleDateFor = (acc, tradeISO) => tradeSettlementDate(tradeISO, accountSettleDays(acc));
+
 // 評価額（保有銘柄の円換算評価額合計。現金は含めない）
 export const accountValuation = (acc) => accountHoldings(acc).reduce((s, h) => s + holdingValue(h), 0);
 // 元本（取得額合計）
@@ -62,13 +95,16 @@ export function accountValuationByKind(acc) {
   }
   return { index, stock };
 }
-// 合計残高（総資産への寄与）＝ 現金 ＋ 評価額
-export const accountTotal = (acc) => accountCash(acc) + accountValuation(acc);
+// 合計残高（総資産への寄与）＝ 出金余力 ＋ 評価額。
+// 決済待ちの買付代金は「まだ預り金から引かれていないが、すでに保有銘柄の評価額に含まれている」ため、
+// 預り金をそのまま足すと二重計上になる。出金余力（＝預り金−決済待ち）を使って重複を避ける。
+export const accountTotal = (acc) => accountWithdrawable(acc) + accountValuation(acc);
 
-// 証券口座の balance を「現金＋評価額」で再計算して同期する（総資産計算はbalanceを参照するため）
+// 証券口座の balance を「出金余力＋評価額」で再計算して同期する（総資産計算はbalanceを参照するため）
 export function recomputeAccount(acc) {
   if (!isSecurities(acc)) return;
   acc.cash = Math.round(n(acc.cash));
+  for (const p of accountPendings(acc)) p.amount = Math.round(n(p.amount));
   acc.balance = Math.round(accountTotal(acc));
 }
 export function recomputeAll(state) {
@@ -78,33 +114,38 @@ export function recomputeAll(state) {
 // ===== 全証券口座の横断集計（ホーム画面・利益率） =====
 export function portfolio(state) {
   const accs = securitiesAccounts(state);
-  let cash = 0, cost = 0, index = 0, stock = 0;
+  let deposit = 0, pending = 0, cost = 0, index = 0, stock = 0;
   for (const a of accs) {
-    cash += accountCash(a);
+    deposit += accountDeposit(a);
+    pending += accountPendingTotal(a);
     cost += accountCost(a);
     const k = accountValuationByKind(a);
     index += k.index; stock += k.stock;
   }
+  const withdrawable = deposit - pending;        // 出金余力
   const valuation = index + stock;               // 総評価額（保有銘柄のみ）
   const profit = valuation - cost;               // 評価損益 = 評価額 − 元本(取得額)
   const profitRate = cost > 0 ? (profit / cost) * 100 : null; // 利益率(%)
   return {
     accounts: accs, count: accs.length,
-    cash, cost, principal: cost, valuation, index, stock, profit, profitRate,
-    total: cash + valuation,
+    deposit, pending, withdrawable,
+    cash: withdrawable, // 資産計算に使う「現金」は二重計上を避けるため出金余力
+    cost, principal: cost, valuation, index, stock, profit, profitRate,
+    total: withdrawable + valuation,
   };
 }
 
 // ===== 保有割合（インデックス / 個別株 / 現金。米国株は円換算後の評価額） =====
+// 「現金」は出金余力を使う。決済待ちぶんは保有銘柄の評価額側に既に含まれているため。
 export function allocation(state) {
   const p = portfolio(state);
-  const base = p.index + p.stock + p.cash;
+  const base = p.index + p.stock + p.withdrawable;
   const pct = (v) => (base > 0 ? (v / base) * 100 : 0);
   return {
     base,
     index: { value: p.index, pct: pct(p.index) },
     stock: { value: p.stock, pct: pct(p.stock) },
-    cash: { value: p.cash, pct: pct(p.cash) },
+    cash: { value: p.withdrawable, pct: pct(p.withdrawable) },
   };
 }
 
@@ -119,9 +160,30 @@ export function applyBuyUsd(holding, addQty, unitUsd, fx) {
   if (fx > 0) holding.fxRate = fx;
 }
 
+// ===== 決済待ち（受渡前の買付代金）の記録 =====
+const newId = (prefix) => `${prefix}_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
+
+// 約定した買付を「決済待ち」へ積む。預り金はこの時点では減らさず、受渡日に減る。
+export function addPending(acc, { kind, holdingId, holdingName, amount, tradeDate, memo }) {
+  const rec = {
+    id: newId('pnd'), kind, holdingId: holdingId || null, holdingName: holdingName || '',
+    amount: Math.round(n(amount)), tradeDate,
+    settleDate: settleDateFor(acc, tradeDate), memo: memo || '',
+  };
+  (acc.pending ||= []).push(rec);
+  return rec;
+}
+
+// 受渡済みの記録（履歴表示用。最新200件を保持）
+function pushSettled(acc, p, settledOn) {
+  (acc.settlements ||= []).push({ ...p, id: newId('stl'), pendingId: p.id, settledOn });
+  if (acc.settlements.length > 200) acc.settlements = acc.settlements.slice(-200);
+}
+
 // ===== 個別株の購入 =====
-// 現金から購入金額（円＝株数×購入単価USD×ドル円）を引き、保有数量・取得単価を更新。
-// 元本は取得額の合計として自動的に増える。現金不足なら実行しない。
+// 購入金額（円＝株数×購入単価USD×ドル円）を決済待ちへ積み、保有数量・取得単価を更新。
+// 預り金はこの時点では減らさず、受渡日（既定で2営業日後）に正式反映される。
+// 元本は取得額の合計として自動的に増える。出金余力が不足していれば実行しない。
 export function purchaseStock(state, accountId, holdingId, shares, priceUsd, fx, dateISO) {
   const acc = state.accounts.find((a) => a.id === accountId);
   if (!acc || !isSecurities(acc)) return { ok: false, reason: 'account' };
@@ -130,12 +192,40 @@ export function purchaseStock(state, accountId, holdingId, shares, priceUsd, fx,
   const rate = n(fx) || n(h.fxRate);
   const amount = Math.round(n(shares) * n(priceUsd) * rate);
   if (amount <= 0) return { ok: false, reason: 'amount' };
-  if (accountCash(acc) < amount) return { ok: false, reason: 'cash', amount };
-  acc.cash = accountCash(acc) - amount;
+  const available = accountWithdrawable(acc);
+  if (available < amount) return { ok: false, reason: 'cash', amount, available };
+  const tradeDate = dateISO || jstTodayISO();
   applyBuyUsd(h, n(shares), n(priceUsd), rate);
-  (acc.purchases ||= []).push({ id: 'pur_' + Date.now().toString(36), holdingId, holdingName: h.name, shares: n(shares), priceUsd: n(priceUsd), fxRate: rate, amount, date: dateISO });
+  const pend = addPending(acc, { kind: 'stock', holdingId, holdingName: h.name, amount, tradeDate });
+  (acc.purchases ||= []).push({
+    id: newId('pur'), holdingId, holdingName: h.name, shares: n(shares), priceUsd: n(priceUsd),
+    fxRate: rate, amount, date: tradeDate, settleDate: pend.settleDate, pendingId: pend.id,
+  });
   recomputeAccount(acc);
-  return { ok: true, amount };
+  return { ok: true, amount, settleDate: pend.settleDate };
+}
+
+// 決済待ちを手動で「今すぐ預り金へ反映」する（受渡日前でも実際の口座に合わせられるように）。
+export function settlePendingNow(state, accountId, pendingId) {
+  const acc = state.accounts.find((a) => a.id === accountId);
+  if (!acc || !isSecurities(acc)) return false;
+  const p = accountPendings(acc).find((x) => x.id === pendingId);
+  if (!p) return false;
+  acc.cash = n(acc.cash) - n(p.amount);
+  acc.pending = accountPendings(acc).filter((x) => x.id !== pendingId);
+  pushSettled(acc, p, jstTodayISO());
+  recomputeAccount(acc);
+  return true;
+}
+
+// 決済待ちを取り消す（誤登録の削除。預り金は動かさない）。
+export function removePending(state, accountId, pendingId) {
+  const acc = state.accounts.find((a) => a.id === accountId);
+  if (!acc || !isSecurities(acc)) return false;
+  const before = accountPendings(acc).length;
+  acc.pending = accountPendings(acc).filter((x) => x.id !== pendingId);
+  recomputeAccount(acc);
+  return acc.pending.length !== before;
 }
 
 // ===================================================================
@@ -163,10 +253,15 @@ export function jstNowISO() {
 // 各銘柄の保有数量・評価額も内訳として保持する。すべて登録済みデータからの計算のみ（ダミー値なし）。
 export function performanceSnapshot(state) {
   const accs = securitiesAccounts(state);
-  let secCash = 0, nisaPrincipal = 0, nisaValue = 0, stockPrincipal = 0, stockValue = 0;
+  // secCash は「証券口座の現金」として合計資産に足される値のため、二重計上を避けて出金余力を使う。
+  // 預り金・決済待ちは内訳として別に持つ。
+  let secCash = 0, secDeposit = 0, secPending = 0;
+  let nisaPrincipal = 0, nisaValue = 0, stockPrincipal = 0, stockValue = 0;
   const holdings = [];
   for (const a of accs) {
-    secCash += accountCash(a);
+    secCash += accountWithdrawable(a);
+    secDeposit += accountDeposit(a);
+    secPending += accountPendingTotal(a);
     for (const h of accountHoldings(a)) {
       const value = holdingValue(h);
       const cost = holdingCost(h);
@@ -187,6 +282,7 @@ export function performanceSnapshot(state) {
   const profitRate = principal > 0 ? (profit / principal) * 100 : null; // 利益率(%)
   return {
     secCash: Math.round(secCash),
+    secDeposit: Math.round(secDeposit), secPending: Math.round(secPending),
     nisaPrincipal: Math.round(nisaPrincipal), nisaValue: Math.round(nisaValue),
     stockPrincipal: Math.round(stockPrincipal), stockValue: Math.round(stockValue),
     principal: Math.round(principal), valuation: Math.round(valuation),
@@ -271,6 +367,7 @@ export function contributionForDate(a, iso) {
 
 // 1口座・1日分の積立を実行（対象はONのインデックス積立設定のみ）。履歴に成否を記録。
 // インデックス投資は円建てのため、積立額を 取得価額(cost) と 現在保有額(value) の両方へ加算する。
+// 積立代金は約定した時点では預り金から引かず「決済待ち」へ積み、受渡日に預り金へ正式反映する。
 function runAccrualForDate(acc, iso) {
   for (const a of acc.accumulations || []) {
     const amount = contributionForDate(a, iso);
@@ -278,11 +375,13 @@ function runAccrualForDate(acc, iso) {
     const h = accountHoldings(acc).find((x) => x.id === a.holdingId);
     const holdingName = h ? h.name : '積立対象';
     if (!h || !isIndex(h)) { pushHistory(acc, { date: iso, holdingId: a.holdingId, holdingName, amount, status: 'failed', reason: '対象ファンドなし' }); continue; }
-    if (accountCash(acc) < amount) { pushHistory(acc, { date: iso, holdingId: a.holdingId, holdingName, amount, status: 'failed', reason: '現金不足' }); continue; }
-    acc.cash = accountCash(acc) - amount;   // ① 現金から積立額を引く
-    h.cost = n(h.cost) + amount;            // ② 総元本へ加算（毎晩23時の積立はここに積み上がる）
-    h.value = n(h.value) + amount;          // ③ 現在保有額へ同額を反映（総資産の整合性維持。実評価額は手入力で上書き可）
-    pushHistory(acc, { date: iso, holdingId: a.holdingId, holdingName, amount, status: 'success' });
+    // 判定は預り金ではなく出金余力（＝すでに使用予定の決済待ちを除いた金額）で行う。
+    if (accountWithdrawable(acc) < amount) { pushHistory(acc, { date: iso, holdingId: a.holdingId, holdingName, amount, status: 'failed', reason: '出金余力不足' }); continue; }
+    h.cost = n(h.cost) + amount;            // ① 総元本へ加算（毎晩23時の積立はここに積み上がる）
+    h.value = n(h.value) + amount;          // ② 現在保有額へ同額を反映（総資産の整合性維持。実評価額は手入力で上書き可）
+    // ③ 代金は決済待ちへ。預り金は受渡日（既定で2営業日後の日本時間10時ごろ）に減る。
+    const pend = addPending(acc, { kind: 'index', holdingId: a.holdingId, holdingName, amount, tradeDate: iso });
+    pushHistory(acc, { date: iso, holdingId: a.holdingId, holdingName, amount, status: 'success', settleDate: pend.settleDate });
   }
 }
 function pushHistory(acc, rec) {
@@ -300,6 +399,39 @@ export function runAccumulations(state) {
     while (cur < target && guard < 400) { cur = nextISO(cur); runAccrualForDate(acc, cur); guard++; changed = true; }
     acc.lastAccumDate = target;
     recomputeAccount(acc);
+  }
+  return changed;
+}
+
+// ===================================================================
+// 受渡処理（決済待ち → 預り金への正式反映）
+// ===================================================================
+// 受渡日の日本時間10時ごろに、その買付代金が預り金から正式に引かれる。
+// 積立と同じくアプリ起動時のキャッチアップ方式で、受渡日を過ぎた決済待ちをまとめて反映する。
+
+// 「10時を過ぎて反映済みとみなせる最新の受渡日」。JST10時以降なら今日、未満なら昨日。
+export function lastSettlementISO() {
+  const d = jstDate();
+  const y = d.getUTCFullYear(), m = d.getUTCMonth(), day = d.getUTCDate();
+  if (d.getUTCHours() >= SETTLE_HOUR_JST) return `${y}-${pad(m + 1)}-${pad(day)}`;
+  const prev = new Date(Date.UTC(y, m, day - 1));
+  return `${prev.getUTCFullYear()}-${pad(prev.getUTCMonth() + 1)}-${pad(prev.getUTCDate())}`;
+}
+
+// 全証券口座で、受渡日を過ぎた決済待ちを預り金へ反映する。反映があれば true。
+export function runSettlements(state) {
+  const target = lastSettlementISO();
+  let changed = false;
+  for (const acc of securitiesAccounts(state)) {
+    const due = accountPendings(acc).filter((p) => p.settleDate && p.settleDate <= target);
+    if (!due.length) continue;
+    for (const p of due) {
+      acc.cash = n(acc.cash) - n(p.amount); // 預り金から正式に引かれる（出金余力は変わらない）
+      pushSettled(acc, p, target);
+    }
+    acc.pending = accountPendings(acc).filter((p) => !(p.settleDate && p.settleDate <= target));
+    recomputeAccount(acc);
+    changed = true;
   }
   return changed;
 }
