@@ -9,8 +9,25 @@
  *  - 静的アセット: キャッシュ優先 → 無ければ取得して保存
  */
 
-const CACHE_VERSION = 'v1';
+const CACHE_VERSION = 'v2';
 const CACHE_NAME = `pdf-folder-${CACHE_VERSION}`;
+
+// 日本語 PDF が使う定義済み CMap。これが無いと文字が描画されないため、
+// オフラインでも閲覧できるようにアプリシェルと一緒に先読みしておく (計 130KB 程度)。
+// その他の CMap / フォントは必要になった時点で fetch → キャッシュされる。
+const PDFJS_CMAPS = [
+  'UniJIS-UCS2-H',
+  'UniJIS-UCS2-V',
+  'UniJIS-UCS2-HW-H',
+  'UniJIS-UCS2-HW-V',
+  'UniJIS-UTF16-H',
+  'UniJIS-UTF16-V',
+  '90ms-RKSJ-H',
+  '90ms-RKSJ-V',
+  '90msp-RKSJ-H',
+  'Adobe-Japan1-UCS2',
+].map((name) => `/pdfjs/cmaps/${name}.bcmap`);
+
 const APP_SHELL = [
   '/',
   '/manifest.webmanifest',
@@ -18,6 +35,7 @@ const APP_SHELL = [
   '/icons/icon-192.png',
   '/icons/icon-512.png',
   '/icons/icon-180.png',
+  ...PDFJS_CMAPS,
 ];
 
 self.addEventListener('install', (event) => {
