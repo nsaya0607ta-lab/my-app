@@ -1023,3 +1023,114 @@ button.fc-btnreset { background: none; border: none; padding: 0; margin: 0; font
 .fc-sim-sheet-nav { display: flex; gap: 10px; margin-top: 14px; }
 .fc-sim-sheet-nav .fc-btn { flex: 1; }
 .fc-pill.neg { color: #fff; background: var(--fc-neg); border-color: var(--fc-neg); }
+
+/* ================= 口座別の将来資産シミュレーション ================= */
+/* iPhoneの縦画面で横スクロールせずに読めるよう、金額は2段組み・口座名は折り返し可にする。 */
+
+/* 将来時点の切替チップ（口座別一覧の中） */
+.fc-as-points { margin-bottom: 10px; }
+
+/* --- 口座別の将来残高（カード一覧） --- */
+.fc-as-list { display: flex; flex-direction: column; gap: 10px; }
+.fc-as-row {
+  background: var(--fc-surface-2); border: 1px solid var(--fc-line); border-radius: var(--fc-radius-sm);
+  padding: 12px 13px; display: flex; flex-direction: column; gap: 9px; transition: transform 0.12s;
+}
+.fc-as-row:active { transform: scale(0.985); }
+.fc-as-row-head { display: flex; align-items: center; gap: 7px; }
+.fc-as-dot { width: 9px; height: 9px; border-radius: 50%; flex: none; }
+/* 長い口座名でも崩れないよう、省略せず2行まで折り返す */
+.fc-as-name {
+  flex: 1; min-width: 0; font-size: 14px; font-weight: 800; line-height: 1.35;
+  overflow-wrap: anywhere; word-break: break-word;
+}
+.fc-as-tag { flex: none; font-size: 10.5px; font-weight: 800; border-radius: 999px; padding: 3px 8px; white-space: nowrap; }
+.fc-as-chev { display: inline-flex; color: var(--fc-muted); flex: none; }
+
+.fc-as-nums { display: flex; align-items: flex-end; gap: 8px; }
+.fc-as-col { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.fc-as-col > span { font-size: 11px; color: var(--fc-muted); font-weight: 600; }
+.fc-as-col > b {
+  font-size: 19px; font-weight: 800; letter-spacing: -0.01em; line-height: 1.15;
+  font-feature-settings: 'tnum' 1; font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
+}
+.fc-as-col.to > b { color: var(--fc-accent); }
+.fc-as-col > b.neg { color: var(--fc-neg); }
+.fc-as-arrow { flex: none; color: var(--fc-muted); display: inline-flex; padding-bottom: 5px; }
+
+.fc-as-foot { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; }
+.fc-as-delta { font-size: 13px; font-weight: 800; font-feature-settings: 'tnum' 1; font-variant-numeric: tabular-nums; }
+.fc-as-delta.pos { color: var(--fc-pos); }
+.fc-as-delta.neg { color: var(--fc-neg); }
+.fc-as-reason { font-size: 11.5px; color: var(--fc-text-2); background: var(--fc-surface); border: 1px solid var(--fc-line); border-radius: 999px; padding: 4px 9px; }
+
+/* 合計行（内訳の合計＝合計資産） */
+.fc-as-total { margin-top: 12px; border-top: 2px solid var(--fc-line-2); padding-top: 10px; }
+.fc-as-total-row { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; }
+.fc-as-total-row > span { font-size: 13px; font-weight: 700; color: var(--fc-text-2); }
+.fc-as-total-row > b { font-size: 22px; font-weight: 800; font-feature-settings: 'tnum' 1; font-variant-numeric: tabular-nums; }
+.fc-as-total-row.sub { margin-top: 4px; }
+.fc-as-total-row.sub > span { font-size: 12px; color: var(--fc-muted); font-weight: 600; }
+.fc-as-total-row.sub > b { font-size: 14px; }
+.fc-as-total-row.sub > b.pos { color: var(--fc-pos); }
+.fc-as-total-row.sub > b.neg { color: var(--fc-neg); }
+
+/* 参考値（合計資産に含めない項目） */
+.fc-as-ref { margin-top: 12px; background: var(--fc-surface-2); border-radius: var(--fc-radius-sm); padding: 4px 12px 8px; }
+.fc-as-ref-head { font-size: 11.5px; font-weight: 700; color: var(--fc-muted); padding: 8px 0 2px; }
+
+/* --- 資産構成比 --- */
+.fc-as-comp { display: flex; flex-direction: column; align-items: center; gap: 14px; }
+.fc-as-donut { width: 168px; flex: none; }
+.fc-as-donut svg { width: 100%; height: auto; display: block; }
+.fc-as-bars { width: 100%; display: flex; flex-direction: column; gap: 9px; }
+.fc-as-bar { display: flex; flex-direction: column; gap: 5px; }
+.fc-as-bar-top { display: flex; align-items: center; gap: 7px; }
+.fc-as-bar-top .dot { width: 9px; height: 9px; border-radius: 50%; flex: none; }
+.fc-as-bar-name { flex: 1; min-width: 0; font-size: 12.5px; font-weight: 700; overflow-wrap: anywhere; }
+.fc-as-bar-pct { font-size: 12px; font-weight: 800; color: var(--fc-text-2); flex: none; }
+.fc-as-bar-amt { font-size: 13px; font-weight: 800; flex: none; font-feature-settings: 'tnum' 1; font-variant-numeric: tabular-nums; }
+.fc-as-bar-amt.neg { color: var(--fc-neg); }
+.fc-as-bar-track { height: 7px; border-radius: 999px; background: var(--fc-surface-2); overflow: hidden; }
+.fc-as-bar-fill { display: block; height: 100%; border-radius: 999px; }
+
+/* --- 資金不足の警告（口座単位） --- */
+.fc-as-warn { background: var(--fc-surface); border: 1px solid rgba(229, 72, 77, 0.22); border-radius: var(--fc-radius-sm); padding: 10px 12px; }
+.fc-as-warn + .fc-as-warn { margin-top: 8px; }
+.fc-as-warn-head { display: flex; align-items: center; gap: 8px; margin-bottom: 4px; }
+.fc-as-warn-acc { font-size: 14px; font-weight: 800; min-width: 0; overflow-wrap: anywhere; }
+.fc-as-warn-tag { flex: none; font-size: 10.5px; font-weight: 700; color: var(--fc-neg); background: rgba(229, 72, 77, 0.12); border-radius: 999px; padding: 3px 8px; white-space: nowrap; }
+.fc-as-warn-advice { display: flex; flex-direction: column; gap: 3px; margin-top: 9px; background: var(--fc-surface-2); border-radius: 10px; padding: 9px 10px; }
+.fc-as-warn-advice > span:first-child { font-size: 11px; font-weight: 700; color: var(--fc-muted); }
+.fc-as-warn-advice > span:last-child { font-size: 12.5px; line-height: 1.6; color: var(--fc-text); }
+
+/* --- 口座の詳細モーダル --- */
+.fc-as-modal-head { display: flex; flex-direction: column; align-items: flex-start; gap: 6px; margin-bottom: 12px; }
+.fc-as-modal-tag { font-size: 11px; font-weight: 800; border-radius: 999px; padding: 4px 10px; }
+.fc-as-modal-amt { display: flex; align-items: baseline; flex-wrap: wrap; gap: 8px; font-feature-settings: 'tnum' 1; font-variant-numeric: tabular-nums; }
+.fc-as-modal-amt > span:first-child { font-size: 15px; color: var(--fc-muted); font-weight: 700; }
+.fc-as-modal-amt > b { font-size: 26px; font-weight: 800; letter-spacing: -0.01em; }
+.fc-as-modal-arrow { display: inline-flex; color: var(--fc-muted); align-self: center; }
+.fc-as-modal-delta { font-size: 13.5px; font-weight: 800; }
+.fc-as-modal-delta.pos { color: var(--fc-pos); }
+.fc-as-modal-delta.neg { color: var(--fc-neg); }
+.fc-as-modal-reason { font-size: 12.5px; color: var(--fc-text-2); }
+.fc-as-sub { font-size: 12.5px; font-weight: 800; color: var(--fc-text-2); margin: 16px 0 2px; }
+.fc-note.sm { font-size: 11px; margin-top: 8px; }
+
+/* 将来の合計予想: タップで内訳を開ける行 */
+.fc-fc-row.tap { grid-template-columns: 1fr auto auto auto; cursor: pointer; }
+.fc-fc-row.tap .fc-link-arrow { color: var(--fc-muted); display: inline-flex; }
+
+/* 値が長文になる明細行（資金不足の原因・前提条件など）はラベルを上に置いて読みやすくする */
+.fc-kv-row.stack { flex-direction: column; align-items: stretch; gap: 3px; }
+.fc-kv-row.stack b { text-align: left; font-weight: 700; line-height: 1.6; }
+/* 内訳の最後に置く合計行 */
+.fc-kv-row.total { border-top: 2px solid var(--fc-line-2); }
+.fc-kv-row.total span { color: var(--fc-text); font-weight: 700; }
+.fc-kv-row.total b { font-size: 16px; }
+.fc-as-delta.flat { color: var(--fc-muted); }
+/* セクション見出しの右側ヒントは折り返さず、タイトル側を縮める */
+.fc-sec-head .fc-sec-title { min-width: 0; }
+.fc-sec-head .fc-chart-hint { flex: none; white-space: nowrap; }

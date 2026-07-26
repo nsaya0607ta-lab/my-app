@@ -4,6 +4,7 @@ import * as C from './calc.js?v=20260725b';
 import * as CF from './cashflow.js?v=20260725b';
 import * as Sec from './securities.js?v=20260725b';
 import * as FS from './futureSim.js?v=20260725b';
+import * as AS from './accountSim.js?v=20260726a';
 import * as IS from './idealSim.js?v=20260725b';
 import * as Perf from './performance.js?v=20260725b';
 import { lineChart, barChart, groupedBarChart, donutChart, multiLineChart, fanChart, perfChart, perfDeltaChart } from './charts.js?v=20260725b';
@@ -19,6 +20,8 @@ import * as H from './holidays.js?v=20260725b';
 const ui = {
   route: 'dashboard',
   simMonths: 12,           // 将来シミュレーションの表示期間
+  simPoint: 12,            // 口座別の将来残高・資産構成比を表示する将来時点(か月)。表示期間以下に丸める。
+  simTrend: 'total',       // 口座別推移グラフの表示対象: 'total'(全体) | 資産種別キー(bank/cash/secCash/nisa/stock/other)
   simTab: 'cashflow',      // 「将来」タブ内の切替: 'cashflow'(収支) | 'invest'(投資将来予測)
   investTab: 'overview',   // 投資将来予測の3タブ: 'overview'(概要) | 'simulation' | 'detail'(詳細設定)
   futureCheckDate: null,   // 投資予測: 資産推移を確認する日付
@@ -2079,6 +2082,13 @@ function plLine(name, amount, color) {
 
 // ============ 資産シミュレーション（データ駆動・日次キャッシュフロー） ============
 function kv(k, v) { return el('div', { class: 'fc-kv-row' }, el('span', { text: k }), el('b', { text: v })); }
+// 値が長文になる行（原因・改善案など）。ラベルを上、内容を下に置いて折り返しを読みやすくする。
+function kvStack(k, v, cls = '') { return el('div', { class: 'fc-kv-row stack ' + cls }, el('span', { text: k }), el('b', { text: v })); }
+
+// 期間・将来時点の共通区切り。ヒーロー・口座別一覧・構成比・グラフはすべてこの区切りを共有する。
+const SIM_PERIODS = [[3, '3か月'], [6, '半年'], [12, '1年'], [24, '2年'], [36, '3年']];
+const simPeriodLabel = (mo) => SIM_PERIODS.find((p) => p[0] === mo)?.[1] || `${mo}か月`;
+const simPointLabel = (mo) => `${simPeriodLabel(mo)}後`;
 
 function renderSimulate() {
   const st = S.getState();
@@ -2095,51 +2105,63 @@ function renderSimulate() {
   if (ui.simTab === 'invest') { wrap.append(renderFutureSim()); return wrap; }
 
   // 期間切替
-  const periods = [[3, '3か月'], [6, '半年'], [12, '1年'], [24, '2年'], [36, '3年']];
-  if (!periods.some((p) => p[0] === ui.simMonths)) ui.simMonths = 12;
+  if (!SIM_PERIODS.some((p) => p[0] === ui.simMonths)) ui.simMonths = 12;
   const seg = el('div', { class: 'fc-period' });
-  for (const [mo, lab] of periods)
-    seg.append(el('button', { class: 'fc-period-btn' + (ui.simMonths === mo ? ' on' : ''), type: 'button', text: lab, onclick: () => { ui.simMonths = mo; render(); } }));
+  for (const [mo, lab] of SIM_PERIODS)
+    seg.append(el('button', { class: 'fc-period-btn' + (ui.simMonths === mo ? ' on' : ''), type: 'button', text: lab, onclick: () => { ui.simMonths = mo; ui.simPoint = mo; render(); } }));
   wrap.append(seg);
 
-  const sim = CF.simulate(st, ui.simMonths);
-  const chart = CF.chartSeries(st, ui.simMonths);
-  const endTotal = chart[chart.length - 1].value;
-  const diff = endTotal - sim.start;
-  const shortage = CF.shortageAlert(st, ui.simMonths);
+  // --- 画面全体の計算元（口座別シミュレーション）。すべてのセクションがこの1つの結果を共有するため、
+  //     合計・口座別内訳・構成比・グラフ・警告が必ず同じ数値になる。---
+  // 「将来の資産予想」で1年後まで表示するため、内部の計算期間は最低12か月ぶん確保する。
+  const proj = AS.projectAccounts(st, { months: Math.max(ui.simMonths, 12) });
+  if (!SIM_PERIODS.some(([mo]) => mo === ui.simPoint && mo <= ui.simMonths)) ui.simPoint = ui.simMonths;
+  const k = ui.simPoint;                    // 口座別内訳・構成比を表示する将来時点（か月）
+  const start = proj.current.total;
+  const endPt = AS.pointAt(proj, ui.simMonths);
+  const diff = endPt.total - start;
+  const shortages = AS.accountShortages(proj);
   const unpaid = CF.unpaidCards(st);
 
-  // 現在資産ヒーロー
-  wrap.append(el('div', { class: 'fc-simhero' + (shortage ? ' warn' : '') },
+  // ① 現在資産サマリー
+  wrap.append(el('div', { class: 'fc-simhero' + (shortages.length ? ' warn' : '') },
     el('span', { class: 'fc-simhero-lab', text: '現在資産' }),
-    el('span', { class: 'fc-simhero-amt', text: M(sim.start) }),
+    el('span', { class: 'fc-simhero-amt', text: M(start) }),
     el('div', { class: 'fc-simhero-split' },
       el('span', { text: `可処分 ${secret ? '＊＊＊' : yen(C.disposableAssets(st))}` }),
       el('span', { text: `投資・その他 ${secret ? '＊＊＊' : yen(C.reservedAssets(st))}` })),
     el('div', { class: 'fc-simhero-foot' },
-      el('span', { text: `${periods.find((p) => p[0] === ui.simMonths)[1]}後の予想` }),
-      el('b', { class: diff >= 0 ? 'pos' : 'neg', text: secret ? '＊＊＊' : M(endTotal) + `（${yen(diff, { sign: diff > 0 })}）` })),
+      el('span', { text: `${simPointLabel(ui.simMonths)}の予想` }),
+      el('b', { class: diff >= 0 ? 'pos' : 'neg', text: secret ? '＊＊＊' : M(endPt.total) + `（${yen(diff, { sign: diff > 0 })}）` })),
   ));
 
-  // 資産不足アラート（⑪）
-  if (shortage) {
-    wrap.append(el('div', { class: 'fc-shortage' },
-      el('div', { class: 'fc-shortage-top' }, el('span', { class: 'fc-shortage-ic', html: iconHtml('alert', { size: 18 }) }), el('b', { text: shortage.message })),
-      el('div', { class: 'fc-shortage-sub', text: `最低残高の見込み ${M(sim.minPoint.total)}（${fmtDate(sim.minPoint.date)}）` }),
-      shortage.causes.length ? el('div', { class: 'fc-shortage-causes' },
-        el('span', { class: 'fc-shortage-causes-lab', text: '主な要因' }),
-        ...shortage.causes.map((c) => el('span', { class: 'fc-cause-chip' }, el('span', { class: 'fc-ico', html: iconHtml(CF.eventIcon(c.kind), { size: 13 }) }), el('span', { text: `${c.description || CF.eventLabel(c.kind)} ${yen(c.amount)}` })))) : '',
-    ));
-  }
+  // ② 将来の合計予想（時点別）。タップでその時点の口座別内訳を表示する。
+  wrap.append(simForecastCard(st, proj, secret));
 
-  // 資産推移グラフ（⑧⑩）
+  // ③ 口座別の将来残高一覧
+  wrap.append(simAccountCard(st, proj, k, secret));
+
+  // ④ 資産構成比
+  wrap.append(simCompositionCard(proj, k, secret));
+
+  // ⑤ 資産推移グラフ（合計）
+  const totalChart = proj.series.slice(0, ui.simMonths + 1).map((p) => ({ label: p.label, value: p.total }));
   wrap.append(card(
-    sectionTitle('資産推移', el('span', { class: 'fc-chart-hint', text: '下のタイムラインで詳細' })),
+    sectionTitle('資産推移', el('span', { class: 'fc-chart-hint', text: '合計資産の見込み' })),
     secret ? el('p', { class: 'fc-empty', text: 'シークレットモード中は非表示' })
-      : el('div', { class: 'fc-chart', html: lineChart(chart, { color: shortage ? 'var(--fc-neg)' : 'var(--fc-accent)', height: 230 }) }),
+      : el('div', { class: 'fc-chart', html: lineChart(totalChart, { color: shortages.length ? 'var(--fc-neg)' : 'var(--fc-accent)', height: 230 }) }),
   ));
 
-  // 未払いカード（⑦）
+  // ⑥ 口座別推移グラフ
+  wrap.append(simTrendCard(proj, secret));
+
+  // ⑦ 資金不足警告（口座単位）
+  if (shortages.length) wrap.append(simShortageCard(shortages, secret));
+
+  // ⑧ 前提条件
+  wrap.append(simAssumptionCard(st, proj));
+
+  // 未払いカード
   if (st.cards.length) {
     wrap.append(el('div', { class: 'fc-unpaid tap', role: 'button', onclick: () => unpaidModal(unpaid) },
       el('div', { class: 'fc-unpaid-ic', html: iconHtml('card', { size: 20 }) }),
@@ -2151,24 +2173,315 @@ function renderSimulate() {
     ));
   }
 
-  // 将来の可処分資金（⑧）
-  const fc = CF.forecasts(st);
-  wrap.append(card(sectionTitle('将来の資産予想'),
-    el('div', { class: 'fc-fc-list' }, ...fc.map((f) =>
-      el('div', { class: 'fc-fc-row' },
-        el('span', { class: 'fc-fc-lab', text: f.label }),
-        el('span', { class: 'fc-fc-amt' + (f.total < 0 ? ' neg' : ''), text: M(f.total) }),
-        el('span', { class: 'fc-fc-delta ' + (f.delta >= 0 ? 'pos' : 'neg'), text: secret ? '' : yen(f.delta, { sign: f.delta > 0 }) }))),
-  )));
-
-  // 将来のイベント: 同じ日付を1つのカードにまとめ、タップで展開（⑩・2）
+  // 将来のイベント: 同じ日付を1つのカードにまとめ、タップで展開
   const groups = CF.dailyGroups(st, { days: ui.simMonths <= 6 ? 150 : 240, max: 60 });
   wrap.append(card(sectionTitle('これからの入出金'),
     groups.length ? el('div', { class: 'fc-daygroups' }, ...groups.map((g) => dayGroupItem(g, secret)))
       : el('p', { class: 'fc-empty', text: '固定収支・カード利用・固定振替を登録すると、ここに将来の入出金が表示されます' })));
 
-  wrap.append(el('p', { class: 'fc-note', text: '※ 登録済みの口座残高・固定収支・固定振替・カード利用・将来日付の取引だけから、カードは実際の引落日に銀行から差し引いて計算しています。編集すると即座に再計算されます。' }));
+  wrap.append(el('p', { class: 'fc-note', text: '※ 登録済みの口座残高・固定収支・固定振替・カード利用・将来日付の取引・積立設定だけから計算しています。カードは実際の引落日に銀行から差し引き、投資の評価額は前提条件の想定年利で伸ばしています。編集すると即座に再計算されます。' }));
   return wrap;
+}
+
+// ---- ② 将来の合計予想（時点別）。行タップでその時点の口座別内訳をモーダル表示する。----
+function simForecastCard(st, proj, secret) {
+  const start = proj.current.total;
+  const defs = [[0, '今月末予想'], [1, '来月末予想'], [3, '3か月後'], [6, '半年後'], [12, '1年後']];
+  if (ui.simMonths > 12) defs.push([ui.simMonths, simPointLabel(ui.simMonths)]);
+  const rows = defs.map(([k, label]) => {
+    const p = AS.pointAt(proj, k);
+    const delta = p.total - start;
+    return el('div', { class: 'fc-fc-row tap', role: 'button', 'aria-label': `${label}の口座別内訳`, onclick: () => simPointModal(st, proj, k, label) },
+      el('span', { class: 'fc-fc-lab', text: label }),
+      el('span', { class: 'fc-fc-amt' + (p.total < 0 ? ' neg' : ''), text: M(p.total) }),
+      el('span', { class: 'fc-fc-delta ' + (delta >= 0 ? 'pos' : 'neg'), text: secret ? '' : yen(delta, { sign: delta > 0 }) }),
+      el('span', { class: 'fc-link-arrow', html: iconHtml('chevronRight', { size: 15 }) }));
+  });
+  return card(sectionTitle('将来の合計予想', el('span', { class: 'fc-chart-hint', text: 'タップで口座別内訳' })),
+    el('div', { class: 'fc-fc-list' }, ...rows));
+}
+
+// ---- ③ 口座別の将来残高一覧（形式A: カード一覧。タップで内訳） ----
+function simAccountCard(st, proj, k, secret) {
+  const rows = AS.accountRows(st, proj, k);
+  const pt = AS.pointAt(proj, k);
+  const body = el('div', {});
+
+  if (!rows.length) {
+    body.append(el('p', { class: 'fc-empty', text: '口座を登録すると、口座ごとの将来残高がここに表示されます' }));
+    return card(sectionTitle('口座別の将来残高'), body);
+  }
+
+  // 将来時点の切替（3か月後〜選択中の期間まで）
+  const pts = SIM_PERIODS.filter(([mo]) => mo <= ui.simMonths);
+  if (pts.length > 1) {
+    const chips = el('div', { class: 'fc-period fc-as-points' });
+    for (const [mo] of pts)
+      chips.append(el('button', { class: 'fc-period-btn' + (k === mo ? ' on' : ''), type: 'button', text: simPointLabel(mo), onclick: () => { ui.simPoint = mo; render(); } }));
+    body.append(chips);
+  }
+
+  body.append(el('div', { class: 'fc-as-list' }, ...rows.map((r) => simAccountRow(st, proj, k, r, secret))));
+
+  // 合計（内訳の合計＝合計資産。必ず一致する）
+  body.append(el('div', { class: 'fc-as-total' },
+    el('div', { class: 'fc-as-total-row' },
+      el('span', { text: '合計資産' }),
+      el('b', { text: M(pt.total) })),
+    el('div', { class: 'fc-as-total-row sub' },
+      el('span', { text: '現在からの増減' }),
+      el('b', { class: pt.total - proj.current.total >= 0 ? 'pos' : 'neg', text: secret ? '＊＊＊' : yen(pt.total - proj.current.total, { sign: pt.total > proj.current.total }) })),
+  ));
+
+  // 参考値（合計資産には含めない項目。二重計上を避けるため別枠で表示する）
+  body.append(el('div', { class: 'fc-as-ref' },
+    el('div', { class: 'fc-as-ref-head', text: '参考（合計資産には含めません）' }),
+    el('div', { class: 'fc-kv' },
+      kv('投資元本（NISA＋個別株の取得額）', M(pt.principal)),
+      kv('投資評価額（NISA＋個別株）', M(pt.groups.nisa + pt.groups.stock)),
+      kv('評価損益', secret ? '＊＊＊' : yen(pt.groups.nisa + pt.groups.stock - pt.principal, { sign: pt.groups.nisa + pt.groups.stock > pt.principal })),
+      kv('カード未払い（引落予定額）', M(pt.unpaidCard)))));
+
+  return card(
+    sectionTitle('口座別の将来残高', el('span', { class: 'fc-chart-hint', text: 'タップで内訳' })),
+    body,
+    el('p', { class: 'fc-note sm', text: '※ 投資元本は評価額の取得額（内訳）、カード未払いは将来の銀行引落として既に反映済みのため、どちらも合計資産には足していません。合計資産＝銀行＋現金＋証券口座現金＋NISA評価額＋個別株評価額＋その他資産です。' }),
+  );
+}
+
+// 口座1行（口座名・現在残高・将来残高・増減額・補足説明）
+function simAccountRow(st, proj, k, r, secret) {
+  const g = AS.groupDef(r.group);
+  const up = r.delta >= 0;
+  const rateTxt = r.rate == null ? '' : `（${r.rate >= 0 ? '+' : ''}${r.rate.toFixed(1)}%）`;
+  return el('div', {
+    class: 'fc-as-row tap', role: 'button', 'aria-label': `${r.accountName} ${g.label}の内訳`,
+    onclick: () => simAccountDetailModal(st, proj, k, r),
+  },
+    el('div', { class: 'fc-as-row-head' },
+      el('span', { class: 'fc-as-dot', style: `background:${g.color}` }),
+      el('span', { class: 'fc-as-name', text: r.accountName }),
+      el('span', { class: 'fc-as-tag', style: `color:${g.color};background:${g.color}1f`, text: g.short }),
+      el('span', { class: 'fc-as-chev', html: iconHtml('chevronRight', { size: 15 }) })),
+    el('div', { class: 'fc-as-nums' },
+      el('div', { class: 'fc-as-col' }, el('span', { text: '現在' }), el('b', { text: M(r.current) })),
+      el('span', { class: 'fc-as-arrow', html: iconHtml('arrowRight', { size: 15 }) }),
+      el('div', { class: 'fc-as-col to' }, el('span', { text: simPointLabel(k) }), el('b', { class: r.future < 0 ? 'neg' : '', text: M(r.future) }))),
+    el('div', { class: 'fc-as-foot' },
+      el('span', { class: 'fc-as-delta ' + (r.delta === 0 ? 'flat' : up ? 'pos' : 'neg'), text: secret ? '＊＊＊' : (r.delta === 0 ? '増減なし' : yen(r.delta, { sign: up }) + rateTxt) }),
+      r.reason ? el('span', { class: 'fc-as-reason', text: `主因: ${r.reason}` }) : ''),
+  );
+}
+
+// ---- ④ 資産構成比（将来時点） ----
+function simCompositionCard(proj, k, secret) {
+  const comp = AS.composition(proj, k);
+  if (secret) return card(sectionTitle(`資産構成比（${simPointLabel(k)}）`), el('p', { class: 'fc-empty', text: 'シークレットモード中は非表示' }));
+  if (!comp.items.length) return card(sectionTitle(`資産構成比（${simPointLabel(k)}）`), el('p', { class: 'fc-empty', text: '口座を登録すると資産構成比が表示されます' }));
+  const donutData = comp.items.filter((x) => x.value > 0).map((x) => ({ label: x.label, value: x.value, color: x.color }));
+  // マイナス残高の区分がある場合、円グラフの合計＝プラス分の合計になるためラベルで区別する
+  const hasNegative = comp.total !== comp.base;
+  return card(
+    sectionTitle(`資産構成比（${simPointLabel(k)}）`),
+    el('div', { class: 'fc-as-comp' },
+      el('div', { class: 'fc-as-donut', html: donutChart(donutData, { size: 168, thick: 26, centerLabel: hasNegative ? 'プラスの合計' : '合計資産' }) }),
+      el('div', { class: 'fc-as-bars' }, ...comp.items.map((x) =>
+        el('div', { class: 'fc-as-bar' },
+          el('div', { class: 'fc-as-bar-top' },
+            el('i', { class: 'dot', style: `background:${x.color}` }),
+            el('span', { class: 'fc-as-bar-name', text: x.label }),
+            el('span', { class: 'fc-as-bar-pct', text: x.value > 0 ? `${x.pct.toFixed(1)}%` : '—' }),
+            el('b', { class: 'fc-as-bar-amt' + (x.value < 0 ? ' neg' : ''), text: yen(x.value) })),
+          el('div', { class: 'fc-as-bar-track' },
+            el('i', { class: 'fc-as-bar-fill', style: `width:${Math.max(0, Math.min(100, x.pct))}%;background:${x.color}` })))))),
+    el('p', { class: 'fc-note sm', text: hasNegative
+      ? '※ 割合はプラスの区分の合計に対する比率です。マイナス残高の区分は割合を出さず金額のみ表示します。投資元本・カード未払いは二重計上になるため含めていません。'
+      : '※ 割合は「合計資産に占める各区分の金額」です。投資元本・カード未払いは二重計上になるため含めていません。' }),
+  );
+}
+
+// ---- ⑥ 口座別推移グラフ（全体／区分ごとに切替） ----
+function simTrendCard(proj, secret) {
+  const pts = proj.series.slice(0, ui.simMonths + 1);
+  const labels = pts.map((p) => p.label);
+  const present = AS.ASSET_GROUPS.filter((g) => pts.some((p) => p.groups[g.key] !== 0));
+  if (!present.length) {
+    return card(sectionTitle('口座別の資産推移'),
+      el('p', { class: 'fc-empty', text: '口座を登録すると、口座ごとの資産推移が表示されます' }));
+  }
+  const targets = [{ key: 'total', label: '全体', color: 'var(--fc-accent)' }, ...present.map((g) => ({ key: g.key, label: g.short, color: g.color }))];
+  if (!targets.some((t) => t.key === ui.simTrend)) ui.simTrend = 'total';
+
+  const chips = el('div', { class: 'fc-period' });
+  for (const t of targets)
+    chips.append(el('button', { class: 'fc-period-btn' + (ui.simTrend === t.key ? ' on' : ''), type: 'button', text: t.label, onclick: () => { ui.simTrend = t.key; render(); } }));
+
+  const body = el('div', {});
+  if (secret) {
+    body.append(el('p', { class: 'fc-empty', text: 'シークレットモード中は非表示' }));
+  } else {
+    const mkData = (get) => pts.map((p, i) => ({ label: labels[i], value: get(p) }));
+    let seriesList = [], legend = [];
+    if (ui.simTrend === 'total') {
+      // 全体: 資産種別ごとの推移を重ねる（どの区分がいつ増減しているかを比較できる）
+      seriesList = present.map((g) => ({ label: g.label, color: g.color, data: mkData((p) => p.groups[g.key]) }));
+      legend = present.map((g) => ({ label: g.label, color: g.color, value: pts.at(-1).groups[g.key] }));
+    } else {
+      const g = AS.groupDef(ui.simTrend);
+      seriesList = [{ label: g.label, color: g.color, data: mkData((p) => p.groups[g.key]) }];
+      legend = [{ label: `${g.label}（合計）`, color: g.color, value: pts.at(-1).groups[g.key] }];
+      // その区分に複数の口座が関わる場合は口座ごとの内訳も重ねる
+      const pick = (a) => (ui.simTrend === 'nisa' ? a.indexValue : ui.simTrend === 'stock' ? a.stockValue : a.cash);
+      const ids = proj.accounts.filter((m) => (
+        ui.simTrend === 'secCash' ? m.isSec
+          : ui.simTrend === 'nisa' ? m.isSec && (m.hasIndex || pts.at(-1).accounts[m.id]?.indexValue)
+            : ui.simTrend === 'stock' ? m.isSec && (m.hasStock || pts.at(-1).accounts[m.id]?.stockValue)
+              : !m.isSec && (m.type === 'bank' ? ui.simTrend === 'bank' : m.type === 'cash' ? ui.simTrend === 'cash' : ui.simTrend === 'other')
+      ));
+      if (ids.length > 1) {
+        const cols = ['#0a84ff', '#bf5af2', '#ff375f', '#34c759', '#ff9500', '#5ac8fa', '#ffd60a', '#64d2ff'];
+        ids.forEach((m, i) => {
+          const color = cols[i % cols.length];
+          seriesList.push({ label: m.name, color, width: 1.8, data: mkData((p) => pick(p.accounts[m.id] || {}) || 0) });
+          legend.push({ label: m.name, color, value: pick(pts.at(-1).accounts[m.id] || {}) || 0 });
+        });
+      }
+    }
+    body.append(el('div', { class: 'fc-chart', html: multiLineChart(seriesList, { height: 240 }) }));
+    body.append(el('div', { class: 'fc-legend-list' }, ...legend.map((l) =>
+      el('div', { class: 'fc-legend-row' },
+        el('i', { class: 'dot', style: `background:${l.color}` }),
+        el('span', { class: 'fc-legend-name', text: l.label }),
+        el('span', { class: 'fc-legend-amt', text: yen(l.value) })))));
+  }
+  return card(
+    sectionTitle('口座別の資産推移', el('span', { class: 'fc-chart-hint', text: `${simPeriodLabel(ui.simMonths)}先まで` })),
+    chips, body,
+    el('p', { class: 'fc-note sm', text: '※ 各区分の金額は月末時点の見込みです。凡例の金額は期間末の値です。' }),
+  );
+}
+
+// シークレットモードでは、文章に埋め込まれた金額も伏せる（数値だけ読めてしまうのを防ぐ）
+const maskAmounts = (text, secret) => (secret ? String(text).replace(/[\d][\d,]*円/g, '＊＊＊円') : String(text));
+
+// ---- ⑦ 資金不足警告（対象口座・不足日・不足額・原因・改善案） ----
+function simShortageCard(shortages, secret) {
+  return el('div', { class: 'fc-shortage' },
+    el('div', { class: 'fc-shortage-top' },
+      el('span', { class: 'fc-shortage-ic', html: iconHtml('alert', { size: 18 }) }),
+      el('b', { text: `${shortages.length}件の資金不足が見込まれます` })),
+    ...shortages.map((s) => el('div', { class: 'fc-as-warn' },
+      el('div', { class: 'fc-as-warn-head' },
+        el('b', { class: 'fc-as-warn-acc', text: s.accountName }),
+        el('span', { class: 'fc-as-warn-tag', text: s.type === 'secCash' ? '証券口座現金' : '口座残高' })),
+      el('div', { class: 'fc-kv' },
+        kv('不足日', fmtDateLong(s.date)),
+        kv('不足額', secret ? '＊＊＊' : yen(s.amount)),
+        kvStack('原因', maskAmounts(s.cause, secret))),
+      el('div', { class: 'fc-as-warn-advice' }, el('span', { text: '改善案' }), el('span', { text: maskAmounts(s.advice, secret) })))),
+  );
+}
+
+// ---- ⑧ 前提条件 ----
+function simAssumptionCard(st, proj) {
+  const secret = st.settings.secret;
+  const items = AS.assumptions(st, proj).map((i) => ({ ...i, value: maskAmounts(i.value, secret) }));
+  return card(
+    sectionTitle('シミュレーションの前提', el('button', { class: 'fc-link', type: 'button', text: '投資設定へ', onclick: () => { ui.simTab = 'invest'; render(); scrollTop(); } })),
+    el('div', { class: 'fc-kv' }, ...items.map((i) => (i.value.length > 16 ? kvStack(i.label, i.value) : kv(i.label, i.value)))),
+    el('p', { class: 'fc-note sm', text: '※ この前提のとおりに収支・積立・振替が続いた場合の見込みです。想定年利・積立設定は「投資将来予測」タブで変更できます。' }),
+  );
+}
+
+// ---- 時点別の口座別内訳（「将来の合計予想」の行タップで表示） ----
+function simPointModal(st, proj, k, label) {
+  const secret = st.settings.secret;
+  const rows = AS.accountRows(st, proj, k);
+  const pt = AS.pointAt(proj, k);
+  const body = el('div', {},
+    el('p', { class: 'fc-field-hint', text: `${fmtDateLong(pt.date)} 時点の口座別内訳です。` }),
+    el('div', { class: 'fc-kv' },
+      ...rows.map((r) => kv(`${r.accountName}・${AS.groupDef(r.group).label}`, M(r.future))),
+      el('div', { class: 'fc-kv-row total' }, el('span', { text: '合計資産' }), el('b', { text: M(pt.total) }))),
+    el('div', { class: 'fc-as-ref' },
+      el('div', { class: 'fc-as-ref-head', text: '参考（合計資産には含めません）' }),
+      el('div', { class: 'fc-kv' },
+        kv('投資元本', M(pt.principal)),
+        kv('カード未払い（引落予定額）', M(pt.unpaidCard)))),
+  );
+  modal(`${label}の口座別内訳`, body, {});
+}
+
+// ---- 口座1件の詳細（その金額になるまでの内訳＋月ごとの推移） ----
+function simAccountDetailModal(st, proj, k, r) {
+  const secret = st.settings.secret;
+  const f = r.detail;                 // 将来時点の累計内訳
+  const c = proj.current.accounts[r.accountId] || {};
+  const fs = st.futureSim || {};
+  const rateTxt = fs.useOverride !== false ? `${FS.scenarioRate(fs).toFixed(1)}%` : '銘柄ごとの設定値';
+  const money = (v) => M(v);
+  const lines = [];
+
+  if (r.group === 'secCash') {
+    lines.push(['初期残高（現在の預り金）', money(f.cashInitial)]);
+    lines.push(['銀行からの入金（振替）', money(f.xferIn)]);
+    if (f.depositIn) lines.push(['証券口座へのその他入金', money(f.depositIn)]);
+    if (f.dividend) lines.push(['受取配当（再投資しない設定）', money(f.dividend)]);
+    lines.push(['NISA購入（積立）', secret ? '＊＊＊' : `− ${yen(f.nisaBuy)}`]);
+    lines.push(['個別株購入', secret ? '＊＊＊' : `− ${yen(f.stockBuy)}`]);
+    if (f.xferOut) lines.push(['銀行への出金（振替）', secret ? '＊＊＊' : `− ${yen(f.xferOut)}`]);
+    if (f.withdraw) lines.push(['証券口座からのその他出金', secret ? '＊＊＊' : `− ${yen(f.withdraw)}`]);
+    if (f.nisaMissed + f.stockMissed > 0) lines.push(['現金不足で実行できなかった購入', secret ? '＊＊＊' : yen(f.nisaMissed + f.stockMissed)]);
+    lines.push(['最終予測残高', money(f.cash)]);
+  } else if (r.group === 'nisa' || r.group === 'stock') {
+    const isNisa = r.group === 'nisa';
+    const buy = isNisa ? f.nisaBuy : f.stockBuy;
+    const growth = isNisa ? f.nisaGrowth : f.stockGrowth;
+    const principal = isNisa ? f.indexPrincipal : f.stockPrincipal;
+    const value = isNisa ? f.indexValue : f.stockValue;
+    const curValue = isNisa ? c.indexValue : c.stockValue;
+    lines.push(['現在評価額', money(curValue)]);
+    lines.push([isNisa ? '積立累計（期間中の購入額）' : '購入累計（期間中の購入額）', money(buy)]);
+    lines.push(['想定年利', rateTxt]);
+    lines.push(['評価額の増加（運用益）', secret ? '＊＊＊' : yen(growth, { sign: growth > 0 })]);
+    lines.push(['投資元本（取得額）', money(principal)]);
+    lines.push(['評価損益', secret ? '＊＊＊' : yen(value - principal, { sign: value > principal })]);
+    lines.push(['最終予測評価額', money(value)]);
+  } else {
+    lines.push(['初期残高', money(f.cashInitial)]);
+    lines.push(['収入（給料・固定収入など）', money(f.income)]);
+    if (f.dividend) lines.push(['　うち受取配当（再投資しない設定）', money(f.dividend)]);
+    lines.push(['支出・固定費', secret ? '＊＊＊' : `− ${yen(f.expense)}`]);
+    lines.push(['カード引落', secret ? '＊＊＊' : `− ${yen(f.card)}`]);
+    if (f.xferIn) lines.push(['他口座からの振替入金', money(f.xferIn)]);
+    if (f.xferOut) lines.push(['他口座への振替（証券口座への入金など）', secret ? '＊＊＊' : `− ${yen(f.xferOut)}`]);
+    lines.push(['最終予測残高', money(f.cash)]);
+  }
+
+  // 月ごとの推移（その口座がいつ・いくらになるか）
+  const pick = (snap) => {
+    const a = snap.accounts[r.accountId];
+    if (!a) return 0;
+    return r.group === 'nisa' ? a.indexValue : r.group === 'stock' ? a.stockValue : a.cash;
+  };
+  const pts = proj.series.slice(0, k + 1);
+  const step = pts.length > 14 ? Math.ceil(pts.length / 12) : 1;
+  const trend = pts.filter((_, i) => i % step === 0 || i === pts.length - 1);
+  const chartData = pts.map((p) => ({ label: p.label, value: pick(p) }));
+
+  const body = el('div', {},
+    el('div', { class: 'fc-as-modal-head' },
+      el('span', { class: 'fc-as-modal-tag', style: `color:${AS.groupDef(r.group).color};background:${AS.groupDef(r.group).color}1f`, text: AS.groupDef(r.group).label }),
+      el('div', { class: 'fc-as-modal-amt' }, el('span', { text: M(r.current) }), el('span', { class: 'fc-as-modal-arrow', html: iconHtml('arrowRight', { size: 15 }) }), el('b', { text: M(r.future) })),
+      el('div', { class: 'fc-as-modal-delta ' + (r.delta >= 0 ? 'pos' : 'neg'), text: secret ? '＊＊＊' : yen(r.delta, { sign: r.delta > 0 }) + (r.rate == null ? '' : `（${r.rate >= 0 ? '+' : ''}${r.rate.toFixed(1)}%）`) }),
+      r.reason ? el('div', { class: 'fc-as-modal-reason', text: `主な理由: ${r.reason}` }) : ''),
+    secret ? '' : el('div', { class: 'fc-chart', html: lineChart(chartData, { color: AS.groupDef(r.group).color, height: 170 }) }),
+    el('h4', { class: 'fc-as-sub', text: `${simPointLabel(k)}までの内訳` }),
+    el('div', { class: 'fc-kv' }, ...lines.map(([a, b]) => kv(a, b))),
+    el('h4', { class: 'fc-as-sub', text: '月ごとの推移' }),
+    el('div', { class: 'fc-kv' }, ...trend.map((p) => kv(`${p.label}（${fmtDate(p.date)}）`, M(pick(p))))),
+  );
+  modal(`${r.accountName}の将来予測`, body, { wide: true });
 }
 
 // 日付グループ（概要 + タップで詳細展開）
