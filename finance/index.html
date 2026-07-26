@@ -11,7 +11,7 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="Asset">
 <meta name="description" content="現在の資産から未来の目的地までを可視化する資産管理アプリ">
-<meta name="finance-build" content="20260726e">
+<meta name="finance-build" content="20260726f">
 <link rel="manifest" href="manifest.json">
 <link rel="icon" type="image/x-icon" href="assets/icon/favicon.ico">
 <link rel="icon" type="image/png" sizes="16x16" href="assets/icon/app-icon-16.png">
@@ -29,6 +29,7 @@
 <link rel="stylesheet" href="css/voyage-position.css?v=20260726c">
 <link rel="stylesheet" href="css/voyage-goal.css?v=20260726d">
 <link rel="stylesheet" href="css/voyage-goal-fix.css?v=20260726e">
+<link rel="stylesheet" href="css/voyage-experience.css?v=20260726f">
 <script type="importmap">
 {
   "imports": {
@@ -47,11 +48,13 @@
   import { initSimCashPersistence } from './js/simCashPersistence.js?v=20260725c';
   import { initVoyagePosition } from './js/voyagePosition.js?v=20260726c';
   import { initVoyageGoal } from './js/voyageGoal.js?v=20260726d';
+  import { initVoyageExperience } from './js/voyageExperience.js?v=20260726f';
 
   init();
   initSimCashPersistence();
   initVoyagePosition();
   initVoyageGoal();
+  initVoyageExperience();
 </script>
 </body>
 </html>
