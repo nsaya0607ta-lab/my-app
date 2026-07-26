@@ -1,17 +1,22 @@
 'use client';
 
 /**
- * 自動分類ルールの作成・編集。
+ * フォルダー単位の自動分類ルール作成・編集。
  *
- * 条件はアプリ側で固定せず、ユーザーが自由に足したり消したりできる。
- * 種類ごとに入力欄が変わるため、条件 1 行ぶんの入力を ConditionRow にまとめている。
+ * ルールごとに「適用元フォルダー」を必須で持たせる。
+ * そのフォルダー直下に追加・保存された PDF だけが判定対象となり、
+ * 移動先は適用元フォルダー自身またはその配下に限定する。
  */
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
-import { FolderInput, Plus, Trash2 } from 'lucide-react';
+import { FolderInput, FolderTree, Plus, Trash2 } from 'lucide-react';
 import { describeRule } from '@/lib/classify';
-import { MAX_CONDITIONS } from '@/lib/classifyRules';
+import {
+  MAX_CONDITIONS,
+  sourceFolderIdOf,
+  type RuleInput,
+} from '@/lib/classifyRules';
 import { createId } from '@/lib/naming';
-import { ROOT_NAME, pathString } from '@/lib/tree';
+import { ROOT_NAME, descendantFolderIds, pathString } from '@/lib/tree';
 import {
   ORIGIN_LABELS,
   ROOT_ID,
@@ -30,22 +35,17 @@ import { Button, Switch, cx } from '@/components/ui/Primitives';
 import { BottomSheet } from '@/components/ui/Sheet';
 import { FolderPicker } from '@/components/dialogs/FolderPicker';
 
-export type RuleDraft = {
-  id?: string;
-  name: string;
-  match: RuleMatchMode;
-  conditions: RuleCondition[];
-  destFolderId: string;
-  autoMove: boolean;
-  confirmBeforeMove: boolean;
-  enabled: boolean;
-};
+export type RuleDraft = RuleInput;
 
-export function emptyDraft(destFolderId = UNSORTED_ID): RuleDraft {
+export function emptyDraft(
+  sourceFolderId = UNSORTED_ID,
+  destFolderId = sourceFolderId,
+): RuleDraft {
   return {
     name: '',
     match: 'any',
     conditions: [{ id: createId('cond'), field: 'nameContains', text: '' }],
+    sourceFolderId,
     destFolderId,
     autoMove: true,
     confirmBeforeMove: false,
@@ -59,6 +59,7 @@ export function toDraft(rule: ClassifyRule): RuleDraft {
     name: rule.name,
     match: rule.match,
     conditions: rule.conditions.map((condition) => ({ ...condition })),
+    sourceFolderId: sourceFolderIdOf(rule),
     destFolderId: rule.destFolderId,
     autoMove: rule.autoMove,
     confirmBeforeMove: rule.confirmBeforeMove,
@@ -111,7 +112,6 @@ function Field({ label, children }: { label: string; children: ReactNode }) {
   );
 }
 
-/** 条件 1 行ぶんの入力。 */
 function ConditionRow({
   condition,
   index,
@@ -153,12 +153,20 @@ function ConditionRow({
         value={condition.field}
         onChange={(event) => {
           const field = event.target.value as RuleField;
-          // 種類を変えたら、その種類で使う項目だけを残す
           onChange({
             id: condition.id,
             field,
-            text: TEXT_FIELDS.includes(field) ? (condition.text ?? '') : field === 'origin' ? 'file' : field === 'fileType' ? 'pdf' : undefined,
-            compare: NUMBER_FIELDS.includes(field) || DATE_FIELDS.includes(field) ? 'atLeast' : undefined,
+            text: TEXT_FIELDS.includes(field)
+              ? (condition.text ?? '')
+              : field === 'origin'
+                ? 'file'
+                : field === 'fileType'
+                  ? 'pdf'
+                  : undefined,
+            compare:
+              NUMBER_FIELDS.includes(field) || DATE_FIELDS.includes(field)
+                ? 'atLeast'
+                : undefined,
           });
         }}
       >
@@ -231,8 +239,8 @@ function ConditionRow({
             aria-label={compare === 'atMost' ? '上限' : '下限'}
             value={compare === 'atMost' ? (condition.max ?? '') : (condition.min ?? '')}
             onChange={(event) => {
-              const value = event.target.value === '' ? undefined : Number(event.target.value);
-              patch(compare === 'atMost' ? { max: value } : { min: value });
+              const number = event.target.value === '' ? undefined : Number(event.target.value);
+              patch(compare === 'atMost' ? { max: number } : { min: number });
             }}
           />
           {compare === 'between' ? (
@@ -246,7 +254,9 @@ function ConditionRow({
                 aria-label="上限"
                 value={condition.max ?? ''}
                 onChange={(event) =>
-                  patch({ max: event.target.value === '' ? undefined : Number(event.target.value) })
+                  patch({
+                    max: event.target.value === '' ? undefined : Number(event.target.value),
+                  })
                 }
               />
             </>
@@ -281,7 +291,9 @@ function ConditionRow({
                 aria-label="日数"
                 value={condition.days ?? ''}
                 onChange={(event) =>
-                  patch({ days: event.target.value === '' ? undefined : Number(event.target.value) })
+                  patch({
+                    days: event.target.value === '' ? undefined : Number(event.target.value),
+                  })
                 }
               />
               <span className="text-sm text-ink-sub dark:text-[#98a3b0]">日以内</span>
@@ -328,20 +340,41 @@ export function RuleEditor({
   onSave: (draft: RuleDraft) => void;
 }) {
   const [value, setValue] = useState<RuleDraft>(draft ?? emptyDraft());
-  const [picker, setPicker] = useState(false);
+  const [picker, setPicker] = useState<'source' | 'destination' | null>(null);
   const [error, setError] = useState('');
 
   useEffect(() => {
     if (open && draft) {
       setValue(draft);
       setError('');
+      setPicker(null);
     }
   }, [draft, open]);
 
-  const destLabel = useMemo(
-    () => (value.destFolderId === ROOT_ID ? ROOT_NAME : pathString(folders, value.destFolderId)),
-    [folders, value.destFolderId],
+  const activeFolders = useMemo(
+    () => folders.filter((folder) => !folder.deletedAt),
+    [folders],
   );
+
+  const folderLabel = (folderId: string) =>
+    folderId === ROOT_ID ? ROOT_NAME : pathString(activeFolders, folderId);
+
+  const sourceLabel = useMemo(
+    () => folderLabel(value.sourceFolderId),
+    [activeFolders, value.sourceFolderId],
+  );
+
+  const destLabel = useMemo(
+    () => folderLabel(value.destFolderId),
+    [activeFolders, value.destFolderId],
+  );
+
+  const allowedDestinations = useMemo(
+    () => descendantFolderIds(activeFolders, value.sourceFolderId),
+    [activeFolders, value.sourceFolderId],
+  );
+
+  const destinationAllowed = allowedDestinations.has(value.destFolderId);
 
   const summary = useMemo(
     () =>
@@ -352,7 +385,7 @@ export function RuleEditor({
         priority: 1,
         createdAt: '',
         updatedAt: '',
-      }),
+      } as ClassifyRule),
     [value],
   );
 
@@ -361,10 +394,19 @@ export function RuleEditor({
       setError('ルール名を入力してください。');
       return;
     }
+    if (!value.sourceFolderId) {
+      setError('ルールを適用するフォルダーを選択してください。');
+      return;
+    }
+    if (!destinationAllowed) {
+      setError('移動先は、適用元フォルダー自身またはそのサブフォルダーを選択してください。');
+      return;
+    }
     if (value.conditions.length === 0) {
       setError('条件を1つ以上追加してください。');
       return;
     }
+
     const empty = value.conditions.some((condition) => {
       if (TEXT_FIELDS.includes(condition.field)) return !condition.text?.trim();
       if (NUMBER_FIELDS.includes(condition.field)) {
@@ -377,10 +419,12 @@ export function RuleEditor({
       }
       return !condition.text;
     });
+
     if (empty) {
       setError('入力していない条件があります。値を入力するか、その条件を削除してください。');
       return;
     }
+
     onSave(value);
   };
 
@@ -388,9 +432,10 @@ export function RuleEditor({
     <>
       <BottomSheet
         open={open}
-        title={value.id ? 'ルールを編集' : 'ルールを作成'}
+        title={value.id ? 'フォルダーのルールを編集' : 'フォルダーのルールを作成'}
+        description="ルールは選択したフォルダー直下のPDFだけに適用されます"
         onClose={onClose}
-        maxHeight="72vh"
+        maxHeight="78vh"
         footer={
           <div className="flex gap-2">
             <Button variant="secondary" className="flex-1" onClick={onClose}>
@@ -402,12 +447,30 @@ export function RuleEditor({
           </div>
         }
       >
+        <Field label="ルールを適用するフォルダー">
+          <button
+            type="button"
+            onClick={() => setPicker('source')}
+            className="flex min-h-tap w-full items-center gap-2 rounded-card border border-line px-3 text-left dark:border-[#333d49]"
+          >
+            <FolderTree size={18} className="shrink-0 text-brand-500" />
+            <span className="min-w-0 flex-1 truncate text-base text-ink dark:text-[#e6eaef]">
+              {sourceLabel}
+            </span>
+          </button>
+          <p className="mt-1.5 text-xs leading-relaxed text-ink-sub dark:text-[#98a3b0]">
+            このフォルダー直下へ追加・保存されたPDFだけを判定します。別のフォルダーには適用しません。
+          </p>
+        </Field>
+
         <Field label="ルール名">
           <input
             className="field"
-            placeholder="例：領収書を自動分類"
+            placeholder="例：領収書を領収書フォルダーへ保存"
             value={value.name}
-            onChange={(event) => setValue((current) => ({ ...current, name: event.target.value }))}
+            onChange={(event) =>
+              setValue((current) => ({ ...current, name: event.target.value }))
+            }
           />
         </Field>
 
@@ -476,17 +539,25 @@ export function RuleEditor({
           </Button>
         </div>
 
-        <Field label="一致した場合の移動先">
+        <Field label="一致した場合の保存先">
           <button
             type="button"
-            onClick={() => setPicker(true)}
-            className="flex min-h-tap w-full items-center gap-2 rounded-card border border-line px-3 text-left dark:border-[#333d49]"
+            onClick={() => setPicker('destination')}
+            className={cx(
+              'flex min-h-tap w-full items-center gap-2 rounded-card border px-3 text-left',
+              destinationAllowed
+                ? 'border-line dark:border-[#333d49]'
+                : 'border-pdf bg-red-50 dark:bg-[#351d23]',
+            )}
           >
             <FolderInput size={18} className="shrink-0 text-ink-sub" />
             <span className="min-w-0 flex-1 truncate text-base text-ink dark:text-[#e6eaef]">
               {destLabel}
             </span>
           </button>
+          <p className="mt-1.5 text-xs leading-relaxed text-ink-sub dark:text-[#98a3b0]">
+            適用元フォルダー自身、またはその配下のサブフォルダーだけを選択できます。
+          </p>
         </Field>
 
         <div className="border-t divider">
@@ -512,12 +583,16 @@ export function RuleEditor({
             </div>
             <Switch
               checked={value.confirmBeforeMove}
-              onChange={(next) => setValue((current) => ({ ...current, confirmBeforeMove: next }))}
+              onChange={(next) =>
+                setValue((current) => ({ ...current, confirmBeforeMove: next }))
+              }
               label="移動前に確認する"
             />
           </div>
           <div className="flex min-h-tap items-center justify-between gap-3 border-b divider px-4 py-3">
-            <p className="min-w-0 flex-1 text-base text-ink dark:text-[#e6eaef]">このルールを使う</p>
+            <p className="min-w-0 flex-1 text-base text-ink dark:text-[#e6eaef]">
+              このルールを使う
+            </p>
             <Switch
               checked={value.enabled}
               onChange={(next) => setValue((current) => ({ ...current, enabled: next }))}
@@ -528,22 +603,55 @@ export function RuleEditor({
 
         <div className="px-4 py-3">
           <p className="text-xs leading-relaxed text-ink-sub dark:text-[#98a3b0]">
+            対象：{sourceLabel}
+            <br />
             判定内容：{summary}
+            <br />
+            保存先：{destLabel}
           </p>
           {error ? <p className="mt-2 text-sm text-pdf">{error}</p> : null}
         </div>
       </BottomSheet>
 
       <FolderPicker
-        open={picker}
-        title="移動先のフォルダーを選択"
-        confirmLabel="ここへ移動する"
-        folders={folders}
-        initialFolderId={value.destFolderId}
-        onClose={() => setPicker(false)}
+        open={picker === 'source'}
+        title="ルールを適用するフォルダー"
+        description="選択したフォルダー直下のPDFだけが対象になります"
+        confirmLabel="このフォルダーに設定"
+        folders={activeFolders}
+        initialFolderId={value.sourceFolderId}
+        onClose={() => setPicker(null)}
         onConfirm={(folderId) => {
+          const allowed = descendantFolderIds(activeFolders, folderId);
+          setValue((current) => ({
+            ...current,
+            sourceFolderId: folderId,
+            destFolderId: allowed.has(current.destFolderId)
+              ? current.destFolderId
+              : folderId,
+          }));
+          setError('');
+          setPicker(null);
+        }}
+      />
+
+      <FolderPicker
+        open={picker === 'destination'}
+        title="保存先のサブフォルダーを選択"
+        description={`「${sourceLabel}」または、その配下のフォルダーを選択してください`}
+        confirmLabel="ここへ保存する"
+        folders={activeFolders}
+        initialFolderId={value.destFolderId}
+        onClose={() => setPicker(null)}
+        onConfirm={(folderId) => {
+          if (!allowedDestinations.has(folderId)) {
+            setError('移動先は、適用元フォルダー自身またはそのサブフォルダーを選択してください。');
+            setPicker(null);
+            return;
+          }
           setValue((current) => ({ ...current, destFolderId: folderId }));
-          setPicker(false);
+          setError('');
+          setPicker(null);
         }}
       />
     </>
