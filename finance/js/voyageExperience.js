@@ -137,12 +137,22 @@ function currentAndFutureForMap(map) {
 function decorateMilestones() {
   const goal = readGoal();
   document.querySelectorAll('.voyage-route-map').forEach((map) => {
-    map.querySelector('.voyage-milestone-layer')?.remove();
-    map.closest('.voyage-destination-card, .voyage-forecast-route')?.querySelector('.voyage-next-milestone')?.remove();
-    if (!goal || map.classList.contains('unset')) return;
+    const host = map.closest('.voyage-destination-card, .voyage-forecast-route');
+    if (!goal || map.classList.contains('unset')) {
+      map.querySelector('.voyage-milestone-layer')?.remove();
+      host?.querySelector('.voyage-next-milestone')?.remove();
+      delete map.dataset.voyageMilestoneSignature;
+      return;
+    }
 
     const { current, future } = currentAndFutureForMap(map);
     const values = milestoneValues(goal.amount);
+    const signature = JSON.stringify({ goal: goal.amount, current, future, values });
+    if (map.dataset.voyageMilestoneSignature === signature && map.querySelector('.voyage-milestone-layer')) return;
+
+    map.querySelector('.voyage-milestone-layer')?.remove();
+    host?.querySelector('.voyage-next-milestone')?.remove();
+    map.dataset.voyageMilestoneSignature = signature;
     if (!values.length) return;
 
     const layer = document.createElement('div');
@@ -243,7 +253,9 @@ function decorateSimulationIntro() {
   const intro = document.createElement('div');
   intro.className = 'voyage-screen-intro';
   intro.innerHTML = `<span>${svg('route', 17)}</span><p>現在地から目的地まで、資金と投資の進み方を航路として確認します。</p>`;
-  title.closest('.fc-head-title')?.insertAdjacentElement('afterend', intro) || title.insertAdjacentElement('afterend', intro);
+  const titleRow = title.closest('.fc-head-title');
+  if (titleRow) titleRow.insertAdjacentElement('afterend', intro);
+  else title.insertAdjacentElement('afterend', intro);
 }
 
 function decorateLedger() {
