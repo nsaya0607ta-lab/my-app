@@ -168,7 +168,7 @@
   padding: 2px 5px;
   border: 1px solid var(--fc-line);
   border-radius: 999px;
-  background: color-mix(in srgb, var(--fc-surface) 92%, transparent);
+  background: rgba(255, 255, 255, 0.92);
   color: inherit;
   font-size: 8px;
   font-weight: 800;
@@ -333,14 +333,6 @@ body[data-voyage-screen='future'] .fc-simhero {
 }
 
 /* ===== ダークモード微調整 ===== */
-:root[data-fc-theme='dark'] .voyage-milestone small,
-@media (prefers-color-scheme: dark) {
-  :root:not([data-fc-theme='light']) .voyage-milestone small {
-    background: rgba(12, 20, 34, 0.92);
-  }
-}
-
-/* 上記のネスト非対応ブラウザー向け */
 :root[data-fc-theme='dark'] .voyage-milestone small {
   background: rgba(12, 20, 34, 0.92);
 }
