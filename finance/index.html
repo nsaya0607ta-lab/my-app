@@ -3,15 +3,15 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>Asset — 未来への資産航海</title>
-<meta name="theme-color" content="#07101e" media="(prefers-color-scheme: dark)">
-<meta name="theme-color" content="#edf1f6" media="(prefers-color-scheme: light)">
+<title>Asset — 資産管理</title>
+<meta name="theme-color" content="#0c1526" media="(prefers-color-scheme: dark)">
+<meta name="theme-color" content="#f5f6f8" media="(prefers-color-scheme: light)">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="Asset">
-<meta name="description" content="現在の資産から未来の目的地までを可視化する資産管理アプリ">
-<meta name="finance-build" content="20260726f">
+<meta name="description" content="今の可処分資金と、未来の資産を可視化する資産管理アプリ">
+<meta name="finance-build" content="20260726g">
 <link rel="manifest" href="manifest.json">
 <link rel="icon" type="image/x-icon" href="assets/icon/favicon.ico">
 <link rel="icon" type="image/png" sizes="16x16" href="assets/icon/app-icon-16.png">
@@ -25,11 +25,6 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Zen+Kaku+Gothic+New:wght@400;500;700;900&display=swap">
 <link rel="stylesheet" href="css/finance.css?v=20260726a">
-<link rel="stylesheet" href="css/voyage-theme.css?v=20260726b">
-<link rel="stylesheet" href="css/voyage-position.css?v=20260726c">
-<link rel="stylesheet" href="css/voyage-goal.css?v=20260726d">
-<link rel="stylesheet" href="css/voyage-goal-fix.css?v=20260726e">
-<link rel="stylesheet" href="css/voyage-experience.css?v=20260726f">
 <script type="importmap">
 {
   "imports": {
@@ -46,15 +41,9 @@
 <script type="module">
   import { init } from './js/app.js?v=20260726a';
   import { initSimCashPersistence } from './js/simCashPersistence.js?v=20260725c';
-  import { initVoyagePosition } from './js/voyagePosition.js?v=20260726c';
-  import { initVoyageGoal } from './js/voyageGoal.js?v=20260726d';
-  import { initVoyageExperience } from './js/voyageExperience.js?v=20260726f';
 
   init();
   initSimCashPersistence();
-  initVoyagePosition();
-  initVoyageGoal();
-  initVoyageExperience();
 </script>
 </body>
 </html>
