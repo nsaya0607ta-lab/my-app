@@ -2,10 +2,17 @@ name: 毎朝のIONQデイリーレポートPDF
 
 on:
   schedule:
-    # 日本時間の毎朝7時。GitHub Actionsの混雑時は開始が遅れる場合がある。
-    - cron: '0 7 * * *'
+    # 7時までの完成を優先し、日本時間の毎朝6時30分に生成を開始する。
+    # GitHub Actionsは混雑時に開始が遅れるため、7時ちょうどの起動にはしない。
+    - cron: '30 6 * * *'
       timezone: 'Asia/Tokyo'
   workflow_dispatch:
+  # ワークフロー自体を変更した際は自動テストとして即時実行する。
+  push:
+    branches:
+      - main
+    paths:
+      - '.github/workflows/ionq-report.yml'
 
 concurrency:
   group: ionq-daily-report
