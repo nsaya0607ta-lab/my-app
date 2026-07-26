@@ -1,19 +1,19 @@
 'use client';
 
 /**
- * 自動分類ルールの管理画面。
+ * フォルダー単位の自動分類ルール管理画面。
  *
- * ルールの追加・編集・削除・複製・有効無効・優先順位の変更・テスト実行を行う。
- * 一括適用とテスト実行はどちらも同じ判定 (classifyRun.planFiles) を使い、
- * 「実際に移動するかどうか」だけが違う。
+ * 画面上部で「ルールを管理するフォルダー」を選び、そのフォルダー専用の
+ * ルールだけを追加・編集・並べ替え・テスト・一括適用する。
  */
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   ArrowDown,
   ArrowLeft,
   ArrowUp,
   Copy,
   FlaskConical,
+  FolderTree,
   MoreVertical,
   Pencil,
   Play,
@@ -33,18 +33,32 @@ import {
   moveRulePriority,
   saveRule,
   setRuleEnabled,
+  sourceFolderIdOf,
 } from '@/lib/classifyRules';
 import { toMessage } from '@/lib/errors';
 import { middleEllipsis } from '@/lib/format';
-import { ROOT_NAME, activeFiles, pathString } from '@/lib/tree';
+import {
+  ROOT_NAME,
+  activeFiles,
+  pathString,
+  toParentKey,
+} from '@/lib/tree';
 import {
   MULTI_MATCH_LABELS,
   ROOT_ID,
+  UNSORTED_ID,
   type ClassifyRule,
   type MultiMatchStrategy,
 } from '@/lib/types';
 import { useApp } from '@/store/AppStore';
-import { Button, IconButton, SectionTitle, Spinner, Switch, cx } from '@/components/ui/Primitives';
+import {
+  Button,
+  IconButton,
+  SectionTitle,
+  Spinner,
+  Switch,
+  cx,
+} from '@/components/ui/Primitives';
 import { BottomSheet, MenuRow } from '@/components/ui/Sheet';
 import { ConfirmDialog } from '@/components/dialogs/CommonDialogs';
 import { Header } from '@/components/views/Header';
@@ -58,6 +72,7 @@ type RunState = {
   plans: ClassifyPlan[];
   failures: PlanFailure[];
   targetCount: number;
+  sourceFolderId: string;
 };
 
 export function RulesView() {
@@ -74,42 +89,106 @@ export function RulesView() {
     updateSettings,
   } = useApp();
 
+  const [sourceFolderId, setSourceFolderId] = useState(UNSORTED_ID);
   const [editor, setEditor] = useState<RuleDraft | null>(null);
   const [menuRule, setMenuRule] = useState<ClassifyRule | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<ClassifyRule | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
-  const [run, setRun] = useState<RunState | null>(null);
+  const [runState, setRunState] = useState<RunState | null>(null);
   const [strategySheet, setStrategySheet] = useState(false);
 
-  const folderLabel = useCallback(
-    (folderId: string) => (folderId === ROOT_ID ? ROOT_NAME : pathString(folders, folderId)),
+  const activeFolderList = useMemo(
+    () => folders.filter((folder) => !folder.deletedAt),
     [folders],
   );
 
-  const targets = useMemo(() => activeFiles(files), [files]);
+  const folderLabel = useCallback(
+    (folderId: string) =>
+      folderId === ROOT_ID ? ROOT_NAME : pathString(activeFolderList, folderId),
+    [activeFolderList],
+  );
+
+  const sourceOptions = useMemo(
+    () => [
+      { id: ROOT_ID, label: ROOT_NAME },
+      ...activeFolderList
+        .map((folder) => ({ id: folder.id, label: pathString(activeFolderList, folder.id) }))
+        .sort((a, b) => a.label.localeCompare(b.label, 'ja')),
+    ],
+    [activeFolderList],
+  );
+
+  useEffect(() => {
+    const exists =
+      sourceFolderId === ROOT_ID ||
+      activeFolderList.some((folder) => folder.id === sourceFolderId);
+    if (exists) return;
+
+    const fallback = activeFolderList.some((folder) => folder.id === UNSORTED_ID)
+      ? UNSORTED_ID
+      : ROOT_ID;
+    setSourceFolderId(fallback);
+  }, [activeFolderList, sourceFolderId]);
+
+  const folderRules = useMemo(
+    () =>
+      rules
+        .filter((rule) => sourceFolderIdOf(rule) === sourceFolderId)
+        .sort(
+          (a, b) =>
+            a.priority - b.priority || a.createdAt.localeCompare(b.createdAt),
+        ),
+    [rules, sourceFolderId],
+  );
+
+  const folderTargets = useMemo(
+    () =>
+      activeFiles(files).filter(
+        (file) => toParentKey(file.parentId) === sourceFolderId,
+      ),
+    [files, sourceFolderId],
+  );
 
   /** 判定だけを行い、結果シートを開く。 */
   const startRun = useCallback(
     async (mode: 'test' | 'apply', rule?: ClassifyRule) => {
-      const usable = rule ? [rule] : rules;
+      const scope = rule ? sourceFolderIdOf(rule) : sourceFolderId;
+      const usable = rule
+        ? [rule]
+        : rules
+            .filter((entry) => sourceFolderIdOf(entry) === scope)
+            .sort(
+              (a, b) =>
+                a.priority - b.priority || a.createdAt.localeCompare(b.createdAt),
+            );
+
       if (usable.length === 0) {
-        notify('先にルールを作成してください。', 'info');
+        notify('このフォルダーにはルールがありません。', 'info');
         return;
       }
+
+      const targets = activeFiles(files).filter(
+        (file) => toParentKey(file.parentId) === scope,
+      );
+
       setBusy(mode === 'test' ? 'テスト実行しています…' : '対象のPDFを確認しています…');
       try {
         const result = await planFiles(targets, {
-          // テスト実行では、無効なルールも含めず「そのルールが有効なら」を見る
-          rules: usable.map((entry) => (rule ? { ...entry, enabled: true } : entry)),
+          // 個別テストでは、無効なルールも「有効ならどうなるか」を確認する
+          rules: usable.map((entry) =>
+            rule ? { ...entry, enabled: true } : entry,
+          ),
           strategy: settings.classifyMultiMatch,
           textPages: settings.classifyTextPages,
         });
-        setRun({
+
+        setRunState({
           mode,
           rule,
           plans: result.plans,
           failures: result.failures,
           targetCount: targets.length,
+          sourceFolderId: scope,
         });
       } catch (error) {
         notify(toMessage(error), 'error');
@@ -117,30 +196,46 @@ export function RulesView() {
         setBusy(null);
       }
     },
-    [notify, rules, settings.classifyMultiMatch, settings.classifyTextPages, targets],
+    [
+      files,
+      notify,
+      rules,
+      settings.classifyMultiMatch,
+      settings.classifyTextPages,
+      sourceFolderId,
+    ],
   );
 
   /** 確認後に一括で移動する。 */
   const executeRun = useCallback(async () => {
-    if (!run) return;
-    const plans = run.plans;
-    setRun(null);
+    if (!runState) return;
+    const plans = runState.plans;
+    const scope = runState.sourceFolderId;
+    setRunState(null);
     setBusy(`PDFを移動しています…（0 / ${plans.length}）`);
+
     try {
       const result = await applyPlans(plans, (done, total) =>
         setBusy(`PDFを移動しています…（${done} / ${total}）`),
       );
       await reload();
+
       if (result.failures.length > 0) {
-        setRun({
+        setRunState({
           mode: 'apply',
           plans: [],
           failures: result.failures,
           targetCount: plans.length,
+          sourceFolderId: scope,
         });
       }
+
       notify(
-        `${result.moved.length} 件のPDFを移動しました${result.failures.length > 0 ? `（${result.failures.length} 件は移動できませんでした）` : ''}`,
+        `${result.moved.length} 件のPDFを移動しました${
+          result.failures.length > 0
+            ? `（${result.failures.length} 件は移動できませんでした）`
+            : ''
+        }`,
         result.failures.length > 0 ? 'info' : 'success',
       );
     } catch (error) {
@@ -148,15 +243,16 @@ export function RulesView() {
     } finally {
       setBusy(null);
     }
-  }, [notify, reload, run]);
+  }, [notify, reload, runState]);
 
   const saveDraft = useCallback(
     async (draft: RuleDraft) => {
       try {
         await saveRule(draft);
         await reloadRules();
+        setSourceFolderId(draft.sourceFolderId);
         setEditor(null);
-        notify('ルールを保存しました。', 'success');
+        notify('フォルダーのルールを保存しました。', 'success');
       } catch (error) {
         notify(toMessage(error), 'error');
       }
@@ -167,8 +263,8 @@ export function RulesView() {
   return (
     <>
       <Header
-        title="自動分類ルール"
-        subtitle={`${rules.length} 件のルール`}
+        title="フォルダー別の自動分類"
+        subtitle={`${folderLabel(sourceFolderId)}・${folderRules.length} 件`}
         left={
           canGoBack ? (
             <IconButton label="戻る" onClick={goBack}>
@@ -177,18 +273,47 @@ export function RulesView() {
           ) : undefined
         }
         right={
-          <IconButton label="ルールを追加" onClick={() => setEditor(emptyDraft())}>
+          <IconButton
+            label="このフォルダーにルールを追加"
+            onClick={() => setEditor(emptyDraft(sourceFolderId))}
+          >
             <Plus size={22} />
           </IconButton>
         }
       />
 
       <div className="bg-surface dark:bg-[#181e26]">
+        <div className="border-b divider px-4 py-3">
+          <label
+            htmlFor="classify-source-folder"
+            className="mb-1.5 flex items-center gap-2 text-sm text-ink-sub dark:text-[#98a3b0]"
+          >
+            <FolderTree size={17} />
+            ルールを管理するフォルダー
+          </label>
+          <select
+            id="classify-source-folder"
+            className="field"
+            value={sourceFolderId}
+            onChange={(event) => setSourceFolderId(event.target.value)}
+          >
+            {sourceOptions.map((option) => (
+              <option key={option.id} value={option.id}>
+                {option.label}
+              </option>
+            ))}
+          </select>
+          <p className="mt-1.5 text-xs leading-relaxed text-ink-sub dark:text-[#98a3b0]">
+            選択したフォルダー直下に追加されたPDFだけへ、このフォルダーのルールを適用します。
+            他のフォルダーのルールとは完全に分けて管理します。
+          </p>
+        </div>
+
         <div className="flex min-h-tap items-center justify-between gap-3 border-b divider px-4 py-3">
           <div className="min-w-0 flex-1">
             <p className="text-base text-ink dark:text-[#e6eaef]">PDF追加時に自動分類する</p>
             <p className="mt-0.5 text-xs text-ink-sub dark:text-[#98a3b0]">
-              OFFにすると、ルールは保存されたまま判定だけ行いません
+              OFFにすると、すべてのフォルダーで自動判定を停止します
             </p>
           </div>
           <Switch
@@ -197,6 +322,7 @@ export function RulesView() {
             label="PDF追加時に自動分類する"
           />
         </div>
+
         <button
           type="button"
           className="flex min-h-tap w-full items-center justify-between gap-3 border-b divider px-4 py-3 text-left"
@@ -211,23 +337,31 @@ export function RulesView() {
         </button>
       </div>
 
-      <SectionTitle>ルール（上にあるものが優先されます）</SectionTitle>
+      <SectionTitle>
+        {folderLabel(sourceFolderId)} のルール（上にあるものが優先）
+      </SectionTitle>
 
-      {rules.length === 0 ? (
+      {folderRules.length === 0 ? (
         <div className="px-6 py-10 text-center">
-          <p className="text-base text-ink dark:text-[#e6eaef]">ルールがまだありません</p>
-          <p className="mt-2 text-sm leading-relaxed text-ink-sub dark:text-[#98a3b0]">
-            例：ファイル名に「領収書」を含む、またはPDF内に「領収金額」を含むPDFを
-            「領収書」フォルダーへ移動する、といったルールを作成できます。
+          <p className="text-base text-ink dark:text-[#e6eaef]">
+            このフォルダーにはルールがありません
           </p>
-          <Button variant="primary" className="mt-4" onClick={() => setEditor(emptyDraft())}>
+          <p className="mt-2 text-sm leading-relaxed text-ink-sub dark:text-[#98a3b0]">
+            例：このフォルダーに追加された「領収書」という名前のPDFを、
+            このフォルダー内の「領収書」サブフォルダーへ保存できます。
+          </p>
+          <Button
+            variant="primary"
+            className="mt-4"
+            onClick={() => setEditor(emptyDraft(sourceFolderId))}
+          >
             <Plus size={18} />
-            ルールを作成
+            このフォルダーにルールを作成
           </Button>
         </div>
       ) : (
         <div className="bg-surface dark:bg-[#181e26]">
-          {rules.map((rule, index) => (
+          {folderRules.map((rule, index) => (
             <div key={rule.id} className="border-b divider px-4 py-3">
               <div className="flex items-start gap-2">
                 <span className="mt-1 shrink-0 rounded-[4px] bg-surface-sub px-1.5 py-0.5 text-xs text-ink-sub dark:bg-[#232b35] dark:text-[#aab4c0]">
@@ -237,7 +371,9 @@ export function RulesView() {
                   <p
                     className={cx(
                       'break-words text-base font-medium',
-                      rule.enabled ? 'text-ink dark:text-[#e6eaef]' : 'text-ink-faint',
+                      rule.enabled
+                        ? 'text-ink dark:text-[#e6eaef]'
+                        : 'text-ink-faint',
                     )}
                   >
                     {rule.name}
@@ -246,7 +382,7 @@ export function RulesView() {
                     {describeRule(rule)}
                   </p>
                   <p className="mt-0.5 break-words text-xs text-ink-sub dark:text-[#98a3b0]">
-                    移動先：{folderLabel(rule.destFolderId)}
+                    保存先：{folderLabel(rule.destFolderId)}
                     {rule.autoMove ? '' : '（自動移動しない）'}
                     {rule.confirmBeforeMove ? '（移動前に確認）' : ''}
                   </p>
@@ -261,6 +397,7 @@ export function RulesView() {
                   label={`${rule.name} を使う`}
                 />
               </div>
+
               <div className="mt-2 flex items-center gap-1">
                 <IconButton
                   label="優先順位を上げる"
@@ -277,7 +414,7 @@ export function RulesView() {
                 <IconButton
                   label="優先順位を下げる"
                   className="h-9 w-9"
-                  disabled={index === rules.length - 1}
+                  disabled={index === folderRules.length - 1}
                   onClick={() =>
                     void moveRulePriority(rule.id, 'down')
                       .then(() => reloadRules())
@@ -293,9 +430,13 @@ export function RulesView() {
                   onClick={() => void startRun('test', rule)}
                 >
                   <FlaskConical size={16} />
-                  テスト実行
+                  テスト
                 </Button>
-                <IconButton label="このルールの操作" className="h-9 w-9" onClick={() => setMenuRule(rule)}>
+                <IconButton
+                  label="このルールの操作"
+                  className="h-9 w-9"
+                  onClick={() => setMenuRule(rule)}
+                >
                   <MoreVertical size={18} />
                 </IconButton>
               </div>
@@ -305,16 +446,27 @@ export function RulesView() {
       )}
 
       <div className="space-y-2 px-4 py-4">
-        <Button variant="secondary" className="w-full" onClick={() => void startRun('test')}>
+        <Button
+          variant="secondary"
+          className="w-full"
+          disabled={folderRules.length === 0}
+          onClick={() => void startRun('test')}
+        >
           <FlaskConical size={18} />
-          すべてのルールでテスト実行
+          このフォルダーのルールでテスト
         </Button>
-        <Button variant="primary" className="w-full" onClick={() => void startRun('apply')}>
+        <Button
+          variant="primary"
+          className="w-full"
+          disabled={folderRules.length === 0}
+          onClick={() => void startRun('apply')}
+        >
           <Play size={18} />
-          既存のPDFへ一括適用
+          このフォルダー内の既存PDFへ適用
         </Button>
         <p className="text-xs leading-relaxed text-ink-sub dark:text-[#98a3b0]">
-          テスト実行ではPDFは移動しません。どのPDFがどこへ分類されるかだけを確認できます。
+          対象は「{folderLabel(sourceFolderId)}」直下のPDF {folderTargets.length} 件です。
+          サブフォルダー内や別フォルダーのPDFには適用しません。
         </p>
       </div>
 
@@ -349,7 +501,7 @@ export function RulesView() {
         <MenuRow
           icon={<FlaskConical size={22} />}
           label="テスト実行"
-          description="移動せずに、分類先だけを確認します"
+          description="このフォルダー内で、移動せずに分類先だけ確認します"
           onClick={() => {
             const target = menuRule;
             setMenuRule(null);
@@ -405,38 +557,38 @@ export function RulesView() {
 
       {/* テスト実行 / 一括適用の確認 */}
       <BottomSheet
-        open={run !== null}
-        title={run?.mode === 'test' ? 'テスト実行の結果' : '一括適用の確認'}
+        open={runState !== null}
+        title={runState?.mode === 'test' ? 'テスト実行の結果' : '一括適用の確認'}
         description={
-          run
-            ? `対象PDF ${run.targetCount} 件のうち、${run.plans.length} 件が移動対象です`
+          runState
+            ? `「${folderLabel(runState.sourceFolderId)}」直下のPDF ${runState.targetCount} 件のうち、${runState.plans.length} 件が移動対象です`
             : undefined
         }
-        onClose={() => setRun(null)}
+        onClose={() => setRunState(null)}
         footer={
-          run?.mode === 'apply' && run.plans.length > 0 ? (
+          runState?.mode === 'apply' && runState.plans.length > 0 ? (
             <div className="flex gap-2">
-              <Button variant="secondary" className="flex-1" onClick={() => setRun(null)}>
+              <Button variant="secondary" className="flex-1" onClick={() => setRunState(null)}>
                 キャンセル
               </Button>
               <Button variant="primary" className="flex-1" onClick={() => void executeRun()}>
-                {run.plans.length} 件を移動
+                {runState.plans.length} 件を移動
               </Button>
             </div>
           ) : (
-            <Button variant="secondary" className="w-full" onClick={() => setRun(null)}>
+            <Button variant="secondary" className="w-full" onClick={() => setRunState(null)}>
               閉じる
             </Button>
           )
         }
       >
-        {run && run.plans.length === 0 && run.failures.length === 0 ? (
+        {runState && runState.plans.length === 0 && runState.failures.length === 0 ? (
           <p className="px-4 py-6 text-center text-sm text-ink-sub dark:text-[#98a3b0]">
             移動対象のPDFはありませんでした。
           </p>
         ) : null}
 
-        {run?.plans.map((plan) => (
+        {runState?.plans.map((plan) => (
           <div key={plan.file.id} className="border-b divider px-4 py-2.5">
             <p className="break-words text-sm text-ink dark:text-[#e6eaef]">
               {middleEllipsis(plan.file.name, 40)}
@@ -446,18 +598,23 @@ export function RulesView() {
             </p>
             <p className="mt-0.5 break-words text-xs text-brand-600 dark:text-brand-300">
               {plan.rule.name}
-              {plan.matches.length > 1 ? `（ほか ${plan.matches.length - 1} 件のルールにも一致）` : ''}
+              {plan.matches.length > 1
+                ? `（ほか ${plan.matches.length - 1} 件のルールにも一致）`
+                : ''}
             </p>
           </div>
         ))}
 
-        {run && run.failures.length > 0 ? (
+        {runState && runState.failures.length > 0 ? (
           <div className="px-4 py-3">
             <p className="text-sm font-medium text-pdf">
-              処理できなかったPDF（{run.failures.length} 件）
+              処理できなかったPDF（{runState.failures.length} 件）
             </p>
-            {run.failures.map((failure) => (
-              <p key={failure.fileId} className="mt-1 break-words text-xs text-ink-sub dark:text-[#98a3b0]">
+            {runState.failures.map((failure) => (
+              <p
+                key={failure.fileId}
+                className="mt-1 break-words text-xs text-ink-sub dark:text-[#98a3b0]"
+              >
                 {middleEllipsis(failure.fileName, 36)}：{failure.reason}
               </p>
             ))}
