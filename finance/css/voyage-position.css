@@ -1,0 +1,92 @@
+/* Midnight Voyage: 合計資産カードの「現在地」表示 */
+
+.voyage-position-head {
+  position: relative;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+
+.voyage-position-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 26px;
+  padding: 4px 10px;
+  border: 1px solid rgba(224, 191, 120, 0.34);
+  border-radius: 999px;
+  background: rgba(213, 178, 105, 0.12);
+  color: var(--voyage-gold);
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  white-space: nowrap;
+  -webkit-backdrop-filter: blur(8px);
+  backdrop-filter: blur(8px);
+}
+
+.voyage-position-badge::before {
+  content: '';
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--voyage-gold);
+  box-shadow: 0 0 10px rgba(224, 191, 120, 0.65);
+}
+
+.voyage-position-date {
+  overflow: hidden;
+  color: rgba(255, 255, 255, 0.58);
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.voyage-position-caption {
+  position: relative;
+  z-index: 2;
+  margin: -5px 0 13px 2px;
+  color: rgba(255, 255, 255, 0.56);
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.06em;
+}
+
+/* 現在地表示が加わっても、元のラベル・シークレットボタンを崩さない。 */
+.fc-hero[data-voyage-position='1'] .fc-hero-row {
+  align-items: flex-start;
+}
+
+.fc-hero[data-voyage-position='1'] .fc-hero-lab {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 3px;
+  min-width: 0;
+}
+
+.fc-hero[data-voyage-position='1'] .fc-hero-sim {
+  letter-spacing: 0.04em;
+}
+
+@media (max-width: 360px) {
+  .voyage-position-date {
+    max-width: 132px;
+  }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .voyage-position-badge::before {
+    animation: voyagePositionPulse 2.8s ease-in-out infinite;
+  }
+}
+
+@keyframes voyagePositionPulse {
+  0%, 100% { opacity: 0.62; transform: scale(0.92); }
+  50% { opacity: 1; transform: scale(1.08); }
+}
