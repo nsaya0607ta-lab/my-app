@@ -10,6 +10,7 @@
  */
 import { deleteKeyed, mutateKeyed, readKeyed, readKeyedByPrefix } from './db';
 import { createId, nowIso } from './naming';
+import { currentOwnerId, isOwnedBy, setOwnerId } from './owner';
 import { LOCAL_OWNER_ID, type MemoSortKey, type PdfMemo } from './types';
 
 const MEMO_PREFIX = 'memo:';
@@ -23,31 +24,14 @@ function memoKey(fileId: string): string {
 /* ------------------------------------------------------------------ */
 
 /**
- * 現在の持ち主。クラウドへログインしていれば UID、していなければ端末ローカル。
- * CloudStore がログイン状態の変化に合わせて更新する。
+ * 持ち主の判定は owner.ts に集約している (メモと自動分類ルールで共通)。
+ * 既存の呼び出し元との互換のため、名前だけここでも公開する。
  */
-let ownerId: string = LOCAL_OWNER_ID;
+export const memoOwnerId = currentOwnerId;
+export const setMemoOwnerId = setOwnerId;
 
-export function memoOwnerId(): string {
-  return ownerId;
-}
-
-/**
- * ログイン状態が変わったときに呼ぶ。
- * 別アカウントでログインした人に、前の人のメモが見えないようにするための土台。
- */
-export function setMemoOwnerId(uid: string | null | undefined): void {
-  ownerId = uid || LOCAL_OWNER_ID;
-}
-
-/**
- * 現在の持ち主が読み書きしてよいメモか。
- *
- * ログイン前に作られたメモ (LOCAL_OWNER_ID) は、この端末を使っている本人のものなので
- * ログイン後も引き続き見える。別 UID のメモは、ログインしていても一切見せない。
- */
 function isOwned(memo: PdfMemo): boolean {
-  return memo.userId === ownerId || memo.userId === LOCAL_OWNER_ID;
+  return isOwnedBy(memo.userId);
 }
 
 /** 保存されている値が壊れていても落ちないように整える。 */
@@ -155,7 +139,7 @@ export async function saveMemo(input: MemoInput): Promise<PdfMemo> {
     const existing = input.id ? mine.find((memo) => memo.id === input.id) : undefined;
     const memo: PdfMemo = {
       id: existing?.id ?? input.id ?? createId('memo'),
-      userId: existing?.userId ?? ownerId,
+      userId: existing?.userId ?? currentOwnerId(),
       fileId: input.fileId,
       title: input.title?.trim() ? input.title.trim() : undefined,
       content: input.content,
@@ -384,7 +368,7 @@ export async function transferMemos(
         ...memo,
         id: createId('memo'),
         fileId: toFileId,
-        userId: ownerId,
+        userId: currentOwnerId(),
         updatedAt: timestamp,
       });
       continue;
@@ -402,7 +386,7 @@ export async function transferMemos(
       ...memo,
       id: createId('memo'),
       fileId: toFileId,
-      userId: ownerId,
+      userId: currentOwnerId(),
       ...normalizePageRange(Math.min(...remapped), Math.max(...remapped)),
       updatedAt: timestamp,
     });

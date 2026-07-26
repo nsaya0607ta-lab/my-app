@@ -17,6 +17,7 @@ import {
   useState,
   type ReactNode,
 } from 'react';
+import { listRules } from '@/lib/classifyRules';
 import { estimateStorage, isIndexedDbAvailable, readThumb, writeThumb } from '@/lib/db';
 import { isIos } from '@/lib/device';
 import { toMessage } from '@/lib/errors';
@@ -27,6 +28,7 @@ import { renderThumbnail } from '@/lib/pdf';
 import {
   DEFAULT_SETTINGS,
   ROOT_ID,
+  type ClassifyRule,
   type Folder,
   type PdfFileMeta,
   type PdfMemo,
@@ -41,7 +43,8 @@ export type Route =
   | { view: 'favorites' }
   | { view: 'trash' }
   | { view: 'settings' }
-  | { view: 'search' };
+  | { view: 'search' }
+  | { view: 'rules' };
 
 export type Toast = { id: number; message: string; tone: 'info' | 'error' | 'success' };
 
@@ -52,6 +55,8 @@ type AppState = {
   files: PdfFileMeta[];
   /** すべての PDF のメモ。検索と一覧のバッジ表示に使う。 */
   memos: PdfMemo[];
+  /** 自動分類ルール (優先順位順・現在の持ち主のぶんだけ)。 */
+  rules: ClassifyRule[];
   settings: Settings;
   route: Route;
   canGoBack: boolean;
@@ -69,6 +74,8 @@ type AppActions = {
   reload: () => Promise<void>;
   /** メモだけを読み直す (メモの保存・削除のあとに呼ぶ)。 */
   reloadMemos: () => Promise<void>;
+  /** 自動分類ルールだけを読み直す (ルールの保存・削除のあとに呼ぶ)。 */
+  reloadRules: () => Promise<void>;
   updateSettings: (patch: Partial<Settings>) => Promise<void>;
   notify: (message: string, tone?: Toast['tone']) => void;
   dismissToast: (id: number) => void;
@@ -95,6 +102,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [folders, setFolders] = useState<Folder[]>([]);
   const [files, setFiles] = useState<PdfFileMeta[]>([]);
   const [memos, setMemos] = useState<PdfMemo[]>([]);
+  const [rules, setRules] = useState<ClassifyRule[]>([]);
   const [settings, setSettings] = useState<Settings>(DEFAULT_SETTINGS);
   const [route, setRoute] = useState<Route>({ view: 'home' });
   const [back, setBack] = useState<Route[]>([]);
@@ -121,6 +129,14 @@ export function AppProvider({ children }: { children: ReactNode }) {
       setMemos(await listAllMemos());
     } catch {
       // メモを読めなくてもアプリ自体は使えるようにする
+    }
+  }, []);
+
+  const reloadRules = useCallback(async () => {
+    try {
+      setRules(await listRules());
+    } catch {
+      // ルールを読めなくてもアプリ自体は使えるようにする (自動分類だけが動かない)
     }
   }, []);
 
@@ -171,6 +187,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         setSettings(snapshot.settings);
         setReady(true);
         await reloadMemos();
+        await reloadRules();
 
         const purged = await repo.purgeExpiredTrash(snapshot.settings.trashRetentionDays);
         if (purged > 0 && !cancelled) {
@@ -193,7 +210,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     return () => {
       cancelled = true;
     };
-  }, [reload, reloadMemos, refreshStorage]);
+  }, [reload, reloadMemos, reloadRules, refreshStorage]);
 
   /* テーマ ------------------------------------------------------------ */
   useEffect(() => {
@@ -352,6 +369,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       folders,
       files,
       memos,
+      rules,
       settings,
       route,
       canGoBack: back.length > 0,
@@ -365,6 +383,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       goUp,
       reload,
       reloadMemos,
+      reloadRules,
       updateSettings,
       notify,
       dismissToast,
@@ -393,7 +412,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
       refreshStorage,
       reload,
       reloadMemos,
+      reloadRules,
       route,
+      rules,
       run,
       settings,
       storage,

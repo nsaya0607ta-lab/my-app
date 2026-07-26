@@ -13,7 +13,8 @@
     "start": "next start",
     "lint": "eslint .",
     "typecheck": "tsc --noEmit",
-    "test:cloud": "node scripts/test-cloud-storage.cjs"
+    "test:cloud": "node scripts/test-cloud-storage.cjs",
+    "test:classify": "node scripts/test-auto-classify.cjs"
   },
   "dependencies": {
     "fflate": "^0.8.2",

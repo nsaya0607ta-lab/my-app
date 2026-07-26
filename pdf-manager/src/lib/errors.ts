@@ -26,6 +26,10 @@ export type AppErrorCode =
   | 'BACKUP_FAILED'
   | 'RESTORE_FAILED'
   | 'IMAGE_CONVERT_FAILED'
+  | 'IMAGE_PDF_TOO_MANY'
+  | 'IMAGE_PDF_CANCELLED'
+  | 'IMAGE_PDF_IN_PROGRESS'
+  | 'IMAGE_PDF_ENCRYPT_FAILED'
   | 'PRINT_FAILED'
   | 'PDF_EDIT_EMPTY'
   | 'PDF_EDIT_TOO_LARGE'
@@ -59,6 +63,12 @@ export const ERROR_MESSAGES: Record<AppErrorCode, string> = {
   BACKUP_FAILED: 'バックアップの作成に失敗しました。',
   RESTORE_FAILED: 'バックアップファイルを読み込めませんでした。ファイルを確認してください。',
   IMAGE_CONVERT_FAILED: '画像からPDFを作成できませんでした。対応していない画像形式の可能性があります。',
+  IMAGE_PDF_TOO_MANY:
+    '一度に作成できる画像の枚数を超えています。枚数を減らして分けて作成してください。',
+  IMAGE_PDF_CANCELLED: '',
+  IMAGE_PDF_IN_PROGRESS: 'PDFを作成しています。完了までお待ちください。',
+  IMAGE_PDF_ENCRYPT_FAILED:
+    'パスワードの設定に失敗しました。パスワードなしで作成し直すか、もう一度お試しください。',
   PRINT_FAILED: '印刷画面を開けませんでした。ポップアップがブロックされていないか確認してください。',
   PDF_EDIT_EMPTY: 'ページがすべて削除されています。1ページ以上残してください。',
   PDF_EDIT_TOO_LARGE:
