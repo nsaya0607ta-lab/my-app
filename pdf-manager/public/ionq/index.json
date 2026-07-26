@@ -1,6 +1,14 @@
 {
   "reports": [
     {
+      "id": "2026-07-24-test-ionq",
+      "file": "2026-07-26_IONQデイリーレポート.pdf",
+      "name": "投資_IQ_20260724.pdf",
+      "size": 392275,
+      "generatedAt": "2026-07-26T13:10:00.000Z",
+      "marketDate": "2026-07-24"
+    },
+    {
       "id": "2026-07-26-ionq",
       "file": "2026-07-26_IONQデイリーレポート.pdf",
       "name": "2026-07-26_IONQデイリーレポート.pdf",
@@ -9,5 +17,5 @@
       "marketDate": "2026-07-24"
     }
   ],
-  "deploymentTrigger": 1
+  "deploymentTrigger": 2
 }
