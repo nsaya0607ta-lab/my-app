@@ -1,0 +1,57 @@
+name: 毎朝のIONQデイリーレポートPDF
+
+on:
+  schedule:
+    # 日本時間の毎朝7時。GitHub Actionsの混雑時は開始が遅れる場合がある。
+    - cron: '0 7 * * *'
+      timezone: 'Asia/Tokyo'
+  workflow_dispatch:
+
+concurrency:
+  group: ionq-daily-report
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+
+      - name: 日本語フォントを導入
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends fonts-noto-cjk
+
+      - name: 依存関係を導入
+        run: npm ci
+
+      - name: Chromiumを導入
+        run: npx puppeteer browsers install chrome
+
+      - name: IONQレポートを生成
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          ALPHA_VANTAGE_API_KEY: ${{ secrets.ALPHA_VANTAGE_API_KEY }}
+          GEMINI_MODEL: ${{ vars.GEMINI_MODEL }}
+        run: npm run ionq-report
+
+      - name: 生成物をコミット
+        run: |
+          if [ -z "$(git status --porcelain pdf-manager/public/ionq)" ]; then
+            echo "生成物に変更がないためコミットしません"
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add pdf-manager/public/ionq
+          git commit -m "IONQデイリーレポートを追加: $(TZ=Asia/Tokyo date +%Y-%m-%d)"
+          git pull --rebase origin "${GITHUB_REF_NAME}"
+          git push origin "HEAD:${GITHUB_REF_NAME}"
