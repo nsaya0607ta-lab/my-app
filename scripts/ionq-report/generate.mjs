@@ -21,6 +21,10 @@ function jstDate() {
   }).format(new Date());
 }
 
+function compactDate(value) {
+  return String(value || '').replaceAll('-', '');
+}
+
 async function htmlToPdf(html) {
   const browser = await puppeteer.launch({
     headless: 'new',
@@ -73,7 +77,7 @@ async function main() {
   const html = renderIonqHtml({ stock, report: { ...report, reportDate }, sources });
 
   await mkdir(OUT_DIR, { recursive: true });
-  const fileName = `${reportDate}_IONQデイリーレポート.pdf`;
+  const fileName = `投資_IQ_${compactDate(stock.marketDate)}.pdf`;
   if (KEEP_HTML) await writeFile(path.join(OUT_DIR, fileName.replace(/\.pdf$/, '.html')), html, 'utf8');
 
   const pdf = await htmlToPdf(html);
