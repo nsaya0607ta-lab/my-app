@@ -29,6 +29,21 @@ function makeAxisFmt(min, max) {
   return (v) => Math.round(v).toLocaleString();
 }
 
+// x軸ラベルを出すインデックス集合。等間隔に間引きつつ末尾も必ず表示するが、
+// 末尾が直前の目盛りと近すぎる（間隔の半分未満）ときはその手前を落として文字の重なりを防ぐ。
+function axisTicks(len, step) {
+  const st = Math.max(1, Math.round(step) || 1);
+  const keep = new Set();
+  for (let i = 0; i < len; i += st) keep.add(i);
+  const last = len - 1;
+  if (last >= 0 && !keep.has(last)) {
+    const prev = Math.floor(last / st) * st;
+    if (last - prev < st / 2) keep.delete(prev);
+    keep.add(last);
+  }
+  return keep;
+}
+
 // ===== 折れ線グラフ（資産推移・収支推移） =====
 // data: [{label, value}] , opts: {height, color, fill, area}
 export function lineChart(data, opts = {}) {
@@ -65,8 +80,10 @@ export function lineChart(data, opts = {}) {
       grid += `<text x="${pad.l - 6}" y="${yy + 3}" class="fc-axis" text-anchor="end">${fmtShort(v)}</text>`;
     }
     const step = Math.ceil(data.length / 6);
+    // 末尾のラベルは必ず出すが、直前の目盛りと近すぎる場合は重なるので省く
+    const keep = axisTicks(data.length, step);
     data.forEach((d, i) => {
-      if (i % step === 0 || i === data.length - 1)
+      if (keep.has(i))
         xl += `<text x="${x(i)}" y="${h - 8}" class="fc-axis" text-anchor="middle">${d.label}</text>`;
     });
     if (data.length <= 14)
@@ -207,8 +224,9 @@ export function multiLineChart(seriesList, opts = {}) {
   }
   let xl = '';
   const step = Math.ceil(first.length / 6);
+  const keep = axisTicks(first.length, step);
   first.forEach((d, i) => {
-    if (i % step === 0 || i === first.length - 1)
+    if (keep.has(i))
       xl += `<text x="${x(i)}" y="${h - 8}" class="fc-axis" text-anchor="middle">${d.label}</text>`;
   });
   const zeroLine = (min < 0 && max > 0)
@@ -357,8 +375,9 @@ export function perfChart(points, series, opts = {}) {
   // x軸ラベル（長期は間引き）
   let xl = '';
   const step = Math.max(1, Math.ceil(N / 6));
+  const keep = axisTicks(N, step);
   points.forEach((p, i) => {
-    if (i % step === 0 || i === N - 1)
+    if (keep.has(i))
       xl += `<text x="${x(i)}" y="${h - 8}" class="fc-axis" text-anchor="middle">${p.label}</text>`;
   });
 
