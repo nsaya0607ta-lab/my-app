@@ -45,7 +45,7 @@ jobs:
           cache: npm
 
       - name: 今日のPDF作成状況を確認
-        id: report-check
+        id: report_check
         shell: bash
         run: |
           REPORT_DATE="$(TZ=Asia/Tokyo date +%Y-%m-%d)"
@@ -79,21 +79,21 @@ jobs:
           fi
 
       - name: 日本語フォントを導入
-        if: steps.report-check.outputs.should_generate == 'true'
+        if: steps.report_check.outputs.should_generate == 'true'
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends fonts-noto-cjk
 
       - name: 依存関係を導入
-        if: steps.report-check.outputs.should_generate == 'true'
+        if: steps.report_check.outputs.should_generate == 'true'
         run: npm ci
 
       - name: Chromiumを導入
-        if: steps.report-check.outputs.should_generate == 'true'
+        if: steps.report_check.outputs.should_generate == 'true'
         run: npx puppeteer browsers install chrome
 
       - name: IONQレポートを生成
-        if: steps.report-check.outputs.should_generate == 'true'
+        if: steps.report_check.outputs.should_generate == 'true'
         env:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           ALPHA_VANTAGE_API_KEY: ${{ secrets.ALPHA_VANTAGE_API_KEY }}
@@ -103,7 +103,7 @@ jobs:
         run: npm run ionq-report
 
       - name: 生成物をコミット
-        if: steps.report-check.outputs.should_generate == 'true'
+        if: steps.report_check.outputs.should_generate == 'true'
         run: |
           if [ -z "$(git status --porcelain pdf-manager/public/ionq)" ]; then
             echo "生成物に変更がないためコミットしません"
