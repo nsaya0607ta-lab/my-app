@@ -1,6 +1,0 @@
-/* Small layout safeguards for the voyage goal components. */
-.voyage-progress-ring { position: relative; }
-.voyage-route-point.destination {
-  right: 0;
-  transform: translate(0, -50%);
-}
