@@ -23,6 +23,8 @@ type PdfPageProxy = {
     /** 高解像度描画用のスケール。pdf.js へ明示的に伝える (詳細は PdfViewer)。 */
     transform?: [number, number, number, number, number, number];
   }) => { promise: Promise<void>; cancel: () => void };
+  /** ページ内のテキスト。自動分類の「PDF内の文字」条件で使う。 */
+  getTextContent: () => Promise<{ items: { str?: string }[] }>;
   cleanup: () => void;
 };
 
@@ -94,6 +96,37 @@ export async function getPageCount(blob: Blob): Promise<number | undefined> {
     return doc.numPages;
   } catch {
     return undefined;
+  } finally {
+    await doc?.destroy().catch(() => undefined);
+  }
+}
+
+/**
+ * PDF 本文のテキストを取り出す (自動分類の「PDF内の文字」条件で使う)。
+ *
+ * 全ページを読むと大きな PDF で時間がかかるため、先頭 `maxPages` ページまでに限る。
+ * 画像だけのスキャンPDFなど、テキストを持たないPDFでは空文字を返す
+ * (このアプリは文字認識を行わないため、本文条件では一致しない)。
+ */
+export async function extractText(blob: Blob, maxPages = 5): Promise<string> {
+  let doc: PdfDocumentProxy | undefined;
+  try {
+    doc = await openDocument(blob);
+    const limit = Math.max(1, Math.min(maxPages, doc.numPages));
+    const chunks: string[] = [];
+    for (let number = 1; number <= limit; number += 1) {
+      const page = await doc.getPage(number);
+      try {
+        const content = await page.getTextContent();
+        chunks.push(content.items.map((item) => item.str ?? '').join(''));
+      } finally {
+        // ページごとに内部キャッシュを解放し、メモリを増やし続けないようにする
+        page.cleanup();
+      }
+    }
+    return chunks.join('\n');
+  } catch {
+    return '';
   } finally {
     await doc?.destroy().catch(() => undefined);
   }

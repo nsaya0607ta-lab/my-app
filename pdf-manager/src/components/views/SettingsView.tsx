@@ -11,6 +11,7 @@ import {
   Sunrise,
   Trash2,
   Upload,
+  Wand2,
 } from 'lucide-react';
 import { createBackup, restoreBackup, type RestoreMode } from '@/lib/backup';
 import { downloadBlob, sharePdf } from '@/lib/device';
@@ -69,8 +70,20 @@ function Row({
 }
 
 export function SettingsView() {
-  const { settings, updateSettings, storage, refreshStorage, notify, reload, goBack, canGoBack, files, folders } =
-    useApp();
+  const {
+    settings,
+    updateSettings,
+    storage,
+    refreshStorage,
+    notify,
+    reload,
+    goBack,
+    canGoBack,
+    files,
+    folders,
+    rules,
+    navigate,
+  } = useApp();
   const restoreInput = useRef<HTMLInputElement | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [sheet, setSheet] = useState<
@@ -183,6 +196,22 @@ export function SettingsView() {
         >
           <Row label="取り込み先フォルダー" description={reportFolderLabel}>
             <Sunrise size={20} className="text-ink-sub" />
+          </Row>
+        </button>
+      </div>
+
+      <SectionTitle>自動分類</SectionTitle>
+      <div className="bg-surface dark:bg-[#181e26]">
+        <button type="button" className="w-full text-left" onClick={() => navigate({ view: 'rules' })}>
+          <Row
+            label="自動分類ルール"
+            description={
+              settings.classifyEnabled
+                ? `${rules.length} 件のルール（PDF追加時に自動で振り分けます）`
+                : `${rules.length} 件のルール（自動分類はOFFです）`
+            }
+          >
+            <Wand2 size={20} className="text-ink-sub" />
           </Row>
         </button>
       </div>

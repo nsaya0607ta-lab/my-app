@@ -44,6 +44,7 @@ import {
 } from '@/lib/firebaseCloud';
 import { AppError, toMessage } from '@/lib/errors';
 import { claimLocalMemos, setMemoOwnerId } from '@/lib/memos';
+import { claimLocalRules } from '@/lib/classifyRules';
 import { nowIso } from '@/lib/naming';
 import * as repo from '@/lib/repository';
 import { isInCloud, storageStateOf, type PdfFileMeta } from '@/lib/types';
@@ -94,7 +95,7 @@ export function useCloudRequired(): CloudContextValue {
 
 export function CloudProvider({ children }: { children: ReactNode }) {
   const app = useApp();
-  const { files, settings, notify, reload, reloadMemos, updateSettings } = app;
+  const { files, settings, notify, reload, reloadMemos, reloadRules, updateSettings } = app;
 
   const [user, setUser] = useState<CloudUser | null>(null);
   const [authReady, setAuthReady] = useState(false);
@@ -147,19 +148,22 @@ export function CloudProvider({ children }: { children: ReactNode }) {
       setUser(nextUser);
       setAuthReady(ready);
 
-      // メモの持ち主を切り替える。ログイン前に作ったメモは、この端末を使っている
-      // 本人のものとして引き継ぎ、以後は別アカウントからは見えないようにする。
+      // メモと自動分類ルールの持ち主を切り替える。ログイン前に作ったものは、
+      // この端末を使っている本人のものとして引き継ぎ、以後は別アカウントからは
+      // 見えないようにする。
       setMemoOwnerId(nextUser?.uid ?? null);
-      if (nextUser?.uid) {
-        void claimLocalMemos(nextUser.uid)
-          .then(() => reloadMemos())
+      const uid = nextUser?.uid;
+      if (uid) {
+        void Promise.all([claimLocalMemos(uid), claimLocalRules(uid)])
+          .then(() => Promise.all([reloadMemos(), reloadRules()]))
           .catch(() => undefined);
       } else {
         void reloadMemos();
+        void reloadRules();
       }
     });
     return unsubscribe;
-  }, [reloadMemos, settings.cloudEnabled]);
+  }, [reloadMemos, reloadRules, settings.cloudEnabled]);
 
   /* ---------------------------------------------------------------- */
   /* 中断された処理の後始末 (起動時に 1 回)                            */

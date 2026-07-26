@@ -31,6 +31,7 @@ import {
   type FolderColor,
   type Importance,
   type PdfFileMeta,
+  type PdfOrigin,
   type Settings,
   type StorageState,
 } from './types';
@@ -446,6 +447,12 @@ export type AddPdfOptions = {
   /** 同名衝突時の扱い。既定は自動採番。 */
   onDuplicate?: 'rename' | 'overwrite' | 'skip';
   pageCount?: number;
+  /** どの経路で追加されたか (自動分類の「登録元」条件で使う)。 */
+  origin?: PdfOrigin;
+  /** 共有元アプリ名など (分かる場合だけ)。 */
+  sharedFrom?: string;
+  /** 元になったファイルの形式 (画像から作った PDF では使った画像形式)。 */
+  sourceFormats?: string[];
 };
 
 export async function addPdf(
@@ -499,6 +506,9 @@ export async function addPdf(
     createdAt: timestamp,
     updatedAt: timestamp,
     thumbState: 'none',
+    origin: options.origin ?? 'unknown',
+    sharedFrom: options.sharedFrom,
+    sourceFormats: options.sourceFormats,
   };
 
   await tx([STORE.files, STORE.blobs], 'readwrite', async (t) => {
@@ -701,7 +711,17 @@ async function scheduleCloudDeletes(targets: PdfFileMeta[]): Promise<void> {
   }
 }
 
-export async function moveFile(fileId: string, destId: string): Promise<PdfFileMeta> {
+/**
+ * PDF を別フォルダーへ移す。
+ *
+ * @param options.ruleId    自動分類で移動したときのルール ID (どのルールで動いたかを残す)
+ * @param options.clearRule 分類による移動を取り消すときに、その記録を消す
+ */
+export async function moveFile(
+  fileId: string,
+  destId: string,
+  options: { ruleId?: string; clearRule?: boolean } = {},
+): Promise<PdfFileMeta> {
   const { files } = await loadAll();
   const target = files.find((file) => file.id === fileId);
   if (!target) throw new AppError('NOT_FOUND');
@@ -709,6 +729,11 @@ export async function moveFile(fileId: string, destId: string): Promise<PdfFileM
   const updated = await mergeFile(fileId, {
     parentId: destId,
     name: nextAvailableName(target.name, siblings),
+    ...(options.ruleId
+      ? { classifiedByRuleId: options.ruleId, classifiedAt: nowIso() }
+      : options.clearRule
+        ? { classifiedByRuleId: undefined, classifiedAt: undefined }
+        : {}),
   });
   if (!updated) throw new AppError('NOT_FOUND');
   return updated;

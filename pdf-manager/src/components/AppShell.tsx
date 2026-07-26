@@ -16,6 +16,15 @@ import {
   Star,
   X,
 } from 'lucide-react';
+import {
+  applyPlan,
+  moveToFolder,
+  planFile,
+  undoClassification,
+  type ClassifyPlan,
+  type ClassifyRecord,
+} from '@/lib/classifyRun';
+import { saveRule } from '@/lib/classifyRules';
 import { AppError, toMessage } from '@/lib/errors';
 import { copyToClipboard, downloadBlob, isIos, openWithOtherApp, printPdf, sharePdf } from '@/lib/device';
 import { ensurePdfExtension, nextAvailableName, sanitizeName, stripPdfExtension } from '@/lib/naming';
@@ -31,7 +40,9 @@ import {
   type ExplorerItem,
   type FolderColor,
   type Importance,
+  type ImagePdfOptions,
   type PdfFileMeta,
+  type PdfOrigin,
 } from '@/lib/types';
 import { ROOT_NAME, descendantFolderIds, pathString, toParentKey } from '@/lib/tree';
 import { useApp } from '@/store/AppStore';
@@ -41,7 +52,10 @@ import { BottomSheet, MenuRow } from '@/components/ui/Sheet';
 import { ColorSheet, ConfirmDialog, DetailsSheet, DuplicateDialog, NameDialog, SortSheet, TagMemoSheet } from '@/components/dialogs/CommonDialogs';
 import { FolderPicker } from '@/components/dialogs/FolderPicker';
 import { ItemMenu, type ItemMenuActions } from '@/components/dialogs/ItemMenu';
-import { ScanSheet } from '@/components/dialogs/ScanSheet';
+import { ClassifyConfirmSheet, ClassifyResultSheet } from '@/components/classify/ClassifySheets';
+import { ImageToPdfView, type ImagePdfSaved } from '@/components/imagepdf/ImageToPdfView';
+import { RuleEditor, toDraft, type RuleDraft } from '@/components/rules/RuleEditor';
+import { RulesView } from '@/components/rules/RulesView';
 import { PdfViewer } from '@/components/viewer/PdfViewer';
 import { MemoSheet } from '@/components/memo/MemoSheet';
 import { PdfEditView } from '@/components/editor/PdfEditView';
@@ -56,7 +70,7 @@ import { SettingsView } from '@/components/views/SettingsView';
 type DuplicateChoice = 'overwrite' | 'rename' | 'cancel';
 
 type PickerState =
-  | { mode: 'import'; sources: { blob: Blob; name: string }[] }
+  | { mode: 'import'; sources: { blob: Blob; name: string }[]; origin: PdfOrigin }
   | { mode: 'move'; item: ExplorerItem }
   | { mode: 'copy'; item: ExplorerItem }
   | null;
@@ -68,12 +82,14 @@ export function AppShell() {
     files,
     folders,
     memos,
+    rules,
     settings,
     route,
     navigate,
     notify,
     reload,
     reloadMemos,
+    reloadRules,
     run,
     updateSettings,
     refreshStorage,
@@ -95,7 +111,19 @@ export function AppShell() {
   const [tagTarget, setTagTarget] = useState<PdfFileMeta | null>(null);
   const [detailTarget, setDetailTarget] = useState<PdfFileMeta | null>(null);
   const [sortSheet, setSortSheet] = useState(false);
-  const [scan, setScan] = useState<'camera' | 'gallery' | null>(null);
+  /** 画像からPDFを作成する画面 (null なら閉じている)。 */
+  const [imagePdf, setImagePdf] = useState<'camera' | 'gallery' | null>(null);
+  /* --- 自動分類 --- */
+  /** 移動前の確認待ち。先頭から 1 件ずつ確認する。 */
+  const [pendingPlans, setPendingPlans] = useState<ClassifyPlan[]>([]);
+  /** 確認画面で選んでいるルール。 */
+  const [pendingRuleId, setPendingRuleId] = useState<string | null>(null);
+  /** 自動分類で移動したPDF (元に戻す・別フォルダーへ移動に使う)。 */
+  const [classifyRecords, setClassifyRecords] = useState<ClassifyRecord[]>([]);
+  /** 「別フォルダーへ移動」で移動先を選んでいるPDF。 */
+  const [reclassifyTarget, setReclassifyTarget] = useState<ClassifyRecord | null>(null);
+  /** 自動分類の画面から開いたルール編集。 */
+  const [ruleDraft, setRuleDraft] = useState<RuleDraft | null>(null);
   const [viewer, setViewer] = useState<{ file: PdfFileMeta; blob: Blob; page?: number } | null>(
     null,
   );
@@ -143,10 +171,64 @@ export function AppShell() {
     [],
   );
 
+  /* ---------------------------------------------------------------- */
+  /* 自動分類                                                          */
+  /* ---------------------------------------------------------------- */
+
+  /**
+   * 追加された PDF にルールを当てる。
+   *
+   * 1 件の判定に失敗しても、ほかの PDF の処理は止めない。
+   * 「移動前に確認する」ルールと「自動移動しない」ルールは、移動せずに確認待ちへ積む。
+   */
+  const classifyFiles = useCallback(
+    async (metas: PdfFileMeta[], options: { showResult?: boolean } = {}): Promise<ClassifyRecord[]> => {
+      if (!settings.classifyEnabled || rules.length === 0 || metas.length === 0) return [];
+      const context = {
+        rules,
+        strategy: settings.classifyMultiMatch,
+        textPages: settings.classifyTextPages,
+      };
+      const applied: ClassifyRecord[] = [];
+      const confirms: ClassifyPlan[] = [];
+
+      for (const meta of metas) {
+        try {
+          const plan = await planFile(meta, context);
+          if (!plan || plan.alreadyThere) continue;
+          if (plan.needsConfirm) {
+            confirms.push(plan);
+            continue;
+          }
+          applied.push(await applyPlan(plan));
+        } catch {
+          // 判定・移動に失敗しても、ほかの PDF の処理は続ける
+        }
+      }
+
+      if (applied.length > 0 || confirms.length > 0) await reload();
+      if (confirms.length > 0) {
+        // すでに確認待ちがある場合は後ろへ積む (先に出した確認を消さない)
+        setPendingPlans((current) => [...current, ...confirms]);
+        setPendingRuleId((current) => current ?? confirms[0].rule.id);
+      }
+      if (applied.length > 0 && options.showResult !== false) {
+        setClassifyRecords((current) => [...current, ...applied]);
+      }
+      return applied;
+    },
+    [reload, rules, settings.classifyEnabled, settings.classifyMultiMatch, settings.classifyTextPages],
+  );
+
   const importSources = useCallback(
-    async (sources: { blob: Blob; name: string }[], destId: string) => {
+    async (
+      sources: { blob: Blob; name: string }[],
+      destId: string,
+      origin: PdfOrigin = 'file',
+    ) => {
       if (sources.length === 0) return;
       setBusy(`PDFを追加しています…（0 / ${sources.length}）`);
+      const addedFiles: PdfFileMeta[] = [];
       let added = 0;
       let skipped = 0;
       let applyAll: DuplicateChoice | null = null;
@@ -195,8 +277,10 @@ export function AppShell() {
             parentId: destId,
             onDuplicate,
             pageCount,
+            origin,
           });
           taken.add(meta.name.toLowerCase());
+          addedFiles.push(meta);
           added += 1;
         }
 
@@ -207,6 +291,8 @@ export function AppShell() {
           `${added} 件のPDFを「${destName}」へ追加しました${skipped > 0 ? `（${skipped} 件は追加しませんでした）` : ''}`,
           'success',
         );
+        // 追加が終わってから自動分類する (移動の結果は画面上に表示する)
+        await classifyFiles(addedFiles);
       } catch (error) {
         notify(toMessage(error), 'error');
       } finally {
@@ -215,7 +301,7 @@ export function AppShell() {
         duplicateResolver.current = null;
       }
     },
-    [askDuplicate, folders, notify, refreshStorage, reload],
+    [askDuplicate, classifyFiles, folders, notify, refreshStorage, reload],
   );
 
   /** ファイル選択 → 保存先を選ばせてから取り込む。 */
@@ -223,7 +309,7 @@ export function AppShell() {
     (list: FileList | null) => {
       if (!list || list.length === 0) return;
       const sources = Array.from(list).map((file) => ({ blob: file, name: file.name }));
-      setPicker({ mode: 'import', sources });
+      setPicker({ mode: 'import', sources, origin: 'file' });
     },
     [],
   );
@@ -236,7 +322,7 @@ export function AppShell() {
       const shared = await takeSharedFiles();
       if (cancelled || shared.length === 0) return;
       if (hasSharedFlag()) clearSharedFlag();
-      setPicker({ mode: 'import', sources: shared });
+      setPicker({ mode: 'import', sources: shared, origin: 'share' });
     })();
     return () => {
       cancelled = true;
@@ -272,6 +358,7 @@ export function AppShell() {
             parentId: destId,
             onDuplicate: 'skip',
             pageCount,
+            origin: 'report',
           });
           imported.push(report.id);
           added += 1;
@@ -403,6 +490,85 @@ export function AppShell() {
       }
     },
     [notify, resolveBlob],
+  );
+
+  /** ID から最新のメタデータを読み直して処理する (作成直後の操作で使う)。 */
+  const withFile = useCallback(
+    async (fileId: string, action: (file: PdfFileMeta) => void | Promise<void>) => {
+      const meta = await repo.readFileMeta(fileId);
+      if (!meta) {
+        notify(new AppError('NOT_FOUND').message, 'error');
+        return;
+      }
+      await action(meta);
+    },
+    [notify],
+  );
+
+  /**
+   * 画像から作った PDF を保存する。
+   * 保存 → 自動分類 → 完了画面に出す情報を返す、までをここで行う。
+   */
+  const saveImagePdf = useCallback(
+    async (input: {
+      blob: Blob;
+      name: string;
+      folderId: string;
+      formats: string[];
+      pageCount: number;
+    }): Promise<ImagePdfSaved | null> => {
+      try {
+        const meta = await repo.addPdf(input.blob, input.name, {
+          parentId: input.folderId,
+          onDuplicate: 'rename',
+          pageCount: input.pageCount,
+          origin: 'image',
+          sourceFormats: input.formats,
+        });
+        await reload();
+        void refreshStorage();
+
+        // 作成した PDF にもルールを適用する。結果は完了画面に出すので、
+        // お知らせシートは開かない。
+        const applied = await classifyFiles([meta], { showResult: false });
+        const record = applied.find((entry) => entry.fileId === meta.id);
+        const latest = (await repo.readFileMeta(meta.id)) ?? meta;
+        return {
+          fileId: meta.id,
+          fileName: latest.name,
+          folderPath: pathString(folders, toParentKey(latest.parentId)),
+          pageCount: input.pageCount,
+          size: input.blob.size,
+          appliedRuleName: record?.ruleName,
+        };
+      } catch (error) {
+        notify(toMessage(error), 'error');
+        return null;
+      }
+    },
+    [classifyFiles, folders, notify, refreshStorage, reload],
+  );
+
+  /**
+   * 確認待ちの先頭 1 件を処理する。
+   * @param apply true なら移動する。false は「今回だけルールを適用しない」。
+   */
+  const applyPending = useCallback(
+    async (apply: boolean) => {
+      const plan = pendingPlans[0];
+      setPendingPlans((current) => current.slice(1));
+      setPendingRuleId(pendingPlans[1]?.rule.id ?? null);
+      if (!plan || !apply) return;
+      const rule = plan.matches.find((entry) => entry.id === pendingRuleId) ?? plan.rule;
+      try {
+        const record = await applyPlan(plan, rule);
+        await reload();
+        setClassifyRecords((current) => [...current, record]);
+      } catch (error) {
+        notify(toMessage(error), 'error');
+      }
+    },
+    [notify, pendingPlans, pendingRuleId, reload],
   );
 
   /** 指定 PDF に付いているメモの件数。 */
@@ -658,6 +824,8 @@ export function AppShell() {
         );
       case 'settings':
         return <SettingsView />;
+      case 'rules':
+        return <RulesView />;
       default:
         return null;
     }
@@ -751,16 +919,16 @@ export function AppShell() {
           description="撮影した書類をPDFにします"
           onClick={() => {
             setAddSheet(false);
-            setScan('camera');
+            setImagePdf('camera');
           }}
         />
         <MenuRow
           icon={<ImagePlus size={22} />}
           label="画像からPDFを作成"
-          description="端末内の画像を選んでPDFにまとめます"
+          description="複数の画像を選んで1つのPDFにまとめます"
           onClick={() => {
             setAddSheet(false);
-            setScan('gallery');
+            setImagePdf('gallery');
           }}
         />
         {isIos() ? (
@@ -811,9 +979,9 @@ export function AppShell() {
         onClose={() => {
           if (picker?.mode === 'import') {
             // 保存先を選ばなかった場合は「未分類」へ
-            const sources = picker.sources;
+            const { sources, origin } = picker;
             setPicker(null);
-            void importSources(sources, UNSORTED_ID);
+            void importSources(sources, UNSORTED_ID, origin);
             return;
           }
           setPicker(null);
@@ -825,7 +993,7 @@ export function AppShell() {
           if (!state) return;
           if (state.mode === 'import') {
             importDest.current = folderId;
-            void importSources(state.sources, folderId);
+            void importSources(state.sources, folderId, state.origin);
             return;
           }
           const { item } = state;
@@ -1031,15 +1199,99 @@ export function AppShell() {
         }}
       />
 
-      {/* スキャン */}
-      <ScanSheet
-        open={scan !== null}
-        mode={scan ?? 'camera'}
-        onClose={() => setScan(null)}
-        onError={(message) => notify(message, 'error')}
-        onCreated={(blob, name) => {
-          setScan(null);
-          setPicker({ mode: 'import', sources: [{ blob, name }] });
+      {/* 画像からPDFを作成 */}
+      {imagePdf ? (
+        <ImageToPdfView
+          folders={folders}
+          initialFolderId={currentFolderId}
+          defaults={settings.imagePdfOptions}
+          startWith={imagePdf}
+          notify={notify}
+          onClose={() => setImagePdf(null)}
+          onSaveOptions={(next: ImagePdfOptions) => void updateSettings({ imagePdfOptions: next })}
+          onSave={saveImagePdf}
+          onOpenFile={(fileId) => {
+            setImagePdf(null);
+            void withFile(fileId, (file) => openFile(file));
+          }}
+          onShareFile={(fileId) =>
+            void withFile(fileId, (file) =>
+              withBlob(file, async (blob) => {
+                const shared = await sharePdf(blob, file.name);
+                if (!shared) downloadBlob(blob, file.name);
+              }),
+            )
+          }
+          onRenameFile={(fileId) =>
+            void withFile(fileId, (file) => setRenameTarget({ kind: 'file', file }))
+          }
+          onMoveFile={(fileId) =>
+            void withFile(fileId, (file) => setPicker({ mode: 'move', item: { kind: 'file', file } }))
+          }
+        />
+      ) : null}
+
+      {/* 自動分類：移動前の確認 */}
+      <ClassifyConfirmSheet
+        plan={pendingPlans[0] ?? null}
+        remaining={Math.max(0, pendingPlans.length - 1)}
+        folders={folders}
+        selectedRuleId={pendingRuleId}
+        onSelectRule={setPendingRuleId}
+        onApply={() => void applyPending(true)}
+        onSkip={() => void applyPending(false)}
+        onEditRule={(rule) => setRuleDraft(toDraft(rule))}
+      />
+
+      {/* 自動分類：移動後のお知らせ */}
+      <ClassifyResultSheet
+        records={classifyRecords}
+        folders={folders}
+        rules={rules}
+        onClose={() => setClassifyRecords([])}
+        onUndo={(record) => {
+          setClassifyRecords((current) =>
+            current.filter((entry) => entry.fileId !== record.fileId),
+          );
+          void run(() => undoClassification(record), '元のフォルダーへ戻しました。');
+        }}
+        onMove={(record) => setReclassifyTarget(record)}
+        onEditRule={(rule) => setRuleDraft(toDraft(rule))}
+      />
+
+      {/* 自動分類：ルールの編集 */}
+      <RuleEditor
+        open={ruleDraft !== null}
+        draft={ruleDraft}
+        folders={folders}
+        onClose={() => setRuleDraft(null)}
+        onSave={(draft) => {
+          setRuleDraft(null);
+          void saveRule(draft)
+            .then(() => reloadRules())
+            .then(() => notify('ルールを保存しました。', 'success'))
+            .catch((error) => notify(toMessage(error), 'error'));
+        }}
+      />
+
+      {/* 自動分類：別フォルダーへ移動 */}
+      <FolderPicker
+        open={reclassifyTarget !== null}
+        title="移動先のフォルダーを選択"
+        confirmLabel="ここに移動"
+        folders={folders}
+        initialFolderId={reclassifyTarget?.toParentId ?? currentFolderId}
+        onClose={() => setReclassifyTarget(null)}
+        onConfirm={(folderId) => {
+          const target = reclassifyTarget;
+          setReclassifyTarget(null);
+          if (!target) return;
+          void run(async () => {
+            const moved = await moveToFolder(target, folderId);
+            setClassifyRecords((current) =>
+              current.map((entry) => (entry.fileId === moved.fileId ? moved : entry)),
+            );
+          }, 'PDFを移動しました。');
         }}
       />
 
