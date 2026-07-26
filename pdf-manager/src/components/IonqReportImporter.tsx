@@ -7,7 +7,7 @@ import { AppError } from '@/lib/errors';
 import { getPageCount } from '@/lib/pdf';
 import * as repo from '@/lib/repository';
 import { activeFiles } from '@/lib/tree';
-import { ROOT_ID } from '@/lib/types';
+import { UNSORTED_ID } from '@/lib/types';
 import { useApp } from '@/store/AppStore';
 
 const INDEX_URL = '/ionq/index.json';
@@ -60,7 +60,8 @@ export function IonqReportImporter() {
           if (blob.size === 0) continue;
           const pageCount = await getPageCount(blob);
           const meta = await repo.addPdf(blob, entry.name || entry.file, {
-            parentId: ROOT_ID,
+            // 自動取り込みも通常の追加と同じ入口へ置き、未分類フォルダーのルールを適用する。
+            parentId: UNSORTED_ID,
             onDuplicate: 'skip',
             pageCount,
             origin: 'report',
