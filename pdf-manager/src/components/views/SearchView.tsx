@@ -2,23 +2,33 @@
 
 /** アプリ内のすべてのフォルダーと PDF を対象にした検索画面。 */
 import { useMemo, useState } from 'react';
-import { ArrowLeft, Search, SlidersHorizontal } from 'lucide-react';
+import { ArrowLeft, NotebookPen, Search, SlidersHorizontal } from 'lucide-react';
 import { DEFAULT_FILTERS, collectTags, hasActiveFilters, searchAll, type SearchField, type SearchFilters } from '@/lib/search';
-import type { ExplorerItem } from '@/lib/types';
+import { memoPageLabel } from '@/lib/memos';
+import { formatDateTime } from '@/lib/format';
+import type { ExplorerItem, PdfFileMeta } from '@/lib/types';
 import { useApp } from '@/store/AppStore';
 import { ListRow, type ItemHandlers } from '@/components/items/ItemViews';
-import { Button, EmptyState, IconButton, Switch, cx } from '@/components/ui/Primitives';
+import { Badge, Button, EmptyState, IconButton, Switch, cx } from '@/components/ui/Primitives';
 import { Header } from './Header';
 
 const FIELD_LABELS: { value: SearchField; label: string }[] = [
   { value: 'name', label: 'ファイル名' },
   { value: 'folder', label: 'フォルダー名' },
   { value: 'tag', label: 'タグ' },
-  { value: 'memo', label: 'メモ' },
+  { value: 'memo', label: 'メモ（1行）' },
+  { value: 'pdfMemo', label: 'ページ別のメモ' },
 ];
 
-export function SearchView({ handlers }: { handlers: ItemHandlers }) {
-  const { folders, files, goBack, canGoBack } = useApp();
+export function SearchView({
+  handlers,
+  onOpenMemoHit,
+}: {
+  handlers: ItemHandlers;
+  /** メモの検索結果から、対象PDFの該当ページを直接開く。 */
+  onOpenMemoHit?: (file: PdfFileMeta, page?: number) => void;
+}) {
+  const { folders, files, memos, goBack, canGoBack } = useApp();
   const [filters, setFilters] = useState<SearchFilters>(DEFAULT_FILTERS);
   const [advanced, setAdvanced] = useState(false);
 
@@ -26,8 +36,8 @@ export function SearchView({ handlers }: { handlers: ItemHandlers }) {
 
   const hits = useMemo(() => {
     if (!hasActiveFilters(filters)) return [];
-    return searchAll(folders, files, filters).slice(0, 300);
-  }, [files, filters, folders]);
+    return searchAll(folders, files, filters, { memos }).slice(0, 300);
+  }, [files, filters, folders, memos]);
 
   const patch = (value: Partial<SearchFilters>) =>
     setFilters((current) => ({ ...current, ...value }));
@@ -63,7 +73,7 @@ export function SearchView({ handlers }: { handlers: ItemHandlers }) {
           <input
             autoFocus
             className="field h-10 py-1"
-            placeholder="ファイル名・フォルダー名・タグ・メモ"
+            placeholder="ファイル名・フォルダー名・タグ・メモ・ページ"
             value={filters.query}
             onChange={(event) => patch({ query: event.target.value })}
           />
@@ -183,7 +193,7 @@ export function SearchView({ handlers }: { handlers: ItemHandlers }) {
         <EmptyState
           icon={<Search size={48} strokeWidth={1.2} />}
           title="キーワードを入力してください"
-          description="ファイル名・フォルダー名・タグ・メモ・保存日・更新日から検索できます。"
+          description="ファイル名・フォルダー名・タグ・メモの本文や対象ページ・保存日・更新日から検索できます。メモの結果からは該当ページを直接開けます。"
         />
       ) : hits.length === 0 ? (
         <EmptyState
@@ -196,6 +206,42 @@ export function SearchView({ handlers }: { handlers: ItemHandlers }) {
           <p className="px-4 py-2 text-sm text-ink-sub dark:text-[#98a3b0]">{hits.length} 件</p>
           <div className="bg-surface dark:bg-[#181e26]">
             {hits.map((hit) => {
+              if (hit.kind === 'memo') {
+                return (
+                  <button
+                    key={`m-${hit.memo.id}`}
+                    type="button"
+                    onClick={() => onOpenMemoHit?.(hit.file, hit.page)}
+                    className="flex w-full items-start gap-3 border-b divider px-4 py-3 text-left active:bg-surface-sub dark:active:bg-[#232b35]"
+                  >
+                    <NotebookPen size={20} className="mt-0.5 shrink-0 text-ink-sub dark:text-[#98a3b0]" />
+                    <span className="min-w-0 flex-1">
+                      <span className="flex flex-wrap items-center gap-1.5">
+                        <Badge tone={hit.memo.pageStart === undefined ? 'neutral' : 'brand'}>
+                          {memoPageLabel(hit.memo)}
+                        </Badge>
+                        {hit.memo.isReview ? <Badge tone="warn">復習項目</Badge> : null}
+                        {hit.memo.isDraft ? <Badge tone="neutral">下書き</Badge> : null}
+                      </span>
+                      {hit.memo.title ? (
+                        <span className="mt-1 block break-words text-base font-medium text-ink dark:text-[#e6eaef]">
+                          {hit.memo.title}
+                        </span>
+                      ) : null}
+                      <span className="mt-0.5 block break-words text-sm text-ink dark:text-[#e6eaef] line-clamp-2">
+                        {hit.memo.content}
+                      </span>
+                      <span className="mt-1 block break-all text-xs text-brand-500 dark:text-brand-300">
+                        {hit.file.name}
+                      </span>
+                      <span className="block truncate text-xs text-ink-sub dark:text-[#98a3b0]">
+                        {hit.path} ・ {formatDateTime(hit.memo.updatedAt)}
+                      </span>
+                    </span>
+                  </button>
+                );
+              }
+
               const item: ExplorerItem =
                 hit.kind === 'folder'
                   ? { kind: 'folder', folder: hit.folder }

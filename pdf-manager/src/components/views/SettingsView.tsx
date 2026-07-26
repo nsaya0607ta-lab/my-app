@@ -41,6 +41,11 @@ const THEME_LABELS: Record<ThemeMode, string> = {
 
 const RETENTION_OPTIONS = [7, 14, 30, 60, 90, 0];
 
+/** PDF 編集の履歴として残すバージョン数 (0 = 残さない)。 */
+const VERSION_COUNT_OPTIONS = [0, 1, 3, 5, 10];
+/** バージョンを残す期間 (0 = 期限で消さない)。 */
+const VERSION_DAYS_OPTIONS = [7, 30, 90, 180, 0];
+
 function Row({
   label,
   description,
@@ -68,7 +73,9 @@ export function SettingsView() {
     useApp();
   const restoreInput = useRef<HTMLInputElement | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
-  const [sheet, setSheet] = useState<'view' | 'sort' | 'theme' | 'retention' | null>(null);
+  const [sheet, setSheet] = useState<
+    'view' | 'sort' | 'theme' | 'retention' | 'versionCount' | 'versionDays' | null
+  >(null);
   const [confirmWipe, setConfirmWipe] = useState(false);
   const [restoreMode, setRestoreMode] = useState<RestoreMode>('merge');
   const [pendingRestore, setPendingRestore] = useState<File | null>(null);
@@ -194,6 +201,33 @@ export function SettingsView() {
             }
           />
         </button>
+      </div>
+
+      <SectionTitle>PDF編集の履歴</SectionTitle>
+      <div className="bg-surface dark:bg-[#181e26]">
+        <button type="button" className="w-full text-left" onClick={() => setSheet('versionCount')}>
+          <Row
+            label="残すバージョンの数"
+            description={
+              settings.versionKeepCount === 0
+                ? '編集前のPDFを残さない'
+                : `1つのPDFにつき最大 ${settings.versionKeepCount} 件`
+            }
+          />
+        </button>
+        <button type="button" className="w-full text-left" onClick={() => setSheet('versionDays')}>
+          <Row
+            label="残す期間"
+            description={
+              settings.versionKeepDays === 0
+                ? '期限で削除しない'
+                : `${settings.versionKeepDays}日を過ぎたら削除`
+            }
+          />
+        </button>
+        <p className="px-4 pb-3 text-xs leading-relaxed text-ink-sub dark:text-[#98a3b0]">
+          PDFを上書き保存したとき、編集前のPDFをこの範囲で残します。多く残すほど端末の保存容量を使います。
+        </p>
       </div>
 
       <SectionTitle>データ</SectionTitle>
@@ -350,6 +384,59 @@ export function SettingsView() {
             label={days === 0 ? '自動削除しない' : `${days}日後`}
             onClick={() => {
               void updateSettings({ trashRetentionDays: days });
+              setSheet(null);
+            }}
+          />
+        ))}
+      </BottomSheet>
+
+      {/* PDF編集の履歴：残す数 */}
+      <BottomSheet
+        open={sheet === 'versionCount'}
+        title="残すバージョンの数"
+        description="上書き保存したときに残す、編集前のPDFの数です。"
+        onClose={() => setSheet(null)}
+      >
+        {VERSION_COUNT_OPTIONS.map((count) => (
+          <MenuRow
+            key={count}
+            icon={
+              <span
+                className={cx(
+                  'h-2.5 w-2.5 rounded-full',
+                  settings.versionKeepCount === count ? 'bg-brand-500' : 'bg-line',
+                )}
+              />
+            }
+            label={count === 0 ? '残さない' : `${count} 件まで`}
+            onClick={() => {
+              void updateSettings({ versionKeepCount: count });
+              setSheet(null);
+            }}
+          />
+        ))}
+      </BottomSheet>
+
+      {/* PDF編集の履歴：残す期間 */}
+      <BottomSheet
+        open={sheet === 'versionDays'}
+        title="履歴を残す期間"
+        onClose={() => setSheet(null)}
+      >
+        {VERSION_DAYS_OPTIONS.map((days) => (
+          <MenuRow
+            key={days}
+            icon={
+              <span
+                className={cx(
+                  'h-2.5 w-2.5 rounded-full',
+                  settings.versionKeepDays === days ? 'bg-brand-500' : 'bg-line',
+                )}
+              />
+            }
+            label={days === 0 ? '期限で削除しない' : `${days}日`}
+            onClick={() => {
+              void updateSettings({ versionKeepDays: days });
               setSheet(null);
             }}
           />

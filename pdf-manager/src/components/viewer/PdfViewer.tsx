@@ -12,6 +12,7 @@ import {
   ChevronRight,
   MoreVertical,
   Minus,
+  NotebookPen,
   Plus,
   X,
 } from 'lucide-react';
@@ -65,13 +66,29 @@ type PinchState = {
 export function PdfViewer({
   file,
   blob,
+  initialPage,
+  jumpTo,
+  locked = false,
   onClose,
   onMenu,
+  onMemo,
+  onPageChange,
 }: {
   file: PdfFileMeta;
   blob: Blob;
+  /** 開いた直後に表示するページ (検索結果やメモから開いたとき)。 */
+  initialPage?: number;
+  /** 外側からのページ移動要求。同じページを続けて指定できるよう seq で判定する。 */
+  jumpTo?: { page: number; seq: number } | null;
+  /**
+   * メモなどのシートを開いている間 true。
+   * 背面の PDF が指の動きで勝手にスクロール・拡大しないようにする。
+   */
+  locked?: boolean;
   onClose: () => void;
   onMenu: () => void;
+  onMemo: () => void;
+  onPageChange?: (page: number) => void;
 }) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const containerRef = useRef<HTMLDivElement | null>(null);
@@ -87,7 +104,7 @@ export function PdfViewer({
   const pinchFrame = useRef<number | null>(null);
 
   const [pageCount, setPageCount] = useState(file.pageCount ?? 0);
-  const [page, setPage] = useState(1);
+  const [page, setPage] = useState(Math.max(1, Math.floor(initialPage ?? 1)));
   const [scale, setScale] = useState(1);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -259,7 +276,36 @@ export function PdfViewer({
 
   useEffect(() => {
     setPageInput(String(page));
-  }, [page]);
+    onPageChange?.(page);
+  }, [onPageChange, page]);
+
+  /* 外側からのページ移動 (メモ・検索結果から「該当ページへ」) ---------- */
+  const lastJump = useRef(-1);
+  useEffect(() => {
+    if (!jumpTo || jumpTo.seq === lastJump.current) return;
+    lastJump.current = jumpTo.seq;
+    const target = Math.max(1, Math.min(pageCount || jumpTo.page, Math.floor(jumpTo.page)));
+    pinch.current = null;
+    clearPinchPreview();
+    anchor.current = null;
+    setPage(target);
+    containerRef.current?.scrollTo({ top: 0, left: 0 });
+  }, [clearPinchPreview, jumpTo, pageCount]);
+
+  /** 指定ページが総ページ数を超えていた場合に収める (PDF編集後などに起こりうる)。 */
+  useEffect(() => {
+    if (pageCount > 0 && page > pageCount) setPage(pageCount);
+  }, [page, pageCount]);
+
+  /* シートを開いている間は背面のジェスチャーを止める -------------------- */
+  const lockedRef = useRef(locked);
+  useEffect(() => {
+    lockedRef.current = locked;
+    if (!locked) return;
+    // 途中まで進んでいたピンチ操作を打ち切り、指を離した扱いにする
+    pinch.current = null;
+    clearPinchPreview();
+  }, [clearPinchPreview, locked]);
 
   /* ピンチズームと指の移動 --------------------------------------------- */
   // ピンチ中はReact stateとpdf.js描画を更新しない。CSS transformをrAFで更新し、
@@ -301,6 +347,8 @@ export function PdfViewer({
     };
 
     const onStart = (event: TouchEvent) => {
+      // シートを開いている間は背面を動かさない
+      if (lockedRef.current) return;
       if (event.touches.length === 1) {
         gestured.current = false;
         moved.current = false;
@@ -336,6 +384,7 @@ export function PdfViewer({
     };
 
     const onMove = (event: TouchEvent) => {
+      if (lockedRef.current) return;
       if (event.touches.length === 1) {
         const start = touchStart.current;
         if (start) {
@@ -415,6 +464,7 @@ export function PdfViewer({
 
   /** 本文のタップ。指を動かした後やピンチ直後は開閉しない。 */
   const onSurfaceClick = () => {
+    if (locked) return;
     if (gestured.current || moved.current) {
       gestured.current = false;
       moved.current = false;
@@ -447,6 +497,8 @@ export function PdfViewer({
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
+      // シートを開いている間は、その場でのキー操作を優先する
+      if (locked) return;
       if (event.key === 'Escape') onClose();
       if (event.key === 'ArrowRight') changePage(1);
       if (event.key === 'ArrowLeft') changePage(-1);
@@ -454,7 +506,7 @@ export function PdfViewer({
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [onClose, pageCount]);
+  }, [locked, onClose, pageCount]);
 
   return (
     <div className="fixed inset-0 z-[60] flex flex-col bg-[#20262d]">
@@ -469,6 +521,9 @@ export function PdfViewer({
           <X size={22} />
         </IconButton>
         <p className="min-w-0 flex-1 truncate text-sm text-white">{file.name}</p>
+        <IconButton label="メモ" onClick={onMemo} className="text-white">
+          <NotebookPen size={21} />
+        </IconButton>
         <IconButton label="操作メニュー" onClick={onMenu} className="text-white">
           <MoreVertical size={22} />
         </IconButton>
@@ -477,7 +532,12 @@ export function PdfViewer({
       <div
         ref={containerRef}
         onClick={onSurfaceClick}
-        className="pdf-surface flex-1 overflow-auto bg-[#20262d]"
+        className={cx(
+          'pdf-surface flex-1 bg-[#20262d]',
+          // シート表示中は背面が動かないよう、スクロールもタップも受け付けない
+          locked ? 'overflow-hidden [touch-action:none]' : 'overflow-auto',
+        )}
+        style={locked ? { pointerEvents: 'none' } : undefined}
       >
         {loading ? (
           <div className="flex h-full items-center justify-center">

@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { Check, FilePlus2, RefreshCw, X } from 'lucide-react';
+import { Check, FilePlus2, NotebookPen, RefreshCw, X } from 'lucide-react';
 import { formatBytes, formatDateTime } from '@/lib/format';
 import { stripPdfExtension } from '@/lib/naming';
 import { SORT_LABELS } from '@/lib/tree';
@@ -510,11 +510,17 @@ export function DetailsSheet({
   open,
   file,
   path,
+  memoCount = 0,
+  onOpenMemo,
   onClose,
 }: {
   open: boolean;
   file: PdfFileMeta | null;
   path: string;
+  /** この PDF に登録されているメモの件数。 */
+  memoCount?: number;
+  /** 詳細画面からメモを開く。 */
+  onOpenMemo?: () => void;
   onClose: () => void;
 }) {
   if (!file) return null;
@@ -531,7 +537,8 @@ export function DetailsSheet({
     ['保存日', formatDateTime(file.createdAt)],
     ['更新日時', formatDateTime(file.updatedAt)],
     ['最終閲覧', file.lastOpenedAt ? formatDateTime(file.lastOpenedAt) : '未閲覧'],
-    ['メモ', file.memo?.trim() ? file.memo : 'なし'],
+    ['メモ（1行）', file.memo?.trim() ? file.memo : 'なし'],
+    ['ページ別のメモ', memoCount > 0 ? `${memoCount} 件` : 'なし'],
     ['PDF本体の保存先', STORAGE_STATE_LABELS[storageStateOf(file)]],
     ...(file.cloudUploadedAt
       ? ([['クラウドへ保存', formatDateTime(file.cloudUploadedAt)]] as [string, string][])
@@ -545,6 +552,14 @@ export function DetailsSheet({
 
   return (
     <BottomSheet open={open} title="詳細情報" onClose={onClose}>
+      {onOpenMemo ? (
+        <div className="border-b divider p-4">
+          <Button variant="secondary" className="w-full" onClick={onOpenMemo}>
+            <NotebookPen size={18} />
+            メモ{memoCount > 0 ? `（${memoCount} 件）` : ''}
+          </Button>
+        </div>
+      ) : null}
       <dl className="divide-y divider">
         {rows.map(([label, value]) => (
           <div key={label} className="flex gap-3 px-4 py-2.5">

@@ -27,6 +27,11 @@ export type AppErrorCode =
   | 'RESTORE_FAILED'
   | 'IMAGE_CONVERT_FAILED'
   | 'PRINT_FAILED'
+  | 'PDF_EDIT_EMPTY'
+  | 'PDF_EDIT_TOO_LARGE'
+  | 'PDF_EDIT_FAILED'
+  | 'PDF_EDIT_VERIFY_FAILED'
+  | 'PDF_EDIT_IN_PROGRESS'
   | 'CLOUD_OFFLINE'
   | 'CLOUD_SIGNED_OUT'
   | 'CLOUD_UPLOAD_FAILED'
@@ -55,6 +60,14 @@ export const ERROR_MESSAGES: Record<AppErrorCode, string> = {
   RESTORE_FAILED: 'バックアップファイルを読み込めませんでした。ファイルを確認してください。',
   IMAGE_CONVERT_FAILED: '画像からPDFを作成できませんでした。対応していない画像形式の可能性があります。',
   PRINT_FAILED: '印刷画面を開けませんでした。ポップアップがブロックされていないか確認してください。',
+  PDF_EDIT_EMPTY: 'ページがすべて削除されています。1ページ以上残してください。',
+  PDF_EDIT_TOO_LARGE:
+    'ページ数が多すぎるため、この端末では処理できません。PDFを分割してから編集してください。',
+  PDF_EDIT_FAILED:
+    '編集内容を保存できませんでした。元のPDFはそのまま残しています。編集内容は下書きとして保持しています。',
+  PDF_EDIT_VERIFY_FAILED:
+    '編集後のPDFを確認できなかったため、保存を中止しました。元のPDFはそのまま残しています。',
+  PDF_EDIT_IN_PROGRESS: '保存の処理中です。完了までお待ちください。',
   CLOUD_OFFLINE:
     'このPDFはクラウドに保存されています。インターネットへ接続してから、もう一度開いてください。',
   CLOUD_SIGNED_OUT:

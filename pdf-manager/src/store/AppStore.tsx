@@ -20,9 +20,18 @@ import {
 import { estimateStorage, isIndexedDbAvailable, readThumb, writeThumb } from '@/lib/db';
 import { isIos } from '@/lib/device';
 import { toMessage } from '@/lib/errors';
+import { listAllMemos } from '@/lib/memos';
+import { pruneVersions } from '@/lib/pdfVersions';
 import * as repo from '@/lib/repository';
 import { renderThumbnail } from '@/lib/pdf';
-import { DEFAULT_SETTINGS, ROOT_ID, type Folder, type PdfFileMeta, type Settings } from '@/lib/types';
+import {
+  DEFAULT_SETTINGS,
+  ROOT_ID,
+  type Folder,
+  type PdfFileMeta,
+  type PdfMemo,
+  type Settings,
+} from '@/lib/types';
 import { toParentKey } from '@/lib/tree';
 
 export type Route =
@@ -41,6 +50,8 @@ type AppState = {
   fatalError: string | null;
   folders: Folder[];
   files: PdfFileMeta[];
+  /** すべての PDF のメモ。検索と一覧のバッジ表示に使う。 */
+  memos: PdfMemo[];
   settings: Settings;
   route: Route;
   canGoBack: boolean;
@@ -56,12 +67,16 @@ type AppActions = {
   goHome: () => void;
   goUp: () => void;
   reload: () => Promise<void>;
+  /** メモだけを読み直す (メモの保存・削除のあとに呼ぶ)。 */
+  reloadMemos: () => Promise<void>;
   updateSettings: (patch: Partial<Settings>) => Promise<void>;
   notify: (message: string, tone?: Toast['tone']) => void;
   dismissToast: (id: number) => void;
   run: <T>(task: () => Promise<T>, successMessage?: string) => Promise<T | undefined>;
   refreshStorage: () => Promise<void>;
   getThumbnail: (fileId: string) => Promise<string | null>;
+  /** PDF の中身が変わったときに、作り直しのため古いサムネイルを捨てる。 */
+  invalidateThumbnail: (fileId: string) => void;
 };
 
 const AppContext = createContext<(AppState & AppActions) | null>(null);
@@ -79,6 +94,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [fatalError, setFatalError] = useState<string | null>(null);
   const [folders, setFolders] = useState<Folder[]>([]);
   const [files, setFiles] = useState<PdfFileMeta[]>([]);
+  const [memos, setMemos] = useState<PdfMemo[]>([]);
   const [settings, setSettings] = useState<Settings>(DEFAULT_SETTINGS);
   const [route, setRoute] = useState<Route>({ view: 'home' });
   const [back, setBack] = useState<Route[]>([]);
@@ -100,11 +116,20 @@ export function AppProvider({ children }: { children: ReactNode }) {
     setToasts((current) => current.filter((toast) => toast.id !== id));
   }, []);
 
+  const reloadMemos = useCallback(async () => {
+    try {
+      setMemos(await listAllMemos());
+    } catch {
+      // メモを読めなくてもアプリ自体は使えるようにする
+    }
+  }, []);
+
   const reload = useCallback(async () => {
     const snapshot = await repo.refresh();
     setFolders(snapshot.folders);
     setFiles(snapshot.files);
-  }, []);
+    await reloadMemos();
+  }, [reloadMemos]);
 
   const refreshStorage = useCallback(async () => {
     setStorage(await estimateStorage());
@@ -145,11 +170,18 @@ export function AppProvider({ children }: { children: ReactNode }) {
         setFiles(snapshot.files);
         setSettings(snapshot.settings);
         setReady(true);
+        await reloadMemos();
 
         const purged = await repo.purgeExpiredTrash(snapshot.settings.trashRetentionDays);
         if (purged > 0 && !cancelled) {
           await reload();
         }
+        // 保持期間を過ぎた編集前バージョンを片付ける (容量が増え続けないようにする)
+        void pruneVersions(
+          snapshot.files.map((file) => file.id),
+          snapshot.settings.versionKeepCount,
+          snapshot.settings.versionKeepDays,
+        ).catch(() => undefined);
         void refreshStorage();
       } catch (error) {
         if (!cancelled) {
@@ -161,7 +193,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     return () => {
       cancelled = true;
     };
-  }, [reload, refreshStorage]);
+  }, [reload, reloadMemos, refreshStorage]);
 
   /* テーマ ------------------------------------------------------------ */
   useEffect(() => {
@@ -291,6 +323,20 @@ export function AppProvider({ children }: { children: ReactNode }) {
     return job;
   }, []);
 
+  /**
+   * PDF を編集して中身が変わったときに呼ぶ。
+   * IndexedDB 側のサムネイルは repository が消すので、ここではメモリ上の
+   * Blob URL キャッシュを破棄して、次の表示で作り直させる。
+   */
+  const invalidateThumbnail = useCallback((fileId: string) => {
+    const url = thumbUrls.current.get(fileId);
+    if (url) {
+      URL.revokeObjectURL(url);
+      thumbUrls.current.delete(fileId);
+    }
+    thumbJobs.current.delete(fileId);
+  }, []);
+
   useEffect(() => {
     const urls = thumbUrls.current;
     return () => {
@@ -305,6 +351,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       fatalError,
       folders,
       files,
+      memos,
       settings,
       route,
       canGoBack: back.length > 0,
@@ -317,12 +364,14 @@ export function AppProvider({ children }: { children: ReactNode }) {
       goHome,
       goUp,
       reload,
+      reloadMemos,
       updateSettings,
       notify,
       dismissToast,
       run,
       refreshStorage,
       getThumbnail,
+      invalidateThumbnail,
     }),
     [
       back.length,
@@ -336,11 +385,14 @@ export function AppProvider({ children }: { children: ReactNode }) {
       goForward,
       goHome,
       goUp,
+      invalidateThumbnail,
+      memos,
       navigate,
       notify,
       ready,
       refreshStorage,
       reload,
+      reloadMemos,
       route,
       run,
       settings,

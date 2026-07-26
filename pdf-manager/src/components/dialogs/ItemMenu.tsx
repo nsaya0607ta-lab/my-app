@@ -8,8 +8,11 @@ import {
   Eye,
   FolderInput,
   Info,
+  History,
   Link2,
+  NotebookPen,
   Palette,
+  PenSquare,
   Printer,
   Share2,
   SquarePen,
@@ -39,17 +42,26 @@ export type ItemMenuActions = {
   onTags?: () => void;
   onColor?: () => void;
   onToggleRead?: () => void;
+  /** PDF ごとのメモ。 */
+  onMemo?: () => void;
+  /** ページ編集画面を開く。 */
+  onEdit?: () => void;
+  /** 編集のバージョン履歴。 */
+  onHistory?: () => void;
 };
 
 export function ItemMenu({
   item,
   path,
   actions,
+  memoCount = 0,
   onClose,
 }: {
   item: ExplorerItem | null;
   path: string;
   actions: ItemMenuActions;
+  /** この PDF に登録されているメモの件数 (メニューに表示する)。 */
+  memoCount?: number;
   onClose: () => void;
 }) {
   if (!item) return null;
@@ -113,6 +125,25 @@ export function ItemMenu({
 
         {item.kind === 'file' ? (
           <>
+            <div className="my-1 border-t divider" />
+            <MenuRow
+              icon={<NotebookPen size={20} />}
+              label="メモ"
+              description={memoCount > 0 ? `${memoCount} 件のメモ` : 'ページを指定したメモを登録できます'}
+              onClick={wrap(actions.onMemo)}
+            />
+            <MenuRow
+              icon={<PenSquare size={20} />}
+              label="PDFを編集"
+              description="ページの並べ替え・回転・削除など"
+              onClick={wrap(actions.onEdit)}
+            />
+            <MenuRow
+              icon={<History size={20} />}
+              label="編集の履歴"
+              onClick={wrap(actions.onHistory)}
+            />
+
             <div className="my-1 border-t divider" />
             <MenuRow icon={<Share2 size={20} />} label="共有" onClick={wrap(actions.onShare)} />
             <MenuRow

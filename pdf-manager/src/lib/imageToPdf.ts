@@ -9,7 +9,9 @@ import { AppError } from './errors';
 const A4_WIDTH = 595.28;
 const A4_HEIGHT = 841.89;
 
-async function toJpegBitmap(file: Blob): Promise<{ data: Uint8Array; width: number; height: number }> {
+export async function toJpegBitmap(
+  file: Blob,
+): Promise<{ data: Uint8Array; width: number; height: number }> {
   const url = URL.createObjectURL(file);
   try {
     const image = await new Promise<HTMLImageElement>((resolve, reject) => {

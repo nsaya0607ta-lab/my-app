@@ -131,4 +131,39 @@ export async function renderThumbnail(blob: Blob, maxWidth = 320): Promise<Blob 
   }
 }
 
+/**
+ * 開いている PDF の 1 ページを小さな画像にする (編集画面のページ一覧用)。
+ * 何十ページも作るため、canvas は毎回解放する。
+ */
+export async function renderPageThumbnail(
+  doc: PdfDocumentProxy,
+  pageNumber: number,
+  maxWidth = 200,
+): Promise<Blob | null> {
+  let canvas: HTMLCanvasElement | undefined;
+  try {
+    const page = await doc.getPage(pageNumber);
+    const base = page.getViewport({ scale: 1 });
+    const scale = Math.min(2, maxWidth / base.width);
+    const viewport = page.getViewport({ scale });
+    const target = document.createElement('canvas');
+    canvas = target;
+    target.width = Math.max(1, Math.floor(viewport.width));
+    target.height = Math.max(1, Math.floor(viewport.height));
+    const context = target.getContext('2d');
+    if (!context) return null;
+    context.fillStyle = '#ffffff';
+    context.fillRect(0, 0, target.width, target.height);
+    await page.render({ canvasContext: context, viewport }).promise;
+    page.cleanup();
+    return await new Promise<Blob | null>((resolve) => {
+      target.toBlob((result) => resolve(result), 'image/jpeg', 0.7);
+    });
+  } catch {
+    return null;
+  } finally {
+    if (canvas) releaseCanvas(canvas);
+  }
+}
+
 export type { PdfDocumentProxy, PdfPageProxy };
