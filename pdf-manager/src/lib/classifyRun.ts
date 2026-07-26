@@ -12,8 +12,9 @@ import { findMatchingRules, needsText } from './classify';
 import { sourceFolderIdOf } from './classifyRules';
 import { extractText } from './pdf';
 import * as repo from './repository';
-import { toParentKey } from './tree';
-import type { ClassifyRule, MultiMatchStrategy, PdfFileMeta } from './types';
+import { activeFolders, toParentKey } from './tree';
+import { ROOT_ID } from './types';
+import type { ClassifyRule, Folder, MultiMatchStrategy, PdfFileMeta } from './types';
 
 /** 1 件分の分類予定。 */
 export type ClassifyPlan = {
@@ -28,6 +29,8 @@ export type ClassifyPlan = {
   alreadyThere: boolean;
   /** 移動前にユーザーの確認が必要か。 */
   needsConfirm: boolean;
+  /** 移動後のフォルダーでも続けて再判定するための条件。 */
+  options: ClassifyOptions;
 };
 
 /** 移動が済んだ記録（「元に戻す」で使う）。 */
@@ -51,6 +54,36 @@ export type ClassifyOptions = {
 function scopedRulesFor(file: PdfFileMeta, rules: ClassifyRule[]): ClassifyRule[] {
   const parentId = toParentKey(file.parentId);
   return rules.filter((rule) => sourceFolderIdOf(rule) === parentId);
+}
+
+/**
+ * ルート直下を深さ1として、現在のフォルダーツリーの最大深度を返す。
+ * 親参照が壊れている場合や循環している場合も停止する。
+ */
+function folderTreeDepth(folders: Folder[]): number {
+  const foldersById = new Map(activeFolders(folders).map((folder) => [folder.id, folder]));
+  let maxDepth = 1;
+
+  for (const folder of foldersById.values()) {
+    let depth = 1;
+    let current: Folder | undefined = folder;
+    const visited = new Set<string>();
+
+    while (current && !visited.has(current.id)) {
+      visited.add(current.id);
+      const parentId = toParentKey(current.parentId);
+      if (parentId === ROOT_ID) break;
+
+      const parent = foldersById.get(parentId);
+      if (!parent) break;
+      depth += 1;
+      current = parent;
+    }
+
+    maxDepth = Math.max(maxDepth, depth);
+  }
+
+  return maxDepth;
 }
 
 /**
@@ -80,7 +113,7 @@ function textReaderFor(
  * 重要:
  * - PDF がフォルダー1にある場合、フォルダー1のルールだけを評価する
  * - フォルダー2や他フォルダーのルールは一切評価しない
- * - 移動後の PDF に、移動元フォルダーのルールを再適用しない
+ * - 移動後の再判定では、移動先フォルダーのルールだけを評価する
  */
 export async function planFile(
   file: PdfFileMeta,
@@ -110,6 +143,7 @@ export async function planFile(
       rule.confirmBeforeMove ||
       !rule.autoMove ||
       (options.strategy === 'ask' && matches.length > 1),
+    options,
   };
 }
 
@@ -154,21 +188,64 @@ export async function planFiles(
 
 /**
  * 分類を実行する（PDF を移動先フォルダーへ移す）。
- * @param rule 確認画面でユーザーが選び直したルール。省略時は plan のルール。
+ *
+ * 移動後は最新の PDF 情報を読み直し、移動先フォルダーのルールを再判定する。
+ * フォルダーツリーの最大深度まで繰り返し、同じフォルダーへ戻る循環は停止する。
+ *
+ * @param rule 確認画面でユーザーが選び直した最初のルール。省略時は plan のルール。
  */
 export async function applyPlan(
   plan: ClassifyPlan,
   rule?: ClassifyRule,
 ): Promise<ClassifyRecord> {
-  const applied = rule ?? plan.rule;
-  const moved = await repo.moveFile(plan.file.id, applied.destFolderId, { ruleId: applied.id });
+  const initialFromParentId = plan.fromParentId;
+  const initialSnapshot = await repo.refresh();
+  const maxMoves = folderTreeDepth(initialSnapshot.folders);
+  const visitedFolderIds = new Set<string>([initialFromParentId]);
+
+  let currentPlan = plan;
+  let currentRule = rule ?? plan.rule;
+  let lastRecord: ClassifyRecord | null = null;
+
+  for (let moveIndex = 0; moveIndex < maxMoves; moveIndex += 1) {
+    const moved = await repo.moveFile(currentPlan.file.id, currentRule.destFolderId, {
+      ruleId: currentRule.id,
+    });
+
+    lastRecord = {
+      fileId: currentPlan.file.id,
+      fileName: moved.name,
+      ruleId: currentRule.id,
+      ruleName: currentRule.name,
+      fromParentId: currentPlan.fromParentId,
+      toParentId: currentRule.destFolderId,
+    };
+    visitedFolderIds.add(currentRule.destFolderId);
+
+    if (moveIndex + 1 >= maxMoves) break;
+
+    // 次の階層では、必ず移動後の最新 parentId を使う。
+    const snapshot = await repo.refresh();
+    const latestFile = snapshot.files.find(
+      (file) => file.id === currentPlan.file.id && !file.deletedAt,
+    );
+    if (!latestFile) break;
+
+    const nextPlan = await planFile(latestFile, currentPlan.options);
+    if (!nextPlan || nextPlan.alreadyThere || nextPlan.needsConfirm) break;
+
+    // A → B → A のような循環を防ぐ。
+    if (visitedFolderIds.has(nextPlan.toParentId)) break;
+
+    currentPlan = nextPlan;
+    currentRule = nextPlan.rule;
+  }
+
+  // 最初の場所から最終移動先までを1件の結果として扱う。
+  // 「元に戻す」では、途中のフォルダーではなく分類前の場所へ戻す。
   return {
-    fileId: plan.file.id,
-    fileName: moved.name,
-    ruleId: applied.id,
-    ruleName: applied.name,
-    fromParentId: plan.fromParentId,
-    toParentId: applied.destFolderId,
+    ...(lastRecord as ClassifyRecord),
+    fromParentId: initialFromParentId,
   };
 }
 
