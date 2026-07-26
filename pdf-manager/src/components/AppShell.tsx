@@ -43,6 +43,9 @@ import { FolderPicker } from '@/components/dialogs/FolderPicker';
 import { ItemMenu, type ItemMenuActions } from '@/components/dialogs/ItemMenu';
 import { ScanSheet } from '@/components/dialogs/ScanSheet';
 import { PdfViewer } from '@/components/viewer/PdfViewer';
+import { MemoSheet } from '@/components/memo/MemoSheet';
+import { PdfEditView } from '@/components/editor/PdfEditView';
+import { VersionHistorySheet } from '@/components/editor/VersionHistorySheet';
 import { Onboarding } from '@/components/Onboarding';
 import { HomeView } from '@/components/views/HomeView';
 import { FolderView } from '@/components/views/FolderView';
@@ -64,14 +67,17 @@ export function AppShell() {
   const {
     files,
     folders,
+    memos,
     settings,
     route,
     navigate,
     notify,
     reload,
+    reloadMemos,
     run,
     updateSettings,
     refreshStorage,
+    invalidateThumbnail,
   } = app;
 
   const pdfInput = useRef<HTMLInputElement | null>(null);
@@ -90,7 +96,16 @@ export function AppShell() {
   const [detailTarget, setDetailTarget] = useState<PdfFileMeta | null>(null);
   const [sortSheet, setSortSheet] = useState(false);
   const [scan, setScan] = useState<'camera' | 'gallery' | null>(null);
-  const [viewer, setViewer] = useState<{ file: PdfFileMeta; blob: Blob } | null>(null);
+  const [viewer, setViewer] = useState<{ file: PdfFileMeta; blob: Blob; page?: number } | null>(
+    null,
+  );
+  /** ビューアーで表示中のページ (メモの「このページ」表示に使う)。 */
+  const [viewerPage, setViewerPage] = useState(1);
+  /** メモから「該当ページへ」を押したときのページ移動要求。 */
+  const [jumpTo, setJumpTo] = useState<{ page: number; seq: number } | null>(null);
+  const [memoTarget, setMemoTarget] = useState<PdfFileMeta | null>(null);
+  const [editor, setEditor] = useState<{ file: PdfFileMeta; blob: Blob } | null>(null);
+  const [historyTarget, setHistoryTarget] = useState<PdfFileMeta | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [emptyTrashConfirm, setEmptyTrashConfirm] = useState(false);
   const [purgeTarget, setPurgeTarget] = useState<ExplorerItem | null>(null);
@@ -348,14 +363,16 @@ export function AppShell() {
   );
 
   const openFile = useCallback(
-    async (file: PdfFileMeta) => {
+    async (file: PdfFileMeta, page?: number) => {
       // 1. クラウド保管済みなら、オンライン確認 → 取得 → 検証まで resolveBlob が行う
       const fetching = isInCloud(file) && !file.localCachedAt;
       setBusy(fetching ? 'クラウドからPDFを取得しています…' : 'PDFを開いています…');
       try {
         const blob = await resolveBlob(file);
-        // 2. 取得できたら通常どおりビューアーで開く
-        setViewer({ file, blob });
+        // 2. 取得できたら通常どおりビューアーで開く (メモ・検索からはそのページを開く)
+        setViewer({ file, blob, page });
+        setViewerPage(page ?? 1);
+        setJumpTo(null);
         // 3. 最終閲覧日時を更新する (次の自動移動の起点になる)
         await repo.markOpened(file.id);
         await reload();
@@ -366,6 +383,32 @@ export function AppShell() {
       }
     },
     [notify, reload, resolveBlob],
+  );
+
+  /** PDF 編集画面を開く。編集前の本体を先に用意しておく。 */
+  const openEditor = useCallback(
+    async (file: PdfFileMeta) => {
+      const fetching = isInCloud(file) && !file.localCachedAt;
+      setBusy(fetching ? 'クラウドからPDFを取得しています…' : 'PDFを開いています…');
+      try {
+        // 編集の直前に、ファイルが存在するかを最新の状態で確かめる
+        const latest = await repo.readFileMeta(file.id);
+        if (!latest || latest.deletedAt) throw new AppError('NOT_FOUND');
+        const blob = await resolveBlob(latest);
+        setEditor({ file: latest, blob });
+      } catch (error) {
+        notify(toMessage(error), 'error');
+      } finally {
+        setBusy(null);
+      }
+    },
+    [notify, resolveBlob],
+  );
+
+  /** 指定 PDF に付いているメモの件数。 */
+  const memoCountOf = useCallback(
+    (fileId: string) => memos.filter((memo) => memo.fileId === fileId).length,
+    [memos],
   );
 
   /**
@@ -518,6 +561,9 @@ export function AppShell() {
       },
       onDetails: item.kind === 'file' ? () => setDetailTarget(item.file) : undefined,
       onTags: item.kind === 'file' ? () => setTagTarget(item.file) : undefined,
+      onMemo: item.kind === 'file' ? () => setMemoTarget(item.file) : undefined,
+      onEdit: item.kind === 'file' ? () => void openEditor(item.file) : undefined,
+      onHistory: item.kind === 'file' ? () => setHistoryTarget(item.file) : undefined,
       onColor: item.kind === 'folder' ? () => setColorTarget(item) : undefined,
       onToggleRead:
         item.kind === 'file'
@@ -528,7 +574,7 @@ export function AppShell() {
               )
           : undefined,
     };
-  }, [handlers, menuItem, notify, pathOf, run, withBlob]);
+  }, [handlers, menuItem, notify, openEditor, pathOf, run, withBlob]);
 
   /* 削除 (ごみ箱へ) --------------------------------------------------- */
   const deleteInfo = useMemo(() => {
@@ -604,7 +650,12 @@ export function AppShell() {
           />
         );
       case 'search':
-        return <SearchView handlers={handlers} />;
+        return (
+          <SearchView
+            handlers={handlers}
+            onOpenMemoHit={(file, page) => void openFile(file, page)}
+          />
+        );
       case 'settings':
         return <SettingsView />;
       default:
@@ -730,6 +781,7 @@ export function AppShell() {
         item={menuItem}
         path={menuItem ? pathOf(menuItem) : ''}
         actions={menuActions}
+        memoCount={menuItem?.kind === 'file' ? memoCountOf(menuItem.file.id) : 0}
         onClose={() => setMenuItem(null)}
       />
 
@@ -952,6 +1004,12 @@ export function AppShell() {
         open={detailTarget !== null}
         file={detailTarget}
         path={detailTarget ? pathString(folders, toParentKey(detailTarget.parentId)) : ''}
+        memoCount={detailTarget ? memoCountOf(detailTarget.id) : 0}
+        onOpenMemo={() => {
+          const target = detailTarget;
+          setDetailTarget(null);
+          if (target) setMemoTarget(target);
+        }}
         onClose={() => setDetailTarget(null)}
       />
 
@@ -990,13 +1048,87 @@ export function AppShell() {
         <PdfViewer
           file={viewer.file}
           blob={viewer.blob}
-          onClose={() => setViewer(null)}
+          initialPage={viewer.page}
+          jumpTo={jumpTo}
+          // メモなどのシートを開いている間は、背面のPDFを動かさない
+          locked={memoTarget !== null || menuItem !== null || detailTarget !== null || busy !== null}
+          onPageChange={setViewerPage}
+          onClose={() => {
+            setViewer(null);
+            setJumpTo(null);
+          }}
+          onMemo={() => {
+            const latest = files.find((file) => file.id === viewer.file.id) ?? viewer.file;
+            setMemoTarget(latest);
+          }}
           onMenu={() => {
             const latest = files.find((file) => file.id === viewer.file.id) ?? viewer.file;
             setMenuItem({ kind: 'file', file: latest });
           }}
         />
       ) : null}
+
+      {/* メモ */}
+      <MemoSheet
+        open={memoTarget !== null}
+        file={memoTarget}
+        // ビューアーで開いている PDF のメモなら、現在ページを起点にする
+        currentPage={viewer && memoTarget?.id === viewer.file.id ? viewerPage : undefined}
+        pageCount={memoTarget?.pageCount}
+        onClose={() => setMemoTarget(null)}
+        onGoToPage={(page) => {
+          if (viewer && memoTarget?.id === viewer.file.id) {
+            // すでに開いているPDFなら、そのページへ移動してシートを閉じる
+            setJumpTo({ page, seq: Date.now() });
+            setMemoTarget(null);
+            return;
+          }
+          const target = memoTarget;
+          setMemoTarget(null);
+          if (target) void openFile(target, page);
+        }}
+      />
+
+      {/* PDF 編集 */}
+      {editor ? (
+        <PdfEditView
+          file={editor.file}
+          blob={editor.blob}
+          resolveBlob={resolveBlob}
+          onClose={() => setEditor(null)}
+          onSaved={async ({ mode, file, message }) => {
+            setEditor(null);
+            // 保存後に一覧・容量・サムネイル・検索対象を更新する
+            invalidateThumbnail(file.id);
+            await reload();
+            await reloadMemos();
+            void refreshStorage();
+            // 上書き保存したPDFを開いたままにしていた場合は、新しい内容で開き直す
+            if (mode === 'overwrite' && viewer?.file.id === file.id) {
+              setViewer(null);
+              void openFile(file);
+            }
+            notify(message, 'success');
+          }}
+        />
+      ) : null}
+
+      {/* 編集の履歴 */}
+      <VersionHistorySheet
+        open={historyTarget !== null}
+        file={historyTarget}
+        resolveBlob={resolveBlob}
+        onClose={() => setHistoryTarget(null)}
+        onRestored={async (file) => {
+          invalidateThumbnail(file.id);
+          await reload();
+          void refreshStorage();
+          if (viewer?.file.id === file.id) {
+            setViewer(null);
+            void openFile(file);
+          }
+        }}
+      />
 
       {/* 初回チュートリアル */}
       {!settings.onboardingDone ? (

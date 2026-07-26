@@ -217,6 +217,50 @@ export async function writeKeyed<T>(key: string, value: T): Promise<void> {
   });
 }
 
+export async function deleteKeyed(key: string): Promise<void> {
+  await tx(STORE.settings, 'readwrite', async (t) => {
+    await idb.delete(t.objectStore(STORE.settings), key);
+  });
+}
+
+/**
+ * 接頭辞が一致するキー付きレコードをまとめて読む。
+ * メモ (`memo:<fileId>`) のように「ファイルごとに 1 レコード」で持つデータを、
+ * 検索のために横断して集めるときに使う。
+ */
+export async function readKeyedByPrefix<T>(
+  prefix: string,
+): Promise<{ key: string; value: T }[]> {
+  return tx(STORE.settings, 'readonly', async (t) => {
+    const rows = await idb.getAll<{ key: string; value: T }>(t.objectStore(STORE.settings));
+    return rows.filter((row) => typeof row?.key === 'string' && row.key.startsWith(prefix));
+  });
+}
+
+/**
+ * キー付きレコードを 1 つのトランザクション内で「読み → 変更 → 書き戻し」する。
+ *
+ * メモは同じファイルの配列を丸ごと持つため、読んでから書くまでの間に別の操作が
+ * 割り込むと、片方の変更が消えてしまう。必ず最新を読み直してから書き換える。
+ * `mutate` が undefined を返した場合はレコードごと削除する。
+ */
+export async function mutateKeyed<T>(
+  key: string,
+  mutate: (current: T | undefined) => T | undefined,
+): Promise<T | undefined> {
+  return tx(STORE.settings, 'readwrite', async (t) => {
+    const store = t.objectStore(STORE.settings);
+    const record = await idb.get<{ key: string; value: T }>(store, key);
+    const next = mutate(record?.value);
+    if (next === undefined) {
+      await idb.delete(store, key);
+      return undefined;
+    }
+    await idb.put(store, { key, value: next });
+    return next;
+  });
+}
+
 export async function readThumb(id: string): Promise<Blob | undefined> {
   return tx(STORE.thumbs, 'readonly', async (t) => {
     const record = await idb.get<{ id: string; blob: Blob }>(t.objectStore(STORE.thumbs), id);

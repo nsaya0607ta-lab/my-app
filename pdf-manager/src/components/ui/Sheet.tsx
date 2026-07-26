@@ -1,6 +1,12 @@
 'use client';
 
-/** 画面下から出るシートと、中央に出るダイアログ。 */
+/**
+ * 画面下から出るシートと、中央に出るダイアログ。
+ *
+ * 重なり順は、全画面のPDFビューアー (z-60) とPDF編集画面 (z-64) より前面、
+ * 処理中の表示 (z-80) とトースト (z-90) より背面に置く。
+ * ビューアーの操作メニューやメモをビューアーの上に出すために必要。
+ */
 import { useEffect, type ReactNode } from 'react';
 import { X } from 'lucide-react';
 import { IconButton, cx } from './Primitives';
@@ -19,7 +25,7 @@ function useLockBodyScroll(active: boolean) {
 export function Backdrop({ onClick }: { onClick?: () => void }) {
   return (
     <div
-      className="fixed inset-0 z-40 animate-fade-in bg-[rgba(15,23,32,0.45)]"
+      className="fixed inset-0 z-[72] animate-fade-in bg-[rgba(15,23,32,0.45)]"
       onClick={onClick}
       aria-hidden="true"
     />
@@ -62,7 +68,7 @@ export function BottomSheet({
         role="dialog"
         aria-modal="true"
         aria-label={title}
-        className="fixed inset-x-0 bottom-0 z-50 animate-sheet-up rounded-t-sheet border-t border-line bg-surface shadow-sheet dark:border-[#2a333d] dark:bg-[#181e26]"
+        className="fixed inset-x-0 bottom-0 z-[74] animate-sheet-up rounded-t-sheet border-t border-line bg-surface shadow-sheet dark:border-[#2a333d] dark:bg-[#181e26]"
         style={{ paddingBottom: 'var(--safe-bottom)' }}
       >
         <div className="flex items-start justify-between gap-3 px-4 pb-2 pt-3">
@@ -110,7 +116,7 @@ export function Dialog({
   return (
     <>
       <Backdrop onClick={onClose} />
-      <div className="fixed inset-0 z-50 flex items-center justify-center p-5">
+      <div className="fixed inset-0 z-[74] flex items-center justify-center p-5">
         <div
           role="dialog"
           aria-modal="true"

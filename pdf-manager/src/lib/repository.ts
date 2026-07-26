@@ -19,6 +19,8 @@ import {
   writeSettings,
 } from './db';
 import { enqueueCloudDeletes, uidFromCloudPath } from './cloudQueue';
+import { deleteMemosOfFile } from './memos';
+import { deleteVersionsOfFile } from './pdfVersions';
 import { AppError } from './errors';
 import { createId, ensurePdfExtension, nextAvailableName, nowIso, sanitizeName } from './naming';
 import {
@@ -412,6 +414,8 @@ export async function purgeFolder(folderId: string): Promise<void> {
       await idb.delete(thumbStore, id);
     }
   });
+
+  await purgeAttachments(fileIds);
 }
 
 /* ------------------------------------------------------------------ */
@@ -559,6 +563,52 @@ export async function updateFile(
   return updated;
 }
 
+/**
+ * PDF 本体を編集後の内容へ差し替える (「上書き保存」)。
+ *
+ * メタデータ・本体・サムネイルの入れ替えを 1 つのトランザクションで行うため、
+ * 途中で失敗しても「新しい本体と古いページ数」のような食い違いは起きない。
+ * 呼び出し側は、完成した Blob を用意し、編集前のバージョンを保存してから呼ぶこと。
+ *
+ * メモは fileId で紐付いているので、この差し替えでは一切影響を受けない。
+ */
+export async function replaceFileContent(
+  fileId: string,
+  blob: Blob,
+  options: { pageCount?: number } = {},
+): Promise<PdfFileMeta> {
+  const before = await readFileMeta(fileId);
+  if (!before) throw new AppError('NOT_FOUND');
+
+  // 中身が変わった以上、クラウド上の古い PDF は同じファイルの実体ではない。
+  // 紐付けを外しておかないと、次回の「端末内 Blob の削除」で編集後の本体が消え、
+  // クラウドに残った編集前の PDF だけになってしまう。
+  const staleCloudPath = before.cloudPath;
+
+  const updated = await tx([STORE.files, STORE.blobs, STORE.thumbs], 'readwrite', async (t) => {
+    const store = t.objectStore(STORE.files);
+    const latest = await idb.get<PdfFileMeta>(store, fileId);
+    if (!latest) throw new AppError('NOT_FOUND');
+    const next: PdfFileMeta = {
+      ...latest,
+      ...LOCAL_COPY_FIELDS,
+      size: blob.size,
+      pageCount: options.pageCount ?? latest.pageCount,
+      updatedAt: nowIso(),
+      thumbState: 'none',
+    };
+    await idb.put(store, next);
+    await idb.put(t.objectStore(STORE.blobs), { id: fileId, blob });
+    await idb.delete(t.objectStore(STORE.thumbs), fileId);
+    return next;
+  });
+
+  if (staleCloudPath) {
+    await scheduleCloudDeletes([{ ...before, cloudPath: staleCloudPath }]);
+  }
+  return updated;
+}
+
 export async function markOpened(fileId: string): Promise<PdfFileMeta | undefined> {
   // 閲覧しただけで更新日時は動かさない (並べ替えの見え方を変えないため)
   return mergeFile(fileId, { isRead: true, lastOpenedAt: nowIso() }, { touch: false });
@@ -618,6 +668,21 @@ export async function cacheLocalBlob(fileId: string, blob: Blob): Promise<void> 
 export { hasBlob };
 
 /** 完全削除するファイル群について、クラウド側の削除予約を積む。 */
+/**
+ * 完全削除した PDF に付いていたメモと編集履歴を片付ける。
+ *
+ * 呼ぶのは「PDF そのものを完全に削除するとき」だけ。
+ * ごみ箱への移動・移動・名前変更・ページ編集では絶対に呼ばない
+ * (メモや復習項目を勝手に消さないため)。
+ */
+async function purgeAttachments(fileIds: string[]): Promise<void> {
+  for (const fileId of fileIds) {
+    // 片付けに失敗しても本体の削除は続行する (残っても実害は無い)
+    await deleteMemosOfFile(fileId).catch(() => undefined);
+    await deleteVersionsOfFile(fileId).catch(() => undefined);
+  }
+}
+
 async function scheduleCloudDeletes(targets: PdfFileMeta[]): Promise<void> {
   const entries = targets
     .filter((file) => Boolean(file.cloudPath))
@@ -715,6 +780,8 @@ export async function purgeFile(fileId: string): Promise<void> {
     await idb.delete(t.objectStore(STORE.blobs), fileId);
     await idb.delete(t.objectStore(STORE.thumbs), fileId);
   });
+
+  await purgeAttachments([fileId]);
 }
 
 /* ------------------------------------------------------------------ */
@@ -741,6 +808,8 @@ export async function emptyTrash(): Promise<void> {
       await idb.delete(thumbStore, id);
     }
   });
+
+  await purgeAttachments(fileIds);
 }
 
 /** 保持期間を過ぎたごみ箱の項目を自動削除する。起動時に呼ぶ。 */
@@ -771,6 +840,8 @@ export async function purgeExpiredTrash(retentionDays: number): Promise<number> 
       await idb.delete(thumbStore, id);
     }
   });
+
+  await purgeAttachments(fileIds);
   return folderIds.length + fileIds.length;
 }
 

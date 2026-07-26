@@ -105,6 +105,51 @@ export type PdfFileMeta = {
 /** 仕様どおりの「Blob を含む PDF レコード」。読み書きの境界で組み立てる。 */
 export type PdfFile = PdfFileMeta & { blob: Blob };
 
+/* ------------------------------------------------------------------ */
+/* PDF ごとのメモ                                                      */
+/* ------------------------------------------------------------------ */
+
+/** クラウドへログインしていないときの持ち主 (この端末)。 */
+export const LOCAL_OWNER_ID = 'local';
+
+/**
+ * PDF に紐付くメモ。
+ *
+ * 紐付けはファイル名やパスではなく、変更されない `fileId` で行う。
+ * そのため PDF を別フォルダーへ移動しても、名前を変更しても、メモは切れない。
+ * `pageStart` / `pageEnd` を省略すると「PDF 全体へのメモ」になる。
+ */
+export type PdfMemo = {
+  id: string;
+  /** 持ち主。クラウド未ログイン時は LOCAL_OWNER_ID。 */
+  userId: string;
+  /** 対象 PDF の不変 ID。 */
+  fileId: string;
+  title?: string;
+  content: string;
+  /** 対象ページ (1 始まり)。未設定なら PDF 全体へのメモ。 */
+  pageStart?: number;
+  /** 範囲メモの終了ページ。省略時は pageStart と同じ 1 ページ分。 */
+  pageEnd?: number;
+  tags: string[];
+  isFavorite: boolean;
+  /** 復習項目として登録するか。 */
+  isReview: boolean;
+  /** 入力途中の自動保存 (下書き)。明示的に保存すると false になる。 */
+  isDraft: boolean;
+  createdAt: string;
+  updatedAt: string;
+};
+
+/** メモ一覧の並べ替え。 */
+export type MemoSortKey = 'createdDesc' | 'page' | 'updatedDesc';
+
+export const MEMO_SORT_LABELS: Record<MemoSortKey, string> = {
+  createdDesc: '作成日時が新しい順',
+  page: 'ページ順',
+  updatedDesc: '更新日時が新しい順',
+};
+
 export type ViewMode = 'list' | 'grid' | 'thumbnail';
 
 export type SortKey =
@@ -134,6 +179,16 @@ export type Settings = {
   /** 取り込み済みレポートの ID (日付) 一覧。二重取り込みの防止に使う。 */
   importedReports: string[];
 
+  /* --- メモ --- */
+  /** メモ一覧の並べ替え。 */
+  memoSortKey: MemoSortKey;
+
+  /* --- PDF 編集のバージョン履歴 --- */
+  /** 1 つの PDF につき残す編集前バージョンの数。0 = 保持しない。 */
+  versionKeepCount: number;
+  /** バージョンを保持する日数。0 = 期限で消さない。 */
+  versionKeepDays: number;
+
   /* --- クラウド保管 --- */
   /**
    * クラウド保管機能を使うか。
@@ -161,6 +216,9 @@ export const DEFAULT_SETTINGS: Settings = {
   schemaVersion: 1,
   dailyReportEnabled: false,
   importedReports: [],
+  memoSortKey: 'page',
+  versionKeepCount: 3,
+  versionKeepDays: 30,
   cloudEnabled: false,
   cloudIdleDays: 1,
   cloudWifiOnly: true,
