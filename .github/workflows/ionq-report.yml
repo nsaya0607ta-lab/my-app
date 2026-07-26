@@ -40,7 +40,9 @@ jobs:
         env:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           ALPHA_VANTAGE_API_KEY: ${{ secrets.ALPHA_VANTAGE_API_KEY }}
-          GEMINI_MODEL: ${{ vars.GEMINI_MODEL }}
+          # 新しいAPIキーではGemini 2.5 Flashが利用できない場合があるため、
+          # Googleが現在推奨する安定版Flashモデルを明示して固定する。
+          GEMINI_MODEL: gemini-3.6-flash
         run: npm run ionq-report
 
       - name: 生成物をコミット
