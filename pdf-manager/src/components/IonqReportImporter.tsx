@@ -12,6 +12,7 @@ import { useApp } from '@/store/AppStore';
 
 const INDEX_URL = '/ionq/index.json';
 const MAX_PER_RUN = 5;
+const LEGACY_REPORT_NAME = /^\d{4}-\d{2}-\d{2}_IONQデイリーレポート\.pdf$/;
 
 type IonqReportEntry = {
   id: string;
@@ -21,13 +22,19 @@ type IonqReportEntry = {
   generatedAt?: string;
 };
 
+function expectedReportName(id: string): string | null {
+  const match = /^(\d{4})-(\d{2})-(\d{2})-ionq$/.exec(id);
+  if (!match) return null;
+  return `投資_IQ_${match[1]}${match[2]}${match[3]}.pdf`;
+}
+
 function isEntry(value: unknown): value is IonqReportEntry {
   if (!value || typeof value !== 'object') return false;
   const entry = value as Partial<IonqReportEntry>;
-  if (!/^\d{4}-\d{2}-\d{2}-ionq$/.test(entry.id ?? '')) return false;
-  if (typeof entry.file !== 'string' || !entry.file.toLowerCase().endsWith('.pdf')) return false;
-  if (entry.file.includes('/') || entry.file.includes('\\')) return false;
-  if (entry.name !== undefined && typeof entry.name !== 'string') return false;
+  const expectedName = expectedReportName(entry.id ?? '');
+  if (!expectedName) return false;
+  if (entry.file !== expectedName) return false;
+  if (entry.name !== undefined && entry.name !== expectedName) return false;
   if (entry.size !== undefined && (!Number.isFinite(entry.size) || Number(entry.size) <= 0)) return false;
   if (entry.generatedAt !== undefined && typeof entry.generatedAt !== 'string') return false;
   return true;
@@ -103,8 +110,29 @@ export function IonqReportImporter() {
 
       const importedKeys = new Set(settings.importedReports ?? []);
       const beforeImport = await repo.refresh();
+
+      // 旧仕様で取り込まれた「YYYY-MM-DD_IONQデイリーレポート.pdf」は、
+      // 正式な「投資_IQ_YYYYMMDD.pdf」が公開されている場合だけごみ箱へ移す。
+      // 自動生成レポートだけを対象にするため、ユーザーが手動追加した同名PDFは触らない。
+      let removedLegacy = 0;
+      if (entries.length > 0) {
+        const legacyReports = activeFiles(beforeImport.files).filter(
+          (file) => file.origin === 'report' && LEGACY_REPORT_NAME.test(file.name),
+        );
+        for (const file of legacyReports) {
+          if (cancelled) return;
+          try {
+            await repo.trashFile(file.id);
+            removedLegacy += 1;
+          } catch {
+            // 削除に失敗しても、正式ファイルの取り込みは続ける
+          }
+        }
+      }
+
+      const currentSnapshot = removedLegacy > 0 ? await repo.refresh() : beforeImport;
       const localReportsByName = new Map(
-        activeFiles(beforeImport.files)
+        activeFiles(currentSnapshot.files)
           .filter((file) => file.origin === 'report')
           .map((file) => [normalizedName(file.name), file]),
       );
@@ -240,10 +268,16 @@ export function IonqReportImporter() {
       }
 
       if (cancelled) return;
-      if (imported.length > 0 || moved > 0) await reload();
+      if (imported.length > 0 || moved > 0 || removedLegacy > 0) await reload();
       void refreshStorage();
+
       const changed = added + updated;
-      if (changed > 0) notify(`IONQレポートを ${changed} 件取り込み・更新しました`, 'success');
+      if (changed > 0 || removedLegacy > 0) {
+        const messages: string[] = [];
+        if (changed > 0) messages.push(`IONQレポートを ${changed} 件取り込み・更新`);
+        if (removedLegacy > 0) messages.push(`旧形式を ${removedLegacy} 件ごみ箱へ移動`);
+        notify(`${messages.join('、')}しました`, 'success');
+      }
     })();
 
     return () => { cancelled = true; };

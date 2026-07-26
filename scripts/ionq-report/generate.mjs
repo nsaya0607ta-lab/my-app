@@ -25,6 +25,19 @@ function compactDate(value) {
   return String(value || '').replaceAll('-', '');
 }
 
+function expectedReportFile(id) {
+  const match = /^(\d{4})-(\d{2})-(\d{2})-ionq$/.exec(String(id || ''));
+  if (!match) return null;
+  return `投資_IQ_${match[1]}${match[2]}${match[3]}.pdf`;
+}
+
+function isCanonicalReport(entry) {
+  const expected = expectedReportFile(entry?.id);
+  if (!expected) return false;
+  if (entry?.file !== expected) return false;
+  return entry?.name === undefined || entry.name === expected;
+}
+
 async function htmlToPdf(html) {
   const browser = await puppeteer.launch({
     headless: 'new',
@@ -47,7 +60,9 @@ async function htmlToPdf(html) {
 async function readIndex() {
   try {
     const parsed = JSON.parse(await readFile(INDEX_PATH, 'utf8'));
-    return Array.isArray(parsed?.reports) ? parsed.reports : [];
+    const reports = Array.isArray(parsed?.reports) ? parsed.reports : [];
+    // 旧形式・テスト用エントリーは次回生成時にも引き継がない。
+    return reports.filter(isCanonicalReport);
   } catch {
     return [];
   }
@@ -55,7 +70,9 @@ async function readIndex() {
 
 async function pruneOld(reports) {
   const cutoff = new Date(Date.now() - RETENTION_DAYS * 86400000).toISOString().slice(0, 10);
-  const kept = reports.filter((entry) => String(entry.id || '').slice(0, 10) >= cutoff);
+  const kept = reports
+    .filter(isCanonicalReport)
+    .filter((entry) => String(entry.id || '').slice(0, 10) >= cutoff);
   const keptFiles = new Set(kept.map((entry) => entry.file));
   const existing = await readdir(OUT_DIR).catch(() => []);
   for (const name of existing) {
