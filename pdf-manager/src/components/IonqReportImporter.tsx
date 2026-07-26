@@ -6,8 +6,9 @@ import { listRules } from '@/lib/classifyRules';
 import { AppError } from '@/lib/errors';
 import { getPageCount } from '@/lib/pdf';
 import * as repo from '@/lib/repository';
-import { activeFiles } from '@/lib/tree';
-import { UNSORTED_ID } from '@/lib/types';
+import { activeFiles, activeFolders, toParentKey } from '@/lib/tree';
+import { ROOT_ID, UNSORTED_ID } from '@/lib/types';
+import type { Folder } from '@/lib/types';
 import { useApp } from '@/store/AppStore';
 
 const INDEX_URL = '/ionq/index.json';
@@ -19,6 +20,36 @@ function isEntry(value: unknown): value is IonqReportEntry {
   if (!value || typeof value !== 'object') return false;
   const entry = value as Partial<IonqReportEntry>;
   return typeof entry.id === 'string' && entry.id.endsWith('-ionq') && typeof entry.file === 'string' && entry.file.toLowerCase().endsWith('.pdf') && !entry.file.includes('/') && !entry.file.includes('\\');
+}
+
+/**
+ * ルート直下を深さ1として、現在のフォルダーツリーの最大深度を返す。
+ * 壊れた親参照や循環があっても停止する。
+ */
+function folderTreeDepth(folders: Folder[]): number {
+  const foldersById = new Map(activeFolders(folders).map((folder) => [folder.id, folder]));
+  let maxDepth = 1;
+
+  for (const folder of foldersById.values()) {
+    let depth = 1;
+    let current: Folder | undefined = folder;
+    const visited = new Set<string>();
+
+    while (current && !visited.has(current.id)) {
+      visited.add(current.id);
+      const parentId = toParentKey(current.parentId);
+      if (parentId === ROOT_ID) break;
+
+      const parent = foldersById.get(parentId);
+      if (!parent) break;
+      depth += 1;
+      current = parent;
+    }
+
+    maxDepth = Math.max(maxDepth, depth);
+  }
+
+  return maxDepth;
 }
 
 export function IonqReportImporter() {
@@ -84,20 +115,53 @@ export function IonqReportImporter() {
       let moved = 0;
       if (settings.classifyEnabled) {
         try {
-          const latestRules = await listRules();
-          if (latestRules.length > 0) {
-            const snapshot = await repo.refresh();
-            const result = await planFiles(activeFiles(snapshot.files), {
+          const initialSnapshot = await repo.refresh();
+          const maxPasses = folderTreeDepth(initialSnapshot.folders);
+          const visitedFolderIdsByFile = new Map<string, Set<string>>();
+
+          for (const file of activeFiles(initialSnapshot.files)) {
+            visitedFolderIdsByFile.set(file.id, new Set([toParentKey(file.parentId)]));
+          }
+
+          for (let pass = 0; pass < maxPasses; pass += 1) {
+            if (cancelled) return;
+
+            // 各階層で必ず最新のファイル位置・フォルダー・ルールを読み直す。
+            const [snapshot, latestRules] = await Promise.all([repo.refresh(), listRules()]);
+            if (latestRules.length === 0) break;
+
+            const files = activeFiles(snapshot.files);
+            for (const file of files) {
+              const currentFolderId = toParentKey(file.parentId);
+              const visited = visitedFolderIdsByFile.get(file.id) ?? new Set<string>();
+              visited.add(currentFolderId);
+              visitedFolderIdsByFile.set(file.id, visited);
+            }
+
+            const result = await planFiles(files, {
               rules: latestRules,
               strategy: settings.classifyMultiMatch,
               textPages: settings.classifyTextPages,
             });
 
-            // 起動時は、確認不要かつ自動移動が許可されたルールだけを静かに適用する。
-            const autoPlans = result.plans.filter((plan) => !plan.needsConfirm);
-            if (autoPlans.length > 0) {
-              const applied = await applyPlans(autoPlans);
-              moved = applied.moved.length;
+            const autoPlans = result.plans.filter((plan) => {
+              if (plan.needsConfirm) return false;
+              const visited = visitedFolderIdsByFile.get(plan.file.id) ?? new Set([plan.fromParentId]);
+              visitedFolderIdsByFile.set(plan.file.id, visited);
+              return !visited.has(plan.toParentId);
+            });
+
+            if (autoPlans.length === 0) break;
+
+            const applied = await applyPlans(autoPlans);
+            if (applied.moved.length === 0) break;
+
+            moved += applied.moved.length;
+            for (const record of applied.moved) {
+              const visited = visitedFolderIdsByFile.get(record.fileId) ?? new Set<string>();
+              visited.add(record.fromParentId);
+              visited.add(record.toParentId);
+              visitedFolderIdsByFile.set(record.fileId, visited);
             }
           }
         } catch {
