@@ -3,7 +3,6 @@
 import { useEffect, useRef } from 'react';
 import { applyPlans, planFiles } from '@/lib/classifyRun';
 import { listRules } from '@/lib/classifyRules';
-import { AppError } from '@/lib/errors';
 import { getPageCount } from '@/lib/pdf';
 import * as repo from '@/lib/repository';
 import { activeFiles, activeFolders, toParentKey } from '@/lib/tree';
@@ -14,12 +13,40 @@ import { useApp } from '@/store/AppStore';
 const INDEX_URL = '/ionq/index.json';
 const MAX_PER_RUN = 5;
 
-type IonqReportEntry = { id: string; file: string; name?: string };
+type IonqReportEntry = {
+  id: string;
+  file: string;
+  name?: string;
+  size?: number;
+  generatedAt?: string;
+};
 
 function isEntry(value: unknown): value is IonqReportEntry {
   if (!value || typeof value !== 'object') return false;
   const entry = value as Partial<IonqReportEntry>;
-  return typeof entry.id === 'string' && entry.id.endsWith('-ionq') && typeof entry.file === 'string' && entry.file.toLowerCase().endsWith('.pdf') && !entry.file.includes('/') && !entry.file.includes('\\');
+  if (!/^\d{4}-\d{2}-\d{2}-ionq$/.test(entry.id ?? '')) return false;
+  if (typeof entry.file !== 'string' || !entry.file.toLowerCase().endsWith('.pdf')) return false;
+  if (entry.file.includes('/') || entry.file.includes('\\')) return false;
+  if (entry.name !== undefined && typeof entry.name !== 'string') return false;
+  if (entry.size !== undefined && (!Number.isFinite(entry.size) || Number(entry.size) <= 0)) return false;
+  if (entry.generatedAt !== undefined && typeof entry.generatedAt !== 'string') return false;
+  return true;
+}
+
+function reportName(entry: IonqReportEntry): string {
+  return entry.name || entry.file;
+}
+
+/**
+ * 同じ日付IDでも生成し直されたPDFを区別するため、公開ファイルの版を含めたキーを使う。
+ * 旧版では日付IDだけを保存していたため、後方互換判定は取り込み処理側で行う。
+ */
+function reportKey(entry: IonqReportEntry): string {
+  return [entry.id, entry.file, entry.size ?? '', entry.generatedAt ?? ''].join('|');
+}
+
+function normalizedName(value: string): string {
+  return value.trim().toLocaleLowerCase('ja-JP');
 }
 
 /**
@@ -74,14 +101,35 @@ export function IonqReportImporter() {
         // レポート一覧を取得できなくても、起動時の自動分類は続ける
       }
 
-      const importedIds = new Set(settings.importedReports ?? []);
+      const importedKeys = new Set(settings.importedReports ?? []);
+      const beforeImport = await repo.refresh();
+      const localReportsByName = new Map(
+        activeFiles(beforeImport.files)
+          .filter((file) => file.origin === 'report')
+          .map((file) => [normalizedName(file.name), file]),
+      );
+
       const targets = entries
-        .filter((entry) => !importedIds.has(entry.id))
+        .filter((entry) => {
+          const key = reportKey(entry);
+          if (importedKeys.has(key)) return false;
+
+          const local = localReportsByName.get(normalizedName(reportName(entry)));
+          const legacyIdWasImported = importedKeys.has(entry.id);
+
+          // 旧版の日付IDだけが記録済みでも、現在公開中のファイル名が端末に無ければ
+          // 修正版・再生成版として取り込む。今回の 20260724 → 20260727 修正もここで救済する。
+          if (legacyIdWasImported && !local) return true;
+          if (legacyIdWasImported && local && entry.size && local.size !== entry.size) return true;
+          return !legacyIdWasImported;
+        })
         .sort((a, b) => b.id.localeCompare(a.id))
         .slice(0, MAX_PER_RUN);
 
       const imported: string[] = [];
       let added = 0;
+      let updated = 0;
+
       for (const entry of targets) {
         if (cancelled) return;
         try {
@@ -90,18 +138,40 @@ export function IonqReportImporter() {
           const blob = await response.blob();
           if (blob.size === 0) continue;
           const pageCount = await getPageCount(blob);
-          const meta = await repo.addPdf(blob, entry.name || entry.file, {
+          const expectedName = reportName(entry);
+
+          // 同じ公開ファイル名の自動レポートがある場合は、場所・メモ・お気に入りを保ったまま
+          // PDF本体だけを最新版へ差し替える。
+          const latest = await repo.refresh();
+          const existingReport = activeFiles(latest.files).find(
+            (file) => file.origin === 'report' && normalizedName(file.name) === normalizedName(expectedName),
+          );
+
+          if (existingReport) {
+            if (existingReport.size !== blob.size || existingReport.pageCount !== pageCount) {
+              await repo.replaceFileContent(existingReport.id, blob, { pageCount });
+              updated += 1;
+            }
+            await repo.updateFile(existingReport.id, {
+              tags: [...new Set([...existingReport.tags, 'IONQ', '株式レポート'])],
+            });
+            imported.push(reportKey(entry));
+            continue;
+          }
+
+          const meta = await repo.addPdf(blob, expectedName, {
             // 自動取り込みも通常の追加と同じ入口へ置き、未分類フォルダーのルールを適用する。
+            // 同名の手動PDFがある場合は消さず、自動採番してレポートを必ず取り込む。
             parentId: UNSORTED_ID,
-            onDuplicate: 'skip',
+            onDuplicate: 'rename',
             pageCount,
             origin: 'report',
           });
           await repo.updateFile(meta.id, { tags: ['IONQ', '株式レポート'] });
-          imported.push(entry.id);
+          imported.push(reportKey(entry));
           added += 1;
-        } catch (error) {
-          if (error instanceof AppError && error.code === 'DUPLICATE_NAME') imported.push(entry.id);
+        } catch {
+          // 失敗したレポートは取り込み済みにせず、次回起動時に再試行する。
         }
       }
 
@@ -172,7 +242,8 @@ export function IonqReportImporter() {
       if (cancelled) return;
       if (imported.length > 0 || moved > 0) await reload();
       void refreshStorage();
-      if (added > 0) notify(`IONQレポートを ${added} 件取り込みました`, 'success');
+      const changed = added + updated;
+      if (changed > 0) notify(`IONQレポートを ${changed} 件取り込み・更新しました`, 'success');
     })();
 
     return () => { cancelled = true; };
