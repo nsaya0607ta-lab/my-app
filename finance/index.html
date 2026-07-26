@@ -11,7 +11,7 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="Asset">
 <meta name="description" content="現在の資産から未来の目的地までを可視化する資産管理アプリ">
-<meta name="finance-build" content="20260726b">
+<meta name="finance-build" content="20260726c">
 <link rel="manifest" href="manifest.json">
 <link rel="icon" type="image/x-icon" href="assets/icon/favicon.ico">
 <link rel="icon" type="image/png" sizes="16x16" href="assets/icon/app-icon-16.png">
@@ -26,6 +26,7 @@
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Zen+Kaku+Gothic+New:wght@400;500;700;900&display=swap">
 <link rel="stylesheet" href="css/finance.css?v=20260726a">
 <link rel="stylesheet" href="css/voyage-theme.css?v=20260726b">
+<link rel="stylesheet" href="css/voyage-position.css?v=20260726c">
 <script type="importmap">
 {
   "imports": {
@@ -42,9 +43,11 @@
 <script type="module">
   import { init } from './js/app.js?v=20260726a';
   import { initSimCashPersistence } from './js/simCashPersistence.js?v=20260725c';
+  import { initVoyagePosition } from './js/voyagePosition.js?v=20260726c';
 
   init();
   initSimCashPersistence();
+  initVoyagePosition();
 </script>
 </body>
 </html>
