@@ -10,7 +10,9 @@
     "fetch:youtube-playlist": "node scripts/fetchYouTubePlaylist.js",
     "daily-report": "node scripts/daily-report/generate.mjs",
     "daily-report:dry-run": "node scripts/daily-report/generate.mjs --dry-run --html",
-    "daily-report:verify-import": "node scripts/daily-report/verify-import.mjs"
+    "daily-report:verify-import": "node scripts/daily-report/verify-import.mjs",
+    "ionq-report": "node scripts/ionq-report/generate.mjs",
+    "ionq-report:html": "node scripts/ionq-report/generate.mjs --html"
   },
   "dependencies": {
     "firebase-admin": "^14.1.0"
