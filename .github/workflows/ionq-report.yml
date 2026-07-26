@@ -2,16 +2,23 @@ name: 毎朝のIONQデイリーレポートPDF
 
 on:
   schedule:
-    # 日本時間の毎朝7時にIONQレポートの生成を開始する。
+    # 日本時間7:00に通常実行し、未作成の場合だけ7:10・7:20・7:30に再試行する。
     - cron: '0 7 * * *'
       timezone: 'Asia/Tokyo'
+    - cron: '10 7 * * *'
+      timezone: 'Asia/Tokyo'
+    - cron: '20 7 * * *'
+      timezone: 'Asia/Tokyo'
+    - cron: '30 7 * * *'
+      timezone: 'Asia/Tokyo'
   workflow_dispatch:
-  # ワークフロー自体を変更した際は自動テストとして即時実行する。
+  # ワークフローまたは生成処理を変更した際は、当日分を即時確認・生成する。
   push:
     branches:
       - main
     paths:
       - '.github/workflows/ionq-report.yml'
+      - 'scripts/ionq-report/**'
 
 concurrency:
   group: ionq-daily-report
@@ -26,23 +33,67 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # 再試行時に、直前の実行で生成済みかを最新mainで確認する。
+      - name: 最新mainを同期
+        run: |
+          git fetch origin main
+          git reset --hard origin/main
+
       - uses: actions/setup-node@v4
         with:
           node-version: '20'
           cache: npm
 
+      - name: 今日のPDF作成状況を確認
+        id: report-check
+        shell: bash
+        run: |
+          REPORT_DATE="$(TZ=Asia/Tokyo date +%Y-%m-%d)"
+          COMPACT_DATE="$(TZ=Asia/Tokyo date +%Y%m%d)"
+          EXPECTED_FILE="投資_IQ_${COMPACT_DATE}.pdf"
+          REPORT_PATH="pdf-manager/public/ionq/${EXPECTED_FILE}"
+
+          # 手動実行は既存ファイルがあっても再生成する。
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "should_generate=true" >> "$GITHUB_OUTPUT"
+            echo "手動実行のため再生成します"
+            exit 0
+          fi
+
+          if REPORT_ID="${REPORT_DATE}-ionq" EXPECTED_FILE="$EXPECTED_FILE" REPORT_PATH="$REPORT_PATH" node -e '
+            const fs = require("node:fs");
+            const path = require("node:path");
+            if (!fs.existsSync(process.env.REPORT_PATH)) process.exit(1);
+            const indexPath = path.join("pdf-manager", "public", "ionq", "index.json");
+            const index = JSON.parse(fs.readFileSync(indexPath, "utf8"));
+            const found = Array.isArray(index.reports) && index.reports.some(
+              (entry) => entry.id === process.env.REPORT_ID && entry.file === process.env.EXPECTED_FILE,
+            );
+            process.exit(found ? 0 : 1);
+          '; then
+            echo "should_generate=false" >> "$GITHUB_OUTPUT"
+            echo "今日のPDFは作成済みです: ${EXPECTED_FILE}"
+          else
+            echo "should_generate=true" >> "$GITHUB_OUTPUT"
+            echo "今日のPDFがないため生成します: ${EXPECTED_FILE}"
+          fi
+
       - name: 日本語フォントを導入
+        if: steps.report-check.outputs.should_generate == 'true'
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends fonts-noto-cjk
 
       - name: 依存関係を導入
+        if: steps.report-check.outputs.should_generate == 'true'
         run: npm ci
 
       - name: Chromiumを導入
+        if: steps.report-check.outputs.should_generate == 'true'
         run: npx puppeteer browsers install chrome
 
       - name: IONQレポートを生成
+        if: steps.report-check.outputs.should_generate == 'true'
         env:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           ALPHA_VANTAGE_API_KEY: ${{ secrets.ALPHA_VANTAGE_API_KEY }}
@@ -52,6 +103,7 @@ jobs:
         run: npm run ionq-report
 
       - name: 生成物をコミット
+        if: steps.report-check.outputs.should_generate == 'true'
         run: |
           if [ -z "$(git status --porcelain pdf-manager/public/ionq)" ]; then
             echo "生成物に変更がないためコミットしません"

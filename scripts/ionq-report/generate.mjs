@@ -77,7 +77,8 @@ async function main() {
   const html = renderIonqHtml({ stock, report: { ...report, reportDate }, sources });
 
   await mkdir(OUT_DIR, { recursive: true });
-  const fileName = `投資_IQ_${compactDate(stock.marketDate)}.pdf`;
+  // ファイル名の日付は市場取引日ではなく、レポートを作成した日本日付にする。
+  const fileName = `投資_IQ_${compactDate(reportDate)}.pdf`;
   if (KEEP_HTML) await writeFile(path.join(OUT_DIR, fileName.replace(/\.pdf$/, '.html')), html, 'utf8');
 
   const pdf = await htmlToPdf(html);
