@@ -1,9 +1,13 @@
-name: IONQレポート17時31分一時テスト
+name: IONQレポート即時一時テスト
 
 on:
-  schedule:
-    - cron: '31 17 27 7 *'
-      timezone: 'Asia/Tokyo'
+  # このファイルをmainへ反映したpushで即時実行する。時刻指定cronには依存しない。
+  push:
+    branches:
+      - main
+    paths:
+      - '.github/workflows/ionq-report-test-20260727-1731.yml'
+  workflow_dispatch:
 
 concurrency:
   group: ionq-daily-report
@@ -16,26 +20,26 @@ jobs:
       contents: write
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: 最新mainを同期
         run: |
           git fetch origin main
           git reset --hard origin/main
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v5
         with:
           node-version: '24.x'
           cache: npm
 
-      - name: 実行日時を確認
+      - name: 実行日を確認
         id: test_check
         shell: bash
         run: |
           REPORT_DATE="$(TZ=Asia/Tokyo date +%Y-%m-%d)"
           if [ "$REPORT_DATE" = "2026-07-27" ]; then
             echo "should_generate=true" >> "$GITHUB_OUTPUT"
-            echo "17:31の一時テストとしてIONQレポートを再生成します"
+            echo "一時テストとしてIONQレポートを即時再生成します"
           else
             echo "should_generate=false" >> "$GITHUB_OUTPUT"
             echo "対象日ではないため生成しません"
@@ -73,6 +77,6 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add pdf-manager/public/ionq
-          git commit -m "IONQ日次レポート17時31分テスト: 2026-07-27"
+          git commit -m "IONQ新形式レポートを即時テスト生成: 2026-07-27"
           git pull --rebase origin main
           git push origin HEAD:main
