@@ -1,20 +1,17 @@
 'use client';
 
 /**
- * クラウド保管で使う Firebase クライアント (認証 + Storage)。
+ * クラウド保管とGemini機能で使う Firebase クライアント
+ * (Authentication + Storage + Firestore)。
  *
- * - 既存の学習アプリと同じ Firebase プロジェクト / メール・パスワード認証を使う。
- * - Firebase SDK はブラウザーで必要になった時だけ CDN から読み込む。
- *   Next.js のサーバー描画や初回バンドルには含めないので、
- *   クラウド保管を使わないユーザーの起動速度には影響しない。
- * - ここにあるのは公開用のウェブ設定だけ。管理者用の秘密鍵 (サービスアカウント) は
- *   ブラウザーへ一切持ち込まない。アクセス制御は Storage セキュリティルールで行う。
+ * Firebase SDKはブラウザーで必要になった時だけCDNから読み込む。
+ * ここにある設定は公開用のウェブ設定だけで、管理者秘密鍵は含めない。
  */
 
 const FIREBASE_VERSION = '10.0.0';
 const APP_NAME = 'pdf-cloud-storage';
 
-const FIREBASE_CONFIG = {
+export const FIREBASE_CONFIG = {
   apiKey: 'AIzaSyCg3zD2xkq_3e5MclG9YK_uVqVzWulO9Ws',
   authDomain: 'my-az900-app.firebaseapp.com',
   projectId: 'my-az900-app',
@@ -29,9 +26,11 @@ export type CloudUser = {
 };
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
-type FirebaseServices = {
+export type FirebaseServices = {
   auth: any;
   storage: any;
+  firestore: any;
+  firebase: any;
 };
 
 declare global {
@@ -53,9 +52,11 @@ function loadScript(src: string): Promise<void> {
     }
     if (existing) {
       existing.addEventListener('load', () => resolve(), { once: true });
-      existing.addEventListener('error', () => reject(new Error('Firebase SDKを読み込めませんでした')), {
-        once: true,
-      });
+      existing.addEventListener(
+        'error',
+        () => reject(new Error('Firebase SDKを読み込めませんでした')),
+        { once: true },
+      );
       return;
     }
 
@@ -71,9 +72,11 @@ function loadScript(src: string): Promise<void> {
       },
       { once: true },
     );
-    script.addEventListener('error', () => reject(new Error('Firebase SDKを読み込めませんでした')), {
-      once: true,
-    });
+    script.addEventListener(
+      'error',
+      () => reject(new Error('Firebase SDKを読み込めませんでした')),
+      { once: true },
+    );
     document.head.append(script);
   });
 }
@@ -88,6 +91,7 @@ export async function getCloudServices(): Promise<FirebaseServices> {
     await Promise.all([
       loadScript(`${base}/firebase-auth-compat.js`),
       loadScript(`${base}/firebase-storage-compat.js`),
+      loadScript(`${base}/firebase-firestore-compat.js`),
     ]);
 
     const firebase = window.firebase;
@@ -97,14 +101,20 @@ export async function getCloudServices(): Promise<FirebaseServices> {
       firebase.initializeApp(FIREBASE_CONFIG, APP_NAME);
 
     const auth = app.auth();
-    // iPhone のホーム画面版を閉じてもログイン状態を保持する。
     try {
       await auth.setPersistence(firebase.auth.Auth.Persistence.LOCAL);
     } catch {
-      // 保存制限のある環境では Firebase 既定の永続化方式を使う。
+      // 保存制限のある環境ではFirebase既定の永続化方式を使用する。
     }
 
-    return { auth, storage: app.storage() };
+    const firestore = app.firestore();
+    try {
+      await firestore.enablePersistence({ synchronizeTabs: true });
+    } catch {
+      // 複数タブ競合や非対応ブラウザーではオンライン利用へフォールバックする。
+    }
+
+    return { auth, storage: app.storage(), firestore, firebase };
   })().catch((error) => {
     servicesPromise = null;
     throw error;
@@ -131,8 +141,6 @@ export function subscribeCloudAuth(
       unsubscribe = auth.onAuthStateChanged((user: any) => listener(toCloudUser(user), true));
     })
     .catch(() => {
-      // SDK を読み込めない (オフライン等) ときは「未ログイン」ではなく
-      // 「まだ分からない」として扱い、端末内データには一切影響させない。
       if (active) listener(null, false);
     });
 
@@ -159,9 +167,7 @@ export async function cloudSignUp(email: string, password: string): Promise<Clou
 }
 
 /**
- * ログアウトする。
- * 端末内の PDF・フォルダー・タグ・メモには一切手を触れない
- * (クラウド保管済みの PDF は再ログインすればまた開ける)。
+ * ログアウトする。端末内のPDF・フォルダー・タグ・メモには触れない。
  */
 export async function cloudSignOut(): Promise<void> {
   const { auth } = await getCloudServices();
@@ -173,7 +179,7 @@ export async function currentCloudUser(): Promise<CloudUser | null> {
   return toCloudUser(auth.currentUser);
 }
 
-/** ログインが今も有効か確認する (期限切れならトークン更新で弾かれる)。 */
+/** ログインが今も有効か確認する。 */
 export async function requireCloudUser(): Promise<CloudUser> {
   const { auth } = await getCloudServices();
   const user = auth.currentUser;
@@ -182,10 +188,30 @@ export async function requireCloudUser(): Promise<CloudUser> {
   return toCloudUser(user) as CloudUser;
 }
 
-/** Storage の参照を得る。 */
+/** Vercel APIへ渡すFirebase IDトークンを取得する。 */
+export async function cloudIdToken(forceRefresh = false): Promise<string> {
+  const { auth } = await getCloudServices();
+  const user = auth.currentUser;
+  if (!user) throw new Error('SIGNED_OUT');
+  return user.getIdToken(forceRefresh);
+}
+
+/** Storageの参照を得る。 */
 export async function cloudRef(path: string): Promise<any> {
   const { storage } = await getCloudServices();
   return storage.ref(path);
+}
+
+/** Firestoreインスタンスを得る。 */
+export async function cloudFirestore(): Promise<any> {
+  const { firestore } = await getCloudServices();
+  return firestore;
+}
+
+/** Firebase互換SDK本体を得る。TimestampやFieldValueが必要な処理で使用する。 */
+export async function cloudFirebase(): Promise<any> {
+  const { firebase } = await getCloudServices();
+  return firebase;
 }
 
 export function cloudErrorCode(error: unknown): string {
@@ -206,11 +232,15 @@ export function cloudErrorMessage(error: unknown): string {
   }
   if (code.includes('too-many-requests')) return '試行回数が多いため、一度時間を置いてください。';
   if (code.includes('network-request-failed')) return '通信できません。ネットワーク接続を確認してください。';
-  if (code.includes('storage/unauthorized') || code.includes('permission-denied')) {
-    return 'クラウド保存の権限がありません。Firebaseのセキュリティルールを確認してください。';
+  if (
+    code.includes('storage/unauthorized') ||
+    code.includes('permission-denied') ||
+    code.includes('firestore/permission-denied')
+  ) {
+    return 'Firebaseの権限がありません。セキュリティルールを確認してください。';
   }
-  if (code.includes('storage/quota-exceeded')) {
-    return 'クラウドの保存容量が不足しています。';
+  if (code.includes('storage/quota-exceeded') || code.includes('resource-exhausted')) {
+    return 'クラウドの保存容量または利用上限を超えました。';
   }
   if (code.includes('storage/object-not-found')) {
     return 'クラウド上にファイルが見つかりませんでした。';
