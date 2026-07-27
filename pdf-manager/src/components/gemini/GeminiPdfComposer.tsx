@@ -1,7 +1,7 @@
 'use client';
 
 import { ArrowLeft, FileText, Save, Sparkles, X } from 'lucide-react';
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { cloudIdToken } from '@/lib/firebaseCloud';
 import { createGeminiPdfBlob } from '@/lib/geminiPdf';
 import { applyDateVariables, type GeminiMessage, type GeminiPreferences, type PdfDuplicateMode, type PdfOutlineResponse } from '@/lib/geminiTypes';
@@ -13,6 +13,28 @@ import { pathString } from '@/lib/tree';
 import { useApp } from '@/store/AppStore';
 import { Button, IconButton, Spinner } from '@/components/ui/Primitives';
 import { MarkdownContent } from './MarkdownContent';
+
+const PDF_COMPOSER_SETTINGS_KEY = 'pdf-manager:gemini-pdf-composer-settings:v1';
+const DOCUMENT_TYPES = ['学習・復習資料', 'LPIC試験対策資料', '業務手順書', '要点まとめ'] as const;
+const DUPLICATE_MODES: PdfDuplicateMode[] = ['replaceSameDate', 'overwrite', 'rename', 'skip'];
+
+type PdfComposerSettings = {
+  folderId: string;
+  fileNameTemplate: string;
+  titleTemplate: string;
+  documentType: string;
+  instructions: string;
+  duplicateMode: PdfDuplicateMode;
+};
+
+const DEFAULT_PDF_COMPOSER_SETTINGS: PdfComposerSettings = {
+  folderId: ROOT_ID,
+  fileNameTemplate: '学習_yyyymmdd.pdf',
+  titleTemplate: '学習まとめ yyyy-mm-dd',
+  documentType: '学習・復習資料',
+  instructions: '質問、勘違い、詰まった点を必ず整理してください。',
+  duplicateMode: 'replaceSameDate',
+};
 
 function fieldClass() {
   return 'min-h-tap w-full rounded-xl border border-white/80 bg-white/90 px-3 py-2.5 text-base text-ink shadow-sm outline-none backdrop-blur-xl focus:border-brand-400 dark:border-[#39424e] dark:bg-[#181e26] dark:text-[#e6eaef]';
@@ -32,6 +54,39 @@ function GeminiBackdrop() {
   );
 }
 
+function normalizeSettings(value: unknown, folders: Folder[]): PdfComposerSettings {
+  const saved = value && typeof value === 'object' ? (value as Partial<PdfComposerSettings>) : {};
+  const folderId =
+    typeof saved.folderId === 'string' &&
+    (saved.folderId === ROOT_ID || folders.some((folder) => folder.id === saved.folderId && !folder.deletedAt))
+      ? saved.folderId
+      : ROOT_ID;
+
+  return {
+    folderId,
+    fileNameTemplate:
+      typeof saved.fileNameTemplate === 'string'
+        ? saved.fileNameTemplate
+        : DEFAULT_PDF_COMPOSER_SETTINGS.fileNameTemplate,
+    titleTemplate:
+      typeof saved.titleTemplate === 'string'
+        ? saved.titleTemplate
+        : DEFAULT_PDF_COMPOSER_SETTINGS.titleTemplate,
+    documentType:
+      typeof saved.documentType === 'string' && DOCUMENT_TYPES.includes(saved.documentType as (typeof DOCUMENT_TYPES)[number])
+        ? saved.documentType
+        : DEFAULT_PDF_COMPOSER_SETTINGS.documentType,
+    instructions:
+      typeof saved.instructions === 'string'
+        ? saved.instructions
+        : DEFAULT_PDF_COMPOSER_SETTINGS.instructions,
+    duplicateMode:
+      typeof saved.duplicateMode === 'string' && DUPLICATE_MODES.includes(saved.duplicateMode as PdfDuplicateMode)
+        ? (saved.duplicateMode as PdfDuplicateMode)
+        : DEFAULT_PDF_COMPOSER_SETTINGS.duplicateMode,
+  };
+}
+
 export function GeminiPdfComposer({
   chatDate,
   messages,
@@ -46,14 +101,15 @@ export function GeminiPdfComposer({
   onClose: () => void;
 }) {
   const { reload, refreshStorage, notify } = useApp();
-  const [folderId, setFolderId] = useState(ROOT_ID);
-  const [fileNameTemplate, setFileNameTemplate] = useState('学習_yyyymmdd.pdf');
-  const [titleTemplate, setTitleTemplate] = useState('学習まとめ yyyy-mm-dd');
-  const [documentType, setDocumentType] = useState('学習・復習資料');
-  const [instructions, setInstructions] = useState('質問、勘違い、詰まった点を必ず整理してください。');
-  const [duplicateMode, setDuplicateMode] = useState<PdfDuplicateMode>('replaceSameDate');
+  const [folderId, setFolderId] = useState(DEFAULT_PDF_COMPOSER_SETTINGS.folderId);
+  const [fileNameTemplate, setFileNameTemplate] = useState(DEFAULT_PDF_COMPOSER_SETTINGS.fileNameTemplate);
+  const [titleTemplate, setTitleTemplate] = useState(DEFAULT_PDF_COMPOSER_SETTINGS.titleTemplate);
+  const [documentType, setDocumentType] = useState(DEFAULT_PDF_COMPOSER_SETTINGS.documentType);
+  const [instructions, setInstructions] = useState(DEFAULT_PDF_COMPOSER_SETTINGS.instructions);
+  const [duplicateMode, setDuplicateMode] = useState<PdfDuplicateMode>(DEFAULT_PDF_COMPOSER_SETTINGS.duplicateMode);
   const [outline, setOutline] = useState<PdfOutlineResponse | null>(null);
   const [busy, setBusy] = useState<'outline' | 'pdf' | null>(null);
+  const settingsLoaded = useRef(false);
 
   const activeFolders = useMemo(
     () => folders.filter((folder) => !folder.deletedAt).sort((a, b) => pathString(folders, a.id).localeCompare(pathString(folders, b.id), 'ja')),
@@ -64,11 +120,48 @@ export function GeminiPdfComposer({
   );
   const title = applyDateVariables(titleTemplate, chatDate) || `学習まとめ ${chatDate}`;
 
+  useEffect(() => {
+    if (settingsLoaded.current) return;
+    settingsLoaded.current = true;
+
+    try {
+      const raw = window.localStorage.getItem(PDF_COMPOSER_SETTINGS_KEY);
+      if (!raw) return;
+      const saved = normalizeSettings(JSON.parse(raw), folders);
+      setFolderId(saved.folderId);
+      setFileNameTemplate(saved.fileNameTemplate);
+      setTitleTemplate(saved.titleTemplate);
+      setDocumentType(saved.documentType);
+      setInstructions(saved.instructions);
+      setDuplicateMode(saved.duplicateMode);
+    } catch {
+      window.localStorage.removeItem(PDF_COMPOSER_SETTINGS_KEY);
+    }
+  }, [folders]);
+
+  const persistSettings = (showNotification: boolean) => {
+    try {
+      const settings: PdfComposerSettings = {
+        folderId,
+        fileNameTemplate,
+        titleTemplate,
+        documentType,
+        instructions,
+        duplicateMode,
+      };
+      window.localStorage.setItem(PDF_COMPOSER_SETTINGS_KEY, JSON.stringify(settings));
+      if (showNotification) notify('PDF作成設定を保存しました。', 'success');
+    } catch {
+      if (showNotification) notify('PDF作成設定を保存できませんでした。', 'error');
+    }
+  };
+
   const createOutline = async () => {
     if (messages.length === 0) {
       notify('この日のチャットにはPDF化できるメッセージがありません。', 'error');
       return;
     }
+    persistSettings(false);
     setBusy('outline');
     try {
       const token = await cloudIdToken();
@@ -152,13 +245,23 @@ export function GeminiPdfComposer({
               <Button onClick={() => void savePdf()} disabled={busy !== null}>
                 <Save size={18} /> 保存
               </Button>
-            ) : null}
+            ) : (
+              <Button
+                variant="secondary"
+                className="min-h-9 px-3 text-sm"
+                onClick={() => persistSettings(true)}
+                disabled={busy !== null}
+              >
+                <Save size={17} /> 設定保存
+              </Button>
+            )}
           </div>
 
           {!outline ? (
             <div className="space-y-4 px-4 py-5">
               <div className="rounded-card border border-brand-200 bg-brand-50/90 px-4 py-3 text-sm leading-relaxed text-[#245469] shadow-sm backdrop-blur-xl dark:border-[#345563] dark:bg-[#1d3039] dark:text-[#dce9ef]">
                 単なる会話ログではなく、質問・勘違い・重要点を整理した復習資料へ再構成します。
+                <p className="mt-1 text-xs opacity-80">設定保存を押すと、ファイル名や追加指示などを次回も引き継ぎます。プレビュー生成時にも自動保存します。</p>
               </div>
               <label className="block">
                 <span className="mb-1 block text-sm font-medium">対象日</span>
@@ -188,10 +291,7 @@ export function GeminiPdfComposer({
               <label className="block">
                 <span className="mb-1 block text-sm font-medium">資料タイプ</span>
                 <select className={fieldClass()} value={documentType} onChange={(event) => setDocumentType(event.target.value)}>
-                  <option value="学習・復習資料">学習・復習資料</option>
-                  <option value="LPIC試験対策資料">LPIC試験対策資料</option>
-                  <option value="業務手順書">業務手順書</option>
-                  <option value="要点まとめ">要点まとめ</option>
+                  {DOCUMENT_TYPES.map((type) => <option key={type} value={type}>{type}</option>)}
                 </select>
               </label>
               <label className="block">
