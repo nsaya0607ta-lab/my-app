@@ -30,19 +30,6 @@ service firebase.storage {
                     && request.auth.uid == userId;
     }
 
-    // Google Drive → GAS → Vercel から届く一時受信箱。
-    // 作成・上書きは Firebase Admin 権限を持つVercel APIだけが行う。
-    // ブラウザー側は本人のファイルを読み取り、アプリへの保管完了後に削除できる。
-    match /users/{userId}/drive-inbox/{fileName} {
-      allow read: if request.auth != null
-                  && request.auth.uid == userId;
-
-      allow delete: if request.auth != null
-                    && request.auth.uid == userId;
-
-      allow create, update: if false;
-    }
-
     // 上記以外は既定で拒否される (ここに何も書かない = 拒否)
   }
 }
