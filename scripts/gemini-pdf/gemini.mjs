@@ -1,7 +1,7 @@
 const ENDPOINT = 'https://generativelanguage.googleapis.com/v1beta/models';
 
 function modelName() {
-  return String(process.env.GEMINI_MODEL || 'gemini-3.5-flash').replace(/^models\//, '');
+  return String(process.env.GEMINI_MODEL || 'gemini-3.6-flash').replace(/^models\//, '');
 }
 
 function apiKey() {
@@ -88,8 +88,6 @@ export async function generateDocument(input) {
         systemInstruction: { parts: [{ text: systemPrompt(input.preferences) }] },
         contents: [{ role: 'user', parts: [{ text: documentPrompt(input) }] }],
         generationConfig: {
-          temperature: 0.25,
-          topP: 0.85,
           maxOutputTokens: 16384,
         },
       }),
