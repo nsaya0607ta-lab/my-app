@@ -1,0 +1,41 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function isOwner(userId) {
+      return request.auth != null && request.auth.uid == userId;
+    }
+
+    match /users/{userId}/geminiChats/{date} {
+      allow read, create, update, delete: if isOwner(userId);
+
+      match /messages/{messageId} {
+        allow read, create, update, delete: if isOwner(userId);
+      }
+    }
+
+    match /users/{userId}/geminiSettings/{settingId} {
+      allow read, create, update, delete: if isOwner(userId);
+    }
+
+    match /users/{userId}/pdfGenerationRules/{ruleId} {
+      allow read, create, update, delete: if isOwner(userId);
+    }
+
+    // 定期実行履歴はFirebase Adminだけが作成する。本人は結果を閲覧できる。
+    match /users/{userId}/pdfGenerationRuns/{runId} {
+      allow read: if isOwner(userId);
+      allow create, update, delete: if false;
+    }
+
+    // PDF本体の作成はFirebase Adminだけが行う。
+    // 本人はアプリへの取り込み完了状態だけを更新できる。
+    match /users/{userId}/geminiGeneratedPdfs/{pdfId} {
+      allow read: if isOwner(userId);
+      allow update: if isOwner(userId)
+                    && request.resource.data.diff(resource.data).affectedKeys()
+                      .hasOnly(['status', 'localFileId', 'importedAt', 'cleanupAt']);
+      allow create, delete: if false;
+    }
+  }
+}
