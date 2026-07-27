@@ -8,6 +8,12 @@ Firebase Consoleで **Firestore Database → データベースを作成** を�
 
 `firebase/gemini.firestore.rules` の内容をFirestoreのルールへ反映してください。既存ルールがある場合は、`match /users/{userId}/...` の各ブロックを既存の `match /databases/{database}/documents` 内へ追加します。
 
+自動生成PDFの後片付けには複合インデックスが必要です。`firebase/firestore.indexes.json` をFirebase CLIで反映するか、同じ内容をFirebase Consoleのインデックス画面から作成してください。
+
+```bash
+firebase deploy --only firestore:indexes
+```
+
 ## 2. Storageルールを反映
 
 `firebase/pdf-cloud-storage.storage.rules` の内容をFirebase Consoleの **Storage → Rules** へ反映します。
@@ -24,7 +30,7 @@ Vercelの `my-app-gllz` プロジェクトへ次を設定し、PreviewとProduct
 | Key | 内容 |
 |---|---|
 | `GEMINI_API_KEY` | Google AI Studioで作成したGemini APIキー |
-| `GEMINI_MODEL` | 使用するモデル名。例：`gemini-3.5-flash` |
+| `GEMINI_MODEL` | `gemini-3.6-flash` |
 | `FIREBASE_WEB_API_KEY` | 任意。FirebaseウェブAPIキー。未設定時はアプリ内の公開設定を使用 |
 
 Gemini APIキーはブラウザーへ公開されず、Vercel Functionsだけで使用されます。
@@ -44,7 +50,7 @@ GitHubリポジトリの **Settings → Secrets and variables → Actions** へ�
 
 | Name | 内容 |
 |---|---|
-| `GEMINI_MODEL` | `gemini-3.5-flash` など |
+| `GEMINI_MODEL` | `gemini-3.6-flash` |
 | `FIREBASE_STORAGE_BUCKET` | `my-az900-app.firebasestorage.app` |
 
 サービスアカウントJSONは、Firebase Consoleの **プロジェクトの設定 → サービス アカウント → 新しい秘密鍵を生成** から取得します。JSONはGitHub Secrets以外へ保存しないでください。
