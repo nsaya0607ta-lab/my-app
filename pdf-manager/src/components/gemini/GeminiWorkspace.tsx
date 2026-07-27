@@ -65,6 +65,20 @@ function attachmentIcon(mimeType: string) {
   return mimeType === 'application/pdf' ? <FileText size={15} /> : <ImagePlus size={15} />;
 }
 
+function GeminiBackdrop() {
+  return (
+    <div
+      aria-hidden="true"
+      className="pointer-events-none absolute inset-0 overflow-hidden dark:hidden"
+      style={{ background: 'linear-gradient(180deg, #ffffff 0%, #f8fbff 48%, #e7f1ff 100%)' }}
+    >
+      <div className="absolute -bottom-28 left-1/2 h-96 w-96 -translate-x-1/2 rounded-full bg-blue-200/35 blur-3xl" />
+      <div className="absolute bottom-12 -left-14 h-56 w-56 rounded-full bg-cyan-200/25 blur-3xl" />
+      <div className="absolute bottom-24 -right-16 h-64 w-64 rounded-full bg-indigo-200/20 blur-3xl" />
+    </div>
+  );
+}
+
 export function GeminiWorkspace() {
   const app = useApp();
   const cloud = useCloudRequired();
@@ -330,9 +344,10 @@ export function GeminiWorkspace() {
 
   if (!cloud.enabled || !cloud.user) {
     return (
-      <div className="fixed inset-0 z-[100] bg-app dark:bg-[#11161c]">
-        <div className="mx-auto flex min-h-full max-w-3xl flex-col">
-          <div className="flex min-h-[58px] items-center border-b divider bg-surface px-3 dark:bg-[#181e26]">
+      <div className="fixed inset-0 z-[100] overflow-hidden bg-white dark:bg-[#11161c]">
+        <GeminiBackdrop />
+        <div className="relative z-10 mx-auto flex min-h-full max-w-3xl flex-col">
+          <div className="flex min-h-[58px] items-center border-b border-white/60 bg-white/80 px-3 shadow-sm backdrop-blur-xl dark:border-[#2a323d] dark:bg-[#181e26]/95">
             <IconButton label="閉じる" onClick={() => setOpen(false)}>
               <X size={22} />
             </IconButton>
@@ -340,7 +355,9 @@ export function GeminiWorkspace() {
             <span className="h-tap w-tap" />
           </div>
           <div className="flex flex-1 flex-col items-center justify-center px-8 text-center">
-            <Sparkles size={50} className="mb-5 text-[#596fb0]" />
+            <div className="mb-5 flex h-20 w-20 items-center justify-center rounded-[28px] border border-white/70 bg-white/70 shadow-lg shadow-blue-200/25 backdrop-blur-xl dark:border-[#2a323d] dark:bg-[#181e26]">
+              <Sparkles size={46} className="text-[#596fb0]" />
+            </div>
             <h2 className="text-xl font-semibold">クラウドへのログインが必要です</h2>
             <p className="mt-3 max-w-sm text-sm leading-relaxed text-ink-sub">
               日付別チャットと自動PDF設定を安全に保存するため、設定からFirebaseクラウド保管を有効にしてログインしてください。
@@ -362,9 +379,10 @@ export function GeminiWorkspace() {
   }
 
   return (
-    <div className="fixed inset-0 z-[100] bg-app dark:bg-[#11161c]">
-      <div className="mx-auto flex h-full max-w-3xl flex-col">
-        <header className="shrink-0 border-b divider bg-surface/95 px-3 pb-2 pt-[max(8px,var(--safe-top))] backdrop-blur dark:bg-[#181e26]/95">
+    <div className="fixed inset-0 z-[100] overflow-hidden bg-white dark:bg-[#11161c]">
+      <GeminiBackdrop />
+      <div className="relative z-10 mx-auto flex h-full max-w-3xl flex-col">
+        <header className="shrink-0 border-b border-white/60 bg-white/80 px-3 pb-2 pt-[max(8px,var(--safe-top))] shadow-sm backdrop-blur-xl dark:border-[#2a323d] dark:bg-[#181e26]/95">
           <div className="flex min-h-[48px] items-center gap-1">
             <IconButton label="閉じる" onClick={() => setOpen(false)}>
               <X size={22} />
@@ -374,7 +392,7 @@ export function GeminiWorkspace() {
                 <div className="flex gap-2">
                   <input
                     autoFocus
-                    className="min-w-0 flex-1 rounded-lg border divider bg-transparent px-2 py-1 text-base font-semibold outline-none"
+                    className="min-w-0 flex-1 rounded-lg border border-white/70 bg-white/60 px-2 py-1 text-base font-semibold outline-none backdrop-blur dark:border-[#39424e] dark:bg-transparent"
                     value={chatTitle}
                     maxLength={80}
                     onChange={(event) => setChatTitle(event.target.value)}
@@ -415,10 +433,10 @@ export function GeminiWorkspace() {
                     setShowDatePicker(false);
                   }}
                   className={cx(
-                    'rounded-lg px-1 py-2 text-center text-xs',
+                    'rounded-xl border px-1 py-2 text-center text-xs shadow-sm backdrop-blur',
                     date === selectedDate
-                      ? 'bg-[#4c65a8] text-white'
-                      : 'bg-surface-sub text-ink-sub dark:bg-[#252d37]',
+                      ? 'border-[#4c65a8] bg-[#4c65a8] text-white'
+                      : 'border-white/70 bg-white/65 text-ink-sub dark:border-[#39424e] dark:bg-[#252d37]',
                   )}
                 >
                   <span className="block font-semibold">{date.slice(5).replace('-', '/')}</span>
@@ -432,7 +450,9 @@ export function GeminiWorkspace() {
         <main className="min-h-0 flex-1 overflow-y-auto px-3 py-4">
           {messages.length === 0 && !sending ? (
             <div className="flex min-h-full flex-col items-center justify-center px-5 pb-24 text-center">
-              <Sparkles size={45} className="mb-4 text-[#596fb0]" />
+              <div className="mb-5 flex h-16 w-16 items-center justify-center rounded-3xl border border-white/70 bg-white/65 shadow-lg shadow-blue-200/20 backdrop-blur-xl dark:border-[#2a323d] dark:bg-[#181e26]">
+                <Sparkles size={38} className="text-[#596fb0]" />
+              </div>
               <h2 className="text-lg font-semibold">{dateLabel(selectedDate)}のチャット</h2>
               <p className="mt-2 max-w-sm text-sm leading-relaxed text-ink-sub">
                 学習中の疑問や業務の確認を送ってください。この日の会話だけを使って、高品質な復習PDFを作成できます。
@@ -446,14 +466,14 @@ export function GeminiWorkspace() {
                   className={cx(
                     'max-w-[92%] rounded-2xl px-4 py-3 shadow-sm',
                     message.role === 'user'
-                      ? 'ml-auto bg-[#4c65a8] text-white'
-                      : 'mr-auto bg-surface dark:bg-[#181e26]',
+                      ? 'ml-auto bg-[#4c65a8] text-white shadow-blue-900/10'
+                      : 'mr-auto border border-white/70 bg-white/90 shadow-[0_10px_30px_rgba(76,101,168,0.08)] backdrop-blur-md dark:border-[#2a323d] dark:bg-[#181e26]',
                   )}
                 >
                   {message.attachments.length > 0 ? (
                     <div className="mb-2 flex flex-wrap gap-1.5">
                       {message.attachments.map((attachment) => (
-                        <span key={attachment.id} className={cx('inline-flex max-w-full items-center gap-1 rounded-lg px-2 py-1 text-xs', message.role === 'user' ? 'bg-white/15' : 'bg-surface-sub dark:bg-[#252d37]')}>
+                        <span key={attachment.id} className={cx('inline-flex max-w-full items-center gap-1 rounded-lg px-2 py-1 text-xs', message.role === 'user' ? 'bg-white/15' : 'bg-white/65 dark:bg-[#252d37]')}>
                           {attachmentIcon(attachment.mimeType)}
                           <span className="truncate">{attachment.name}</span>
                         </span>
@@ -471,12 +491,12 @@ export function GeminiWorkspace() {
                 </div>
               ))}
               {sending ? (
-                <div className="mr-auto max-w-[92%] rounded-2xl bg-surface px-4 py-3 shadow-sm dark:bg-[#181e26]">
+                <div className="mr-auto max-w-[92%] rounded-2xl border border-white/70 bg-white/90 px-4 py-3 shadow-[0_10px_30px_rgba(76,101,168,0.08)] backdrop-blur-md dark:border-[#2a323d] dark:bg-[#181e26]">
                   {streamText ? <MarkdownContent markdown={streamText} /> : <div className="flex items-center gap-2 text-sm text-ink-sub"><Spinner /> 回答を作成しています…</div>}
                 </div>
               ) : null}
               {lastFailedInput ? (
-                <button type="button" className="mx-auto flex min-h-tap items-center gap-2 rounded-xl border divider bg-surface px-4 text-sm dark:bg-[#181e26]" onClick={() => void send(lastFailedInput)}>
+                <button type="button" className="mx-auto flex min-h-tap items-center gap-2 rounded-xl border border-white/70 bg-white/80 px-4 text-sm shadow-sm backdrop-blur dark:border-[#2a323d] dark:bg-[#181e26]" onClick={() => void send(lastFailedInput)}>
                   <RotateCcw size={17} /> 直前の質問を再送信
                 </button>
               ) : null}
@@ -485,11 +505,11 @@ export function GeminiWorkspace() {
           )}
         </main>
 
-        <footer className="shrink-0 border-t divider bg-surface px-3 pb-[max(10px,var(--safe-bottom))] pt-2 dark:bg-[#181e26]">
+        <footer className="shrink-0 border-t border-white/60 bg-white/75 px-3 pb-[max(10px,var(--safe-bottom))] pt-2 shadow-[0_-8px_30px_rgba(76,101,168,0.05)] backdrop-blur-xl dark:border-[#2a323d] dark:bg-[#181e26]/95">
           {pendingAttachments.length > 0 ? (
             <div className="mb-2 flex max-h-24 flex-wrap gap-1.5 overflow-y-auto">
               {pendingAttachments.map((attachment) => (
-                <span key={attachment.id} className="inline-flex max-w-[220px] items-center gap-1 rounded-lg bg-surface-sub px-2 py-1 text-xs dark:bg-[#252d37]">
+                <span key={attachment.id} className="inline-flex max-w-[220px] items-center gap-1 rounded-lg border border-white/70 bg-white/70 px-2 py-1 text-xs backdrop-blur dark:border-[#39424e] dark:bg-[#252d37]">
                   {attachmentIcon(attachment.mimeType)}
                   <span className="truncate">{attachment.name}</span>
                   <button type="button" aria-label="添付を削除" onClick={() => removePendingAttachment(attachment)}>
@@ -501,8 +521,8 @@ export function GeminiWorkspace() {
           ) : null}
 
           {showExistingPicker ? (
-            <div className="mb-2 flex gap-2 rounded-xl bg-surface-sub p-2 dark:bg-[#252d37]">
-              <select className="min-w-0 flex-1 rounded-lg border divider bg-surface px-2 text-sm dark:bg-[#181e26]" value={existingFileId} onChange={(event) => setExistingFileId(event.target.value)}>
+            <div className="mb-2 flex gap-2 rounded-xl border border-white/70 bg-white/65 p-2 shadow-sm backdrop-blur-md dark:border-[#39424e] dark:bg-[#252d37]">
+              <select className="min-w-0 flex-1 rounded-lg border border-white/70 bg-white/85 px-2 text-sm dark:border-[#39424e] dark:bg-[#181e26]" value={existingFileId} onChange={(event) => setExistingFileId(event.target.value)}>
                 <option value="">アプリ内PDFを選択</option>
                 {activeFiles.map((file) => <option key={file.id} value={file.id}>{file.name}</option>)}
               </select>
@@ -534,14 +554,14 @@ export function GeminiWorkspace() {
               placeholder="Geminiに質問する"
               rows={1}
               disabled={sending}
-              className="max-h-32 min-h-tap min-w-0 flex-1 resize-none rounded-2xl border divider bg-app px-3 py-2.5 text-base outline-none focus:border-brand-400 dark:bg-[#11161c]"
+              className="max-h-32 min-h-tap min-w-0 flex-1 resize-none rounded-2xl border border-white/80 bg-white/90 px-3 py-2.5 text-base shadow-sm outline-none backdrop-blur-xl focus:border-brand-400 dark:border-[#39424e] dark:bg-[#11161c]"
             />
             {sending ? (
               <button type="button" aria-label="回答を停止" onClick={stop} className="flex h-tap w-tap shrink-0 items-center justify-center rounded-full bg-[#313d48] text-white">
                 <Square size={17} fill="currentColor" />
               </button>
             ) : (
-              <button type="button" aria-label="送信" onClick={() => void send()} disabled={(!input.trim() && pendingAttachments.length === 0) || uploadingAttachment} className="flex h-tap w-tap shrink-0 items-center justify-center rounded-full bg-[#4c65a8] text-white disabled:opacity-40">
+              <button type="button" aria-label="送信" onClick={() => void send()} disabled={(!input.trim() && pendingAttachments.length === 0) || uploadingAttachment} className="flex h-tap w-tap shrink-0 items-center justify-center rounded-full bg-[#4c65a8] text-white shadow-sm disabled:opacity-40">
                 {uploadingAttachment ? <Spinner className="border-white/30 border-t-white" /> : <Send size={19} />}
               </button>
             )}
