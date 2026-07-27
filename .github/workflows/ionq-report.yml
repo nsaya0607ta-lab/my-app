@@ -31,7 +31,7 @@ jobs:
       contents: write
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       # 再試行時に、直前の実行で生成済みかを最新mainで確認する。
       - name: 最新mainを同期
@@ -39,7 +39,7 @@ jobs:
           git fetch origin main
           git reset --hard origin/main
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v5
         with:
           node-version: '24.x'
           cache: npm
