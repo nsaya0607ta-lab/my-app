@@ -1,0 +1,63 @@
+name: PDF管理アプリの安全性・ビルド確認
+
+on:
+  pull_request:
+    paths:
+      - 'pdf-manager/**'
+      - '.github/workflows/pdf-manager-ci.yml'
+  push:
+    branches:
+      - main
+    paths:
+      - 'pdf-manager/**'
+      - '.github/workflows/pdf-manager-ci.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24.x'
+          cache: npm
+          cache-dependency-path: pdf-manager/package-lock.json
+      - name: 依存関係を導入
+        working-directory: pdf-manager
+        run: npm install
+      - name: 監査結果を保存
+        working-directory: pdf-manager
+        run: npm audit --json > audit.json || true
+      - name: 型チェック
+        working-directory: pdf-manager
+        run: npm run typecheck
+      - name: 本番ビルド
+        working-directory: pdf-manager
+        run: npm run build
+      - name: 監査結果をアップロード
+        uses: actions/upload-artifact@v4
+        with:
+          name: pdf-manager-audit
+          path: pdf-manager/audit.json
+          retention-days: 3
+      - name: 高重大度の脆弱性がないことを確認
+        working-directory: pdf-manager
+        run: |
+          node - <<'NODE'
+          const fs = require('node:fs');
+          const audit = JSON.parse(fs.readFileSync('audit.json', 'utf8'));
+          const vulnerabilities = Object.values(audit.vulnerabilities || {});
+          const high = vulnerabilities.filter((item) => item.severity === 'high' || item.severity === 'critical');
+          for (const item of high) {
+            const via = (item.via || []).map((entry) => typeof entry === 'string' ? entry : `${entry.title} (${entry.url})`).join('; ');
+            console.error(`${item.name}: ${item.severity} / ${via}`);
+          }
+          if (high.length > 0) {
+            console.error(`高重大度以上の脆弱性が ${high.length} パッケージ残っています`);
+            process.exit(1);
+          }
+          console.log('高重大度以上の脆弱性はありません');
+          NODE
