@@ -3,12 +3,15 @@
 import { useEffect, useRef } from 'react';
 import { getPageCount } from '@/lib/pdf';
 import * as repo from '@/lib/repository';
-import { activeFiles } from '@/lib/tree';
-import { UNSORTED_ID } from '@/lib/types';
+import { activeFiles, activeFolders, toParentKey } from '@/lib/tree';
+import { ROOT_ID, UNSORTED_ID } from '@/lib/types';
+import type { Folder } from '@/lib/types';
 import { useApp } from '@/store/AppStore';
 
 const INDEX_URL = '/ionq/index.json';
 const MAX_PER_RUN = 5;
+const INVESTMENT_FOLDER_NAME = '01_投資';
+const IONQ_REPORT_NAME = /^投資_IQ_\d{8}\.pdf$/;
 const LEGACY_REPORT_NAME = /^\d{4}-\d{2}-\d{2}_IONQデイリーレポート\.pdf$/;
 
 type IonqReportEntry = {
@@ -48,6 +51,17 @@ function reportKey(entry: IonqReportEntry): string {
 
 function normalizedName(value: string): string {
   return value.trim().toLocaleLowerCase('ja-JP');
+}
+
+/** ルート直下にある「01_投資」フォルダーのIDを返す。 */
+function investmentFolderId(folders: Folder[]): string | null {
+  return (
+    activeFolders(folders).find(
+      (folder) =>
+        toParentKey(folder.parentId) === ROOT_ID &&
+        normalizedName(folder.name) === normalizedName(INVESTMENT_FOLDER_NAME),
+    )?.id ?? null
+  );
 }
 
 export function IonqReportImporter() {
@@ -92,7 +106,35 @@ export function IonqReportImporter() {
         }
       }
 
-      const currentSnapshot = removedLegacy > 0 ? await repo.refresh() : beforeImport;
+      let currentSnapshot = removedLegacy > 0 ? await repo.refresh() : beforeImport;
+      const initialDestinationId = investmentFolderId(currentSnapshot.folders);
+
+      // 旧版でルート直下または未分類へ入ったIONQレポートは、次回起動時に移し直す。
+      // ユーザーが別フォルダーへ手動整理したレポートまでは戻さない。
+      let relocated = 0;
+      if (initialDestinationId) {
+        const misplacedReports = activeFiles(currentSnapshot.files).filter((file) => {
+          const parentId = toParentKey(file.parentId);
+          return (
+            file.origin === 'report' &&
+            IONQ_REPORT_NAME.test(file.name) &&
+            (parentId === ROOT_ID || parentId === UNSORTED_ID)
+          );
+        });
+
+        for (const file of misplacedReports) {
+          if (cancelled) return;
+          try {
+            await repo.moveFile(file.id, initialDestinationId, { clearRule: true });
+            relocated += 1;
+          } catch {
+            // 配置変更に失敗した場合は、次回起動時に再試行する。
+          }
+        }
+      }
+
+      if (relocated > 0) currentSnapshot = await repo.refresh();
+
       const localReportsByName = new Map(
         activeFiles(currentSnapshot.files)
           .filter((file) => file.origin === 'report')
@@ -129,6 +171,7 @@ export function IonqReportImporter() {
           const expectedName = reportName(entry);
 
           const latest = await repo.refresh();
+          const destinationId = investmentFolderId(latest.folders) ?? UNSORTED_ID;
           const existingReport = activeFiles(latest.files).find(
             (file) => file.origin === 'report' && normalizedName(file.name) === normalizedName(expectedName),
           );
@@ -141,12 +184,18 @@ export function IonqReportImporter() {
             await repo.updateFile(existingReport.id, {
               tags: [...new Set([...existingReport.tags, 'IONQ', '株式レポート'])],
             });
+            if (toParentKey(existingReport.parentId) !== destinationId) {
+              await repo.moveFile(existingReport.id, destinationId, { clearRule: true });
+              relocated += 1;
+            }
             imported.push(reportKey(entry));
             continue;
           }
 
           const meta = await repo.addPdf(blob, expectedName, {
-            parentId: UNSORTED_ID,
+            // 毎朝生成されるIONQレポートは「01_投資」の直下へ直接配置する。
+            // フォルダーが見つからない場合だけ未分類へ退避する。
+            parentId: destinationId,
             onDuplicate: 'rename',
             pageCount,
             origin: 'report',
@@ -168,13 +217,14 @@ export function IonqReportImporter() {
 
       // 分類はFolderRuleRunnerへ集約する。
       // 起動時はルート直下だけ、以後はユーザーが表示したフォルダーだけを1階層移動する。
-      if (imported.length > 0 || removedLegacy > 0) await reload();
+      if (imported.length > 0 || removedLegacy > 0 || relocated > 0) await reload();
       void refreshStorage();
 
       const changed = added + updated;
-      if (changed > 0 || removedLegacy > 0) {
+      if (changed > 0 || removedLegacy > 0 || relocated > 0) {
         const messages: string[] = [];
         if (changed > 0) messages.push(`IONQレポートを ${changed} 件取り込み・更新`);
+        if (relocated > 0) messages.push(`${relocated} 件を「${INVESTMENT_FOLDER_NAME}」へ配置`);
         if (removedLegacy > 0) messages.push(`旧形式を ${removedLegacy} 件ごみ箱へ移動`);
         notify(`${messages.join('、')}しました`, 'success');
       }
