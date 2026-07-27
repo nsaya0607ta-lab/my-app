@@ -3,6 +3,8 @@
 import { AppShell } from '@/components/AppShell';
 import { DeploymentTestFolder } from '@/components/DeploymentTestFolder';
 import { FolderRuleRunner } from '@/components/FolderRuleRunner';
+import { GeminiGeneratedPdfImporter } from '@/components/GeminiGeneratedPdfImporter';
+import { GeminiWorkspace } from '@/components/gemini/GeminiWorkspace';
 import { IonqReportImporter } from '@/components/IonqReportImporter';
 import { ServiceWorkerUpdater } from '@/components/ServiceWorkerUpdater';
 import { AppProvider } from '@/store/AppStore';
@@ -16,7 +18,9 @@ export default function Page() {
         <DeploymentTestFolder />
         <FolderRuleRunner />
         <IonqReportImporter />
+        <GeminiGeneratedPdfImporter />
         <AppShell />
+        <GeminiWorkspace />
       </CloudProvider>
     </AppProvider>
   );
