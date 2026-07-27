@@ -11,28 +11,36 @@ let loader: Promise<void> | null = null;
 function loadHtml2Pdf(): Promise<void> {
   if ((window as any).html2pdf) return Promise.resolve();
   if (loader) return loader;
-  loader = new Promise((resolve, reject) => {
+
+  const promise = new Promise<void>((resolve, reject) => {
     const existing = document.querySelector<HTMLScriptElement>(`script[src="${HTML2PDF_URL}"]`);
     if (existing) {
       existing.addEventListener('load', () => resolve(), { once: true });
-      existing.addEventListener('error', () => reject(new Error('PDF作成ライブラリを読み込めませんでした')), {
-        once: true,
-      });
+      existing.addEventListener(
+        'error',
+        () => reject(new Error('PDF作成ライブラリを読み込めませんでした')),
+        { once: true },
+      );
       return;
     }
+
     const script = document.createElement('script');
     script.src = HTML2PDF_URL;
     script.async = true;
     script.addEventListener('load', () => resolve(), { once: true });
-    script.addEventListener('error', () => reject(new Error('PDF作成ライブラリを読み込めませんでした')), {
-      once: true,
-    });
+    script.addEventListener(
+      'error',
+      () => reject(new Error('PDF作成ライブラリを読み込めませんでした')),
+      { once: true },
+    );
     document.head.append(script);
   }).catch((error) => {
     loader = null;
     throw error;
   });
-  return loader;
+
+  loader = promise;
+  return promise;
 }
 
 function toc(markdown: string): string {
@@ -181,7 +189,10 @@ export async function createGeminiPdfBlob(options: {
           backgroundColor: '#ffffff',
         },
         jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait', compress: true },
-        pagebreak: { mode: ['css', 'legacy'], avoid: ['table', 'tr', '.code-card', 'blockquote', '.avoid-break'] },
+        pagebreak: {
+          mode: ['css', 'legacy'],
+          avoid: ['table', 'tr', '.code-card', 'blockquote', '.avoid-break'],
+        },
       })
       .from(wrapper.querySelector('.document'));
     return (await worker.outputPdf('blob')) as Blob;
