@@ -2,6 +2,7 @@
 
 import { AppShell } from '@/components/AppShell';
 import { DeploymentTestFolder } from '@/components/DeploymentTestFolder';
+import { DrivePdfImporter } from '@/components/DrivePdfImporter';
 import { FolderRuleRunner } from '@/components/FolderRuleRunner';
 import { IonqReportImporter } from '@/components/IonqReportImporter';
 import { ServiceWorkerUpdater } from '@/components/ServiceWorkerUpdater';
@@ -14,6 +15,7 @@ export default function Page() {
       <CloudProvider>
         <ServiceWorkerUpdater />
         <DeploymentTestFolder />
+        <DrivePdfImporter />
         <FolderRuleRunner />
         <IonqReportImporter />
         <AppShell />
