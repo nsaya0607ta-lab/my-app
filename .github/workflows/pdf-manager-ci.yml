@@ -4,13 +4,19 @@ on:
   pull_request:
     paths:
       - 'pdf-manager/**'
+      - 'scripts/gemini-pdf/**'
+      - 'package.json'
       - '.github/workflows/pdf-manager-ci.yml'
+      - '.github/workflows/gemini-pdf-scheduler.yml'
   push:
     branches:
       - main
     paths:
       - 'pdf-manager/**'
+      - 'scripts/gemini-pdf/**'
+      - 'package.json'
       - '.github/workflows/pdf-manager-ci.yml'
+      - '.github/workflows/gemini-pdf-scheduler.yml'
 
 permissions:
   contents: read
@@ -19,8 +25,8 @@ jobs:
   verify:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
         with:
           node-version: '24.x'
           cache: npm
@@ -31,17 +37,30 @@ jobs:
       - name: 監査結果を保存
         working-directory: pdf-manager
         run: npm audit --json > audit.json || true
+      - name: Gemini定期処理の構文確認
+        run: |
+          for file in scripts/gemini-pdf/*.mjs; do
+            node --check "$file"
+          done
       - name: 型チェック
         working-directory: pdf-manager
-        run: npm run typecheck
+        run: |
+          set -o pipefail
+          npm run typecheck 2>&1 | tee typecheck.log
       - name: 本番ビルド
         working-directory: pdf-manager
-        run: npm run build
-      - name: 監査結果をアップロード
+        run: |
+          set -o pipefail
+          npm run build 2>&1 | tee build.log
+      - name: 検証ログをアップロード
+        if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: pdf-manager-audit
-          path: pdf-manager/audit.json
+          name: pdf-manager-verification
+          path: |
+            pdf-manager/audit.json
+            pdf-manager/typecheck.log
+            pdf-manager/build.log
           retention-days: 3
       - name: 高重大度の脆弱性がないことを確認
         working-directory: pdf-manager
