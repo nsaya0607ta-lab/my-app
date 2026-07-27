@@ -1,0 +1,39 @@
+name: PDF管理アプリの安全性・ビルド確認
+
+on:
+  pull_request:
+    paths:
+      - 'pdf-manager/**'
+      - '.github/workflows/pdf-manager-ci.yml'
+  push:
+    branches:
+      - main
+    paths:
+      - 'pdf-manager/**'
+      - '.github/workflows/pdf-manager-ci.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24.x'
+          cache: npm
+          cache-dependency-path: pdf-manager/package-lock.json
+      - name: 依存関係を導入
+        working-directory: pdf-manager
+        run: npm install
+      - name: 高重大度の脆弱性がないことを確認
+        working-directory: pdf-manager
+        run: npm audit --audit-level=high
+      - name: 型チェック
+        working-directory: pdf-manager
+        run: npm run typecheck
+      - name: 本番ビルド
+        working-directory: pdf-manager
+        run: npm run build
