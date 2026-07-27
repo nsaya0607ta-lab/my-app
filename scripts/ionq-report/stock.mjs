@@ -19,11 +19,14 @@ function parseDay(date, row) {
   };
 }
 
+function average(values) {
+  const finite = values.filter(Number.isFinite);
+  return finite.length ? finite.reduce((sum, value) => sum + value, 0) / finite.length : 0;
+}
+
 export async function fetchIonqStock() {
   const apiKey = process.env.ALPHA_VANTAGE_API_KEY || process.env.STOCK_API_KEY;
-  if (!apiKey) {
-    throw new Error('ALPHA_VANTAGE_API_KEY（または STOCK_API_KEY）が設定されていません');
-  }
+  if (!apiKey) throw new Error('ALPHA_VANTAGE_API_KEY（または STOCK_API_KEY）が設定されていません');
 
   const url = new URL(API_URL);
   url.searchParams.set('function', 'TIME_SERIES_DAILY');
@@ -46,18 +49,20 @@ export async function fetchIonqStock() {
   if (apiMessage) throw new Error(`Alpha Vantage: ${String(apiMessage).slice(0, 300)}`);
 
   const series = data?.['Time Series (Daily)'];
-  if (!series || typeof series !== 'object') {
-    throw new Error('Alpha Vantage から日次株価データが返されませんでした');
-  }
+  if (!series || typeof series !== 'object') throw new Error('Alpha Vantage から日次株価データが返されませんでした');
 
   const dates = Object.keys(series).sort((a, b) => b.localeCompare(a));
   if (dates.length < 2) throw new Error('前営業日との比較に必要な株価データが不足しています');
 
-  const days = dates.slice(0, 6).map((date) => parseDay(date, series[date]));
-  const latest = days[0];
-  const previous = days[1];
+  const allDays = dates.map((date) => parseDay(date, series[date]));
+  const latest = allDays[0];
+  const previous = allDays[1];
   const change = latest.close - previous.close;
   const changePercent = previous.close === 0 ? 0 : (change / previous.close) * 100;
+  const averageVolume20 = average(allDays.slice(1, 21).map((day) => day.volume));
+  const volumeVsAveragePercent = averageVolume20 === 0 ? 0 : ((latest.volume / averageVolume20) - 1) * 100;
+  const dayRange = latest.high - latest.low;
+  const closePositionPercent = dayRange === 0 ? 50 : ((latest.close - latest.low) / dayRange) * 100;
 
   return {
     symbol: SYMBOL,
@@ -73,7 +78,10 @@ export async function fetchIonqStock() {
     previousClose: previous.close,
     change,
     changePercent,
-    fiveDays: days.slice(0, 5).reverse(),
+    averageVolume20,
+    volumeVsAveragePercent,
+    dayRange,
+    closePositionPercent,
     fetchedAt: new Date().toISOString(),
   };
 }
