@@ -11,6 +11,9 @@ on:
       timezone: 'Asia/Tokyo'
     - cron: '30 7 * * 2-6'
       timezone: 'Asia/Tokyo'
+    # 一時テスト: 2026-07-27 17:03（日本時間）に1回だけ再生成する。
+    - cron: '3 17 27 7 *'
+      timezone: 'Asia/Tokyo'
   workflow_dispatch:
   # ワークフローまたは生成処理を変更した際は、当日分を即時確認・生成する。
   push:
@@ -53,6 +56,15 @@ jobs:
           DAY_OF_WEEK="$(TZ=Asia/Tokyo date +%u)"
           EXPECTED_FILE="投資_IQ_${COMPACT_DATE}.pdf"
           REPORT_PATH="pdf-manager/public/ionq/${EXPECTED_FILE}"
+
+          # 2026-07-27 17:03の一時テストだけ、月曜日・作成済み判定を無視して再生成する。
+          if [ "${{ github.event_name }}" = "schedule" ] \
+            && [ "${{ github.event.schedule }}" = "3 17 27 7 *" ] \
+            && [ "$REPORT_DATE" = "2026-07-27" ]; then
+            echo "should_generate=true" >> "$GITHUB_OUTPUT"
+            echo "17:03の一時テストとしてIONQレポートを再生成します"
+            exit 0
+          fi
 
           # 日本時間の日曜(7)・月曜(1)は、手動実行やpush起動でも作成しない。
           if [ "$DAY_OF_WEEK" = "1" ] || [ "$DAY_OF_WEEK" = "7" ]; then
