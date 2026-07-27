@@ -16,13 +16,15 @@ import {
 } from '@/lib/geminiTypes';
 import { ROOT_ID, type Folder } from '@/lib/types';
 import { pathString } from '@/lib/tree';
-import { Button, IconButton, Switch } from '@/components/ui/Primitives';
+import { Button, IconButton, Spinner, Switch } from '@/components/ui/Primitives';
 
 function fieldClass() {
   return 'min-h-tap w-full rounded-xl border divider bg-surface px-3 py-2.5 text-base text-ink outline-none focus:border-brand-400 dark:bg-[#181e26] dark:text-[#e6eaef]';
 }
 
-function defaultRule(): Omit<PdfGenerationRule, 'id' | 'createdAt' | 'updatedAt'> {
+type EditableRule = Omit<PdfGenerationRule, 'createdAt' | 'updatedAt'> & { id?: string };
+
+function defaultRule(): EditableRule {
   return {
     name: '毎日の学習まとめ',
     enabled: true,
@@ -42,27 +44,39 @@ function defaultRule(): Omit<PdfGenerationRule, 'id' | 'createdAt' | 'updatedAt'
 }
 
 function RuleEditor({
+  uid,
   rule,
   folders,
   onCancel,
   onSaved,
+  notify,
 }: {
-  rule: (Omit<PdfGenerationRule, 'createdAt' | 'updatedAt'> & { id?: string }) | null;
+  uid: string;
+  rule: EditableRule;
   folders: Folder[];
   onCancel: () => void;
   onSaved: () => void;
+  notify: (message: string, tone?: 'info' | 'error' | 'success') => void;
 }) {
-  const [draft, setDraft] = useState(rule ?? defaultRule());
+  const [draft, setDraft] = useState<EditableRule>(rule);
   const [saving, setSaving] = useState(false);
   const activeFolders = useMemo(
-    () => folders.filter((folder) => !folder.deletedAt).sort((a, b) => pathString(folders, a.id).localeCompare(pathString(folders, b.id), 'ja')),
+    () =>
+      folders
+        .filter((folder) => !folder.deletedAt)
+        .sort((a, b) => pathString(folders, a.id).localeCompare(pathString(folders, b.id), 'ja')),
     [folders],
   );
 
   const save = async () => {
+    if (!draft.name.trim() || !draft.time || !draft.fileNameTemplate.trim()) return;
     setSaving(true);
     try {
-      await onSaved();
+      await savePdfGenerationRule(uid, draft);
+      notify('自動PDFルールを保存しました。', 'success');
+      onSaved();
+    } catch (error) {
+      notify(error instanceof Error ? error.message : 'ルールを保存できませんでした。', 'error');
     } finally {
       setSaving(false);
     }
@@ -76,11 +90,8 @@ function RuleEditor({
             <ArrowLeft size={22} />
           </IconButton>
           <h2 className="flex-1 text-lg font-semibold">自動PDFルール</h2>
-          <Button
-            onClick={() => void savePdfGenerationRule((window as unknown as { __geminiUid?: string }).__geminiUid || '', draft as never).then(onSaved)}
-            disabled={saving || !draft.name.trim() || !draft.time || !draft.fileNameTemplate.trim()}
-          >
-            <Save size={18} /> 保存
+          <Button variant="primary" onClick={() => void save()} disabled={saving || !draft.name.trim()}>
+            {saving ? <Spinner /> : <Save size={18} />} 保存
           </Button>
         </div>
 
@@ -94,7 +105,7 @@ function RuleEditor({
             <div className="flex items-center justify-between gap-3">
               <div>
                 <p className="font-medium">自動作成を有効にする</p>
-                <p className="mt-0.5 text-xs text-ink-sub">GitHub Actionsが10分間隔で作成時刻を確認します。</p>
+                <p className="mt-0.5 text-xs text-ink-sub">定期処理が作成時刻を確認します。</p>
               </div>
               <Switch checked={draft.enabled} onChange={(enabled) => setDraft({ ...draft, enabled })} label="自動作成" />
             </div>
@@ -107,7 +118,7 @@ function RuleEditor({
             </label>
             <label className="block">
               <span className="mb-1 block text-sm font-medium">対象チャット</span>
-              <select className={fieldClass()} value={draft.chatTarget} onChange={(event) => setDraft({ ...draft, chatTarget: event.target.value as 'sameDay' | 'previousDay' })}>
+              <select className={fieldClass()} value={draft.chatTarget} onChange={(event) => setDraft({ ...draft, chatTarget: event.target.value as EditableRule['chatTarget'] })}>
                 <option value="sameDay">実行日当日のチャット</option>
                 <option value="previousDay">前日のチャット</option>
               </select>
@@ -200,20 +211,16 @@ export function GeminiSettingsPanel({
   notify: (message: string, tone?: 'info' | 'error' | 'success') => void;
 }) {
   const [rules, setRules] = useState<PdfGenerationRule[]>([]);
-  const [editing, setEditing] = useState<(Omit<PdfGenerationRule, 'createdAt' | 'updatedAt'> & { id?: string }) | null>(null);
+  const [editing, setEditing] = useState<EditableRule | null>(null);
   const [savingPreferences, setSavingPreferences] = useState(false);
 
-  useEffect(() => {
-    (window as unknown as { __geminiUid?: string }).__geminiUid = uid;
-    const unsubscribe = subscribePdfGenerationRules(uid, setRules, (error) => {
-      console.error(error);
-      notify('自動PDFルールを読み込めませんでした。', 'error');
-    });
-    return () => {
-      unsubscribe();
-      delete (window as unknown as { __geminiUid?: string }).__geminiUid;
-    };
-  }, [notify, uid]);
+  useEffect(
+    () =>
+      subscribePdfGenerationRules(uid, setRules, () =>
+        notify('自動PDFルールを読み込めませんでした。', 'error'),
+      ),
+    [notify, uid],
+  );
 
   const savePreferences = async () => {
     setSavingPreferences(true);
@@ -230,16 +237,23 @@ export function GeminiSettingsPanel({
   if (editing) {
     return (
       <RuleEditor
+        uid={uid}
         rule={editing}
         folders={folders}
         onCancel={() => setEditing(null)}
-        onSaved={() => {
-          setEditing(null);
-          notify('自動PDFルールを保存しました。', 'success');
-        }}
+        onSaved={() => setEditing(null)}
+        notify={notify}
       />
     );
   }
+
+  const booleanRows: Array<[keyof GeminiPreferences, string]> = [
+    ['emphasizeImportant', '重要語句と結論を強調する'],
+    ['includeCommandExamples', 'コマンド例を含める'],
+    ['preferTables', '比較では表を積極的に使う'],
+    ['beginnerFriendly', '初心者向けの説明を含める'],
+    ['includeExamTips', '試験対策と覚え方を含める'],
+  ];
 
   return (
     <div className="fixed inset-0 z-[110] overflow-y-auto bg-app dark:bg-[#11161c]">
@@ -249,8 +263,8 @@ export function GeminiSettingsPanel({
             <X size={22} />
           </IconButton>
           <h2 className="flex-1 text-lg font-semibold">Gemini設定</h2>
-          <Button onClick={() => void savePreferences()} disabled={savingPreferences}>
-            <Save size={18} /> 保存
+          <Button variant="primary" onClick={() => void savePreferences()} disabled={savingPreferences}>
+            {savingPreferences ? <Spinner /> : <Save size={18} />} 保存
           </Button>
         </div>
 
@@ -277,17 +291,11 @@ export function GeminiSettingsPanel({
               <span className="mb-1 block text-sm">回答方針</span>
               <textarea className={`${fieldClass()} min-h-28 resize-y`} value={preferences.responsePolicy} onChange={(event) => onPreferencesChange({ ...preferences, responsePolicy: event.target.value })} />
             </label>
-            {[
-              ['emphasizeImportant', '重要語句と結論を強調する'],
-              ['includeCommandExamples', 'コマンド例を含める'],
-              ['preferTables', '比較では表を積極的に使う'],
-              ['beginnerFriendly', '初心者向けの説明を含める'],
-              ['includeExamTips', '試験対策と覚え方を含める'],
-            ].map(([key, label]) => (
+            {booleanRows.map(([key, label]) => (
               <div key={key} className="flex items-center justify-between gap-3 border-b divider px-4 py-3 last:border-b-0">
                 <span>{label}</span>
                 <Switch
-                  checked={Boolean(preferences[key as keyof GeminiPreferences])}
+                  checked={preferences[key] === true}
                   onChange={(value) => onPreferencesChange({ ...preferences, [key]: value })}
                   label={label}
                 />
@@ -295,10 +303,10 @@ export function GeminiSettingsPanel({
             ))}
           </div>
 
-          <div className="mb-2 mt-7 flex items-center justify-between">
+          <div className="mb-2 mt-7 flex items-center justify-between gap-3">
             <div>
               <h3 className="text-sm font-semibold text-ink-sub">自動PDF作成</h3>
-              <p className="mt-0.5 text-xs text-ink-sub">ブラウザーを閉じていてもGitHub Actionsで生成します。</p>
+              <p className="mt-0.5 text-xs text-ink-sub">ブラウザーを閉じていても定期処理で生成します。</p>
             </div>
             <Button onClick={() => setEditing(defaultRule())}>
               <Plus size={18} /> ルール追加
@@ -313,11 +321,7 @@ export function GeminiSettingsPanel({
             ) : (
               rules.map((rule) => (
                 <div key={rule.id} className="rounded-card bg-surface px-4 py-3 dark:bg-[#181e26]">
-                  <button
-                    type="button"
-                    className="w-full text-left"
-                    onClick={() => setEditing({ ...rule })}
-                  >
+                  <button type="button" className="w-full text-left" onClick={() => setEditing({ ...rule })}>
                     <div className="flex items-start justify-between gap-3">
                       <div className="min-w-0">
                         <p className="truncate font-semibold">{rule.name}</p>
