@@ -121,11 +121,15 @@ function blockHTML(occ, hourH, opts){
   const laneCount = occ._laneCount || 1;
   const widthPct = 100 / laneCount;
   const compact = opts && opts.compact;
+  // 30分などの短い予定は、時刻と本文を縦に積むと枠に収まらず文字が切れて
+  // つまみと重なってしまう。一定の高さを下回るときは1行（横並び）にする
+  const short = height < 38;
+  const veryShort = height < 24;
   return `
-    <div class="sched-block${occ.routine ? " routine" : ""}${occ.overridden ? " overridden" : ""}${compact ? " compact" : ""}"
+    <div class="sched-block${occ.routine ? " routine" : ""}${occ.overridden ? " overridden" : ""}${compact ? " compact" : ""}${short ? " short" : ""}"
          data-occ="${esc(occ.key)}" data-schedule="${esc(occ.scheduleId)}" data-date="${esc(occ.dateKey)}"
          style="top:${top}px;height:${height}px;left:calc(${lane * widthPct}% + 2px);width:calc(${widthPct}% - 4px);${occ.color ? `--sched-ev-color:${esc(occ.color)}` : ""}">
-      <span class="sched-block-time">${esc(occ.start || "")}${occ.end && !compact ? `〜${esc(occ.end)}` : ""}</span>
+      ${veryShort ? "" : `<span class="sched-block-time">${esc(occ.start || "")}${occ.end && !compact && !short ? `〜${esc(occ.end)}` : ""}</span>`}
       <span class="sched-block-title">${esc(occ.title)}</span>
       ${compact ? "" : `<span class="sched-block-handle" data-resize="1" aria-hidden="true"></span>`}
     </div>`;
@@ -255,7 +259,7 @@ export function occurrenceRowHTML(occ, opts){
       <span class="sched-row-time">${showDate ? `${esc(formatDateLabel(occ.dateKey))} ` : ""}${esc(time)}</span>
       <span class="sched-row-main">
         <span class="sched-row-title">${esc(occ.title)}</span>
-        ${occ.location ? `<span class="sched-row-sub">📍 ${esc(occ.location)}</span>` : ""}
+        ${occ.location ? `<span class="sched-row-sub">${esc(occ.location)}</span>` : ""}
       </span>
       <span class="sched-row-marks">
         ${occ.routine ? `<span class="sched-tag routine">ルーティン</span>` : ""}
@@ -288,7 +292,7 @@ export function routineViewHTML(){
                 <span class="sched-row-time">${s.allDay ? "終日" : esc(end ? `${start}〜${end}` : start)}</span>
                 <span class="sched-row-main">
                   <span class="sched-row-title">${esc(s.title)}</span>
-                  <span class="sched-row-sub">${esc(recurrenceLabel(s.recurrenceRule))}${(s.reminders || []).length ? ` ・ 🔔 ${esc((s.reminders || []).map(reminderLabel).join("、"))}` : ""}</span>
+                  <span class="sched-row-sub">${esc(recurrenceLabel(s.recurrenceRule))}${(s.reminders || []).length ? ` ・ 通知 ${esc((s.reminders || []).map(reminderLabel).join("、"))}` : ""}</span>
                 </span>
                 <span class="sched-row-marks">${s.googleEventId ? `<span class="sched-tag google">G</span>` : ""}</span>
               </button>`;

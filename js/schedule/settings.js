@@ -41,9 +41,9 @@ export function openSyncSettings(onChanged){
 
     ov.innerHTML = `
       <div class="modal sched-editor">
-        <div class="modal-title sched-editor-title">⚙️ カレンダー同期の設定</div>
+        <div class="modal-title sched-editor-title">カレンダー同期の設定</div>
         ${busyMessage ? `<div class="sched-note">${esc(busyMessage)}</div>` : ""}
-        ${connected ? "" : `<div class="sched-note">Googleカレンダーと連携すると、この設定が使えるようになります。カレンダー画面の「🔗 Googleカレンダーと連携」から連携してください。</div>`}
+        ${connected ? "" : `<div class="sched-note">Googleカレンダーと連携すると、この設定が使えるようになります。カレンダー画面の「Googleカレンダーと連携」から連携してください。</div>`}
 
         <button type="button" class="sched-toggle-row" id="sched-sync-toggle"${connected ? "" : " disabled"}>
           <span class="sched-toggle-info">
@@ -231,11 +231,11 @@ export function maybeShowFirstRunPrompt(onChanged){
   ov.className = "modal-ov sched-modal-ov";
   ov.innerHTML = `
     <div class="modal sched-editor">
-      <div class="modal-title sched-editor-title">🔗 Googleカレンダーと同期しますか？</div>
+      <div class="modal-title sched-editor-title">Googleカレンダーと同期しますか？</div>
       <div class="sched-note">
         ログイン中のGoogleアカウントのカレンダーと、このアプリの予定を同期できます。<br>
         ONにすると、Googleカレンダーの予定がこのアプリに表示され、このアプリで登録した予定もGoogleカレンダーへ反映されます。<br>
-        あとから「カレンダー画面の⚙️」でいつでも変更できます。
+        あとから「カレンダー画面の設定」でいつでも変更できます。
       </div>
       <button class="cta" id="sched-prompt-yes">同期する（おすすめ）</button>
       <button class="ghost" id="sched-prompt-no">今はしない</button>

@@ -61,7 +61,7 @@
 .sched-row:active{transform:scale(.99);border-color:var(--accent);}
 .sched-row-bar{flex:none;width:4px;align-self:stretch;min-height:26px;border-radius:99px;
   background:var(--sched-ev-color,var(--sched-ev));}
-.sched-row-time{flex:none;font-size:11px;font-weight:800;color:var(--accent);
+.sched-row-time{flex:none;font-size:11px;font-weight:800;color:var(--home-blue,var(--accent));
   font-variant-numeric:tabular-nums;min-width:74px;line-height:1.4;}
 .sched-row-main{flex:1;min-width:0;display:flex;flex-direction:column;gap:2px;}
 .sched-row-title{font-size:13.5px;font-weight:700;line-height:1.35;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
@@ -74,38 +74,57 @@
 
 /* ===================== ホーム画面のカード ===================== */
 
+/* ホームのカードは、天気カード・今日のニュースカードと同じ
+   「白×淡い水色のダッシュボード」の見た目に合わせる。見出しは
+   ニュースカードの「今日のニュース」と同じ青枠バッジにし、
+   色はテーマ依存の --accent ではなくダッシュボード共通の
+   --home-* トークンを使う（テーマを変えてもカードの中だけは
+   水色のトーンで揃うようにするため。--home-* が無い環境では
+   従来のトークンへフォールバックする） */
 .sched-home{padding:12px 14px;}
-.sched-home-head{display:flex;align-items:center;gap:8px;width:100%;background:none;border:none;padding:0 0 10px;
-  cursor:pointer;color:var(--text);text-align:left;}
-.sched-home-title{font-size:13px;font-weight:800;}
-.sched-home-date{flex:1;font-size:11px;color:var(--muted);font-weight:600;}
-.sched-home-arrow{flex:none;font-size:16px;color:var(--muted);line-height:1;}
-.sched-home-head:active .sched-home-arrow{color:var(--accent);}
+.sched-home-head{display:flex;align-items:center;gap:9px;width:100%;background:none;border:none;padding:0 0 10px;
+  cursor:pointer;color:var(--home-text,var(--text));text-align:left;}
+.sched-home-title,
+.sched-home-tasks-title{display:inline-block;flex:none;padding:3px 12px;
+  border:1px solid var(--home-badge-border,var(--line));border-radius:10px;
+  background:var(--home-badge-bg,var(--bg2));color:var(--home-text,var(--text));
+  font-size:12px;font-weight:800;line-height:1.4;white-space:nowrap;}
+.sched-home-date{flex:1;min-width:0;font-size:11px;color:var(--home-muted,var(--muted));font-weight:700;}
+.sched-home-arrow{flex:none;font-size:16px;color:var(--home-muted,var(--muted));line-height:1;}
+.sched-home-head:active .sched-home-arrow{color:var(--home-blue,var(--accent));}
 .sched-home-list{display:flex;flex-direction:column;}
 .sched-home-list .sched-row + .sched-row{margin-top:6px;}
 
-.sched-add-btn{width:100%;margin-top:9px;padding:9px 0;border-radius:12px;border:1px dashed var(--line);
-  background:none;color:var(--muted);font-size:12px;font-weight:700;cursor:pointer;}
-.sched-add-btn:active{background:var(--bg2);color:var(--accent);}
+.sched-add-btn{width:100%;margin-top:9px;padding:9px 0;border-radius:12px;
+  border:1px dashed var(--home-badge-border,var(--line));
+  background:none;color:var(--home-muted,var(--muted));font-size:12px;font-weight:700;cursor:pointer;}
+.sched-add-btn:active{background:var(--home-badge-bg,var(--bg2));color:var(--home-blue,var(--accent));}
 
-.sched-home-tasks{margin-top:13px;padding-top:12px;border-top:1px solid var(--line);}
-.sched-home-tasks-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;}
-.sched-home-tasks-title{font-size:12.5px;font-weight:800;color:var(--text);}
-.sched-home-tasks-count{font-size:11px;font-weight:800;color:var(--accent);font-variant-numeric:tabular-nums;}
+.sched-home-tasks{margin-top:13px;padding-top:12px;border-top:1px solid var(--home-line,var(--line));}
+.sched-home-tasks-head{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:8px;}
+.sched-home-tasks-count{flex:none;font-size:11px;font-weight:800;color:var(--home-blue,var(--accent));
+  font-variant-numeric:tabular-nums;}
 .sched-task-list{display:flex;flex-direction:column;gap:5px;}
-.sched-task{display:flex;align-items:center;gap:8px;background:var(--bg2);border-radius:11px;padding:8px 9px;}
-.sched-task.done .sched-task-text{text-decoration:line-through;color:var(--muted);}
-.sched-task-check{flex:none;width:17px;height:17px;accent-color:var(--accent);cursor:pointer;}
-.sched-task-text{flex:1;min-width:0;font-size:12.5px;color:var(--text);line-height:1.4;
-  overflow:hidden;text-overflow:ellipsis;}
+.sched-task{display:flex;align-items:center;gap:8px;background:#f5f9fd;border-radius:10px;padding:8px 9px;}
+.sched-task.done .sched-task-text{text-decoration:line-through;color:var(--home-muted,var(--muted));}
+.sched-task-check{flex:none;width:17px;height:17px;accent-color:var(--home-blue,var(--accent));cursor:pointer;}
+.sched-task-text{flex:1;min-width:0;font-size:12.5px;color:var(--home-text,var(--text));line-height:1.4;
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
 .sched-task-del{flex:none;width:20px;height:20px;border-radius:50%;border:none;background:none;
-  color:var(--muted);font-size:14px;line-height:1;cursor:pointer;}
+  color:var(--home-muted,var(--muted));font-size:14px;line-height:1;cursor:pointer;}
 .sched-task-del:active{background:var(--surface2);}
 .sched-task-form{display:flex;align-items:center;gap:6px;margin-top:8px;}
-.sched-task-input{flex:1;min-width:0;width:auto;padding:9px 10px;font-size:13px;}
-.sched-task-repeat{flex:none;width:108px;padding:9px 26px 9px 9px;font-size:11.5px;}
-.sched-task-add{flex:none;width:32px;height:32px;border-radius:50%;border:none;background:var(--accent);
-  color:#ffffff;font-size:17px;font-weight:700;line-height:1;cursor:pointer;}
+.sched-task-input{flex:1;min-width:0;width:auto;padding:9px 10px;font-size:13px;
+  border-color:var(--home-badge-border,var(--line));}
+.sched-task-input:focus{border-color:var(--home-blue,var(--accent));}
+/* 「なし／毎日／平日／毎週／毎月」の短いラベルだけを出すので、
+   この幅でも文字が切れない */
+.sched-task-repeat{flex:none;width:76px;padding:9px 22px 9px 8px;font-size:11.5px;text-align:center;
+  border-color:var(--home-badge-border,var(--line));background-position:calc(100% - 12px) 50%,calc(100% - 8px) 50%;}
+.sched-task-add{flex:none;width:32px;height:32px;border-radius:50%;border:none;
+  background:linear-gradient(145deg,#19a4f6,#0577df);
+  color:#ffffff;font-size:17px;font-weight:700;line-height:1;cursor:pointer;
+  box-shadow:0 4px 10px rgba(0,130,232,.24);}
 .sched-task-add:active{filter:brightness(.94);}
 
 /* ===================== カレンダー画面 ===================== */
@@ -175,9 +194,17 @@
 .sched-block.compact{padding:2px 4px;border-radius:6px;}
 .sched-block.compact .sched-block-title{font-size:9.5px;-webkit-line-clamp:1;}
 .sched-block.compact .sched-block-time{font-size:8px;}
+/* 短い予定（30分以下など）は1行に収める。つまみも細くして本文に重ねない */
+.sched-block.short{flex-direction:row;align-items:center;gap:5px;padding:0 7px;}
+.sched-block.short .sched-block-time{flex:none;}
+.sched-block.short .sched-block-title{-webkit-line-clamp:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
 .sched-block-handle{position:absolute;left:0;right:0;bottom:0;height:11px;cursor:ns-resize;}
 .sched-block-handle::after{content:"";position:absolute;left:50%;bottom:3px;transform:translateX(-50%);
   width:22px;height:2.5px;border-radius:99px;background:rgba(255,255,255,.75);}
+/* 短いブロックのつまみは、右端の細い領域だけにして本文の上に線を引かない */
+.sched-block.short .sched-block-handle{left:auto;right:0;width:26px;height:100%;}
+.sched-block.short .sched-block-handle::after{left:auto;right:5px;bottom:50%;transform:translateY(50%);
+  width:2.5px;height:14px;}
 
 /* 現在時刻を示す赤いライン */
 .sched-nowline{position:absolute;left:0;right:0;height:0;border-top:2px solid #ef4444;pointer-events:none;z-index:4;}
@@ -258,7 +285,9 @@
 /* ===================== 編集モーダル ===================== */
 
 .sched-modal-ov .modal.sched-editor{max-width:400px;max-height:88vh;overflow-y:auto;-webkit-overflow-scrolling:touch;}
-.sched-editor-title{margin-bottom:12px;}
+/* 共通の .modal-title は警告色（--bad）なので、予定のモーダルでは
+   本文色へ戻す（従来のカレンダーのモーダルもインラインで同じことをしていた） */
+.sched-editor-title{color:var(--text);margin-bottom:12px;font-size:17px;}
 
 .sched-field{display:block;margin-bottom:12px;}
 .sched-label{display:block;font-size:11px;font-weight:800;color:var(--muted);margin-bottom:5px;letter-spacing:.02em;}
@@ -291,8 +320,9 @@
 .sched-weekday-row{margin-top:8px;}
 .sched-wd{width:36px;text-align:center;padding:6px 0;}
 
-.sched-color-row{display:flex;flex-wrap:wrap;gap:8px;}
-.sched-color-dot{width:28px;height:28px;border-radius:50%;border:2px solid transparent;cursor:pointer;padding:0;}
+/* 9個（色なし＋8色）が横1行に収まるサイズにしてある */
+.sched-color-row{display:flex;flex-wrap:wrap;gap:7px;}
+.sched-color-dot{width:26px;height:26px;border-radius:50%;border:2px solid transparent;cursor:pointer;padding:0;flex:none;}
 .sched-color-dot.none{background:var(--bg2);border:1.5px dashed var(--line);}
 .sched-color-dot.selected{border-color:var(--text);box-shadow:0 0 0 2px var(--surface) inset;}
 

@@ -5357,6 +5357,13 @@ if(typeof window !== "undefined"){
     ownEmail: () => gcalOwnGoogleEmail(),
     connect: () => gcalConnectGoogle(),
     disconnect: () => gcalDisconnectGoogle(),
+    // 保存済みトークンからの自動復元。以前はホームの日ウィジェット／月カードの
+    // 描画時にだけ呼ばれていたが、その2つを新しい画面へ置き換えたため、
+    // 新しいホームカード／カレンダー画面の描画時に必ずここを通す
+    // （通さないと「連携済みなのに未連携扱い」になってしまう）
+    maybeAutoReconnect: () => gcalMaybeAutoReconnect(),
+    error: () => gcalGoogleError,
+    connecting: () => gcalGoogleConnecting,
   };
   // 「今日の予定」カードからカレンダー画面（日表示）へ移動するための入口
   window.ScheduleNav = { goCalendar: () => go("calendar") };
