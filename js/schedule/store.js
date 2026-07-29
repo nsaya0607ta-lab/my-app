@@ -250,6 +250,15 @@ export const TASK_REPEAT_LABEL = {
   monthly: "毎月",
 };
 
+// ホーム画面の狭い選択欄用の短縮ラベル（横幅に収めて文字切れを防ぐ）
+export const TASK_REPEAT_SHORT = {
+  none: "なし",
+  daily: "毎日",
+  weekday: "平日",
+  weekly: "毎週",
+  monthly: "毎月",
+};
+
 export function normalizeTask(raw){
   const t = raw || {};
   return {

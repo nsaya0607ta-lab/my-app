@@ -45,6 +45,24 @@ export function isGoogleConnected(){
   return !!(b && b.isConnected());
 }
 
+// 保存済みのGoogleトークンからの自動復元を促す。画面を描くたびに呼んでよい
+// （実際の復元処理は既存カレンダー機能側で1回だけ走るようガードされている）
+export function ensureGoogleConnection(){
+  const b = bridge();
+  if(b && b.maybeAutoReconnect) b.maybeAutoReconnect();
+}
+
+// 連携まわりのエラーメッセージ（未連携・失効など）
+export function googleError(){
+  const b = bridge();
+  return (b && b.error && b.error()) || "";
+}
+
+export function googleConnecting(){
+  const b = bridge();
+  return !!(b && b.connecting && b.connecting());
+}
+
 export function googleCalendars(){
   const b = bridge();
   return b ? (b.calendars() || []) : [];

@@ -12,7 +12,7 @@ import { chappyOnTaskCompleted } from '../chappy.js';
 import { occurrencesForDate, sortForHome } from './occurrences.js';
 import { occurrenceRowHTML } from './views.js';
 import { openScheduleEditor } from './editor.js';
-import { TASK_REPEAT_LABEL, deleteTask, isTaskDoneOn, setTaskDone, tasksForDate, upsertTask } from './store.js';
+import { TASK_REPEAT_LABEL, TASK_REPEAT_SHORT, deleteTask, isTaskDoneOn, setTaskDone, tasksForDate, upsertTask } from './store.js';
 import { esc, formatDateLabel, todayKey } from './util.js';
 
 export const HOME_CARD_ID = "sched-home-card";
@@ -41,7 +41,7 @@ export function renderHomeCard(opts){
   root.innerHTML = `
     <div class="gcal-box sched-home">
       <button type="button" class="sched-home-head" id="sched-home-open">
-        <span class="sched-home-title">📅 今日の予定</span>
+        <span class="sched-home-title">今日の予定</span>
         <span class="sched-home-date">${esc(formatDateLabel(dk))}</span>
         <span class="sched-home-arrow">›</span>
       </button>
@@ -55,7 +55,7 @@ export function renderHomeCard(opts){
 
       <div class="sched-home-tasks">
         <div class="sched-home-tasks-head">
-          <span class="sched-home-tasks-title">✅ 本日のタスク</span>
+          <span class="sched-home-tasks-title">本日のタスク</span>
           <span class="sched-home-tasks-count">${doneCount}/${tasks.length}</span>
         </div>
         <div class="sched-task-list">
@@ -66,7 +66,7 @@ export function renderHomeCard(opts){
         <div class="sched-task-form">
           <input type="text" class="sched-input sched-task-input" id="sched-task-input" placeholder="タスクを追加" maxlength="80">
           <select class="sched-input sched-select sched-task-repeat" id="sched-task-repeat" aria-label="繰り返し">
-            ${Object.keys(TASK_REPEAT_LABEL).map(k => `<option value="${k}"${taskRepeatDraft === k ? " selected" : ""}>${esc(TASK_REPEAT_LABEL[k])}</option>`).join("")}
+            ${Object.keys(TASK_REPEAT_SHORT).map(k => `<option value="${k}"${taskRepeatDraft === k ? " selected" : ""}>${esc(TASK_REPEAT_SHORT[k])}</option>`).join("")}
           </select>
           <button type="button" class="sched-task-add" id="sched-task-add" aria-label="タスクを追加">＋</button>
         </div>
@@ -88,7 +88,7 @@ function taskRowHTML(task){
     <div class="sched-task${task.doneOnDate ? " done" : ""}">
       <input type="checkbox" class="sched-task-check" data-task-toggle="${esc(task.id)}"${task.doneOnDate ? " checked" : ""} aria-label="完了にする">
       <span class="sched-task-text">${esc(task.title)}</span>
-      ${task.repeatType !== "none" ? `<span class="sched-tag">${esc(TASK_REPEAT_LABEL[task.repeatType] || "")}</span>` : ""}
+      ${task.repeatType !== "none" ? `<span class="sched-tag" title="${esc(TASK_REPEAT_LABEL[task.repeatType] || "")}">${esc(TASK_REPEAT_SHORT[task.repeatType] || "")}</span>` : ""}
       <button type="button" class="sched-task-del" data-task-del="${esc(task.id)}" aria-label="このタスクを削除">×</button>
     </div>`;
 }

@@ -91,7 +91,7 @@ export function openScheduleEditor(opts){
   const draw = () => {
     ov.innerHTML = `
       <div class="modal sched-editor">
-        <div class="modal-title sched-editor-title">${isNew ? (draft.routine ? "🔁 ルーティンを追加" : "📅 予定を追加") : (draft.routine ? "🔁 ルーティンの詳細" : "📅 予定の詳細")}</div>
+        <div class="modal-title sched-editor-title">${isNew ? (draft.routine ? "ルーティンを追加" : "予定を追加") : (draft.routine ? "ルーティンの詳細" : "予定の詳細")}</div>
         ${error ? `<div class="sched-error">${esc(error)}</div>` : ""}
         ${!isNew ? syncBadgeHTML(existing) : ""}
         ${!isNew && existing.conflict ? conflictHTML(existing) : ""}
@@ -345,7 +345,7 @@ function conflictHTML(schedule){
   const line = (label, value) => `<div class="sched-conflict-line"><span>${esc(label)}</span><b>${esc(value || "—")}</b></div>`;
   return `
     <div class="sched-conflict">
-      <div class="sched-conflict-title">⚠️ Googleカレンダー側でも変更されています</div>
+      <div class="sched-conflict-title">Googleカレンダー側でも変更されています</div>
       <div class="sched-conflict-cols">
         <div class="sched-conflict-col">
           <div class="sched-conflict-head">このアプリ</div>

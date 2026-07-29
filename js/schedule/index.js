@@ -8,7 +8,7 @@
    をまとめて受け持ち、既存の js/render.js からはこのモジュールの
    関数を呼ぶだけで済むようにしている。
    ========================================================================= */
-import { isGoogleConnected, isSyncing, syncNow } from './gsync.js';
+import { ensureGoogleConnection, googleConnecting, googleError, isGoogleConnected, isSyncing, syncNow } from './gsync.js';
 import { HOME_CARD_ID, homeCardHTML, renderHomeCard, todayOccurrences } from './home.js';
 import { maybeShowFirstRunPrompt, openSyncSettings } from './settings.js';
 import { openScheduleEditor } from './editor.js';
@@ -35,6 +35,8 @@ export function scheduleHomeCardHTML(){ return homeCardHTML(); }
 
 export function renderScheduleHome(){
   handleIdentityChange();
+  // ログイン直後・再訪時に、保存済みのGoogle連携を復元する
+  ensureGoogleConnection();
   renderHomeCard({
     onOpenDay: (dateKey) => {
       setView("day", dateKey);
@@ -53,6 +55,7 @@ export function renderScheduleCalendar(){
   const root = document.getElementById(CAL_CARD_ID);
   if(!root) return;
   handleIdentityChange();
+  ensureGoogleConnection();
 
   const view = getView();
   const settings = loadSettings();
@@ -80,8 +83,9 @@ export function renderScheduleCalendar(){
         <span class="sched-toolbar-spacer"></span>
         ${view === "routine" ? "" : `<button type="button" class="sched-mini-btn" id="sched-today">今日</button>`}
         <button type="button" class="gcal-reload-btn${isSyncing() ? " spinning" : ""}" id="sched-refresh" aria-label="Googleカレンダーと同期" title="Googleカレンダーと同期"${isSyncing() ? " disabled" : ""}>⟲</button>
-        <button type="button" class="sched-gear-btn" id="sched-settings" aria-label="同期の設定" title="同期の設定">⚙️</button>
+        <button type="button" class="sched-mini-btn" id="sched-settings" aria-label="同期の設定">設定</button>
       </div>
+      ${googleError() ? `<div class="sched-error">${esc(googleError())}</div>` : ""}
       ${syncState.lastError ? `<div class="sched-error">同期エラー：${esc(syncState.lastError)}</div>` : ""}
       <div class="sched-view">${body}</div>
       <button type="button" class="sched-fab" id="sched-add-fab" aria-label="予定を追加">＋</button>
@@ -92,14 +96,15 @@ export function renderScheduleCalendar(){
 
 function connectBarHTML(connected, settings){
   if(!connected){
+    const busy = googleConnecting();
     return `
       <div class="gcal-google-bar">
-        <button type="button" class="gcal-google-connect" id="sched-connect">🔗 Googleカレンダーと連携</button>
+        <button type="button" class="gcal-google-connect" id="sched-connect"${busy ? " disabled" : ""}>${busy ? "連携中…" : "Googleカレンダーと連携"}</button>
       </div>`;
   }
   return `
     <div class="gcal-google-bar">
-      <span class="gcal-google-badge">🔗 Google連携中 ${settings.syncEnabled ? "・同期ON" : "・同期OFF"}</span>
+      <span class="gcal-google-badge">Google連携中${settings.syncEnabled ? "・同期ON" : "・同期OFF"}</span>
       <button type="button" class="gcal-google-disconnect" id="sched-disconnect">連携解除</button>
     </div>`;
 }
