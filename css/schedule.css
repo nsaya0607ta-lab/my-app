@@ -1,0 +1,342 @@
+/* =========================================================================
+   予定（Schedule）／タスク（Task）機能のスタイル。
+
+   既存のカレンダー機能（.gcal-*）と同じデザイントークン（--surface /
+   --line / --accent / --bg2 …）と、丸み・淡いブルー・やわらかい影という
+   トーンをそのまま踏襲している。カード枠は既存の .gcal-card / .gcal-box を
+   そのまま再利用し、この中身だけを .sched-* で組み立てる。
+   ========================================================================= */
+
+:root{
+  --sched-hour-h:52px;        /* 日表示の1時間ぶんの高さ（js/schedule/views.js の HOUR_H と揃える） */
+  --sched-week-hour-h:40px;   /* 週表示の1時間ぶんの高さ（WEEK_HOUR_H と揃える） */
+  --sched-ev:#38bdf8;         /* 予定ブロックの既定色（sky-400） */
+}
+
+/* ===================== 共通パーツ ===================== */
+
+.sched-empty{font-size:12.5px;color:var(--muted);text-align:center;padding:18px 8px;line-height:1.7;}
+.sched-empty-sm{padding:10px 6px;font-size:11.5px;}
+.sched-hint{display:block;font-size:11px;color:var(--muted);line-height:1.6;margin-top:6px;}
+.sched-note{font-size:12px;color:var(--text);background:var(--bg2);border-radius:12px;padding:11px 12px;
+  line-height:1.7;margin-bottom:12px;}
+.sched-error{font-size:12px;color:var(--bad);background:rgba(220,38,38,.08);border-radius:10px;
+  padding:8px 10px;margin-bottom:10px;line-height:1.5;}
+.sched-error-text{color:var(--bad);}
+
+/* 入力系の基本形。個別の幅指定（.sched-task-repeat など）が後から効くよう、
+   共通のベーススタイルは必ずこのファイルの先頭側に置く（同じ詳細度の
+   セレクタ同士では後に書いた方が勝つため） */
+.sched-input{width:100%;background:var(--surface);border:1.5px solid var(--line);border-radius:11px;
+  padding:10px 11px;color:var(--text);font-size:14px;font-family:inherit;}
+.sched-input:focus{outline:none;border-color:var(--accent);}
+.sched-textarea{resize:vertical;line-height:1.6;}
+.sched-select{appearance:none;-webkit-appearance:none;
+  background-image:linear-gradient(45deg,transparent 50%,var(--muted) 50%),linear-gradient(135deg,var(--muted) 50%,transparent 50%);
+  background-position:calc(100% - 15px) 50%,calc(100% - 10px) 50%;background-size:5px 5px,5px 5px;
+  background-repeat:no-repeat;padding-right:28px;}
+.sched-time{text-align:center;}
+.sched-num{width:78px;text-align:center;}
+
+.sched-mini-btn{flex:none;padding:6px 12px;border-radius:99px;border:1px solid var(--line);
+  background:var(--surface);color:var(--text);font-size:11.5px;font-weight:700;cursor:pointer;}
+.sched-mini-btn:active{background:var(--bg2);}
+.sched-block-btn{display:block;width:100%;margin-top:10px;text-align:center;}
+
+.sched-gear-btn{flex:none;width:26px;height:26px;border-radius:50%;border:none;background:var(--bg2);
+  font-size:12px;display:flex;align-items:center;justify-content:center;cursor:pointer;}
+.sched-gear-btn:active{background:var(--surface2);}
+
+.sched-tag{flex:none;font-size:9.5px;font-weight:800;color:var(--muted);background:var(--bg2);
+  border-radius:99px;padding:2px 7px;white-space:nowrap;}
+.sched-tag.routine{color:var(--accent);background:rgba(2,132,199,.1);}
+.sched-tag.google{color:var(--good);background:rgba(22,163,74,.1);}
+
+/* ===================== 予定1件の行 ===================== */
+
+.sched-row{display:flex;align-items:center;gap:9px;width:100%;text-align:left;cursor:pointer;
+  background:var(--surface);border:1px solid var(--line);border-radius:13px;padding:9px 11px 9px 8px;
+  color:var(--text);box-shadow:0 2px 6px rgba(15,23,42,.03);transition:transform .1s,border-color .12s;}
+.sched-row + .sched-row{margin-top:6px;}
+.sched-row:active{transform:scale(.99);border-color:var(--accent);}
+.sched-row-bar{flex:none;width:4px;align-self:stretch;min-height:26px;border-radius:99px;
+  background:var(--sched-ev-color,var(--sched-ev));}
+.sched-row-time{flex:none;font-size:11px;font-weight:800;color:var(--accent);
+  font-variant-numeric:tabular-nums;min-width:74px;line-height:1.4;}
+.sched-row-main{flex:1;min-width:0;display:flex;flex-direction:column;gap:2px;}
+.sched-row-title{font-size:13.5px;font-weight:700;line-height:1.35;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.sched-row-sub{font-size:10.5px;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.sched-row-marks{flex:none;display:flex;align-items:center;gap:4px;}
+/* 終了済みの予定は淡くして、これからの予定と一目で見分けられるようにする */
+.sched-row.finished{opacity:.5;background:var(--bg2);box-shadow:none;}
+.sched-row.finished .sched-row-time{color:var(--muted);}
+.sched-row.finished .sched-row-title{text-decoration:line-through;text-decoration-color:var(--line);}
+
+/* ===================== ホーム画面のカード ===================== */
+
+.sched-home{padding:12px 14px;}
+.sched-home-head{display:flex;align-items:center;gap:8px;width:100%;background:none;border:none;padding:0 0 10px;
+  cursor:pointer;color:var(--text);text-align:left;}
+.sched-home-title{font-size:13px;font-weight:800;}
+.sched-home-date{flex:1;font-size:11px;color:var(--muted);font-weight:600;}
+.sched-home-arrow{flex:none;font-size:16px;color:var(--muted);line-height:1;}
+.sched-home-head:active .sched-home-arrow{color:var(--accent);}
+.sched-home-list{display:flex;flex-direction:column;}
+.sched-home-list .sched-row + .sched-row{margin-top:6px;}
+
+.sched-add-btn{width:100%;margin-top:9px;padding:9px 0;border-radius:12px;border:1px dashed var(--line);
+  background:none;color:var(--muted);font-size:12px;font-weight:700;cursor:pointer;}
+.sched-add-btn:active{background:var(--bg2);color:var(--accent);}
+
+.sched-home-tasks{margin-top:13px;padding-top:12px;border-top:1px solid var(--line);}
+.sched-home-tasks-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;}
+.sched-home-tasks-title{font-size:12.5px;font-weight:800;color:var(--text);}
+.sched-home-tasks-count{font-size:11px;font-weight:800;color:var(--accent);font-variant-numeric:tabular-nums;}
+.sched-task-list{display:flex;flex-direction:column;gap:5px;}
+.sched-task{display:flex;align-items:center;gap:8px;background:var(--bg2);border-radius:11px;padding:8px 9px;}
+.sched-task.done .sched-task-text{text-decoration:line-through;color:var(--muted);}
+.sched-task-check{flex:none;width:17px;height:17px;accent-color:var(--accent);cursor:pointer;}
+.sched-task-text{flex:1;min-width:0;font-size:12.5px;color:var(--text);line-height:1.4;
+  overflow:hidden;text-overflow:ellipsis;}
+.sched-task-del{flex:none;width:20px;height:20px;border-radius:50%;border:none;background:none;
+  color:var(--muted);font-size:14px;line-height:1;cursor:pointer;}
+.sched-task-del:active{background:var(--surface2);}
+.sched-task-form{display:flex;align-items:center;gap:6px;margin-top:8px;}
+.sched-task-input{flex:1;min-width:0;width:auto;padding:9px 10px;font-size:13px;}
+.sched-task-repeat{flex:none;width:108px;padding:9px 26px 9px 9px;font-size:11.5px;}
+.sched-task-add{flex:none;width:32px;height:32px;border-radius:50%;border:none;background:var(--accent);
+  color:#ffffff;font-size:17px;font-weight:700;line-height:1;cursor:pointer;}
+.sched-task-add:active{filter:brightness(.94);}
+
+/* ===================== カレンダー画面 ===================== */
+
+.sched-cal{position:relative;padding:12px 12px 16px;}
+
+.sched-tabs{display:flex;gap:5px;background:var(--bg2);border-radius:99px;padding:4px;margin-bottom:10px;}
+.sched-tab{flex:1;padding:8px 0;border:none;border-radius:99px;background:none;color:var(--muted);
+  font-size:12px;font-weight:800;cursor:pointer;transition:background .12s,color .12s;}
+.sched-tab.active{background:var(--surface);color:var(--accent);box-shadow:0 2px 6px rgba(15,23,42,.06);}
+
+.sched-toolbar{display:flex;align-items:center;gap:6px;margin-bottom:10px;}
+.sched-toolbar-title{font-size:15px;font-weight:800;color:var(--text);white-space:nowrap;}
+.sched-toolbar-spacer{flex:1;}
+
+.sched-view{min-width:0;}
+
+/* 右下の「＋」。ホーム画面のGemini／パレットFABと同じ位置ルール
+   （ボトムナビの上・セーフエリア考慮）と丸型・影のトーンに合わせる */
+.sched-fab{position:fixed;right:calc(16px + env(safe-area-inset-right));
+  bottom:calc(16px + var(--bnav-h) + env(safe-area-inset-bottom));
+  width:56px;height:56px;border-radius:50%;border:none;color:#ffffff;
+  background:linear-gradient(135deg,var(--accent),#0ea5e9 55%,#6366f1);
+  display:flex;align-items:center;justify-content:center;
+  font-size:28px;font-weight:400;line-height:1;cursor:pointer;
+  box-shadow:0 6px 18px rgba(2,132,199,.4),inset 0 1px 0 rgba(255,255,255,.25);
+  z-index:500;transition:transform .1s;}
+.sched-fab:active{transform:scale(.94);}
+
+/* ===================== 日表示（タイムライン） ===================== */
+
+.sched-day{min-width:0;}
+.sched-allday-strip{display:flex;align-items:flex-start;gap:8px;background:var(--bg2);border-radius:12px;
+  padding:8px 10px;margin-bottom:8px;}
+.sched-allday-label{flex:none;font-size:10px;font-weight:800;color:var(--muted);padding-top:4px;}
+.sched-allday-items{flex:1;min-width:0;display:flex;flex-wrap:wrap;gap:5px;}
+.sched-allday-item{border:none;border-radius:8px;padding:4px 9px;font-size:11.5px;font-weight:700;
+  color:#ffffff;background:var(--sched-ev-color,var(--sched-ev));cursor:pointer;max-width:100%;
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+
+.sched-timeline{max-height:60vh;overflow-y:auto;-webkit-overflow-scrolling:touch;
+  border:1px solid var(--line);border-radius:14px;background:var(--surface);}
+/* 24時間ぶんの高さを持つ内側のラッパー。予定ブロックはここを基準に
+   絶対配置するので、外枠をスクロールしても時間軸とズレない */
+.sched-timeline-inner{position:relative;}
+.sched-hours{position:relative;}
+.sched-hour-row{position:relative;display:flex;align-items:flex-start;border-bottom:1px solid var(--bg2);}
+.sched-hour-row:last-child{border-bottom:none;}
+.sched-hour-label{flex:none;width:46px;padding:2px 0 0 8px;font-size:10px;font-weight:700;color:var(--muted);
+  font-variant-numeric:tabular-nums;}
+.sched-hour-slot{flex:1;align-self:stretch;border:none;background:none;cursor:pointer;padding:0;}
+.sched-hour-slot:active{background:rgba(2,132,199,.06);}
+
+.sched-blocks{position:absolute;top:0;left:46px;right:0;bottom:0;pointer-events:none;}
+.sched-blocks > *{pointer-events:auto;}
+
+.sched-block{position:absolute;display:flex;flex-direction:column;gap:1px;overflow:hidden;
+  border-radius:9px;padding:3px 7px;cursor:grab;touch-action:none;
+  background:var(--sched-ev-color,var(--sched-ev));color:#ffffff;
+  box-shadow:0 2px 6px rgba(15,23,42,.14);border:1px solid rgba(255,255,255,.5);}
+.sched-block.dragging{cursor:grabbing;opacity:.9;box-shadow:0 8px 20px rgba(15,23,42,.28);z-index:5;}
+.sched-block.routine{background:linear-gradient(160deg,var(--sched-ev-color,#60a5fa),#38bdf8);}
+.sched-block.overridden{border-style:dashed;border-color:#ffffff;}
+.sched-block-time{font-size:9.5px;font-weight:800;opacity:.92;font-variant-numeric:tabular-nums;line-height:1.2;}
+.sched-block-title{font-size:11.5px;font-weight:700;line-height:1.25;overflow:hidden;
+  display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;}
+.sched-block.compact{padding:2px 4px;border-radius:6px;}
+.sched-block.compact .sched-block-title{font-size:9.5px;-webkit-line-clamp:1;}
+.sched-block.compact .sched-block-time{font-size:8px;}
+.sched-block-handle{position:absolute;left:0;right:0;bottom:0;height:11px;cursor:ns-resize;}
+.sched-block-handle::after{content:"";position:absolute;left:50%;bottom:3px;transform:translateX(-50%);
+  width:22px;height:2.5px;border-radius:99px;background:rgba(255,255,255,.75);}
+
+/* 現在時刻を示す赤いライン */
+.sched-nowline{position:absolute;left:0;right:0;height:0;border-top:2px solid #ef4444;pointer-events:none;z-index:4;}
+.sched-nowdot{position:absolute;left:-4px;top:-4px;width:8px;height:8px;border-radius:50%;background:#ef4444;}
+
+/* ===================== 週表示 ===================== */
+
+.sched-week{min-width:0;}
+.sched-week-head{display:flex;gap:2px;margin-bottom:6px;}
+.sched-week-gutter{flex:none;width:26px;}
+.sched-week-daybtn{flex:1;min-width:0;display:flex;flex-direction:column;align-items:center;gap:1px;
+  border:none;background:var(--bg2);border-radius:10px;padding:5px 0;cursor:pointer;color:var(--text);}
+.sched-week-daybtn:active{background:var(--surface2);}
+.sched-week-daybtn.today{background:rgba(2,132,199,.12);box-shadow:inset 0 0 0 1.5px var(--accent);}
+.sched-week-daybtn.sat .sched-week-dow{color:#2563eb;}
+.sched-week-daybtn.holiday .sched-week-dow{color:#dc2626;}
+.sched-week-dow{font-size:9.5px;font-weight:800;color:var(--muted);}
+.sched-week-num{font-size:13px;font-weight:800;font-variant-numeric:tabular-nums;}
+
+/* 終日予定は時間軸の外（ヘッダー直下）にまとめる。列の中に混ぜると、
+   左端の時刻ラベル列と各日の時間グリッドの高さがズレてしまうため */
+.sched-week-allday-row{display:flex;gap:2px;margin-bottom:5px;}
+.sched-week-allday-cell{flex:1;min-width:0;display:flex;flex-direction:column;gap:2px;}
+
+.sched-week-body{display:flex;gap:2px;max-height:58vh;overflow-y:auto;-webkit-overflow-scrolling:touch;
+  border:1px solid var(--line);border-radius:12px;background:var(--surface);padding:0 2px 2px;}
+.sched-week-gutter-col{flex:none;width:26px;padding-top:0;}
+.sched-week-hour{display:flex;align-items:flex-start;justify-content:flex-end;padding-right:3px;}
+.sched-week-hour span{font-size:8.5px;font-weight:700;color:var(--muted);font-variant-numeric:tabular-nums;}
+.sched-week-col{flex:1;min-width:0;}
+.sched-week-col.today{background:rgba(2,132,199,.04);}
+.sched-week-allday{display:block;width:100%;border:none;border-radius:5px;padding:2px 4px;
+  font-size:9px;font-weight:700;color:#ffffff;background:var(--sched-ev-color,var(--sched-ev));
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap;cursor:pointer;}
+.sched-week-grid{position:relative;}
+.sched-week-line{position:absolute;left:0;right:0;height:0;border-top:1px solid var(--bg2);}
+
+/* ===================== 月表示 ===================== */
+
+.sched-month{min-width:0;}
+.sched-mgrid{display:grid;grid-template-columns:repeat(7,1fr);gap:3px;width:100%;}
+.sched-mgrid-head{margin-bottom:4px;}
+.sched-mwd{min-width:0;font-size:10px;font-weight:800;color:var(--muted);text-align:center;padding:4px 0;}
+.sched-mwd.sat{color:#2563eb;}
+.sched-mwd.holiday{color:#dc2626;}
+.sched-mcell{min-width:0;width:100%;aspect-ratio:1;position:relative;display:flex;flex-direction:column;
+  align-items:center;justify-content:flex-start;gap:2px;padding:4px 2px 0;
+  border:1px solid var(--line);border-radius:9px;background:var(--surface);color:var(--text);
+  font-size:12px;font-weight:700;cursor:pointer;}
+.sched-mcell:active{background:var(--bg2);}
+.sched-mcell.outside{opacity:.35;}
+.sched-mcell.sat{color:#2563eb;}
+.sched-mcell.holiday{color:#dc2626;}
+.sched-mcell.today{box-shadow:inset 0 0 0 1.5px var(--accent);color:var(--accent);}
+.sched-mcell.selected{background:var(--accent);border-color:var(--accent);color:#ffffff;box-shadow:none;}
+.sched-mcell-num{font-variant-numeric:tabular-nums;line-height:1.1;}
+.sched-mcell-marks{display:flex;align-items:center;justify-content:center;gap:2px;flex-wrap:wrap;}
+.sched-mcell-count{font-size:9px;font-weight:800;color:var(--accent);background:rgba(2,132,199,.12);
+  border-radius:99px;padding:0 5px;line-height:1.5;}
+.sched-mcell-dot{width:4.5px;height:4.5px;border-radius:50%;background:var(--accent);}
+.sched-mcell.selected .sched-mcell-count{color:#ffffff;background:rgba(255,255,255,.28);}
+.sched-mcell.selected .sched-mcell-dot{background:#ffffff;}
+
+.sched-month-list{margin-top:12px;padding-top:12px;border-top:1px solid var(--line);}
+.sched-month-list-title{font-size:12.5px;font-weight:800;color:var(--text);margin-bottom:9px;}
+
+/* ===================== 週間ルーティン ===================== */
+
+.sched-routine{min-width:0;}
+.sched-routine-intro{font-size:11.5px;color:var(--muted);line-height:1.7;background:var(--bg2);
+  border-radius:12px;padding:10px 12px;margin-bottom:12px;}
+.sched-routine-day + .sched-routine-day{margin-top:12px;}
+.sched-routine-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:7px;}
+.sched-routine-dow{font-size:12.5px;font-weight:800;color:var(--text);}
+.sched-routine-dow.sat{color:#2563eb;}
+.sched-routine-dow.holiday{color:#dc2626;}
+
+/* ===================== 編集モーダル ===================== */
+
+.sched-modal-ov .modal.sched-editor{max-width:400px;max-height:88vh;overflow-y:auto;-webkit-overflow-scrolling:touch;}
+.sched-editor-title{margin-bottom:12px;}
+
+.sched-field{display:block;margin-bottom:12px;}
+.sched-label{display:block;font-size:11px;font-weight:800;color:var(--muted);margin-bottom:5px;letter-spacing:.02em;}
+.sched-time-row{display:flex;align-items:center;gap:8px;}
+.sched-time-row .sched-time{flex:1;min-width:0;}
+.sched-time-sep{flex:none;font-size:13px;color:var(--muted);font-weight:700;}
+.sched-custom-row{display:flex;align-items:center;gap:6px;margin-top:7px;flex-wrap:wrap;}
+.sched-custom-row .sched-num{flex:none;}
+.sched-custom-row .sched-input{flex:1;min-width:88px;}
+
+.sched-toggle-row{display:flex;align-items:center;justify-content:space-between;gap:10px;width:100%;
+  background:var(--bg2);border:none;border-radius:12px;padding:11px 12px;margin-bottom:12px;
+  cursor:pointer;text-align:left;color:var(--text);}
+.sched-toggle-row:disabled{opacity:.55;cursor:default;}
+.sched-toggle-info{flex:1;min-width:0;}
+.sched-toggle-row .sched-label{margin-bottom:0;color:var(--text);font-size:13px;}
+.sched-switch{flex:none;position:relative;width:42px;height:24px;border-radius:99px;background:var(--surface2);
+  transition:background .16s;}
+.sched-switch.on{background:var(--accent);}
+.sched-switch-knob{position:absolute;top:3px;left:3px;width:18px;height:18px;border-radius:50%;
+  background:#ffffff;box-shadow:0 1px 3px rgba(15,23,42,.24);transition:transform .16s;}
+.sched-switch.on .sched-switch-knob{transform:translateX(18px);}
+
+.sched-chip-row{display:flex;flex-wrap:wrap;gap:6px;}
+.sched-chip-row-add{margin-top:6px;}
+.sched-chip{flex:none;padding:6px 11px;border-radius:99px;border:1px solid var(--line);background:var(--surface);
+  color:var(--muted);font-size:11px;font-weight:700;cursor:pointer;}
+.sched-chip:active{background:var(--bg2);}
+.sched-chip.on{background:rgba(2,132,199,.1);border-color:var(--accent);color:var(--accent);}
+.sched-weekday-row{margin-top:8px;}
+.sched-wd{width:36px;text-align:center;padding:6px 0;}
+
+.sched-color-row{display:flex;flex-wrap:wrap;gap:8px;}
+.sched-color-dot{width:28px;height:28px;border-radius:50%;border:2px solid transparent;cursor:pointer;padding:0;}
+.sched-color-dot.none{background:var(--bg2);border:1.5px dashed var(--line);}
+.sched-color-dot.selected{border-color:var(--text);box-shadow:0 0 0 2px var(--surface) inset;}
+
+.sched-scope{display:flex;gap:5px;background:var(--bg2);border-radius:99px;padding:4px;margin-bottom:12px;}
+.sched-scope-btn{flex:1;padding:8px 0;border:none;border-radius:99px;background:none;color:var(--muted);
+  font-size:12px;font-weight:800;cursor:pointer;}
+.sched-scope-btn.active{background:var(--surface);color:var(--accent);box-shadow:0 2px 6px rgba(15,23,42,.06);}
+
+.sched-sync-badge{display:inline-block;font-size:10.5px;font-weight:800;border-radius:99px;padding:4px 10px;
+  margin-bottom:12px;background:var(--bg2);color:var(--muted);}
+.sched-sync-synced{background:rgba(22,163,74,.1);color:var(--good);}
+.sched-sync-pending{background:rgba(217,119,6,.12);color:var(--gold);}
+.sched-sync-conflict,.sched-sync-error{background:rgba(220,38,38,.1);color:var(--bad);}
+
+.sched-danger{color:var(--bad);border-color:rgba(220,38,38,.35);}
+
+/* 競合（アプリ側とGoogle側の両方が変更された）ときの選択エリア */
+.sched-conflict{border:1.5px solid rgba(217,119,6,.5);background:rgba(217,119,6,.07);
+  border-radius:12px;padding:10px 11px;margin-bottom:12px;}
+.sched-conflict-title{font-size:12px;font-weight:800;color:var(--gold);margin-bottom:8px;}
+.sched-conflict-cols{display:flex;gap:8px;}
+.sched-conflict-col{flex:1;min-width:0;background:var(--surface);border-radius:9px;padding:7px 8px;}
+.sched-conflict-head{font-size:10px;font-weight:800;color:var(--muted);margin-bottom:4px;}
+.sched-conflict-line{display:flex;justify-content:space-between;gap:6px;font-size:10px;color:var(--muted);line-height:1.6;}
+.sched-conflict-line b{color:var(--text);font-weight:700;text-align:right;word-break:break-all;}
+.sched-conflict-actions{display:flex;gap:6px;margin-top:9px;}
+.sched-conflict-actions .sched-mini-btn{flex:1;}
+
+.sched-option{display:flex;align-items:center;gap:10px;width:100%;text-align:left;cursor:pointer;
+  background:var(--surface);border:1.5px solid var(--line);border-radius:12px;padding:11px 12px;
+  color:var(--text);margin-bottom:6px;}
+.sched-option:active{background:var(--bg2);}
+.sched-option.active{border-color:var(--accent);background:rgba(2,132,199,.05);}
+.sched-option-main{flex:1;min-width:0;display:flex;flex-direction:column;gap:2px;}
+.sched-option-title{display:flex;align-items:center;gap:6px;font-size:13px;font-weight:700;}
+.sched-option-sub{font-size:10.5px;color:var(--muted);line-height:1.5;}
+.sched-check{flex:none;color:var(--accent);font-weight:800;}
+.sched-caldot{width:9px;height:9px;border-radius:50%;flex:none;}
+.sched-syncinfo{margin:10px 0 14px;text-align:center;}
+
+/* 画面幅が狭い端末では、日表示の時刻ラベル列と週表示をさらに詰める */
+@media (max-width:360px){
+  .sched-hour-label{width:40px;font-size:9px;}
+  .sched-blocks{left:40px;}
+  .sched-task-repeat{width:88px;}
+  .sched-row-time{min-width:66px;font-size:10.5px;}
+}
