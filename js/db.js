@@ -5,6 +5,7 @@ import { applyCloud, applyCloudSkins, commit, getProfileName, publishLeaderboard
 import { updateAiScores } from './reviewAI.js';
 import { app, applyCloudGcal, applyCloudMindPalette, applyCloudPendingOrders, applyCloudPlayground, applyCloudPortfolio, applyCloudScenarioMode, applyCloudTradeLog, applyCloudVoiceprint, gcalStartNotifyListener, gcalStopNotifyListener, logout, render } from './render.js';
 import { S, state } from './state.js';
+import { applyCloudSchedule } from './schedule/store.js';
 
   const firebaseConfig = {
     apiKey: "AIzaSyCg3zD2xkq_3e5MclG9YK_uVqVzWulO9Ws",
@@ -249,6 +250,10 @@ import { S, state } from './state.js';
             // カレンダーのデモ予定・ToDo・登録者名も同様にこの端末へ反映
             // （アクセストークン・選択中カレンダーIDはgcal同期の対象外のまま）
             if (data.gcal) applyCloudGcal(data.gcal);
+            // 予定（Schedule）・タスク（Task）・同期設定もこの端末へ反映する。
+            // 端末をまたいだ引き継ぎ用で、Googleカレンダー本体との同期
+            // （js/schedule/gsync.js）とは独立して動く
+            if (data.schedule) applyCloudSchedule(data.schedule);
             // 背景スキン（所持リスト・適用中）もこの端末へ反映。ログインユーザー
             // 本人のドキュメントのみ購読しているため、他ユーザーのスキンが
             // 混ざることはない

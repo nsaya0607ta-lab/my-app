@@ -25,7 +25,7 @@ import { SKIN_DATA } from './data/skins.js';
 import { UI_THEME_DATA } from './data/uithemes.js';
 import { TAP_SOUND_DATA } from './data/tapsounds.js';
 import { playTapSound } from './audio.js';
-import { notifyDailySummary, notifyDirxEvent, notifyReminder, notifyScheduleCreated, notifyScheduleDeleted } from './notifications.js';
+import { notifyDailySummary, notifyDirxEvent, notifyScheduleCreated, notifyScheduleDeleted } from './notifications.js';
 import { S, state } from './state.js';
 import { chappyHandleIdentityChange, chappyOnNewsOpened, chappyOnStocksViewed, chappyOnTaskCompleted, isChappyHomeWidgetVisible } from './chappy.js';
 import { chappyMiniWidgetHTML, chappyMiniWeatherHint, renderChappyScreen } from './chappyScreen.js';
@@ -38,6 +38,18 @@ import { pgApplyCloud, pgHandleIdentityChange } from './playground/cloudSync.js'
 import { renderScenarioScreen } from './playground/scenarios/scenarioScreen.js';
 import { scenarioModeApplyCloud, scenarioModeHandleIdentityChange } from './playground/scenarios/progressStore.js';
 import { applyCustomButtonColors, isLongPressSuppressed, wireButtonColorLongPress } from './buttonColors.js';
+import {
+  refreshScheduleViews, renderScheduleCalendar, renderScheduleHome,
+  scheduleCalendarCardHTML, scheduleHomeCardHTML,
+  syncNow as scheduleSyncNow, todayOccurrences,
+} from './schedule/index.js';
+import {
+  deleteOccurrence as scheduleDeleteOccurrence, deleteSchedule as scheduleDeleteSchedule,
+  getSchedule as scheduleGetSchedule, setOccurrenceOverride as scheduleSetOccurrenceOverride,
+  tasksForDate as scheduleTasksForDate, upsertSchedule as scheduleUpsert,
+} from './schedule/store.js';
+import { occurrencesForDate as scheduleOccurrencesForDate } from './schedule/occurrences.js';
+import { buildRRule as scheduleBuildRRule, presetToSpec as schedulePresetToSpec } from './schedule/recurrence.js';
 import { fetchNewsCategory, getNewsCategoryState, todaysNewsForCategory } from './news.js';
 import { renderLightPuzzleScreen } from './lightpuzzle/screen.js';
 import { lightPuzzleHandleIdentityChange } from './lightpuzzle/store.js';
@@ -5054,6 +5066,21 @@ function gcalMonthCardHTML(){
 function renderGcalActiveView(){
   if(document.getElementById("gcal-day-card")) renderGcalDailyWidget();
   if(document.getElementById("gcal-month-card")) renderGcalMonthCard();
+  // Gemini経由の予定登録・変更・削除はGoogle Calendar APIを直接叩くため、
+  // 新しい予定機能（js/schedule/）側のローカルデータにはまだ反映されていない。
+  // Googleと同期し直したうえで、表示中のホーム／カレンダーを描き直す
+  refreshScheduleViews();
+  scheduleSyncAfterExternalChange();
+}
+
+// Gemini等がGoogleカレンダーを直接書き換えた直後に呼ぶ、遅延つきの同期。
+// 連続した操作で何度もAPIを叩かないよう、最後の呼び出しから少し待つ
+let scheduleExternalSyncTimer = null;
+function scheduleSyncAfterExternalChange(){
+  clearTimeout(scheduleExternalSyncTimer);
+  scheduleExternalSyncTimer = setTimeout(() => {
+    scheduleSyncNow({ quiet: true }).then(refreshScheduleViews);
+  }, 1500);
 }
 
 /* ================= Google カレンダー本体との連携 =================
@@ -5312,6 +5339,27 @@ async function gcalGoogleApiFetch(path, options){
   if(!res.ok) throw new Error(`gcal-api-error-${res.status}`);
   if(res.status === 204) return null;
   return res.json();
+}
+
+/* ---- 予定機能（js/schedule/）へのGoogle Calendar APIの橋渡し ----
+   OAuthの同意フロー・アクセストークンの自動更新・カレンダー一覧の取得は
+   この既存カレンダー機能がすでに実装しているため、新しい予定／同期機能は
+   トークン管理を持たず、このブリッジ経由でAPIを呼ぶだけにする。
+   window経由にしているのは、js/db.js の window.FirebaseSync など、この
+   アプリで既に使われているモジュール間連携のやり方に合わせるため
+   （render.js ⇄ schedule/ の相互import（循環参照）も避けられる） */
+if(typeof window !== "undefined"){
+  window.GcalGoogleBridge = {
+    isConnected: () => !!gcalGoogleAccessToken,
+    calendars: () => gcalGoogleCalendars || [],
+    ensureCalendars: () => (gcalGoogleCalendars === null ? gcalRefreshGoogleCalendars() : Promise.resolve()),
+    apiFetch: (path, options) => gcalGoogleApiFetch(path, options),
+    ownEmail: () => gcalOwnGoogleEmail(),
+    connect: () => gcalConnectGoogle(),
+    disconnect: () => gcalDisconnectGoogle(),
+  };
+  // 「今日の予定」カードからカレンダー画面（日表示）へ移動するための入口
+  window.ScheduleNav = { goCalendar: () => go("calendar") };
 }
 
 // Googleカレンダーの「日本の祝日」購読カレンダー（ja.japanese#holiday@…）を
@@ -5610,7 +5658,7 @@ function gcalBuildRRule(recurrence, dateObj){
 }
 
 // 指定日の既存の予定一覧を、Google連携中／未連携どちらの場合でも同じ形
-// （{source,calId/storeActiveId,eventId,dateKey,y,m,d,title,start,end}）で
+// （{source, calId/scheduleId, eventId, dateKey, y, m, d, title, start, end}）で
 // 返す。予定の重複チェックと、delete_schedule/update_scheduleでの
 // 日付＋タイトルによる対象特定の両方から共通で使う
 async function geminiFetchDayEventsForQuery(y, m, d){
@@ -5629,9 +5677,14 @@ async function geminiFetchDayEventsForQuery(y, m, d){
     const map = gcalMapGoogleEventItems(data.items, { id: activeId });
     return (map[dateKey] || []).map(ev => ({ source: "google", calId: activeId, eventId: ev.id, dateKey, y, m, d, title: ev.title, start: ev.start, end: ev.end }));
   }
-  const store = loadGcalStore();
-  const evs = (store.events[store.activeId] && store.events[store.activeId][dateKey]) || [];
-  return evs.map(ev => ({ source: "local", storeActiveId: store.activeId, eventId: ev.id, dateKey, y, m, d, title: ev.title, start: ev.start, end: ev.end }));
+  // Google未連携のときは、アプリ内の予定テーブル（js/schedule/）を参照する。
+  // ホーム画面・カレンダー画面と同じデータなので、Gemini経由の確認・変更・
+  // 削除がそのまま画面へ反映される
+  return scheduleOccurrencesForDate(dateKey).map(occ => ({
+    source: "local", scheduleId: occ.scheduleId, recurring: occ.recurring,
+    eventId: occ.scheduleId, dateKey, y, m, d,
+    title: occ.title, start: occ.start, end: occ.end,
+  }));
 }
 
 // delete_schedule/update_scheduleが日付＋タイトルで対象を指定してきたときに、
@@ -5734,24 +5787,6 @@ async function geminiRegisterSchedule(args){
   };
 }
 
-// Googleカレンダー未連携時（ローカル保存）は繰り返し予定の仕組みが無いため、
-// 直近の一定回数分を個別の予定として展開して登録する簡易対応。同じ
-// recurrenceIdを持たせておき、将来の一括編集・削除の手がかりにする
-const GCAL_LOCAL_RECURRENCE_COUNT = { daily: 14, weekly: 8, monthly: 6 };
-function gcalRecurrenceOccurrenceDates(recurrence, y, m, d){
-  const count = GCAL_LOCAL_RECURRENCE_COUNT[recurrence];
-  if(!count) return [{ y, m, d }];
-  const dates = [];
-  for(let i = 0; i < count; i++){
-    let dt;
-    if(recurrence === "daily") dt = new Date(y, m, d + i);
-    else if(recurrence === "weekly") dt = new Date(y, m, d + i * 7);
-    else dt = new Date(y, m + i, d);
-    dates.push({ y: dt.getFullYear(), m: dt.getMonth(), d: dt.getDate() });
-  }
-  return dates;
-}
-
 function gcalRecurrenceLabelFor(recurrence, dateObj){
   if(recurrence === "daily") return "毎日繰り返し";
   if(recurrence === "weekly") return `毎週${NEWS_WEEKDAYS[dateObj.getDay()]}曜日に繰り返し`;
@@ -5819,8 +5854,6 @@ async function geminiConfirmSchedule(msg){
   const dateLabel = msg.preview.dateLabel;
   const timeLabel = msg.preview.timeLabel;
   const recurrenceLabel = msg.preview.recurrenceLabel;
-  let localOccurrenceCount = 0;
-  let localCalIdForNotify = null;
 
   try{
     if(gcalGoogleAccessToken){
@@ -5841,24 +5874,21 @@ async function geminiConfirmSchedule(msg){
       gcalGoogleDayEventsCache = {};
       geminiLastSchedule = { source: "google", calId: activeId, eventId: created && created.id, dateKey: newsDateKey(y, m, d), y, m, d, start, end, title };
     } else {
-      const author = gcalLoadAuthorName() || getProfileName() || "";
-      const store = loadGcalStore();
-      if(!store.events[store.activeId]) store.events[store.activeId] = {};
-      const occurrences = gcalRecurrenceOccurrenceDates(recurrence, y, m, d);
-      const recurrenceId = occurrences.length > 1 ? gcalGenId("r") : "";
-      let first = null;
-      occurrences.forEach(occ => {
-        const dateKey = newsDateKey(occ.y, occ.m, occ.d);
-        if(!store.events[store.activeId][dateKey]) store.events[store.activeId][dateKey] = [];
-        const newEvent = { id: gcalGenId("e"), title, start, end, author };
-        if(recurrenceId) newEvent.recurrenceId = recurrenceId;
-        store.events[store.activeId][dateKey].push(newEvent);
-        if(!first) first = { newEvent, dateKey, ...occ };
+      // Google未連携のときはアプリ内の予定テーブルへ登録する。繰り返しは
+      // 回数ぶんコピーせず、RRULEを持つ1件として保存する（削除するまで
+      // ずっと表示され、あとから「この回だけ」の変更もできる）
+      const dateKey = newsDateKey(y, m, d);
+      const allDay = !start;
+      const created = scheduleUpsert({
+        title,
+        startDateTime: allDay ? `${dateKey}T00:00` : `${dateKey}T${start}`,
+        endDateTime: allDay ? `${dateKey}T23:59` : `${dateKey}T${end || start}`,
+        allDay,
+        recurrenceRule: recurrence && recurrence !== "none"
+          ? scheduleBuildRRule(schedulePresetToSpec(recurrence, dateKey)) : "",
+        syncStatus: "local",
       });
-      saveGcalStore(store);
-      localOccurrenceCount = occurrences.length;
-      localCalIdForNotify = store.activeId;
-      geminiLastSchedule = { source: "local", storeActiveId: store.activeId, eventId: first.newEvent.id, dateKey: first.dateKey, y: first.y, m: first.m, d: first.d, start, end, title };
+      geminiLastSchedule = { source: "local", scheduleId: created.id, recurring: !!created.recurrenceRule, eventId: created.id, dateKey, y, m, d, start, end, title };
     }
   }catch(e){
     msg.status = "pending";
@@ -5867,13 +5897,9 @@ async function geminiConfirmSchedule(msg){
   }
 
   msg.status = "confirmed";
-  const recurrenceSuffix = recurrenceLabel
-    ? `（${recurrenceLabel}${localOccurrenceCount > 1 ? `・直近${localOccurrenceCount}回分をこの端末に登録` : ""}）`
-    : "";
+  const recurrenceSuffix = recurrenceLabel ? `（${recurrenceLabel}）` : "";
   pushGeminiMessage({ role: "model", text: `✅ ${dateLabel} ${timeLabel} に「${title}」を登録しました${recurrenceSuffix}。` });
-  const actorName = gcalActorName();
-  notifyScheduleCreated(actorName, title, `${dateLabel} ${timeLabel}`);
-  if(localCalIdForNotify) gcalNotifyCalendarMembers(localCalIdForNotify, "create", { authorName: actorName, title, whenLabel: `${dateLabel} ${timeLabel}` });
+  notifyScheduleCreated(gcalActorName(), title, `${dateLabel} ${timeLabel}`);
 }
 
 // 確認カードの「キャンセル・修正する」（またはチャットでの「キャンセル」相当の
@@ -5905,22 +5931,20 @@ async function geminiDeleteSchedule(args){
       gcalGoogleEventsCache = {};
       gcalGoogleDayEventsCache = {};
     } else {
-      const store = loadGcalStore();
-      const evs = store.events[ref.storeActiveId] && store.events[ref.storeActiveId][ref.dateKey];
-      const idx = evs ? evs.findIndex(e => e.id === ref.eventId) : -1;
-      if(idx < 0) return { text: "対象の予定が見つかりませんでした。すでに削除されている可能性があります。" };
-      evs.splice(idx, 1);
-      saveGcalStore(store);
+      if(!scheduleGetSchedule(ref.scheduleId)){
+        return { text: "対象の予定が見つかりませんでした。すでに削除されている可能性があります。" };
+      }
+      // 繰り返し予定はその日の回だけを取り消す（他の回は残す）
+      if(ref.recurring) scheduleDeleteOccurrence(ref.scheduleId, ref.dateKey);
+      else scheduleDeleteSchedule(ref.scheduleId);
     }
   }catch(e){
     return { text: `予定「${ref.title}」の削除に失敗しました。もう一度お試しください。` };
   }
 
   if(geminiLastSchedule === ref) geminiLastSchedule = null;
-  const deleteActorName = gcalActorName();
-  notifyScheduleDeleted(deleteActorName, ref.title);
-  if(ref.source !== "google") gcalNotifyCalendarMembers(ref.storeActiveId, "delete", { authorName: deleteActorName, title: ref.title });
-  return { text: `🗑️ 「${ref.title}」の予定を削除しました。` };
+  notifyScheduleDeleted(gcalActorName(), ref.title);
+  return { text: `🗑️ 「${ref.title}」の予定を${ref.source !== "google" && ref.recurring ? "（この回だけ）" : ""}削除しました。` };
 }
 
 // update_schedule：target:'last'（または日付・タイトル省略時）なら直前の予定を、
@@ -5970,16 +5994,25 @@ async function geminiUpdateSchedule(args){
       gcalGoogleEventsCache = {};
       gcalGoogleDayEventsCache = {};
     } else {
-      const store = loadGcalStore();
-      const oldEvs = store.events[ref.storeActiveId] && store.events[ref.storeActiveId][ref.dateKey];
-      const idx = oldEvs ? oldEvs.findIndex(e => e.id === ref.eventId) : -1;
-      if(idx < 0) return { text: "対象の予定が見つかりませんでした。すでに削除・変更されている可能性があります。" };
-      const [ev] = oldEvs.splice(idx, 1);
-      ev.title = title; ev.start = start; ev.end = end;
+      const schedule = scheduleGetSchedule(ref.scheduleId);
+      if(!schedule) return { text: "対象の予定が見つかりませんでした。すでに削除・変更されている可能性があります。" };
       const newDateKey = newsDateKey(y, m, d);
-      if(!store.events[ref.storeActiveId][newDateKey]) store.events[ref.storeActiveId][newDateKey] = [];
-      store.events[ref.storeActiveId][newDateKey].push(ev);
-      saveGcalStore(store);
+      if(ref.recurring && newDateKey === ref.dateKey){
+        // 繰り返し予定の日付が変わらない変更は「この回だけ」の一時変更にする
+        scheduleSetOccurrenceOverride(ref.scheduleId, ref.dateKey, { title, start, end });
+      } else {
+        if(ref.recurring) scheduleDeleteOccurrence(ref.scheduleId, ref.dateKey);
+        const allDay = !start;
+        const moved = ref.recurring
+          ? scheduleUpsert({ title, allDay, syncStatus: "local",
+              startDateTime: allDay ? `${newDateKey}T00:00` : `${newDateKey}T${start}`,
+              endDateTime: allDay ? `${newDateKey}T23:59` : `${newDateKey}T${end || start}` })
+          : scheduleUpsert({ ...schedule, title, allDay,
+              startDateTime: allDay ? `${newDateKey}T00:00` : `${newDateKey}T${start}`,
+              endDateTime: allDay ? `${newDateKey}T23:59` : `${newDateKey}T${end || start}` });
+        ref.scheduleId = moved.id;
+        ref.recurring = !!moved.recurrenceRule;
+      }
       ref.dateKey = newDateKey;
     }
   }catch(e){
@@ -6002,26 +6035,15 @@ async function geminiHandleScheduleFunctionCall(name, args){
 setGeminiScheduleHandler(geminiHandleScheduleFunctionCall);
 
 // Geminiチャットが「今日の予定・タスク」の質問にホーム画面と同じ実データで
-// 答えられるよう、ホーム画面の日表示ウィジェットが既に読み込んでいる
-// キャッシュ（Googleカレンダー連携時）またはローカルストアのみを参照して
-// 本日ぶんのスナップショットを返す。新規のネットワーク取得は行わない
+// 答えられるよう、予定／タスクのローカルストア（ホーム画面の「今日の予定」
+// 「本日のタスク」と同じ一次情報源）から本日ぶんのスナップショットを返す。
+// 新規のネットワーク取得は行わないので、オフラインでも同じ答えになる
 function getTodayHomeContext(){
   const now = new Date();
-  const todayKey = newsDateKey(now.getFullYear(), now.getMonth(), now.getDate());
-  const todos = (loadGcalTodoStore()[todayKey] || []).map(t => ({ text: t.text, done: !!t.done }));
-
-  let events = [];
-  if(gcalGoogleAccessToken && gcalGoogleCalendars && gcalGoogleCalendars.length){
-    const evMap = gcalGoogleDayEventsCache[gcalDayCacheKey(todayKey)];
-    events = (evMap && evMap[todayKey]) || [];
-  } else {
-    const store = loadGcalStore();
-    const active = store.calendars.find(c => c.id === store.activeId) || store.calendars[0];
-    events = (active && store.events[active.id] && store.events[active.id][todayKey]) || [];
-  }
+  const dateKey = newsDateKey(now.getFullYear(), now.getMonth(), now.getDate());
   return {
-    todos,
-    events: events.map(ev => ({ title: ev.title, start: ev.start || null, end: ev.end || null })),
+    todos: scheduleTasksForDate(dateKey).map(t => ({ text: t.title, done: !!t.doneOnDate })),
+    events: todayOccurrences().map(occ => ({ title: occ.title, start: occ.start || null, end: occ.end || null })),
   };
 }
 setGeminiHomeContextProvider(getTodayHomeContext);
@@ -7391,58 +7413,16 @@ export function gcalStopNotifyListener(){
   if(gcalNotifyUnsub){ try{ gcalNotifyUnsub(); }catch(e){} gcalNotifyUnsub = null; }
 }
 
-// 「今日」ぶんの予定を、表示中のデータソース（Google連携中ならキャッシュ済みの
-// 連携カレンダー、未連携ならローカル（デモ）カレンダーの全カレンダー分）から
-// かき集める。5分前リマインダーと朝のデイリーサマリーの両方が共通で使う
+// 朝7時のデイリーサマリー用の「今日の予定」。予定は新しい予定機能
+// （js/schedule/）のローカルストアが一次情報源になったので、Google連携の
+// 有無に関わらずそちらから取り出す（オフラインでも正しく集計できる）
 function gcalCollectTodayEvents(){
-  const now = new Date();
-  const todayKey = newsDateKey(now.getFullYear(), now.getMonth(), now.getDate());
-  if(gcalGoogleAccessToken && gcalGoogleCalendars && gcalGoogleCalendars.length){
-    const evMap = gcalGoogleDayEventsCache[gcalDayCacheKey(todayKey)];
-    return (evMap && evMap[todayKey]) || [];
-  }
-  const store = loadGcalStore();
-  const events = [];
-  store.calendars.forEach(c => {
-    const evs = (store.events[c.id] && store.events[c.id][todayKey]) || [];
-    events.push(...evs);
-  });
-  return events;
+  return todayOccurrences().map(occ => ({ id: occ.key, title: occ.title, start: occ.start, end: occ.end }));
 }
 
-// 5分前リマインダー送信済みIDの記録（同じ予定・同じ日に何度も通知しないため）
-function gcalReminderSentKey(){ return gcalStorageKey("gcal_reminder_sent_v1"); }
-function gcalLoadReminderSent(){
-  try{ return new Set(JSON.parse(localStorage.getItem(gcalReminderSentKey())||"[]")); }catch(e){ return new Set(); }
-}
-function gcalSaveReminderSent(set){
-  try{ localStorage.setItem(gcalReminderSentKey(), JSON.stringify([...set].slice(-200))); }catch(e){}
-}
-
-// 開始5分前判定：今日の予定のうち、開始まで残り0〜5分のウィンドウに入った
-// ものを検出して1回だけ通知する。ポーリング間隔（30秒）より長いウィンドウ
-// なので、取りこぼしなく必ず1回はウィンドウに引っかかる
-function gcalCheckReminders(){
-  const now = new Date();
-  const todayKey = newsDateKey(now.getFullYear(), now.getMonth(), now.getDate());
-  const events = gcalCollectTodayEvents();
-  if(!events.length) return;
-  const sent = gcalLoadReminderSent();
-  let changed = false;
-  events.forEach(ev => {
-    if(!ev || !ev.start) return;
-    const mm = /^([01]\d|2[0-3]):([0-5]\d)$/.exec(ev.start);
-    if(!mm) return;
-    const startAt = new Date(now.getFullYear(), now.getMonth(), now.getDate(), Number(mm[1]), Number(mm[2]), 0, 0);
-    const diffMin = (startAt.getTime() - now.getTime()) / 60000;
-    const sentKey = `${todayKey}|${ev.id}`;
-    if(diffMin > 0 && diffMin <= 5 && !sent.has(sentKey)){
-      notifyReminder(ev.title, ev.start);
-      sent.add(sentKey); changed = true;
-    }
-  });
-  if(changed) gcalSaveReminderSent(sent);
-}
+// 開始前のリマインダーは、予定ごとに「○分前／○時間前／前日○時」を自由に
+// 設定できる新しい通知エンジン（js/schedule/reminders.js）が担当する。
+// ここでは以前の「一律5分前」の判定は行わない（二重通知になるため）。
 
 // 朝7時のデイリーサマリー：日付が変わって初めて7:00を過ぎたタイミングで
 // 一度だけ発火する。アプリを開いていない状態で7:00を過ぎていた場合も、
@@ -7455,15 +7435,6 @@ function gcalCheckDailySummary(){
   let last = null;
   try{ last = localStorage.getItem(gcalDailySummaryKey()); }catch(e){}
   if(last === todayKey) return;
-  // Google連携中でまだ今日ぶんのキャッシュが無い場合は、取得を促してから
-  // 次回のポーリングで判定し直す（未取得のまま「予定なし」と誤判定しないため）
-  if(gcalGoogleAccessToken && gcalGoogleCalendars && gcalGoogleCalendars.length){
-    const cacheKey = gcalDayCacheKey(todayKey);
-    if(!gcalGoogleDayEventsCache[cacheKey]){
-      gcalRefreshGoogleDayEvents(now.getFullYear(), now.getMonth(), now.getDate());
-      return;
-    }
-  }
   try{ localStorage.setItem(gcalDailySummaryKey(), todayKey); }catch(e){}
   const events = gcalCollectTodayEvents()
     .filter(ev => ev && ev.title)
@@ -7472,19 +7443,18 @@ function gcalCheckDailySummary(){
   notifyDailySummary(events);
 }
 
-// エンジン起動：30秒間隔でリマインダー／デイリーサマリーを判定する。
-// 起動直後にも一度評価しておくことで、アプリを開いた時点で既に該当時刻を
-// 過ぎていたケース（5分前を過ぎた予定・7時を過ぎた朝）にも追いつける
+// エンジン起動：30秒間隔で朝のデイリーサマリーを判定する。起動直後にも
+// 一度評価しておくことで、7時を過ぎてからアプリを開いた場合にも追いつける
+// （予定ごとのリマインダーは js/schedule/reminders.js が別途担当する）
 if(typeof window !== "undefined"){
-  setInterval(gcalCheckReminders, 30000);
   setInterval(gcalCheckDailySummary, 30000);
-  setTimeout(() => { gcalCheckReminders(); gcalCheckDailySummary(); }, 3000);
+  setTimeout(() => { gcalCheckDailySummary(); }, 5000);
 }
 
 export function renderSelect(){
   app.innerHTML = `
     ${weatherCardHTML()}
-    ${gcalDayWidgetHTML()}
+    ${scheduleHomeCardHTML()}
     ${newsTodayCardHTML()}
     ${state.currentUser
       ? `<div class="acct-bar"> ${esc(state.currentUser.email||"ログイン中")}<button class="link2" data-logout>ログアウト</button></div>`
@@ -7500,7 +7470,7 @@ export function renderSelect(){
   const lo=app.querySelector("[data-logout]"); if(lo)lo.onclick=()=>logout();
   const li=app.querySelector("[data-login]"); if(li)li.onclick=()=>{ state.guestMode=false; state.authMode="login"; render(); };
   loadWeatherCard();
-  renderGcalDailyWidget();
+  renderScheduleHome();
   renderNewsTodayCard();
   applyCustomButtonColors(app);
   wireButtonColorLongPress(app);
@@ -7737,14 +7707,15 @@ function openRulesModal(){
 
 // 「カレンダー」メニューボタンから遷移する専用画面。ニュース画面と同じ
 // q-head（← ホーム＋タイトル）の構成に統一し、Google連携の設定と
-// 1ヶ月フル表示のカレンダー管理をここに集約する
+// 月／週／日／週間ルーティンの切り替え表示をここに集約する。
+// 中身の描画は js/schedule/index.js が担当する
 export function renderCalendarScreen(){
   app.innerHTML = `
     <div class="q-head"><button class="quit" data-go="select">← ホーム</button><span class="q-count">📅 カレンダー</span></div>
-    ${gcalMonthCardHTML()}
+    ${scheduleCalendarCardHTML()}
   `;
   app.querySelectorAll("[data-go]").forEach(b=>b.onclick=()=>go(b.dataset.go));
-  renderGcalMonthCard();
+  renderScheduleCalendar();
   window.scrollTo(0,0);
 }
 

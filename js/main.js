@@ -8,6 +8,7 @@ import { playTapSound } from './audio.js';
 import { S, state } from './state.js';
 import { checkNewsQuizPopup } from './newsQuiz.js';
 import { updateAiScores } from './reviewAI.js';
+import { initSchedule } from './schedule/index.js';
 
 // 全資格の経験値初期同期が完了した時点で、読み込み画面から正しい総合ランクへ切り替える。
 window.addEventListener("learning-data-ready", () => render());
@@ -40,6 +41,9 @@ document.querySelectorAll(".bnav-btn").forEach(b => b.addEventListener("click", 
 initStockDetailUI();
 
 migrateOldData();
+// 📅 予定／タスク機能：旧データの取り込み・通知エンジン・Googleカレンダーの
+// 起動時同期をまとめて開始する（Google未連携でもローカルだけで完結して動く）
+initSchedule();
 updateAiScores("lpic1");   // 🧠 AIおすすめ復習：アプリ起動時にAIスコアを自動更新
 S.coins = loadCoins();
 S.uiTheme = loadUiTheme();
