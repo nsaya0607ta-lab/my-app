@@ -8,11 +8,11 @@
      （Task）で管理し、完了チェックだけを行う。毎日／平日／毎週の繰り返しにも
      対応していて、繰り返しタスクの完了は日付ごとに記録される。
    ========================================================================= */
-import { chappyOnTaskCompleted } from '../chappy.js';
+import { chappyOnAllSchedulesDone, chappyOnScheduleCompleted, chappyOnTaskCompleted } from '../chappy.js';
 import { occurrencesForDate, sortForHome } from './occurrences.js';
 import { occurrenceRowHTML } from './views.js';
 import { openScheduleEditor } from './editor.js';
-import { TASK_REPEAT_LABEL, TASK_REPEAT_SHORT, deleteTask, isTaskDoneOn, setTaskDone, tasksForDate, upsertTask } from './store.js';
+import { TASK_REPEAT_LABEL, TASK_REPEAT_SHORT, deleteTask, isOccurrenceDone, isTaskDoneOn, setOccurrenceDone, setTaskDone, tasksForDate, upsertTask } from './store.js';
 import { esc, formatDateLabel, todayKey } from './util.js';
 
 export const HOME_CARD_ID = "sched-home-card";
@@ -48,7 +48,7 @@ export function renderHomeCard(opts){
 
       <div class="sched-home-list">
         ${occs.length
-          ? occs.map((o, i) => occurrenceRowHTML(o, { finished: i >= 0 && finishedFrom >= 0 && i >= finishedFrom })).join("")
+          ? occs.map((o, i) => occurrenceLineHTML(o, dk, i >= 0 && finishedFrom >= 0 && i >= finishedFrom)).join("")
           : `<div class="sched-empty">今日は予定がありません</div>`}
       </div>
       <button type="button" class="sched-add-btn" id="sched-home-add">＋ 予定を追加</button>
@@ -76,6 +76,18 @@ export function renderHomeCard(opts){
   bind(root, options, dk, now);
 }
 
+/* 予定1行＝「完了チェック」＋既存の予定行。チェックは予定データ自体には
+   書き込まず、独立した完了記録（store.js）に持つのでGoogle同期に影響しない */
+function occurrenceLineHTML(occ, dateKey, finished){
+  const done = isOccurrenceDone(occ.scheduleId, occ.dateKey || dateKey);
+  return `
+    <div class="sched-occ-line${done ? " done" : ""}">
+      <input type="checkbox" class="sched-occ-check" data-occ-done="${esc(occ.key)}"${done ? " checked" : ""}
+             aria-label="${esc(occ.title)}を完了にする">
+      ${occurrenceRowHTML(occ, { finished })}
+    </div>`;
+}
+
 function isFinishedNow(occ, now){
   if(occ.allDay || !occ.start) return false;
   const ref = occ.end || occ.start;
@@ -101,6 +113,19 @@ function bind(root, options, dk, now){
     dateKey: dk,
     defaults: { start: nextRoundHour(now), end: nextRoundHour(now, 1) },
     onSaved: () => { if(options.onChange) options.onChange(); },
+  });
+
+  // 予定の完了チェック → まるチャピにXP・元気アップ（同じ回は1日1回だけ）
+  root.querySelectorAll("[data-occ-done]").forEach(cb => cb.onchange = () => {
+    const [scheduleId, occDate] = String(cb.dataset.occDone).split("@");
+    setOccurrenceDone(scheduleId, occDate, cb.checked);
+    if(cb.checked){
+      chappyOnScheduleCompleted(occDate, scheduleId);
+      // その日の予定をぜんぶ終わらせたらボーナス
+      const all = occurrencesForDate(dk);
+      if(all.length && all.every(o => isOccurrenceDone(o.scheduleId, o.dateKey))) chappyOnAllSchedulesDone(dk);
+    }
+    if(options.onChange) options.onChange();
   });
 
   // 予定行タップ → 詳細モーダル（ホーム画面から直接編集できる）

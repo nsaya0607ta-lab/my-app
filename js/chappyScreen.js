@@ -1,132 +1,45 @@
 /* =========================================================================
-   🏠 チャッピーハウス：育成画面＋ホーム画面ミニウィジェット（見た目担当）
+   🏠 チャッピーハウス：メイン画面＋ホーム画面ミニウィジェット（見た目担当）
 
-   ・キャラクター「まるチャピ」は完全オリジナルの手続き生成SVG
-     （白くて丸い小動物・水色の垂れ耳・ピンクのほっぺ・つぶらな目・
-     首元に星の飾り）。外部画像は使わない。
-   ・状態の計算・永続化・XP/コイン付与はすべてjs/chappy.jsが担当し、
-     ここではHTML組み立て・アニメーション・操作イベントのみを扱う
-     （旧デジタル盆栽のpet.js⇄render.jsと同じ役割分担）。
+   ・状態の計算・永続化・XP/コイン付与はすべて js/chappy.js が担当し、
+     ここではHTML組み立て・アニメーション・操作イベントのみを扱う。
+   ・お部屋の描画は js/chappyRoom.js、キャラクターSVGは js/chappyChar.js、
+     チャッピーが自分で生活する仕組みは js/chappyLife.js に分かれている。
    ・go("chappy")で遷移してくる独立した1画面（introquiz等と同じ作法）。
+   ・画面を離れたらBGMと生活エンジンを必ず止める（電池と通知音の配慮）。
    ========================================================================= */
 import { app, go } from './render.js';
 import { playTapSound } from './audio.js';
+import { chappySVG } from './chappyChar.js';
 import {
-  getChappy, chappyLevelInfo, chappyStageForXp, chappyNextStage,
-  chappyPet, chappyFeed, isChappyHomeWidgetVisible, setChappyHomeWidgetVisible,
+  getChappy, chappyLevelInfo, chappyStageForXp, chappyNextStage, chappyStats,
+  chappyPet, chappyFeed, chappyCare, chappyEquipped, chappyStyleScore,
+  isChappyHomeWidgetVisible, setChappyHomeWidgetVisible, isChappyBgmOn, setChappyBgm,
+  chappyTimeSlot, chappyCurrentEvent, chappyMissionSummary, chappyClaimSecret,
+  chappyRecordTalk, chappyFloorUnlocked, chappyRoomInfo,
 } from './chappy.js';
-import { CHAPPY_FOODS, CHAPPY_LINES, CHAPPY_STAT_MAX } from './data/chappy-config.js';
+import {
+  chappyRoomLayersHTML, chappyRoomClass, chappyRoomStyleAttr, chappySlotPos,
+  chappyPlacedOn, openChappyRoomEditor,
+} from './chappyRoom.js';
+import { openChappyShop, openChappyGacha } from './chappyShop.js';
+import { openChappyCloset } from './chappyCloset.js';
+import { openChappyMissions, openChappyBook } from './chappyBook.js';
+import { startChappyLife, stopChappyLife, chappyLifeInterrupt, chappyPickLine } from './chappyLife.js';
+import {
+  chappyAudioStart, chappyAudioStop, chappyAudioSwitch, chappyAudioProfileFor,
+  chappyAudioIsPlaying, chappySfx,
+} from './chappyAudio.js';
+import { CHAPPY_FOODS, CHAPPY_CARES, CHAPPY_CARE_STATS, CHAPPY_STAT_MAX, CHAPPY_FLOORS } from './data/chappy-config.js';
+import { CHAPPY_LINES } from './data/chappy-lines.js';
 
 export const CHAPPY_NAME = "まるチャピ";
+export { chappySVG };
 
-/* =========================================================================
-   キャラクターSVG（成長段階ごとに少しずつ変化。すべてパステルカラー）
-   表情・ポーズはSVG内に全パターンを持ち、外側のラッパーclassで切り替える：
-     .chp-face-happy  … にっこり目（なでた時・ごはん時）
-     .chp-face-sleepy … ねむそうな目＋Zzz（夜・放置時）
-     .chp-pose-hungry … お腹を押さえる手（空腹時）
-   ========================================================================= */
-function starPath(cx, cy, r){
-  let d = "";
-  for(let i = 0; i < 10; i++){
-    const ang = -Math.PI / 2 + i * Math.PI / 5;
-    const rr = i % 2 === 0 ? r : r * 0.45;
-    d += `${i === 0 ? "M" : "L"}${(cx + Math.cos(ang) * rr).toFixed(1)},${(cy + Math.sin(ang) * rr).toFixed(1)}`;
-  }
-  return d + "Z";
-}
-
-function chappyEggSVG(){
-  return `
-    <svg viewBox="0 0 200 200" class="chp-svg" aria-hidden="true">
-      <ellipse class="chp-shadow" cx="100" cy="172" rx="46" ry="9"/>
-      <g class="chp-body-g">
-        <path d="M100 38 C136 38 152 82 152 118 C152 152 129 170 100 170 C71 170 48 152 48 118 C48 82 64 38 100 38Z"
-              fill="#fffaf0" stroke="#f3e4c8" stroke-width="3"/>
-        <circle cx="76" cy="88" r="5.5" fill="#cbe9fb"/>
-        <circle cx="128" cy="128" r="4.5" fill="#fbd9e3"/>
-        <circle cx="66" cy="128" r="4" fill="#fdeec9"/>
-        <path d="${starPath(112, 78, 9)}" fill="#f7d774"/>
-        <path class="chp-egg-eye" d="M84 122 q5 5 10 0" stroke="#5a5a5a" stroke-width="3" fill="none" stroke-linecap="round"/>
-        <path class="chp-egg-eye" d="M106 122 q5 5 10 0" stroke="#5a5a5a" stroke-width="3" fill="none" stroke-linecap="round"/>
-      </g>
-    </svg>`;
-}
-
-// scale：ベビー0.82／キッズ1／成長体1.1。grownは首元リボン＋星が少し豪華になる
-function chappyBodySVG(stageKey){
-  const scale = stageKey === "baby" ? 0.82 : stageKey === "grown" ? 1.1 : 1;
-  const grown = stageKey === "grown";
-  const baby = stageKey === "baby";
-  const tx = 100 - 100 * scale;
-  const ty = 172 - 172 * scale;
-  return `
-    <svg viewBox="0 0 200 200" class="chp-svg" aria-hidden="true">
-      <ellipse class="chp-shadow" cx="100" cy="176" rx="${48 * scale}" ry="8"/>
-      <g class="chp-body-g" transform="translate(${tx.toFixed(1)} ${ty.toFixed(1)}) scale(${scale})">
-        <!-- しっぽ（小さく丸い） -->
-        <circle cx="154" cy="138" r="11" fill="#ffffff" stroke="#e5edf5" stroke-width="3"/>
-        <!-- 垂れ耳（水色） -->
-        <g class="chp-ears">
-          <path d="M64 62 C46 58 36 78 44 96 C50 108 62 108 68 96 C72 86 70 72 64 62Z"
-                fill="#aadcf5" stroke="#8ecbec" stroke-width="2.5"/>
-          <path d="M136 62 C154 58 164 78 156 96 C150 108 138 108 132 96 C128 86 130 72 136 62Z"
-                fill="#aadcf5" stroke="#8ecbec" stroke-width="2.5"/>
-          <path d="M60 70 C52 72 48 84 52 92 C55 98 61 97 64 90 C66 83 64 75 60 70Z" fill="#cceefb"/>
-          <path d="M140 70 C148 72 152 84 148 92 C145 98 139 97 136 90 C134 83 136 75 140 70Z" fill="#cceefb"/>
-        </g>
-        <!-- 本体（白くて丸い・もちもち） -->
-        <path d="M100 52 C142 52 160 86 160 118 C160 152 134 172 100 172 C66 172 40 152 40 118 C40 86 58 52 100 52Z"
-              fill="#ffffff" stroke="#e5edf5" stroke-width="3.5"/>
-        <!-- 足（短い） -->
-        <ellipse cx="76" cy="169" rx="14" ry="8" fill="#ffffff" stroke="#e5edf5" stroke-width="3"/>
-        <ellipse cx="124" cy="169" rx="14" ry="8" fill="#ffffff" stroke="#e5edf5" stroke-width="3"/>
-        <!-- 手（通常：体の横） -->
-        <g class="chp-arms-normal">
-          <ellipse cx="47" cy="132" rx="9" ry="12" fill="#ffffff" stroke="#e5edf5" stroke-width="3"/>
-          <ellipse cx="153" cy="132" rx="9" ry="12" fill="#ffffff" stroke="#e5edf5" stroke-width="3"/>
-        </g>
-        <!-- 手（空腹：お腹を押さえる） -->
-        <g class="chp-arms-hungry">
-          <ellipse cx="82" cy="146" rx="10" ry="9" fill="#ffffff" stroke="#e5edf5" stroke-width="3"/>
-          <ellipse cx="118" cy="146" rx="10" ry="9" fill="#ffffff" stroke="#e5edf5" stroke-width="3"/>
-        </g>
-        <!-- ほっぺ（薄ピンク） -->
-        <ellipse cx="${baby ? 68 : 66}" cy="118" rx="${baby ? 12 : 10}" ry="${baby ? 8 : 7}" fill="#fbd0da"/>
-        <ellipse cx="${baby ? 132 : 134}" cy="118" rx="${baby ? 12 : 10}" ry="${baby ? 8 : 7}" fill="#fbd0da"/>
-        <!-- 目（つぶらな黒目）：通常／にっこり／ねむい を切り替え -->
-        <g class="chp-eyes-normal">
-          <circle cx="82" cy="104" r="6" fill="#3d3d3d"/><circle cx="84" cy="102" r="2" fill="#ffffff"/>
-          <circle cx="118" cy="104" r="6" fill="#3d3d3d"/><circle cx="120" cy="102" r="2" fill="#ffffff"/>
-        </g>
-        <g class="chp-eyes-happy">
-          <path d="M75 105 q7 -8 14 0" stroke="#3d3d3d" stroke-width="3.5" fill="none" stroke-linecap="round"/>
-          <path d="M111 105 q7 -8 14 0" stroke="#3d3d3d" stroke-width="3.5" fill="none" stroke-linecap="round"/>
-        </g>
-        <g class="chp-eyes-sleepy">
-          <path d="M75 104 q7 4 14 0" stroke="#3d3d3d" stroke-width="3.5" fill="none" stroke-linecap="round"/>
-          <path d="M111 104 q7 4 14 0" stroke="#3d3d3d" stroke-width="3.5" fill="none" stroke-linecap="round"/>
-        </g>
-        <!-- 口（小さな「ω」） -->
-        <path class="chp-mouth" d="M94 116 q3 4 6 0 q3 4 6 0" stroke="#c98a96" stroke-width="2.5" fill="none" stroke-linecap="round"/>
-        <!-- 首元の飾り：星（成長体はリボン付きで少し豪華に） -->
-        ${grown ? `<path d="M86 156 q14 8 28 0 l-4 10 q-10 5 -20 0Z" fill="#fbd0da" stroke="#f3b7c6" stroke-width="2"/>` : ""}
-        <path d="${starPath(100, grown ? 158 : 156, grown ? 9 : 7)}" fill="#f7d774" stroke="#eec659" stroke-width="1.5"/>
-        <!-- Zzz（ねむい時のみ表示） -->
-        <g class="chp-zzz" fill="#9db8d6" font-size="16" font-weight="700" font-family="sans-serif">
-          <text x="146" y="66">z</text><text x="156" y="52" font-size="20">Z</text>
-        </g>
-        <!-- ☔（ホームの雨の日のみ表示：小さな傘） -->
-        <g class="chp-umbrella">
-          <path d="M158 40 q-26 -18 -52 0 q6 -22 26 -22 q20 0 26 22Z" fill="#aadcf5" stroke="#8ecbec" stroke-width="2"/>
-          <path d="M132 40 v56 q0 8 8 8" stroke="#9db8d6" stroke-width="3.5" fill="none" stroke-linecap="round"/>
-        </g>
-      </g>
-    </svg>`;
-}
-
-export function chappySVG(stageKey){
-  return stageKey === "egg" ? chappyEggSVG() : chappyBodySVG(stageKey);
+function esc(s){
+  return String(s == null ? "" : s).replace(/[&<>"']/g, c => (
+    { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]
+  ));
 }
 
 /* =========================================================================
@@ -137,44 +50,49 @@ function pickLine(kind){
   return list[Math.floor(Math.random() * list.length)] || "";
 }
 
-function hourNow(){ return new Date().getHours(); }
-function isNight(){ const h = hourNow(); return h >= 21 || h < 5; }
-function isMorning(){ const h = hourNow(); return h >= 5 && h < 9; }
+function isNight(){ return chappyTimeSlot() === "night"; }
+function isMorning(){ return chappyTimeSlot() === "morning"; }
 
 // 表情・ポーズの基本クラス（優先度：空腹 > 夜のねむけ > 通常）
-function moodClasses(st){
+function moodClasses(stats){
   const cls = [];
-  if(st.hunger <= 25) cls.push("chp-pose-hungry");
-  if(isNight()) cls.push("chp-face-sleepy");
+  if(stats.hunger <= 25) cls.push("chp-pose-hungry");
+  if(isNight() || stats.sleep <= 30) cls.push("chp-face-sleepy");
   return cls;
 }
 
 /* =========================================================================
-   ホーム画面ミニウィジェット（お天気カード右側・旧デジタル盆栽の位置）
+   ホーム画面ミニウィジェット（お天気カード右側）
    タップで育成画面へ遷移する（data-goはrenderSelect()側で配線される）。
    ========================================================================= */
 export function chappyMiniWidgetHTML(){
   const st = getChappy();
   const stage = chappyStageForXp(st.xp);
   const lv = chappyLevelInfo(st.xp).level;
+  const stats = chappyStats(st);
   const cls = ["weather-chappy-btn", "chp-mini"];
   if(isNight()) cls.push("chp-face-sleepy");
   else if(isMorning()) cls.push("chp-mini--morning");
-  if(st.hunger <= 25) cls.push("chp-pose-hungry");
+  if(stats.hunger <= 25) cls.push("chp-pose-hungry");
+  const ms = chappyMissionSummary();
   return `
     <button type="button" class="${cls.join(" ")}" data-go="chappy"
       aria-label="チャッピーハウス：${CHAPPY_NAME} Lv.${lv}" title="チャッピーハウス：${CHAPPY_NAME} Lv.${lv}">
-      <span class="chp-mini-svgwrap">${chappySVG(stage.key)}</span>
+      <span class="chp-mini-svgwrap">${chappySVG(stage.key, chappyEquipped())}</span>
+      ${ms.claimable > 0 ? `<span class="chp-mini-badge" aria-hidden="true">${ms.claimable}</span>` : ""}
     </button>`;
 }
 
-// お天気カードの天気取得結果から、ミニまるチャピの「雨の日は傘」「晴れの日は
-// うれしそう」の見た目を切り替える（render.jsのrefreshWeatherCardから呼ばれる）
+// お天気カードの天気取得結果から、ミニまるチャピの見た目を切り替える
+let lastWeatherKind = null;
 export function chappyMiniWeatherHint(w){
   const btn = document.querySelector(".weather-chappy-btn");
-  if(!btn || !w) return;
+  if(!w) return;
   const rainy = (typeof w.precip === "number" && w.precip >= 0.5) || /🌧|☔|⛈/.test(w.icon || "");
+  const snowy = /❄|🌨|⛄/.test(w.icon || "");
   const sunny = /☀|🌞/.test(w.icon || "");
+  lastWeatherKind = rainy ? "rain" : snowy ? "snow" : null;
+  if(!btn) return;
   btn.classList.toggle("chp-mini--rain", rainy);
   btn.classList.toggle("chp-face-happy", !rainy && sunny && !btn.classList.contains("chp-face-sleepy"));
 }
@@ -195,8 +113,10 @@ export function chappyHomeReact(kind){
    育成画面
    ========================================================================= */
 let bubbleTimer = null;
-let idleTimer = null;
 let lastPetTs = 0;
+let viewFloor = "f1";
+let teardownObserver = null;
+let audioTimer = null;
 
 function showBubble(text){
   const b = document.getElementById("chp-bubble");
@@ -208,6 +128,7 @@ function showBubble(text){
   b.classList.add("chp-bubble-show");
   clearTimeout(bubbleTimer);
   bubbleTimer = setTimeout(() => { b.classList.remove("chp-bubble-show"); b.hidden = true; }, 3800);
+  chappyRecordTalk(text);
 }
 
 function playCharAnim(name, ms){
@@ -223,7 +144,7 @@ function setFaceHappy(ms){
   const char = document.getElementById("chp-char");
   if(!char) return;
   char.classList.add("chp-face-happy");
-  setTimeout(() => { if(document.getElementById("chp-char")) char.classList.remove("chp-face-happy"); }, ms);
+  setTimeout(() => { const c = document.getElementById("chp-char"); if(c) c.classList.remove("chp-face-happy"); }, ms);
 }
 
 // ハート・キラキラのエフェクト（#chp-fxへ短命のspanを追加して消す）
@@ -234,104 +155,93 @@ function spawnFx(emoji, count){
     const s = document.createElement("span");
     s.className = "chp-fx-item";
     s.textContent = emoji;
-    s.style.left = `${30 + Math.random() * 40}%`;
+    s.style.left = `${20 + Math.random() * 60}%`;
     s.style.animationDelay = `${(i * 0.09).toFixed(2)}s`;
     fx.appendChild(s);
-    setTimeout(() => { try{ s.remove(); }catch(e){} }, 1600 + i * 90);
+    setTimeout(() => { try{ s.remove(); }catch(e){} }, 1700 + i * 90);
   }
 }
 
-function statRowHTML(key, label, icon, value){
-  const pct = Math.round(value / CHAPPY_STAT_MAX * 100);
-  return `
-    <div class="chp-stat-row">
-      <span class="chp-stat-lab">${icon} ${label}</span>
-      <div class="chp-stat-track"><div class="chp-stat-fill chp-stat-${key}" style="width:${pct}%"></div></div>
-      <span class="chp-stat-val" id="chp-val-${key}">${value}</span>
-    </div>`;
+/* ⑬ ごほうび演出：飛び跳ねる・拍手・ハート・キラキラ・ダンス */
+function celebrate(kind){
+  const map = {
+    levelUp: { anim: "chp-anim-jump", ms: 900, fx: "✨", n: 10, sfx: "levelup" },
+    stageUp: { anim: "chp-anim-dance", ms: 1600, fx: "🌟", n: 12, sfx: "levelup" },
+    task:    { anim: "chp-anim-clap", ms: 1000, fx: "👏", n: 4, sfx: "reward" },
+    study:   { anim: "chp-anim-dance", ms: 1500, fx: "📚", n: 4, sfx: "reward" },
+    heart:   { anim: "chp-anim-bounce", ms: 650, fx: "💗", n: 3 },
+    sparkle: { anim: "chp-anim-bounce", ms: 650, fx: "✨", n: 6, sfx: "reward" },
+    dance:   { anim: "chp-anim-dance", ms: 1500, fx: "🎵", n: 5 },
+  };
+  const c = map[kind] || map.heart;
+  playCharAnim(c.anim, c.ms);
+  spawnFx(c.fx, c.n);
+  setFaceHappy(c.ms + 700);
+  if(c.sfx) chappySfx(c.sfx);
+  chappyLifeInterrupt(c.ms + 900);
 }
 
-// なでる・ごはん後にステータス表示だけを部分更新する（画面全体は作り直さない）
+/* ---- ステータス表示だけの部分更新（画面全体は作り直さない） ---- */
 function refreshStatsUI(){
   const st = getChappy();
+  const stats = chappyStats(st);
   const info = chappyLevelInfo(st.xp);
   const set = (id, v) => { const el = document.getElementById(id); if(el) el.textContent = v; };
-  set("chp-val-genki", st.genki);
-  set("chp-val-hunger", st.hunger);
-  set("chp-val-bond", st.bond);
+  CHAPPY_CARE_STATS.forEach(def => {
+    set(`chp-val-${def.key}`, stats[def.key]);
+    const bar = document.querySelector(`.chp-stat-${def.key} .chp-stat-fill`);
+    if(bar) bar.style.width = `${Math.round(stats[def.key] / CHAPPY_STAT_MAX * 100)}%`;
+  });
   set("chp-head-lv", `Lv.${info.level}`);
   set("chp-head-coin", st.coins.toLocaleString());
   set("chp-xp-label", `${info.cur} / ${info.need} XP`);
   set("chp-xp-remain", `つぎのレベルまで あと ${info.need - info.cur} XP`);
-  const bars = { genki: st.genki, hunger: st.hunger, bond: st.bond };
-  Object.keys(bars).forEach(k => {
-    const el = document.querySelector(`.chp-stat-${k}`);
-    if(el) el.style.width = `${Math.round(bars[k] / CHAPPY_STAT_MAX * 100)}%`;
-  });
   const xpBar = document.querySelector(".chp-xp-fill");
   if(xpBar) xpBar.style.width = `${info.pct}%`;
-  // 空腹ポーズの反映
   const char = document.getElementById("chp-char");
-  if(char) char.classList.toggle("chp-pose-hungry", st.hunger <= 25);
+  if(char){
+    char.classList.toggle("chp-pose-hungry", stats.hunger <= 25);
+    char.classList.toggle("chp-face-sleepy", isNight() || stats.sleep <= 30);
+  }
+  const ms = chappyMissionSummary();
+  const badge = document.getElementById("chp-mission-badge");
+  if(badge){
+    badge.textContent = ms.claimable > 0 ? String(ms.claimable) : "";
+    badge.hidden = ms.claimable === 0;
+  }
 }
 
-// なでる（キャラ本体タップ・スワイプ・なでるボタン共通）。連打しても
-// なかよし度の加算はjs/chappy.js側の1日上限で制限される
+/* ---- なでる ---- */
 function doPet(){
   const now = Date.now();
-  if(now - lastPetTs < 400) return;   // 連打による演出の暴走も抑える
+  if(now - lastPetTs < 400) return;   // 連打による演出の暴走を抑える
   lastPetTs = now;
-  markInteraction();
   playTapSound();
   const r = chappyPet();
-  playCharAnim("chp-anim-bounce", 650);
-  setFaceHappy(1800);
-  spawnFx("💗", r.gained > 0 ? 3 : 1);
+  celebrate("heart");
   showBubble(r.capped ? pickLine("rest") : pickLine("petted"));
   refreshStatsUI();
 }
 
-/* ---- 放置検知：一定時間操作がないと座って居眠りする ---- */
-let lastInteractionTs = Date.now();
-function markInteraction(){
-  lastInteractionTs = Date.now();
-  const char = document.getElementById("chp-char");
-  if(char) char.classList.remove("chp-idle-sit", "chp-face-sleepy-idle");
-}
-function startIdleWatch(){
-  clearInterval(idleTimer);
-  idleTimer = setInterval(() => {
-    const char = document.getElementById("chp-char");
-    if(!char){ clearInterval(idleTimer); idleTimer = null; return; }
-    const idleSec = (Date.now() - lastInteractionTs) / 1000;
-    if(idleSec > 45 && !char.classList.contains("chp-idle-sit")){
-      char.classList.add("chp-idle-sit");
-      showBubble(pickLine("idle"));
-    }
-    if(idleSec > 90) char.classList.add("chp-face-sleepy-idle");
-  }, 5000);
-}
-
-/* ---- XP付与イベントの購読（モジュール読み込み時に一度だけ登録）----
-   育成画面が開いていれば表示更新＋レベルアップ演出、ホーム画面に
-   ミニまるチャピがいればタスク完了ジャンプなどのリアクションをする */
+/* ---- XP付与イベントの購読（モジュール読み込み時に一度だけ登録）---- */
 window.addEventListener("chappy-award", (e) => {
   const d = e.detail || {};
   if(document.getElementById("chp-room")){
     refreshStatsUI();
-    if(d.levelUp || d.stageUp){
-      spawnFx("✨", 8);
-      playCharAnim("chp-anim-jump", 900);
+    if(d.stageUp){
+      celebrate("stageUp");
+      showBubble(pickLine("stageUp"));
+      setTimeout(() => { if(document.getElementById("chp-room")) renderChappyScreen(); }, 1600);
+    } else if(d.levelUp){
+      celebrate("levelUp");
       showBubble(pickLine("levelUp"));
-      if(d.stageUp){
-        // 成長段階が変わったら見た目を差し替える（少し間を置いてキラキラの後に）
-        setTimeout(() => { if(document.getElementById("chp-room")) renderChappyScreen(); }, 1200);
-      }
     } else if(d.reason === "taskDone"){
-      playCharAnim("chp-anim-jump", 900);
+      celebrate("task");
       showBubble(pickLine("taskDone"));
+    } else if(d.reason === "studySession" || d.type === "study"){
+      celebrate("study");
+      showBubble(pickLine("studyDone"));
     } else {
-      // レベルアップ目前ならそれを教えてあげる
       const info = chappyLevelInfo(getChappy().xp);
       if(info.need - info.cur <= 5) showBubble(pickLine("nearLevel"));
     }
@@ -340,7 +250,17 @@ window.addEventListener("chappy-award", (e) => {
   }
 });
 
-/* ---- ごはんモーダル ---- */
+// バッジ獲得のお知らせ
+window.addEventListener("chappy-badge", (e) => {
+  if(!document.getElementById("chp-room")) return;
+  const b = (e.detail && e.detail.badges && e.detail.badges[0]) || null;
+  if(!b) return;
+  setTimeout(() => { celebrate("sparkle"); showBubble(`バッジ「${b.name}」をもらったよ！`); }, 900);
+});
+
+/* =========================================================================
+   モーダル：ごはん・お世話・設定
+   ========================================================================= */
 function closeChappyModal(ov){ try{ ov.remove(); }catch(e){} }
 
 function openFoodModal(){
@@ -351,8 +271,8 @@ function openFoodModal(){
     <button type="button" class="chp-food-row" data-food="${f.key}" ${st.coins < f.cost ? "disabled" : ""}>
       <span class="chp-food-icon">${f.icon}</span>
       <span class="chp-food-info">
-        <span class="chp-food-name">${f.name}</span>
-        <span class="chp-food-desc">${f.desc}</span>
+        <span class="chp-food-name">${esc(f.name)}</span>
+        <span class="chp-food-desc">${esc(f.desc)}</span>
       </span>
       <span class="chp-food-cost">🪙 ${f.cost}</span>
     </button>`).join("");
@@ -365,7 +285,6 @@ function openFoodModal(){
       <button type="button" class="chp-modal-close" id="chp-food-close">閉じる</button>
     </div>`;
   document.body.appendChild(ov);
-  // モーダル内をスワイプしても背面のページがスクロールしないようにする
   ov.addEventListener("touchmove", (e) => {
     const list = ov.querySelector(".chp-food-list");
     if(!list || !list.contains(e.target) || list.scrollHeight <= list.clientHeight) e.preventDefault();
@@ -373,7 +292,6 @@ function openFoodModal(){
   ov.querySelector("#chp-food-close").onclick = () => { playTapSound(); closeChappyModal(ov); };
   ov.addEventListener("click", (e) => { if(e.target === ov) closeChappyModal(ov); });
   ov.querySelectorAll("[data-food]").forEach(b => b.onclick = () => {
-    markInteraction();
     const r = chappyFeed(b.dataset.food);
     const note = ov.querySelector("#chp-food-note");
     if(!r.ok){ if(note) note.textContent = r.msg; return; }
@@ -390,11 +308,49 @@ function openFoodModal(){
     setFaceHappy(2200);
     spawnFx("💗", 2);
     showBubble(pickLine("eat"));
+    chappyLifeInterrupt(2500);
     refreshStatsUI();
   });
 }
 
-/* ---- 設定モーダル（ホーム画面へのミニ表示ON/OFF） ---- */
+function openCareModal(){
+  const ov = document.createElement("div");
+  ov.className = "modal-ov";
+  ov.innerHTML = `
+    <div class="modal chp-modal">
+      <div class="chp-modal-title">🫧 お世話をする</div>
+      <div class="chp-modal-coins">お世話は無料。1日12回まで、ちいさなごほうびコインがもらえます。</div>
+      <div class="chp-food-list">
+        ${CHAPPY_CARES.map(c => `
+          <button type="button" class="chp-food-row" data-care="${c.key}">
+            <span class="chp-food-icon">${c.icon}</span>
+            <span class="chp-food-info">
+              <span class="chp-food-name">${esc(c.name)}</span>
+              <span class="chp-food-desc">${esc(c.desc)}</span>
+            </span>
+          </button>`).join("")}
+      </div>
+      <div class="chp-modal-note" id="chp-care-note"></div>
+      <button type="button" class="chp-modal-close" id="chp-care-close">閉じる</button>
+    </div>`;
+  document.body.appendChild(ov);
+  ov.querySelector("#chp-care-close").onclick = () => { playTapSound(); closeChappyModal(ov); };
+  ov.addEventListener("click", (e) => { if(e.target === ov) closeChappyModal(ov); });
+  ov.querySelectorAll("[data-care]").forEach(b => b.onclick = () => {
+    playTapSound();
+    const r = chappyCare(b.dataset.care);
+    if(!r.ok) return;
+    const note = ov.querySelector("#chp-care-note");
+    if(note) note.textContent = `${r.care.name}をしました！${r.coins ? `（🪙+${r.coins}）` : ""}`;
+    playCharAnim(r.care.anim, 1000);
+    setFaceHappy(1900);
+    spawnFx("✨", 3);
+    showBubble(pickLine(r.care.line));
+    chappyLifeInterrupt(2200);
+    refreshStatsUI();
+  });
+}
+
 function openChappySettingsModal(){
   const st = getChappy();
   const ov = document.createElement("div");
@@ -407,34 +363,101 @@ function openChappySettingsModal(){
         <input type="checkbox" id="chp-home-toggle" ${st.homeWidget ? "checked" : ""}>
         <span class="chp-toggle-ui" aria-hidden="true"></span>
       </label>
-      <div class="chp-modal-note">OFFにすると、ホーム画面のお天気カードにまるチャピが表示されなくなります。育成データはそのまま残ります。</div>
+      <label class="chp-toggle-row">
+        <span>BGM・環境音を鳴らす</span>
+        <input type="checkbox" id="chp-bgm-toggle" ${st.bgm ? "checked" : ""}>
+        <span class="chp-toggle-ui" aria-hidden="true"></span>
+      </label>
+      <div class="chp-modal-note">
+        BGMは時間帯・天気・季節イベントで変わります。この画面を離れると自動で止まります。<br>
+        ホーム表示をOFFにしても、育成データはそのまま残ります。
+      </div>
       <button type="button" class="chp-modal-close" id="chp-settings-close">閉じる</button>
     </div>`;
   document.body.appendChild(ov);
-  ov.querySelector("#chp-home-toggle").onchange = (e) => {
-    setChappyHomeWidgetVisible(e.target.checked);
+  ov.querySelector("#chp-home-toggle").onchange = (e) => setChappyHomeWidgetVisible(e.target.checked);
+  ov.querySelector("#chp-bgm-toggle").onchange = (e) => {
+    setChappyBgm(e.target.checked);
+    if(e.target.checked) startAudio(); else chappyAudioStop();
   };
   ov.querySelector("#chp-settings-close").onclick = () => { playTapSound(); closeChappyModal(ov); };
   ov.addEventListener("click", (e) => { if(e.target === ov) closeChappyModal(ov); });
 }
 
-/* ---- 操作ボタン（未実装のものは「準備中」バッジ付きで明示する） ---- */
+/* =========================================================================
+   BGM（⑭）：時間帯・天気・イベントに合わせて切り替える
+   ========================================================================= */
+function audioProfile(){
+  return chappyAudioProfileFor({
+    slot: chappyTimeSlot(),
+    weather: lastWeatherKind,
+    event: chappyCurrentEvent(),
+  });
+}
+
+function startAudio(){
+  if(!isChappyBgmOn()) return;
+  chappyAudioStart(audioProfile());
+  clearInterval(audioTimer);
+  // 時間帯がまたいだときだけ静かに切り替える
+  audioTimer = setInterval(() => {
+    if(!chappyAudioIsPlaying()) return;
+    chappyAudioSwitch(audioProfile());
+  }, 60000);
+}
+
+function stopAudio(){
+  clearInterval(audioTimer); audioTimer = null;
+  chappyAudioStop();
+}
+
+/* =========================================================================
+   画面を離れたときの後片付け（生活エンジン・BGM・タイマー）
+   ========================================================================= */
+function watchTeardown(){
+  if(teardownObserver) teardownObserver.disconnect();
+  teardownObserver = new MutationObserver(() => {
+    if(document.getElementById("chp-room")) return;
+    stopChappyLife();
+    stopAudio();
+    clearTimeout(bubbleTimer);
+    teardownObserver.disconnect();
+    teardownObserver = null;
+  });
+  teardownObserver.observe(app, { childList: true, subtree: false });
+}
+
+/* =========================================================================
+   操作ボタン
+   ========================================================================= */
 const CHAPPY_ACTIONS = [
-  { key: "food",    label: "ごはん",   icon: "🍚", ready: true },
-  { key: "pet",     label: "なでる",   icon: "🤗", ready: true },
-  { key: "dressup", label: "着替え",   icon: "👕", ready: false },
-  { key: "quest",   label: "冒険",     icon: "🎒", ready: false },
-  { key: "room",    label: "部屋編集", icon: "🛋️", ready: false },
-  { key: "zukan",   label: "図鑑",     icon: "📖", ready: false },
+  { key: "food",    label: "ごはん",   icon: "🍚" },
+  { key: "pet",     label: "なでる",   icon: "🤗" },
+  { key: "care",    label: "お世話",   icon: "🫧" },
+  { key: "dressup", label: "着せ替え", icon: "👕" },
+  { key: "room",    label: "模様がえ", icon: "🛋️" },
+  { key: "shop",    label: "ショップ", icon: "🛍️" },
+  { key: "gacha",   label: "ガチャ",   icon: "🎁" },
+  { key: "mission", label: "ミッション", icon: "🎯", badge: true },
+  { key: "book",    label: "図鑑",     icon: "📖" },
 ];
 
+/* =========================================================================
+   画面本体
+   ========================================================================= */
 export function renderChappyScreen(){
   const st = getChappy();
   const stage = chappyStageForXp(st.xp);
   const nextStage = chappyNextStage(st.xp);
   const info = chappyLevelInfo(st.xp);
-  const charCls = ["chp-char", ...moodClasses(st)];
-  const roomTime = isNight() ? "night" : (hourNow() >= 17 ? "evening" : "day");
+  const stats = chappyStats(st);
+  const eq = chappyEquipped();
+  const ev = chappyCurrentEvent();
+  const ms = chappyMissionSummary();
+  const roomInfo = chappyRoomInfo();
+  if(!chappyFloorUnlocked(viewFloor)) viewFloor = "f1";
+  const floors = CHAPPY_FLOORS.filter(f => chappyFloorUnlocked(f.key));
+  const charCls = ["chp-char", ...moodClasses(stats)];
 
   app.innerHTML = `
     <div class="chp-screen">
@@ -443,7 +466,7 @@ export function renderChappyScreen(){
       <div class="chp-head">
         <div class="chp-head-name">
           ${CHAPPY_NAME}
-          <span class="chp-stage-badge">${stage.name}</span>
+          <span class="chp-stage-badge">${esc(stage.name)}</span>
         </div>
         <div class="chp-head-right">
           <span class="chp-head-pill" id="chp-head-lv">Lv.${info.level}</span>
@@ -452,21 +475,31 @@ export function renderChappyScreen(){
         </div>
       </div>
 
-      <div class="chp-room chp-room--${roomTime}" id="chp-room">
-        <div class="chp-room-window"></div>
-        <div class="chp-room-shelf"></div>
-        <div class="chp-room-rug"></div>
+      ${ev ? `<div class="chp-event-banner">${ev.icon} <b>${esc(ev.name)}</b> かいさい中！ ${esc(ev.line)}</div>` : ""}
+
+      ${floors.length > 1 ? `
+        <div class="chp-floor-tabs chp-floor-tabs--view">
+          ${floors.map(f => `<button type="button" class="chp-floor-tab${f.key === viewFloor ? " chp-floor-tab--on" : ""}"
+            data-chp-viewfloor="${f.key}"><span>${f.icon}</span>${esc(f.label)}</button>`).join("")}
+        </div>` : ""}
+
+      <div class="${chappyRoomClass(viewFloor)}" style="${chappyRoomStyleAttr(viewFloor)}" id="chp-room">
+        ${chappyRoomLayersHTML(viewFloor)}
         <div class="chp-bubble" id="chp-bubble" hidden></div>
         <button type="button" class="${charCls.join(" ")}" id="chp-char" aria-label="${CHAPPY_NAME}をなでる">
-          ${chappySVG(stage.key)}
+          ${chappySVG(stage.key, eq)}
+          <span class="chp-act-badge" aria-hidden="true"></span>
         </button>
         <div class="chp-fx" id="chp-fx" aria-hidden="true"></div>
+        <div class="chp-room-meta">
+          <span>🏡 おうち Lv.${roomInfo.level}</span>
+          <span>🪑 ${roomInfo.score.count}こ</span>
+          <span>✨ おしゃれ ${chappyStyleScore(st)}</span>
+        </div>
       </div>
 
       <div class="chp-card chp-stats">
-        ${statRowHTML("genki", "元気", "⚡", st.genki)}
-        ${statRowHTML("hunger", "お腹", "🍙", st.hunger)}
-        ${statRowHTML("bond", "なかよし度", "💗", st.bond)}
+        ${CHAPPY_CARE_STATS.map(def => statRowHTML(def, stats[def.key])).join("")}
         <div class="chp-xp-row">
           <div class="chp-xp-head">
             <span class="chp-stat-lab">🌟 経験値</span>
@@ -474,16 +507,27 @@ export function renderChappyScreen(){
           </div>
           <div class="chp-stat-track chp-xp-track"><div class="chp-stat-fill chp-xp-fill" style="width:${info.pct}%"></div></div>
           <div class="chp-xp-remain" id="chp-xp-remain">つぎのレベルまで あと ${info.need - info.cur} XP</div>
-          ${nextStage ? `<div class="chp-xp-stage">つぎの成長「${nextStage.name}」まで あと ${Math.max(0, nextStage.minXp - st.xp)} XP</div>` : `<div class="chp-xp-stage">りっぱに成長しました！</div>`}
+          ${nextStage
+            ? `<div class="chp-xp-stage">つぎの成長「${esc(nextStage.name)}」まで あと ${Math.max(0, nextStage.minXp - st.xp).toLocaleString()} XP</div>`
+            : `<div class="chp-xp-stage">きわめし者になりました！</div>`}
         </div>
       </div>
 
+      <button type="button" class="chp-card chp-mission-strip" id="chp-mission-strip">
+        <span class="chp-mission-strip-ico">🎯</span>
+        <span class="chp-mission-strip-main">
+          <span class="chp-mission-strip-title">今日のミッション ${ms.done} / ${ms.total} 達成</span>
+          <span class="chp-mission-strip-sub">${ms.claimable > 0 ? `${ms.claimable}件のごほうびが受け取れます！` : "学習・タスク・ニュースで進みます"}</span>
+        </span>
+        <span class="chp-mission-strip-go">›</span>
+      </button>
+
       <div class="chp-card chp-actions">
         ${CHAPPY_ACTIONS.map(a => `
-          <button type="button" class="chp-action${a.ready ? "" : " chp-action--soon"}" data-chp-action="${a.key}">
+          <button type="button" class="chp-action" data-chp-action="${a.key}">
             <span class="chp-action-icon">${a.icon}</span>
-            <span class="chp-action-label">${a.label}</span>
-            ${a.ready ? "" : `<span class="chp-action-soon">準備中</span>`}
+            <span class="chp-action-label">${esc(a.label)}</span>
+            ${a.badge ? `<span class="chp-action-badge" id="chp-mission-badge"${ms.claimable > 0 ? "" : " hidden"}>${ms.claimable || ""}</span>` : ""}
           </button>`).join("")}
       </div>
 
@@ -492,38 +536,124 @@ export function renderChappyScreen(){
       </div>
     </div>`;
 
-  app.querySelectorAll("[data-go]").forEach(b => b.onclick = () => go(b.dataset.go));
-  document.getElementById("chp-settings").onclick = () => { playTapSound(); openChappySettingsModal(); };
+  bindScreen();
 
-  // キャラ本体：タップ＝なでる。スワイプでなでる操作にも対応（pointermove）
-  const char = document.getElementById("chp-char");
-  char.onclick = doPet;
-  let strokeArmed = false;
-  char.addEventListener("pointerdown", () => { strokeArmed = true; });
-  char.addEventListener("pointermove", (e) => {
-    if(!strokeArmed || e.pressure === 0) return;
-    doPet(); // 内部で400msのスロットルがかかる
+  // あいさつの吹き出し（時間帯・季節・お世話状況で出し分け）
+  setTimeout(() => showBubble(greetLine(stats)), 500);
+
+  // チャッピーが自分で生活しはじめる
+  startChappyLife({
+    roomId: "chp-room",
+    charId: "chp-char",
+    floorKey: () => viewFloor,
+    placed: () => chappyPlacedOn(viewFloor),
+    slotPos: (slotId) => chappySlotPos(viewFloor, slotId),
+    onBubble: (text) => showBubble(text),
+    onActivity: (act) => {
+      const badge = document.querySelector(".chp-act-badge");
+      if(badge) badge.textContent = act.icon || "";
+    },
+    onSecret: (secret) => handleSecret(secret),
   });
-  const disarm = () => { strokeArmed = false; };
-  char.addEventListener("pointerup", disarm);
-  char.addEventListener("pointercancel", disarm);
-  char.addEventListener("pointerleave", disarm);
+
+  watchTeardown();
+  if(isChappyBgmOn()) startAudio();
+  window.scrollTo(0, 0);
+}
+
+function greetLine(stats){
+  if(stats.hunger <= 25) return pickLine("hungry");
+  const ev = chappyCurrentEvent();
+  if(ev && Math.random() < 0.5) return ev.line;
+  const st = getChappy();
+  if(st.streak >= 3 && Math.random() < 0.3) return pickLine("streak");
+  const slot = chappyTimeSlot();
+  if(slot === "night") return pickLine("night");
+  if(slot === "morning") return pickLine("morning");
+  return Math.random() < 0.5 ? pickLine("greet") : chappyPickLine(null);
+}
+
+function statRowHTML(def, value){
+  const pct = Math.round(value / CHAPPY_STAT_MAX * 100);
+  return `
+    <div class="chp-stat-row chp-stat-${def.key}">
+      <span class="chp-stat-lab">${def.icon} ${esc(def.label)}</span>
+      <div class="chp-stat-track"><div class="chp-stat-fill chp-fill-${def.color}" style="width:${pct}%"></div></div>
+      <span class="chp-stat-val" id="chp-val-${def.key}">${value}</span>
+    </div>`;
+}
+
+/* ---- 隠しイベントをタップしたとき ---- */
+function handleSecret(secret){
+  const r = chappyClaimSecret(secret.id);
+  if(!r.ok) return;
+  chappySfx("rare");
+  celebrate("sparkle");
+  spawnFx(secret.icon, 6);
+  const parts = [];
+  if(r.gained.coins) parts.push(`🪙+${r.gained.coins}`);
+  if(r.gained.xp) parts.push(`🌟+${r.gained.xp}`);
+  Object.keys(r.gained.tickets).forEach(k => parts.push(`🎫+${r.gained.tickets[k]}`));
+  showBubble(`${secret.icon} ${secret.msg}${parts.length ? `（${parts.join(" ")}）` : ""}`);
+  refreshStatsUI();
+}
+
+/* ---- 画面内のイベント配線 ---- */
+function bindScreen(){
+  app.querySelectorAll("[data-go]").forEach(b => b.onclick = () => go(b.dataset.go));
+  const gear = document.getElementById("chp-settings");
+  if(gear) gear.onclick = () => { playTapSound(); openChappySettingsModal(); };
+
+  app.querySelectorAll("[data-chp-viewfloor]").forEach(b => b.onclick = () => {
+    playTapSound();
+    viewFloor = b.dataset.chpViewfloor;
+    renderChappyScreen();
+  });
+
+  const strip = document.getElementById("chp-mission-strip");
+  if(strip) strip.onclick = () => { playTapSound(); openChappyMissions(() => refreshAfterModal()); };
+
+  // キャラ本体：タップ＝なでる。スワイプでもなでられる
+  const char = document.getElementById("chp-char");
+  if(char){
+    char.onclick = doPet;
+    let strokeArmed = false;
+    char.addEventListener("pointerdown", () => { strokeArmed = true; });
+    char.addEventListener("pointermove", (e) => {
+      if(!strokeArmed || e.pressure === 0) return;
+      doPet(); // 内部で400msのスロットルがかかる
+    });
+    const disarm = () => { strokeArmed = false; };
+    char.addEventListener("pointerup", disarm);
+    char.addEventListener("pointercancel", disarm);
+    char.addEventListener("pointerleave", disarm);
+  }
 
   app.querySelectorAll("[data-chp-action]").forEach(b => b.onclick = () => {
-    markInteraction();
     const key = b.dataset.chpAction;
-    if(key === "food"){ playTapSound(); openFoodModal(); return; }
     if(key === "pet"){ doPet(); return; }
-    // 未実装機能：準備中である旨を吹き出しで伝える（何も起きない無反応ボタンにしない）
     playTapSound();
-    showBubble(pickLine("preparing"));
+    if(key === "food") return openFoodModal();
+    if(key === "care") return openCareModal();
+    if(key === "dressup") return openChappyCloset(() => renderChappyScreen());
+    if(key === "room") return openChappyRoomEditor(() => renderChappyScreen());
+    if(key === "shop") return openChappyShop(() => refreshAfterModal());
+    if(key === "gacha") return openChappyGacha(() => refreshAfterModal());
+    if(key === "mission") return openChappyMissions(() => refreshAfterModal());
+    if(key === "book") return openChappyBook(() => refreshAfterModal());
   });
+}
 
-  // あいさつの吹き出し（時間帯・空腹で出し分け）
-  const greetKind = st.hunger <= 25 ? "hungry" : (isNight() ? "night" : (isMorning() ? "morning" : "greet"));
-  setTimeout(() => showBubble(pickLine(greetKind)), 500);
-
-  lastInteractionTs = Date.now();
-  startIdleWatch();
-  window.scrollTo(0, 0);
+// モーダルを閉じたあと：コイン等の表示だけ更新する（部屋の作り直しは不要）
+function refreshAfterModal(){
+  if(!document.getElementById("chp-room")) return;
+  refreshStatsUI();
+  const strip = document.getElementById("chp-mission-strip");
+  if(strip){
+    const ms = chappyMissionSummary();
+    const title = strip.querySelector(".chp-mission-strip-title");
+    const sub = strip.querySelector(".chp-mission-strip-sub");
+    if(title) title.textContent = `今日のミッション ${ms.done} / ${ms.total} 達成`;
+    if(sub) sub.textContent = ms.claimable > 0 ? `${ms.claimable}件のごほうびが受け取れます！` : "学習・タスク・ニュースで進みます";
+  }
 }

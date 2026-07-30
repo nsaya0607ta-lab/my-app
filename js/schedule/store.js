@@ -238,6 +238,35 @@ export function clearOccurrenceOverride(id, occDateKey){
   upsertSchedule({ ...s, overrides, exdates, syncStatus: s.googleEventId ? "pending" : s.syncStatus });
 }
 
+/* ================= 予定の「完了」記録 =================
+   予定そのもの（Schedule）には手を入れず、独立したキーで
+   「その回を完了にした」だけを持つ。Googleカレンダー側には送らないので、
+   同期の差分計算や競合判定には一切影響しない。
+   キーは `{scheduleId}@{YYYY-MM-DD}`。古い記録は自動で捨てる          */
+const SCHED_DONE_KEY = "sched_done_v1";
+const DONE_TTL_DAYS = 120;
+
+function loadDoneMap(){
+  const raw = readJSON(SCHED_DONE_KEY, {});
+  return (raw && typeof raw === "object" && !Array.isArray(raw)) ? raw : {};
+}
+
+export function isOccurrenceDone(scheduleId, dateKey){
+  return !!loadDoneMap()[`${scheduleId}@${dateKey}`];
+}
+
+export function setOccurrenceDone(scheduleId, dateKey, done){
+  const map = loadDoneMap();
+  const key = `${scheduleId}@${dateKey}`;
+  if(done) map[key] = 1; else delete map[key];
+  const cutoff = addDaysKey(todayKey(), -DONE_TTL_DAYS);
+  Object.keys(map).forEach(k => {
+    const d = k.split("@")[1] || "";
+    if(d && d < cutoff) delete map[k];
+  });
+  writeJSON(SCHED_DONE_KEY, map);
+}
+
 /* ================= タスク（Task）=================
    仕様どおり時間を持たないチェックリスト。repeatType で毎日／平日／毎週の
    繰り返しに対応し、繰り返しタスクの完了は日付ごと（doneDates）に記録する */

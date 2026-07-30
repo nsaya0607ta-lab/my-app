@@ -14,6 +14,7 @@ import {
 import { REMINDER_PRESETS, defaultReminders, reminderLabel } from './reminders.js';
 import { resolveConflict } from './gsync.js';
 import { SYNC_STATUS_LABEL, clearOccurrenceOverride, deleteOccurrence, deleteSchedule, getSchedule, loadSettings, setOccurrenceOverride, upsertSchedule } from './store.js';
+import { chappyOnCalendarAdded } from '../chappy.js';
 import { WEEKDAYS_JA, addDaysKey, datePartOf, esc, formatDateLabel, genId, timePartOf, todayKey } from './util.js';
 
 // 予定に付けられる色。既存アプリの淡いブルー基調を壊さないよう、
@@ -294,6 +295,9 @@ export function openScheduleEditor(opts){
       // 全体を編集したときは、この回だけの一時変更は残さない
       overrides: isRecurringEdit && draft.scope === "all" ? {} : (existing ? existing.overrides : {}),
     });
+
+    // 🏠 新しく予定を登録したら、チャッピーにXP／コイン（1日5件まで・同じ予定は1回だけ）
+    if(!existing) chappyOnCalendarAdded(draft.id);
 
     closeEditor();
     if(options.onSaved) options.onSaved();

@@ -3,7 +3,7 @@ import { DC_PHASES, IMP_POINTS, L, OVERALL_STEP } from './data/constants.js';
 import { SKIN_DATA } from './data/skins.js';
 import { gcalLoadAuthorName, go, loadGcalStore, loadGcalTodoStore, loadPortfolio, render } from './render.js';
 import { S, state } from './state.js';
-import { chappyOnLinuxCorrect } from './chappy.js';
+import { chappyOnStudySession } from './chappy.js';
 import { loadCmdStats, recordCmdResults, saveCmdStats, updateAiScores } from './reviewAI.js';
 import { mpExportRaw } from './mindpalette.js';
 import { scenarioModeExportRaw } from './playground/scenarios/progressStore.js';
@@ -347,10 +347,16 @@ export function finish(){
   const coinGain = coinReward(runMode, correct, score);
   S.coins = (S.coins||0) + coinGain;
   saveCoins(S.coins);
-  // 🏠 Linux（LPIC系資格）の問題に正解した分だけ、まるチャピにXPを付与する
-  // （1日上限つき。5問正解ごとのコインもchappy.js側でまとめて処理される）
+  /* 🏠 現実の学習をそのままチャッピーの成長へ反映する（1日上限つき）。
+     ・LPIC系は従来どおり正解数ぶんのXPとコイン
+     ・資格を問わず「やりきった1回」と実際にかけた学習時間（分）にもXPが付く
+     ・ミッション（30分学習・LPIC10問正解 等）の進捗もここから進む */
   const certMeta = certById(S.cert);
-  if(certMeta && certMeta.vendor === "lpic" && correct > 0) chappyOnLinuxCorrect(correct);
+  const studyMinutes = Math.round((S.qTimes || []).reduce((a, t) => a + (Number(t) || 0), 0) / 60);
+  chappyOnStudySession({
+    vendor: certMeta && certMeta.vendor, certId: S.cert,
+    correct, minutes: studyMinutes,
+  });
   const unlocked = TIERS.filter(t=>t.bp>prevBp && t.bp<=newBp).map(t=>t.icon+" "+t.name);
   const modeLabel = (runMode==="review" ? "復習" : runMode==="practice" ? (S.commandCmd ? `${S.commandCmd}コマンド演習` : S.markedRun ? "後で見直す演習" : "演習") : "試験") + S.deck.length + "問";
   const entry = {id:Date.now(), date:new Date().toISOString(), modeLabel,

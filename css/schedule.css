@@ -95,6 +95,15 @@
 .sched-home-list{display:flex;flex-direction:column;}
 .sched-home-list .sched-row + .sched-row{margin-top:6px;}
 
+/* 予定の完了チェック（チェックすると🏠チャッピーの経験値・元気が上がる）。
+   チェック欄は予定行の外に置き、行そのもののタップ＝編集を邪魔しない */
+.sched-occ-line{display:flex;align-items:center;gap:8px;}
+.sched-occ-line + .sched-occ-line{margin-top:6px;}
+.sched-occ-line .sched-row{flex:1;min-width:0;}
+.sched-occ-check{flex:none;width:17px;height:17px;accent-color:var(--home-blue,var(--accent));cursor:pointer;}
+.sched-occ-line.done .sched-row{opacity:.55;}
+.sched-occ-line.done .sched-row-title{text-decoration:line-through;color:var(--home-muted,var(--muted));}
+
 .sched-add-btn{width:100%;margin-top:9px;padding:9px 0;border-radius:12px;
   border:1px dashed var(--home-badge-border,var(--line));
   background:none;color:var(--home-muted,var(--muted));font-size:12px;font-weight:700;cursor:pointer;}

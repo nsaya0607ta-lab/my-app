@@ -23,6 +23,7 @@ import {
 } from './store.js';
 import { untilToGoogle } from './recurrence.js';
 import { addDaysKey, datePartOf, dateKeyOf, nowISO, pad2, timePartOf, todayKey } from './util.js';
+import { chappyOnGoogleSyncDone } from '../chappy.js';
 
 // 初回（syncTokenが無いとき）に取得する期間。過去3ヶ月〜先12ヶ月。
 // これ以降は差分同期になるので、範囲を広げても通信量は増えない
@@ -502,6 +503,8 @@ export async function syncNow(opts){
     // 「さらにGoogleへ反映する」予約をしない（同期の無限ループを防ぐ）
     saveSchedules(list, { reason: "sync" });
     saveSyncState({ lastSyncAt: nowISO(), lastError: "" });
+    // 🏠 Googleカレンダーと同期できた日は、チャッピーにボーナス（1日1回だけ）
+    chappyOnGoogleSyncDone();
   }catch(e){
     result.error = String(e.message || e);
     saveSyncState({ lastError: result.error });
