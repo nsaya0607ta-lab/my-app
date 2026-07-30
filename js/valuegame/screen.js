@@ -42,6 +42,10 @@ import {
   vgOnlineMyNumber, vgOnlineFetchMyNumber, vgOnlineReveal, vgOnlineTallyVotes,
   vgOnlinePendingInvite, vgOnlineClearInvite,
 } from './online.js';
+import {
+  VOICE_MAX_PEERS, vgVoiceJoin, vgVoiceLeave, vgVoiceState,
+  vgVoiceSyncPeers, vgVoiceToggleMic, vgVoiceToggleMute,
+} from './voice.js';
 
 /* ---- 表示中のビュー（このモジュール内で保持する） ---- */
 let view = "lobby";   // lobby | rules | solo-setup | game | result | records | online-*
@@ -100,7 +104,9 @@ function wirePeekButton(btn, getNumber){
 export function valueGameHandleIdentityChange(){
   const changed = storeIdentityChange();
   if(changed){
-    // ユーザーが切り替わったら、前の人のゲームを引き継がない
+    // ユーザーが切り替わったら、前の人のゲームを引き継がない。
+    // マイクも必ず解放する（別アカウントに音声が引き継がれないように）
+    vgVoiceLeave();
     session = null;
     finalResult = null;
     view = "lobby";
@@ -108,6 +114,14 @@ export function valueGameHandleIdentityChange(){
     stopTimer();
   }
   return changed;
+}
+
+/* ゲーム画面から他の画面へ移ったときにマイクを解放する。
+   「ボイスチャットに入ったまま別の画面に行って、マイクが生きたままだった」
+   という状態を作らないための保険（render()から毎回呼ばれる軽量チェック） */
+export function valueGameOnScreenLeft(){
+  stopTimer();
+  vgVoiceLeave();
 }
 
 /* =========================================================================
@@ -1219,14 +1233,16 @@ function paintOnlineLobby(){
         <button type="button" class="vg-secondary" id="vg-lobby-rules">ルールを確認する</button>
         <button type="button" class="vg-secondary" id="vg-lobby-chat">チャットを開く</button>
       </div>
-      ${room.useVoice ? `<p class="vg-note">この部屋はボイスチャットを「使う」設定です。アプリ内の音声通話機能は未対応のため、通話アプリなどをご利用ください。</p>` : ""}
+      ${room.useVoice ? voicePanelHTML(players) : ""}
       <div class="vg-error" id="vg-lobby-error" hidden></div>
     </div>`;
 
   document.getElementById("vg-leave").onclick = async () => {
+    vgVoiceLeave();   // 先に音声を切ってから退出する
     await vgOnlineLeave();
     switchView("lobby");
   };
+  if(room.useVoice) wireVoicePanel(players);
   document.getElementById("vg-copy-code").onclick = () => copyText(room.code || "");
   document.getElementById("vg-share").onclick = () => shareRoom(room);
   document.getElementById("vg-lobby-rules").onclick = () => openRulesSheet();
@@ -1246,6 +1262,116 @@ function paintOnlineLobby(){
 }
 
 /* ルームの状態が届くたびに呼ばれる。待機→対戦→終了の画面遷移もここで行う */
+/* =========================================================================
+   🎤 ボイスチャット
+   ルーム設定で「使う」にした部屋でだけ表示する。参加は任意で、
+   参加しなくてもゲームは普通に遊べる（テキストチャットは常に使える）。
+   ========================================================================= */
+function voicePanelHTML(players){
+  const v = vgVoiceState();
+  const o = vgOnlineState();
+  const others = players.filter(p => p.id !== o.myId);
+  const tooMany = players.length > VOICE_MAX_PEERS;
+  return `
+    <div class="vg-card vg-voice">
+      <div class="vg-card-title">
+        ボイスチャット
+        ${v.active ? `<span class="vg-voice-live">接続中</span>` : ""}
+      </div>
+      ${tooMany
+        ? `<div class="vg-note">この人数（${players.length}人）ではボイスチャットを使えません。${VOICE_MAX_PEERS}人までの部屋でご利用ください。テキストチャットはいつでも使えます。</div>`
+        : !v.active
+          ? `<button type="button" class="vg-secondary" id="vg-voice-join">🎤 ボイスチャットに参加する</button>
+             <p class="vg-note">参加するとブラウザがマイクの使用許可を尋ねます。断った場合は「聞くだけ」で参加できます。音声は参加者どうしで直接やり取りし、保存はされません。</p>`
+          : `
+            <div class="vg-voice-controls">
+              <button type="button" class="vg-voice-btn${v.micOn ? " on" : ""}" id="vg-voice-mic"${v.listenOnly ? " disabled" : ""}>
+                ${v.listenOnly ? "🔇 マイクなし" : v.micOn ? "🎤 マイク ON" : "🎤 マイク OFF"}
+              </button>
+              <button type="button" class="vg-voice-btn vg-voice-btn--leave" id="vg-voice-leave">退出</button>
+            </div>
+            ${others.length ? `
+              <div class="vg-voice-peers">
+                ${others.map(p => {
+                  const st = v.peers.find(x => x.uid === p.id);
+                  return `
+                    <div class="vg-voice-peer${st && st.speaking ? " speaking" : ""}">
+                      <span class="vg-voice-name">${esc(p.name)}</span>
+                      <span class="vg-voice-state">${voiceStateLabel(st)}</span>
+                      <button type="button" class="vg-voice-mute${st && st.muted ? " on" : ""}" data-voice-mute="${esc(p.id)}"
+                              aria-label="${st && st.muted ? "この人のミュートを解除" : "この人をミュート"}">${st && st.muted ? "🔇" : "🔊"}</button>
+                    </div>`;
+                }).join("")}
+              </div>` : `<div class="vg-note">ほかの参加者を待っています。</div>`}
+            ${v.listenOnly ? `<p class="vg-note">マイクを使えないため、聞くだけの参加になっています。</p>` : ""}`}
+      ${v.error ? `<p class="vg-note vg-voice-warn">${esc(v.error)}</p>` : ""}
+    </div>`;
+}
+
+/* ゲーム中は場所を取らない1行のバーで表示する。誰が話しているかが
+   分かるよう、話し中の人の名前が光る */
+function voiceBarHTML(players){
+  const v = vgVoiceState();
+  const o = vgOnlineState();
+  if(players.length > VOICE_MAX_PEERS) return "";
+  if(!v.active){
+    return `<button type="button" class="vg-voice-bar" id="vg-voice-join">🎤 ボイスチャットに参加する</button>`;
+  }
+  const others = players.filter(p => p.id !== o.myId);
+  return `
+    <div class="vg-voice-bar vg-voice-bar--on">
+      <button type="button" class="vg-voice-btn${v.micOn ? " on" : ""}" id="vg-voice-mic"${v.listenOnly ? " disabled" : ""}>
+        ${v.listenOnly ? "🔇" : v.micOn ? "🎤 ON" : "🎤 OFF"}
+      </button>
+      <span class="vg-voice-names">
+        ${others.map(p => {
+          const st = v.peers.find(x => x.uid === p.id);
+          return `<span class="vg-voice-chip${st && st.speaking ? " speaking" : ""}${st && st.muted ? " muted" : ""}">${esc(p.name)}</span>`;
+        }).join("")}
+      </span>
+      <button type="button" class="vg-voice-btn vg-voice-btn--leave" id="vg-voice-leave">切断</button>
+    </div>`;
+}
+
+function voiceStateLabel(st){
+  if(!st) return "未接続";
+  if(st.speaking) return "話し中";
+  if(st.state === "connected") return "接続済み";
+  if(st.state === "failed") return "つながらず";
+  return "接続中…";
+}
+
+function wireVoicePanel(players){
+  const o = vgOnlineState();
+  const join = document.getElementById("vg-voice-join");
+  if(join) join.onclick = async () => {
+    if(join.disabled) return;
+    join.disabled = true;
+    join.textContent = "接続中…";
+    const res = await vgVoiceJoin(o.roomId, players.map(p => p.id), onVoiceChange);
+    if(!res.ok){
+      showError("vg-lobby-error", res.message || "ボイスチャットに参加できませんでした。");
+      join.disabled = false;
+      join.textContent = "🎤 ボイスチャットに参加する";
+      return;
+    }
+    repaint();
+  };
+  const mic = document.getElementById("vg-voice-mic");
+  if(mic) mic.onclick = () => { vgVoiceToggleMic(); repaint(); };
+  const leave = document.getElementById("vg-voice-leave");
+  if(leave) leave.onclick = () => { vgVoiceLeave(); repaint(); };
+  app.querySelectorAll("[data-voice-mute]").forEach(b => b.onclick = () => {
+    vgVoiceToggleMute(b.dataset.voiceMute);
+    repaint();
+  });
+}
+
+// 音声の接続状態が変わったら、その画面を開いている間だけ描き直す
+function onVoiceChange(){
+  if(view === "online-lobby" || view === "online-game") repaint();
+}
+
 function onOnlineUpdate(){
   const o = vgOnlineState();
   const room = o.room;
@@ -1315,6 +1441,7 @@ function paintOnlineGame(){
 
       <div class="vg-center">
         ${spectating ? `<div class="vg-notice">観戦中です。数字は配られていません。</div>` : ""}
+        ${room.useVoice ? voiceBarHTML(players) : ""}
         ${room.phase === "reveal"
           ? onlineRevealHTML(room)
           : !allAnswered
@@ -1520,9 +1647,16 @@ function wireOnlineGame(room, players){
   const leave = document.getElementById("vg-online-leave");
   if(leave) leave.onclick = async () => {
     if(!confirm("ルームから退出しますか？")) return;
+    vgVoiceLeave();
     await vgOnlineLeave();
     switchView("lobby");
   };
+
+  if(room.useVoice){
+    wireVoicePanel(players);
+    // 参加者の入れ替わりに合わせて、音声の接続先も追従させる
+    vgVoiceSyncPeers(players.map(p => p.id));
+  }
 }
 
 /* オンラインのゲーム終了：戦績の記録とBPの受け取り（サーバー判定） */
@@ -1587,6 +1721,7 @@ async function finishOnlineGame(){
     newTitles: rec.newTitles,
     lastRows: (room.revealed && room.revealed.rows) || [],
   };
+  vgVoiceLeave();   // ゲームが終わったらマイクも必ず解放する
   await vgOnlineLeave();
   onlineFinishing = false;
   switchView("result");

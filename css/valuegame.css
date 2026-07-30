@@ -475,6 +475,67 @@
 .vg-room-sub{ font-size:10.5px; color:var(--muted); }
 .vg-room-count{ font-size:12px; font-weight:800; color:var(--accent); flex-shrink:0; }
 
+/* ================= 🎤 ボイスチャット ================= */
+.vg-voice-live{
+  font-size:9.5px; font-weight:800; color:var(--good);
+  background:rgba(22,163,74,.14); border-radius:6px; padding:2px 7px;
+}
+.vg-voice-controls{ display:flex; gap:8px; }
+.vg-voice-btn{
+  flex:1; border:1px solid var(--line); background:var(--bg); color:var(--text);
+  font-size:12px; font-weight:700; padding:9px 6px; border-radius:10px; cursor:pointer;
+  min-width:0; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+}
+.vg-voice-btn.on{ background:rgba(22,163,74,.13); border-color:rgba(22,163,74,.45); color:var(--good); }
+.vg-voice-btn:disabled{ opacity:.55; cursor:default; }
+.vg-voice-btn--leave{ flex:0 0 auto; padding-left:14px; padding-right:14px; color:var(--bad); }
+
+.vg-voice-peers{ display:flex; flex-direction:column; }
+.vg-voice-peer{
+  display:flex; align-items:center; gap:9px;
+  padding:7px 8px; border-bottom:1px solid var(--line);
+  border-radius:8px;
+}
+.vg-voice-peer:last-child{ border-bottom:none; }
+/* 話している人の枠がやわらかく光る */
+.vg-voice-peer.speaking{ background:rgba(99,102,241,.1); }
+.vg-voice-name{
+  flex:1; min-width:0; font-size:12.5px; color:var(--text);
+  overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
+}
+.vg-voice-peer.speaking .vg-voice-name{ font-weight:800; color:var(--accent); }
+.vg-voice-state{ font-size:10px; color:var(--muted); flex-shrink:0; }
+.vg-voice-mute{
+  flex-shrink:0; width:30px; height:26px; border-radius:8px;
+  border:1px solid var(--line); background:var(--bg);
+  font-size:12px; cursor:pointer; line-height:1;
+}
+.vg-voice-mute.on{ background:rgba(239,68,68,.1); border-color:rgba(239,68,68,.4); }
+.vg-voice-warn{ color:var(--bad) !important; }
+
+/* ゲーム中の1行バー */
+.vg-voice-bar{
+  display:flex; align-items:center; gap:7px; width:100%;
+  border:1px solid var(--line); background:var(--surface);
+  border-radius:11px; padding:7px 9px; cursor:pointer;
+  font-size:12px; font-weight:700; color:var(--text);
+  justify-content:center;
+}
+.vg-voice-bar--on{ cursor:default; justify-content:flex-start; }
+.vg-voice-bar .vg-voice-btn{ flex:0 0 auto; padding:6px 10px; font-size:11px; }
+.vg-voice-names{
+  flex:1; min-width:0; display:flex; gap:5px; overflow-x:auto;
+  scrollbar-width:none;
+}
+.vg-voice-names::-webkit-scrollbar{ display:none; }
+.vg-voice-chip{
+  flex-shrink:0; font-size:10.5px; color:var(--muted);
+  background:rgba(148,163,184,.16); border-radius:999px; padding:3px 9px;
+  transition:background .2s ease, color .2s ease;
+}
+.vg-voice-chip.speaking{ background:rgba(99,102,241,.2); color:var(--accent); font-weight:800; }
+.vg-voice-chip.muted{ opacity:.5; text-decoration:line-through; }
+
 /* ---- ゲーム内ランキング ---- */
 .vg-rank-row{
   display:flex; align-items:center; gap:10px;

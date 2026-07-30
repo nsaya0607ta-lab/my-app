@@ -57,7 +57,7 @@ import { renderBpScreen } from './bp/screen.js';
 import { bpHandleIdentityChange, bpOnNewsRead } from './bp/store.js';
 import { bpDailyCheck, bpDailyResetToken } from './bp/daily.js';
 import './bp/toast.js';
-import { renderValueGameScreen, valueGameHandleIdentityChange } from './valuegame/screen.js';
+import { renderValueGameScreen, valueGameHandleIdentityChange, valueGameOnScreenLeft } from './valuegame/screen.js';
 
 export const app = document.getElementById("app");
 
@@ -77,6 +77,9 @@ const DIRX_SCREENS = ["lpic-dir-explorer", "lpic-dirx-missions", "lpic-dirx-inci
 const DIRX_SCENARIOS_ORDER = DIRX_SCENARIOS.map(s=>s.id);
 
 export function go(s){
+  // 🃏 価値観ゲームから別の画面へ移るときは、制限時間のタイマーと
+  // ボイスチャットのマイクを必ず解放する
+  if(S.screen === "valuegame" && s !== "valuegame") valueGameOnScreenLeft();
   if(s === "certs" || s === "lpic-certs" || s === "select") S.cert = null;
   // ホームへ戻ったら、Gemini相談画面の「戻る」先の記憶もリセットする
   // （次にGeminiへ入るのがFABなど別の入口であれば、通常どおりホームへ戻せるように）

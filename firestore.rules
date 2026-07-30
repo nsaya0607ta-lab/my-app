@@ -52,6 +52,18 @@ service cloud.firestore {
       allow create: if request.auth != null
                     && request.resource.data.hostId == request.auth.uid;
       allow update, delete: if request.auth != null;
+
+      // 🎤 ボイスチャットの接続用の合図（SDP・ICE候補）。
+      // 音声そのものは参加者どうしが直接やり取りするので、ここを通らない。
+      // 読めるのは宛先本人だけ。書き込みは差出人が自分であることを求める。
+      // 処理した合図はすぐ削除するため、削除は誰でも行える。
+      match /signals/{signalId} {
+        allow read: if request.auth != null && resource.data.to == request.auth.uid;
+        allow create: if request.auth != null
+                      && request.resource.data.from == request.auth.uid;
+        allow delete: if request.auth != null;
+        allow update: if false;
+      }
     }
 
     // ---- 公開ランキング：全員が読め、本人だけが自分の行を書ける ----
