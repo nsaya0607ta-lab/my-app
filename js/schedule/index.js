@@ -16,7 +16,7 @@ import { startReminderEngine } from './reminders.js';
 import { applyCloudSchedule, handleIdentityChange, loadSettings, loadSyncState, migrateLegacyData, onStoreChange } from './store.js';
 import {
   bindViewEvents, dayViewHTML, getDateKey, getView, goToday, monthViewHTML,
-  routineViewHTML, setView, shiftView, viewTitle, weekViewHTML,
+  resetTimelineScroll, routineViewHTML, setView, shiftView, timelineScrollPending, viewTitle, weekViewHTML,
 } from './views.js';
 import { debounce, esc, todayKey } from './util.js';
 
@@ -51,9 +51,18 @@ export function renderScheduleHome(){
 
 export function scheduleCalendarCardHTML(){ return `<div class="gcal-card" id="${CAL_CARD_ID}"></div>`; }
 
+// 直前に描いた内容と、その描画先の要素。中身がまったく同じ再描画（同期の完了通知など）では
+// DOMを作り直さない。作り直すとタイムラインのスクロール枠まで新しくなり、
+// 見ていた位置が飛んでしまうため
+let lastCalRoot = null;
+let lastCalHTML = "";
+
 export function renderScheduleCalendar(){
   const root = document.getElementById(CAL_CARD_ID);
   if(!root) return;
+  // カレンダー画面を開き直したときは、覚えていたスクロール位置は捨てて
+  // 新しい画面の初期位置（日表示なら0:00）から見せる
+  if(root !== lastCalRoot) resetTimelineScroll();
   handleIdentityChange();
   ensureGoogleConnection();
 
@@ -68,7 +77,7 @@ export function renderScheduleCalendar(){
     view === "routine" ? routineViewHTML() :
                          dayViewHTML(getDateKey());
 
-  root.innerHTML = `
+  const html = `
     <div class="gcal-box sched-cal">
       ${connectBarHTML(connected, settings)}
       <div class="sched-tabs">
@@ -90,6 +99,14 @@ export function renderScheduleCalendar(){
       <div class="sched-view">${body}</div>
       <button type="button" class="sched-fab" id="sched-add-fab" aria-label="予定を追加">＋</button>
     </div>`;
+
+  // 表示内容に変化がないときは、DOMもイベント配線もそのまま使い回す。
+  // （スクロール位置の初期化待ちのときだけは、位置を出し直すために描き直す）
+  if(root === lastCalRoot && root.childElementCount && html === lastCalHTML && !timelineScrollPending()) return;
+
+  root.innerHTML = html;
+  lastCalRoot = root;
+  lastCalHTML = html;
 
   bindCalendar(root, view);
 }
