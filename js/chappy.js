@@ -17,6 +17,12 @@ import {
   CHAPPY_XP, CHAPPY_COIN, CHAPPY_DAILY_CAPS, CHAPPY_STAGES, CHAPPY_FOODS,
   CHAPPY_STAT_MAX, CHAPPY_PET_BOND_GAIN, chappyXpToNext,
 } from './data/chappy-config.js';
+import {
+  bpOnChappyBond, bpOnChappyCare, bpOnChappyFirst, bpOnChappyLevelUp, bpOnChappySeasonEvent,
+} from './bp/store.js';
+
+// 🎖️ なかよし度がこの値に達したら、一度だけBPボーナスを出す
+const CHAPPY_BOND_BP_THRESHOLDS = [25, 50, 75, 100];
 
 const STORE_KEY_BASE = "chappy_v1";
 
@@ -177,9 +183,23 @@ function grantXp(st, amount, reason){
   st.daily.xpEarned += amount;
   const after = levelForXp(st.xp).level;
   const stageAfter = chappyStageForXp(st.xp).key;
+  // 🎖️ チャッピーのレベルが上がったら総合ランクのBPも少し入る
+  // （レベルごとに一度きり。付与判定は js/bp/store.js 側）
+  if(after > before){
+    for(let lv = before + 1; lv <= after; lv++){
+      try{ bpOnChappyLevelUp(lv); }catch(e){}
+    }
+  }
   dispatch({ type: "xp", amount, reason,
              levelUp: after > before, level: after,
              stageUp: stageAfter !== stageBefore, stage: stageAfter });
+}
+
+// 🎖️ なかよし度がしきい値を越えたら一度だけBPを付与する
+function checkBondBp(st){
+  CHAPPY_BOND_BP_THRESHOLDS.forEach(th => {
+    if(st.bond >= th){ try{ bpOnChappyBond(th); }catch(e){} }
+  });
 }
 
 // 画面側（育成画面・ホームウィジェット）が演出のために購読するイベント
@@ -427,6 +447,9 @@ export function chappyPet(){
     st.bond = clampStat(st.bond + CHAPPY_PET_BOND_GAIN);
     gained = CHAPPY_PET_BOND_GAIN;
     persist();
+    // 🎖️ お世話としてのBP（種別ごとに同日1回・1日上限あり）
+    try{ bpOnChappyCare("pet"); }catch(e){}
+    checkBondBp(st);
   }
   return { gained, capped: gained === 0 };
 }
@@ -443,5 +466,42 @@ export function chappyFeed(foodKey){
   st.genki = clampStat(st.genki + food.genki);
   st.lastCareTs = Date.now();
   persist();
+  // 🎖️ お世話としてのBP（同日1回）＋はじめてのごはんは一度きりのボーナス
+  try{
+    bpOnChappyFirst("feed");
+    bpOnChappyCare("feed");
+  }catch(e){}
+  checkBondBp(st);
   return { ok: true, food };
+}
+
+/* =========================================================================
+   🎖️ チャッピーハウスの拡張要素（部屋の掃除・着せ替え・家具の購入・
+   季節イベント）からのBP付与インターフェース。
+
+   これらの機能自体はまだこのアプリに存在しないため、ここでは「実装された
+   ときに呼び出すだけで正しく1回だけ付与される入口」を用意するに留める
+   （既存の 🔌 付きの関数と同じ方針。架空の呼び出しやダミーデータでの
+   付与は行わない）。
+   ========================================================================= */
+
+// 🔌 部屋を掃除した（掃除機能が未実装のため未接続）
+export function chappyOnRoomCleaned(){
+  try{ bpOnChappyFirst("clean"); bpOnChappyCare("clean"); }catch(e){}
+}
+
+// 🔌 着せ替えをした（着せ替え機能が未実装のため未接続）
+export function chappyOnDressUp(itemId){
+  try{ bpOnChappyFirst("dressUp"); bpOnChappyCare("dressUp:" + (itemId || "")); }catch(e){}
+}
+
+// 🔌 家具を購入した（家具ショップが未実装のため未接続）
+export function chappyOnFurniturePurchased(){
+  try{ bpOnChappyFirst("furniture"); }catch(e){}
+}
+
+// 🔌 季節イベントへ参加した（季節イベントが未実装のため未接続）
+export function chappyOnSeasonEventJoined(eventId){
+  if(!eventId) return;
+  try{ bpOnChappySeasonEvent(eventId); }catch(e){}
 }

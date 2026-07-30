@@ -1,0 +1,91 @@
+rules_version = '2';
+
+// =============================================================================
+// Firestore セキュリティルール
+//
+// このファイルはリポジトリ上のドキュメントであり、置くだけでは反映されない。
+// Firebaseコンソール（Firestore Database ＞ ルール）に貼り付けるか、
+// Firebase CLI（firebase deploy --only firestore:rules）で反映すること。
+//
+// 🃏 価値観ゲームの数字の秘匿について
+//   各プレイヤーの数字は vgSecrets にサーバー側の鍵で暗号化して保管し、
+//   クライアントへは /api/valuegame/deal が本人のぶんだけ返す。
+//   下の vgSecrets のルールはその多重防御（読めても暗号文だが、そもそも
+//   クライアントからは読ませない）。Admin SDK（サーバー）はこのルールの
+//   対象外なので、APIからの読み書きには影響しない。
+// =============================================================================
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ---- 個人データ：本人だけが読み書きできる ----
+    match /users/{uid} {
+      allow read, write: if request.auth != null && request.auth.uid == uid;
+
+      // BPの付与記録・日次集計はサーバー（Admin SDK）だけが書き込む。
+      // 本人は自分の履歴を読めるだけにして、クライアントからの改ざんを防ぐ
+      match /bpGrants/{gameId} {
+        allow read: if request.auth != null && request.auth.uid == uid;
+        allow write: if false;
+      }
+      match /bpDaily/{dateKey} {
+        allow read: if request.auth != null && request.auth.uid == uid;
+        allow write: if false;
+      }
+      match /newsQuizAttempts/{dateKey} {
+        allow read: if request.auth != null && request.auth.uid == uid;
+        allow write: if false;
+      }
+    }
+
+    // ---- 🃏 価値観ゲームの数字：クライアントからは一切読ませない ----
+    // ここに入るのは暗号文だが、そもそも読む必要がないので完全に閉じる。
+    // 配布・公開はサーバー（Admin SDK）経由でのみ行う。
+    match /vgSecrets/{docId} {
+      allow read, write: if false;
+    }
+
+    // ---- 🃏 オンラインルーム ----
+    // ログイン中のユーザーが読み書きできる。数字はここに入らない設計なので、
+    // ルームを読めても他人の数字は得られない。
+    match /vgRooms/{roomId} {
+      allow read: if request.auth != null;
+      allow create: if request.auth != null
+                    && request.resource.data.hostId == request.auth.uid;
+      allow update, delete: if request.auth != null;
+    }
+
+    // ---- 公開ランキング：全員が読め、本人だけが自分の行を書ける ----
+    match /leaderboard/{uid} {
+      allow read: if true;
+      allow write: if request.auth != null && request.auth.uid == uid;
+    }
+
+    // ---- 問題ごとの正答率の集計：ログイン中なら加算できる ----
+    match /qstats/{docId} {
+      allow read: if true;
+      allow write: if request.auth != null;
+    }
+
+    // ---- ニュース：全員が読め、書き込みは管理者のみ ----
+    match /news/{docId} {
+      allow read: if true;
+      allow write: if request.auth != null
+                   && request.auth.token.email == 'for.administ@gmail.com';
+    }
+
+    // ---- 表示名ディレクトリ・カレンダー通知：ログイン中なら利用できる ----
+    match /gcalNames/{email} {
+      allow read: if request.auth != null;
+      allow write: if request.auth != null;
+    }
+    match /calNotify/{docId} {
+      allow read, write: if request.auth != null;
+    }
+
+    // ---- 日次ニュース検定の問題：読み取りのみ（作成はサーバー） ----
+    match /dailyQuiz/{dateKey} {
+      allow read: if request.auth != null;
+      allow write: if false;
+    }
+  }
+}

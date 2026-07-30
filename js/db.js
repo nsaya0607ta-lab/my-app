@@ -6,6 +6,9 @@ import { updateAiScores } from './reviewAI.js';
 import { app, applyCloudGcal, applyCloudMindPalette, applyCloudPendingOrders, applyCloudPlayground, applyCloudPortfolio, applyCloudScenarioMode, applyCloudTradeLog, applyCloudVoiceprint, gcalStartNotifyListener, gcalStopNotifyListener, logout, render } from './render.js';
 import { S, state } from './state.js';
 import { applyCloudSchedule } from './schedule/store.js';
+import { applyCloudScheduleDone } from './schedule/completion.js';
+import { applyCloudBp } from './bp/store.js';
+import { applyCloudValueGame } from './valuegame/store.js';
 
   const firebaseConfig = {
     apiKey: "AIzaSyCg3zD2xkq_3e5MclG9YK_uVqVzWulO9Ws",
@@ -17,8 +20,13 @@ import { applyCloudSchedule } from './schedule/store.js';
     measurementId: "G-4E16HLF386"
   };
 
-  // runTransaction：株の買付・売却でAC残高と保有株を原子的に検証・更新するために使う
-  window.FirebaseSync = { doc, setDoc, runTransaction };
+  // runTransaction：株の買付・売却でAC残高と保有株を原子的に検証・更新するために使う。
+  // collection以降は🃏価値観ゲームのオンラインルーム（vgRooms）で、
+  // ルームの検索・購読・更新・退出に使う
+  window.FirebaseSync = {
+    doc, setDoc, runTransaction,
+    collection, query, where, orderBy, limit, getDoc, getDocs, deleteDoc, onSnapshot,
+  };
   try {
     const fbApp = initializeApp(firebaseConfig);
     state.db = getFirestore(fbApp);
@@ -254,6 +262,18 @@ import { applyCloudSchedule } from './schedule/store.js';
             // 端末をまたいだ引き継ぎ用で、Googleカレンダー本体との同期
             // （js/schedule/gsync.js）とは独立して動く
             if (data.schedule) applyCloudSchedule(data.schedule);
+            // 予定の「完了」記録（Googleカレンダーには無い概念なので別テーブル）
+            if (data.scheduleDone) applyCloudScheduleDone(data.scheduleDone);
+            // 🎖️ 活動BP（総合ランク用の別枠BP）の台帳・ミッション達成状況。
+            // 合計や重複防止キーを両端でマージするので、別端末で獲得済みの
+            // 行動がこちらで再付与されることはない。値が実際に動いたときだけ
+            // 再描画する（自分の書き込みのechoで画面を作り直さないため）
+            if (data.bpActivity && applyCloudBp(data.bpActivity)) {
+              try { window.dispatchEvent(new CustomEvent("bp-changed")); } catch (e) {}
+              render();
+            }
+            // 🃏 価値観ゲームの戦績・称号もこの端末へ反映する
+            if (data.valueGame) applyCloudValueGame(data.valueGame);
             // 背景スキン（所持リスト・適用中）もこの端末へ反映。ログインユーザー
             // 本人のドキュメントのみ購読しているため、他ユーザーのスキンが
             // 混ざることはない

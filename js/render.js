@@ -53,25 +53,17 @@ import { buildRRule as scheduleBuildRRule, presetToSpec as schedulePresetToSpec 
 import { fetchNewsCategory, getNewsCategoryState, todaysNewsForCategory } from './news.js';
 import { renderLightPuzzleScreen } from './lightpuzzle/screen.js';
 import { lightPuzzleHandleIdentityChange } from './lightpuzzle/store.js';
+import { renderBpScreen } from './bp/screen.js';
+import { bpHandleIdentityChange, bpOnNewsRead } from './bp/store.js';
+import { bpDailyCheck, bpDailyResetToken } from './bp/daily.js';
+import './bp/toast.js';
+import { renderValueGameScreen, valueGameHandleIdentityChange } from './valuegame/screen.js';
 
 export const app = document.getElementById("app");
 
-// 「総合ランク」バーのタップツールチップ：バーをタップすると次のレベルまでの
-// 残りBPを吹き出しで表示する。render()のたびに要素が作り直されるため、
-// 開閉状態はこのモジュール変数側で管理し、再タップ／他要素タップ／2.6秒経過の
-// いずれかで自動的に閉じる。
-let rankTooltipEl = null;
-let rankTooltipTimer = null;
-function closeRankTooltip(){
-  if(rankTooltipEl) rankTooltipEl.classList.remove("sb-tooltip-show");
-  rankTooltipEl = null;
-  clearTimeout(rankTooltipTimer);
-}
-document.addEventListener("click", (e)=>{
-  if(!rankTooltipEl) return;
-  if(e.target.closest && e.target.closest(".sb-line-overall")) return;
-  closeRankTooltip();
-});
+// 「総合ランク」バーは、タップするとBPの詳細（BPミッション）画面へ移動する。
+// 以前はここで「次のレベルまであと◯BP」の吹き出しを出していたが、同じ情報は
+// 遷移先の画面にもっと詳しく載るため、吹き出しは廃止した。
 
 // 「資格を選ぶ」画面・ホーム（select）画面はどちらも特定の資格に紐づかない
 // 全体ビューのため、遷移するたびに選択中の資格をクリアする。これにより、
@@ -118,7 +110,9 @@ export function renderStatusBar(){
              || (!state.guestMode && !state.currentUser)
              || (!state.guestMode && state.currentUser && (!state.profileChecked || !getProfileName()));
   const screen = resolveScreen();
-  const otherScreens = ["ranking","profile","settings","skins","analytics","portfolio","holdings","news-japan","news-world","news-detail","calendar","gemini","gemini-edit-event","mind-palette","mind-palette-folders","playground","scenario","chappy"];
+  // BP詳細（bp）と価値観ゲーム（valuegame）は、画面内に総合ランク・BPや
+  // ゲーム専用のヘッダーを持つため、共通ステータスバーは重ねて出さない
+  const otherScreens = ["ranking","profile","settings","skins","analytics","portfolio","holdings","news-japan","news-world","news-detail","calendar","gemini","gemini-edit-event","mind-palette","mind-palette-folders","playground","scenario","chappy","bp","valuegame"];
   if(gated || otherScreens.includes(screen)){ el.classList.remove("show"); el.innerHTML=""; return; }
   const ov = overallStat();          // 総合Lvと次Lvまでの進捗(%)
   const coins = (S.coins||0);
@@ -142,19 +136,11 @@ export function renderStatusBar(){
       </div>`;
   }
 
-  const overallNextText = ov.remain > 0
-    ? `あと <b>${ov.remain.toLocaleString()}</b> BP`
-    : "まもなくレベルアップ！";
-
   el.innerHTML = `
     <div class="sb-levels">
-      <div class="sb-line sb-line-overall">
+      <div class="sb-line sb-line-overall" role="button" tabindex="0" aria-label="BPミッションを開く" title="タップでBPミッションを開く">
         <span class="sb-lab">総合ランク Lv.<b>${ov.lv}</b></span>
         <span class="sb-prog"><span class="sb-prog-f overall" style="width:${ov.pct}%"></span></span>
-        <div class="sb-tooltip">
-          <span class="sb-tooltip-sub">次のレベルまで</span>
-          <span class="sb-tooltip-main">${overallNextText}</span>
-        </div>
       </div>
       ${certRow}
     </div>
@@ -163,19 +149,14 @@ export function renderStatusBar(){
   `;
   el.classList.add("show");
 
-  // 総合ランクのバーをタップ（クリック）すると、次のレベルまでの残りBPを
-  // 吹き出しでフワッと表示する。もう一度タップするか2.6秒経つと自動的に閉じる
+  // 総合ランクのバーをタップ（クリック）すると、BPの詳細（BPミッション）画面へ移動する。
+  // 以前はここで「次のレベルまで」の吹き出しを出していたが、同じ情報は
+  // 遷移先の画面にもっと詳しく載るため、遷移だけを行う
   const overallLine = el.querySelector(".sb-line-overall");
-  const tip = overallLine && overallLine.querySelector(".sb-tooltip");
-  if(overallLine && tip){
-    overallLine.onclick = (e) => {
-      e.stopPropagation();
-      if(rankTooltipEl === tip){ closeRankTooltip(); return; }
-      closeRankTooltip();
-      rankTooltipEl = tip;
-      tip.classList.add("sb-tooltip-show");
-      rankTooltipTimer = setTimeout(closeRankTooltip, 2600);
-    };
+  if(overallLine){
+    const open = (e) => { e.stopPropagation(); go("bp"); };
+    overallLine.onclick = open;
+    overallLine.onkeydown = (e) => { if(e.key === "Enter" || e.key === " ") open(e); };
   }
 }
 
@@ -184,7 +165,7 @@ export function renderStatusBar(){
 // render()末尾の分岐と同じ優先順位で判定する）ため、ヘッダー周りの表示制御は
 // この「実際に描画される画面名」を使って判断する。
 function resolveScreen(){
-  const noCertScreens = ["ranking","profile","settings","skins","analytics","certs","lpic-certs","portfolio","news-japan","news-world","news-detail","calendar","gemini","gemini-edit-event","mind-palette","mind-palette-folders","introquiz","playground","scenario","chappy"];
+  const noCertScreens = ["ranking","profile","settings","skins","analytics","certs","lpic-certs","portfolio","news-japan","news-world","news-detail","calendar","gemini","gemini-edit-event","mind-palette","mind-palette-folders","introquiz","playground","scenario","chappy","bp","valuegame"];
   if(noCertScreens.includes(S.screen)) return S.screen;
   if(S.screen==="select" || !S.cert) return "select";
   return S.screen; // home/quiz/result/review/dict/transfer/history
@@ -206,7 +187,9 @@ function updateHeaderTitle(){
   const titleEl = document.querySelector("h1.title");
   if(!topEl || !titleEl) return;
   const screen = resolveScreen();
-  if(screen === "select" || screen === "certs" || screen === "lpic-certs"){
+  // 🃏 価値観ゲームは画面内に専用のヘッダー（戻る・ラウンド・ライフ）を持つ
+  // フルスクリーンのゲーム画面なので、共通の見出しは出さず縦幅を譲る
+  if(screen === "select" || screen === "certs" || screen === "lpic-certs" || screen === "valuegame"){
     topEl.style.display = "none";
     return;
   }
@@ -233,7 +216,9 @@ const BNAV_TAB_BY_SCREEN = {
   "lpic-dirx-missions":"select", "lpic-dirx-incidents":"select", "lpic-dirx-events":"select",
   certs:"study-menu", "lpic-certs":"study-menu", playground:"study-menu", scenario:"study-menu",
   "news-japan":"quick-menu", "news-world":"quick-menu", "news-detail":"quick-menu", portfolio:"quick-menu", holdings:"quick-menu", introquiz:"quick-menu", lightpuzzle:"quick-menu",
+  valuegame:"quick-menu",
   chappy:"select",
+  bp:"select",
   calendar:"calendar",
 };
 function updateBottomNav(){
@@ -264,6 +249,10 @@ export function render(){
   pgHandleIdentityChange();   // ログインユーザーの切替を検知し、Linuxプレイグラウンドの状態を読み直す
   dirxHandleIdentityChange(); // ログインユーザーの切替を検知し、探索ミッション/障害対応の進捗を読み直す
   lightPuzzleHandleIdentityChange(); // ログインユーザーの切替を検知し、ライト消しパズルの進捗を読み直す
+  // ログインユーザーの切替を検知し、活動BPの台帳を読み直す。実際に
+  // 切り替わったときだけ、日次ボーナスの判定済みフラグもリセットする
+  if(bpHandleIdentityChange()) bpDailyResetToken();
+  valueGameHandleIdentityChange(); // ログインユーザーの切替を検知し、価値観ゲームの戦績を読み直す
   renderStatusBar();   // 画面が変わっても常に最新の Lv/BP/AC を反映
   updateHeaderNav(false); // デフォルトは非表示。表示すべき画面側で個別に true にする
   updateHeaderTitle();
@@ -281,6 +270,10 @@ export function render(){
     if(!state.profileChecked) return renderLoading();
     if(!getProfileName()) return renderUsername();
   }
+  // 🎖️ ここまで来た＝どのユーザーとしてアプリを使うかが確定した時点。
+  // 当日のログインボーナス・週次の達成率ボーナスをここで判定する
+  // （内部で1日1回・60秒間隔にスロットリングされている）
+  bpDailyCheck();
   // 資格選択なしでも開ける画面
   if(S.screen==="ranking") return renderRanking();
   if(S.screen==="profile") return renderProfile();
@@ -304,6 +297,8 @@ export function render(){
   if(S.screen==="scenario") return renderScenarioScreen();
   if(S.screen==="chappy") return renderChappyScreen();
   if(S.screen==="lightpuzzle") return renderLightPuzzleScreen();
+  if(S.screen==="bp") return renderBpScreen();
+  if(S.screen==="valuegame") return renderValueGameScreen();
   // 大元：資格選択画面
   if(S.screen==="select" || !S.cert) return renderSelect();
   if(S.screen==="home") return renderHome();
@@ -4616,6 +4611,10 @@ function sheetItemHTML({ icon, label, key, variant }){
 
 const LIGHTPUZZLE_LAUNCHER_ICON_SVG = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="3.5" y="3.5" width="6" height="6" rx="1.2"></rect><rect x="14.5" y="3.5" width="6" height="6" rx="1.2"></rect><rect x="3.5" y="14.5" width="6" height="6" rx="1.2"></rect><rect x="14.5" y="14.5" width="6" height="6" rx="1.2" fill="currentColor"></rect></svg>`;
 
+// 🃏 チャッピーの価値観ゲーム（ito形式の協力カードゲーム）のランチャーアイコン。
+// 重ねた2枚のカードを線画で表した、このアプリのオリジナル図案
+const VALUEGAME_LAUNCHER_ICON_SVG = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="6.5" width="10" height="14" rx="2.2" transform="rotate(-9 8 13.5)"></rect><rect x="11" y="3.5" width="10" height="14" rx="2.2" transform="rotate(9 16 10.5)"></rect><circle cx="16" cy="10.5" r="1.6" fill="currentColor" stroke="none"></circle></svg>`;
+
 const QUICK_MENU_ITEMS = [
   { key: "news-japan", icon: `<span class="launcher-emoji" aria-hidden="true">🇯🇵</span>`, label: "J-NEWS", variant: "news-jp" },
   { key: "news-world", icon: `<span class="launcher-emoji" aria-hidden="true">🌐</span>`, label: "F-NEWS", variant: "news-world" },
@@ -4623,6 +4622,7 @@ const QUICK_MENU_ITEMS = [
   { key: "calendar", icon: CALENDAR_APP_LAUNCHER_ICON_SVG, label: "カレンダー", variant: "calendar" },
   { key: "introquiz", icon: INTROQUIZ_LAUNCHER_ICON_SVG, label: "イントロドン", variant: "introquiz" },
   { key: "lightpuzzle", icon: LIGHTPUZZLE_LAUNCHER_ICON_SVG, label: "ライト消しパズル", variant: "lightpuzzle" },
+  { key: "valuegame", icon: VALUEGAME_LAUNCHER_ICON_SVG, label: "カードゲーム", variant: "valuegame" },
   { key: "chappy", icon: `<span class="launcher-emoji" aria-hidden="true">🏠</span>`, label: "チャッピーハウス", variant: "chappy" },
   { key: "settings", icon: SETTINGS_GEAR_ICON_SVG, label: "設定", variant: "settings" },
   { key: "rules", icon: RULES_LIST_ICON_SVG, label: "ルール", variant: "rules" },
@@ -8690,6 +8690,8 @@ function renderNewsDetail(){
   if(!d){ go("select"); return; }
   // 🏠 ニュースを1件開いた→まるチャピにXP（同じ記事は1日1回・1日上限あり）
   chappyOnNewsOpened(`${d.dateKey || ""}:${d.title || ""}`);
+  // 🎖️ 同じ記事は同日1回・1日上限つきで活動BPも付与する
+  bpOnNewsRead(`${d.dateKey || ""}:${d.title || ""}`, d.title || "");
   app.innerHTML = `
     <div class="q-head"><button class="quit" data-go="${esc(d.returnScreen||"select")}">← 戻る</button><span class="q-count">${d.icon||""} ${esc(d.label||"ニュース")}</span></div>
     <div class="njp-detail">
