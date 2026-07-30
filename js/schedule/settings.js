@@ -8,6 +8,7 @@
    ・新規予定の書き込み先カレンダー、日表示の開始時刻、既定の通知
    ========================================================================= */
 import { REMINDER_PRESETS, reminderLabel } from './reminders.js';
+import { closeModalOverlay, createModalOverlay } from './modal.js';
 import { googleCalendars, isGoogleConnected, resetSync, syncNow } from './gsync.js';
 import { loadSettings, loadSyncState, saveSettings } from './store.js';
 import { esc } from './util.js';
@@ -24,11 +25,9 @@ const CONFLICT_OPTIONS = [
 ];
 
 export function openSyncSettings(onChanged){
-  const ov = document.createElement("div");
-  ov.className = "modal-ov sched-modal-ov";
-  document.body.appendChild(ov);
-  const close = () => { try{ ov.remove(); }catch(e){} };
-  ov.addEventListener("click", (e) => { if(e.target === ov) close(); });
+  // 開いている間は背景のカレンダーを操作できないようにする（js/schedule/modal.js）
+  const ov = createModalOverlay({ label: "カレンダー同期の設定", onBackdrop: () => close() });
+  const close = () => closeModalOverlay(ov);
 
   let busyMessage = "";
 
@@ -227,8 +226,7 @@ export function maybeShowFirstRunPrompt(onChanged){
   if(firstRunPromptOpen || s.syncPromptShown || !isGoogleConnected()) return false;
   firstRunPromptOpen = true;
 
-  const ov = document.createElement("div");
-  ov.className = "modal-ov sched-modal-ov";
+  const ov = createModalOverlay({ label: "Googleカレンダーと同期しますか？" });
   ov.innerHTML = `
     <div class="modal sched-editor">
       <div class="modal-title sched-editor-title">Googleカレンダーと同期しますか？</div>
@@ -240,8 +238,7 @@ export function maybeShowFirstRunPrompt(onChanged){
       <button class="cta" id="sched-prompt-yes">同期する（おすすめ）</button>
       <button class="ghost" id="sched-prompt-no">今はしない</button>
     </div>`;
-  document.body.appendChild(ov);
-  const close = () => { firstRunPromptOpen = false; try{ ov.remove(); }catch(e){} };
+  const close = () => { firstRunPromptOpen = false; closeModalOverlay(ov); };
 
   ov.querySelector("#sched-prompt-yes").onclick = async () => {
     saveSettings({ syncEnabled: true, syncPromptShown: true });
