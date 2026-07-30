@@ -2,8 +2,8 @@
    カレンダー画面の3つの表示（月／週／日）と、週間ルーティンの一覧。
 
    ・日表示はGoogleカレンダーと同じ「1時間＝1行のタイムライン」に予定を
-     ブロックで置く方式。ブロックはドラッグで時間変更、下端のつまみで
-     長さ変更ができる。
+     ブロックで置く方式。ブロックは動かせない固定表示で、タップすると
+     編集画面が開く（時刻の変更は編集画面からだけ行う）。
    ・週表示は同じタイムラインを7日ぶん横に並べた縮小版。
    ・月表示は各日に「予定あり」の点と件数を出し、日付を押すとその日の
      日表示へ移動する。
@@ -13,17 +13,15 @@
 import { assignLanes, occurrencesForDate, occurrencesForRange, routinesByWeekday } from './occurrences.js';
 import { openScheduleEditor } from './editor.js';
 import { recurrenceLabel } from './recurrence.js';
-import { setOccurrenceOverride, upsertSchedule } from './store.js';
 import { reminderLabel } from './reminders.js';
 import {
   WEEKDAYS_JA, addDaysKey, dateKeyOf, esc, formatDateLabel,
-  minutesToTime, parseDateKey, startOfWeek, timePartOf, timeToMinutes, todayKey,
+  parseDateKey, startOfWeek, timePartOf, timeToMinutes, todayKey,
 } from './util.js';
 
 // タイムラインの1時間ぶんの高さ（px）。CSS側の --sched-hour-h と必ず揃える
 const HOUR_H = 52;
 const WEEK_HOUR_H = 40;
-const SNAP_MIN = 15;
 const MIN_DURATION_MIN = 15;
 
 /* ================= 表示状態 ================= */
@@ -35,9 +33,13 @@ const viewState = {
 export function getView(){ return viewState.view; }
 export function getDateKey(){ return viewState.dateKey; }
 
+// 表示モード／日付を切り替えたときだけ、新しい画面の初期位置を出し直す。
+// （同期や予定の追加などの再描画では呼ばれないので、ユーザーが手で
+//   スクロールした位置はそのまま残る）
 export function setView(view, dateKey){
   viewState.view = view;
   if(dateKey) viewState.dateKey = dateKey;
+  resetTimelineScroll();
 }
 
 export function shiftView(delta){
@@ -49,9 +51,13 @@ export function shiftView(delta){
   } else {
     viewState.dateKey = addDaysKey(viewState.dateKey, delta);
   }
+  resetTimelineScroll();
 }
 
-export function goToday(){ viewState.dateKey = todayKey(); }
+export function goToday(){
+  viewState.dateKey = todayKey();
+  resetTimelineScroll();
+}
 
 /* ================= 共通パーツ ================= */
 
@@ -122,16 +128,17 @@ function blockHTML(occ, hourH, opts){
   const widthPct = 100 / laneCount;
   const compact = opts && opts.compact;
   // 30分などの短い予定は、時刻と本文を縦に積むと枠に収まらず文字が切れて
-  // つまみと重なってしまう。一定の高さを下回るときは1行（横並び）にする
+  // しまう。一定の高さを下回るときは1行（横並び）にする
   const short = height < 38;
   const veryShort = height < 24;
+  // 予定ブロックは動かせない固定表示。タップすると編集画面が開くだけで、
+  // ドラッグ／長押しでは時間を変えられない（時刻の変更は編集画面から）
   return `
     <div class="sched-block${occ.routine ? " routine" : ""}${occ.overridden ? " overridden" : ""}${compact ? " compact" : ""}${short ? " short" : ""}"
-         data-occ="${esc(occ.key)}" data-schedule="${esc(occ.scheduleId)}" data-date="${esc(occ.dateKey)}"
+         role="button" data-occ="${esc(occ.key)}" data-schedule="${esc(occ.scheduleId)}" data-date="${esc(occ.dateKey)}"
          style="top:${top}px;height:${height}px;left:calc(${lane * widthPct}% + 2px);width:calc(${widthPct}% - 4px);${occ.color ? `--sched-ev-color:${esc(occ.color)}` : ""}">
       ${veryShort ? "" : `<span class="sched-block-time">${esc(occ.start || "")}${occ.end && !compact && !short ? `〜${esc(occ.end)}` : ""}</span>`}
       <span class="sched-block-title">${esc(occ.title)}</span>
-      ${compact ? "" : `<span class="sched-block-handle" data-resize="1" aria-hidden="true"></span>`}
     </div>`;
 }
 
@@ -304,15 +311,23 @@ export function routineViewHTML(){
 
 /* ================= イベント配線 ================= */
 
-// 描画後のDOMへ、共通のタップ／ドラッグ操作を配線する。
+// 描画後のDOMへ、共通のタップ操作とスクロール位置の復元を配線する。
 // onChange は保存が発生したときに呼ばれる再描画コールバック
 export function bindViewEvents(root, onChange){
   const rerender = () => { if(onChange) onChange(); };
 
-  // 予定ブロック／行のタップ → 詳細モーダル
+  // 予定ブロック／行のタップ → 詳細（編集）モーダル。
+  // スクロール中に指が離れたときは開かないよう、押した位置から大きく
+  // 動いていたらタップとして扱わない
   root.querySelectorAll("[data-occ]").forEach(el => {
+    let downY = null, downX = null;
+    el.addEventListener("pointerdown", (e) => { downY = e.clientY; downX = e.clientX; }, { passive: true });
     el.addEventListener("click", (e) => {
-      if(el.dataset.dragged === "1"){ delete el.dataset.dragged; return; }
+      if(downY !== null && (Math.abs(e.clientY - downY) > 10 || Math.abs(e.clientX - downX) > 10)){
+        downY = downX = null;
+        return;
+      }
+      downY = downX = null;
       e.preventDefault();
       const [scheduleId, occDate] = String(el.dataset.occ).split("@");
       openScheduleEditor({ scheduleId, occDateKey: occDate, onSaved: rerender });
@@ -355,8 +370,7 @@ export function bindViewEvents(root, onChange){
     rerender();
   });
 
-  bindBlockDrag(root, rerender);
-  scrollTimelineIntoView(root);
+  setupTimelineScroll(root);
 }
 
 function nextKeyForWeekday(dow){
@@ -367,110 +381,44 @@ function nextKeyForWeekday(dow){
   return todayKey();
 }
 
-// 日表示のタイムラインを、朝（設定の開始時刻）または現在時刻の少し手前が
-// 見えるところまでスクロールしておく
-function scrollTimelineIntoView(root){
-  const timeline = root.querySelector("#sched-timeline") || root.querySelector("#sched-week-body");
-  if(!timeline) return;
-  const hourH = timeline.id === "sched-week-body" ? WEEK_HOUR_H : HOUR_H;
+/* ---- タイムラインのスクロール位置 ----
+   予定の追加・Googleカレンダー同期・状態更新などで画面を描き直しても、
+   ユーザーが見ていた位置をそのまま保つ。位置を初期状態へ戻すのは
+   「日付を変えた」「表示モードを変えた」「今日ボタンを押した」ときだけ
+   （＝setView / shiftView / goToday から resetTimelineScroll を呼ぶ）。 */
+
+// null = 次の描画で初期位置を出し直す。数値 = その位置を復元する
+let timelineScrollTop = null;
+
+// 日表示は必ず0:00（＝0px）から。現在時刻へ自動でスクロールはしない。
+// 週表示は従来どおり、朝または現在時刻の少し手前から見せる
+function initialScrollTop(isWeek){
+  if(!isWeek) return 0;
   const now = new Date();
   const targetHour = viewState.dateKey === todayKey() ? Math.max(0, now.getHours() - 1) : 7;
-  timeline.scrollTop = targetHour * hourH;
+  return targetHour * WEEK_HOUR_H;
 }
 
-/* ---- ドラッグで時間変更 ----
-   ブロック本体のドラッグで開始時刻を移動（長さは維持）、下端のつまみの
-   ドラッグで終了時刻だけを変更する。15分刻みにスナップする。
-   繰り返し予定をドラッグした場合は「その日だけの一時的な変更」として
-   保存し、他の回には影響させない */
-function bindBlockDrag(root, rerender){
-  root.querySelectorAll(".sched-block").forEach(block => {
-    const isCompact = block.classList.contains("compact");
-    const hourH = isCompact ? WEEK_HOUR_H : HOUR_H;
-    let dragging = false, mode = "move", startY = 0, origStartMin = 0, origEndMin = 0, moved = false;
+export function resetTimelineScroll(){ timelineScrollTop = null; }
 
-    const onDown = (e) => {
-      if(e.button != null && e.button !== 0) return;
-      const handle = e.target.closest && e.target.closest("[data-resize]");
-      mode = handle ? "resize" : "move";
-      dragging = true; moved = false;
-      startY = e.clientY;
-      const scheduleId = block.dataset.schedule;
-      const dateKey = block.dataset.date;
-      const occ = occurrencesForDate(dateKey).find(o => o.scheduleId === scheduleId);
-      if(!occ || occ.allDay || !occ.start){ dragging = false; return; }
-      origStartMin = timeToMinutes(occ.start);
-      origEndMin = Math.max(origStartMin + MIN_DURATION_MIN, timeToMinutes(occ.end || occ.start));
-      block.setPointerCapture && block.setPointerCapture(e.pointerId);
-      block.classList.add("dragging");
-    };
+// 初期位置の出し直し待ちかどうか。待ちのあいだは、内容が同じ再描画でも
+// 画面を作り直して初期位置を適用する必要がある（同じ日で「今日」を押した
+// ときなど、表示内容がまったく変わらないケースのため）
+export function timelineScrollPending(){ return timelineScrollTop === null; }
 
-    const onMove = (e) => {
-      if(!dragging) return;
-      const deltaMin = snap((e.clientY - startY) / hourH * 60);
-      if(Math.abs(e.clientY - startY) > 4) moved = true;
-      if(!moved) return;
-      e.preventDefault();
-      if(mode === "move"){
-        const duration = origEndMin - origStartMin;
-        const newStart = clamp(origStartMin + deltaMin, 0, 24 * 60 - duration);
-        block.style.top = `${newStart / 60 * hourH}px`;
-        block.dataset.newStart = String(newStart);
-        block.dataset.newEnd = String(newStart + duration);
-        updateBlockLabel(block, newStart, newStart + duration, isCompact);
-      } else {
-        const newEnd = clamp(origEndMin + deltaMin, origStartMin + MIN_DURATION_MIN, 24 * 60);
-        block.style.height = `${(newEnd - origStartMin) / 60 * hourH}px`;
-        block.dataset.newStart = String(origStartMin);
-        block.dataset.newEnd = String(newEnd);
-        updateBlockLabel(block, origStartMin, newEnd, isCompact);
-      }
-    };
-
-    const onUp = () => {
-      if(!dragging) return;
-      dragging = false;
-      block.classList.remove("dragging");
-      if(!moved || !block.dataset.newStart){ delete block.dataset.newStart; return; }
-      // クリックイベントが後から飛んでくるので、詳細モーダルが開かないよう印を付ける
-      block.dataset.dragged = "1";
-      const newStart = minutesToTime(Number(block.dataset.newStart));
-      const newEnd = minutesToTime(Number(block.dataset.newEnd));
-      delete block.dataset.newStart; delete block.dataset.newEnd;
-      applyTimeChange(block.dataset.schedule, block.dataset.date, newStart, newEnd);
-      rerender();
-    };
-
-    block.addEventListener("pointerdown", onDown);
-    block.addEventListener("pointermove", onMove);
-    block.addEventListener("pointerup", onUp);
-    block.addEventListener("pointercancel", onUp);
-  });
-}
-
-function updateBlockLabel(block, startMin, endMin, compact){
-  const label = block.querySelector(".sched-block-time");
-  if(label) label.textContent = compact ? minutesToTime(startMin) : `${minutesToTime(startMin)}〜${minutesToTime(endMin)}`;
-}
-
-function snap(min){ return Math.round(min / SNAP_MIN) * SNAP_MIN; }
-function clamp(v, lo, hi){ return Math.max(lo, Math.min(hi, v)); }
-
-// ドラッグ結果を保存する。繰り返し予定はその日だけの一時変更として扱う
-function applyTimeChange(scheduleId, dateKey, start, end){
-  const occ = occurrencesForDate(dateKey).find(o => o.scheduleId === scheduleId);
-  if(!occ) return;
-  const schedule = occ.schedule;
-  if(schedule.recurrenceRule){
-    setOccurrenceOverride(scheduleId, dateKey, { start, end });
-    return;
-  }
-  upsertSchedule({
-    ...schedule,
-    startDateTime: `${dateKey}T${start}`,
-    endDateTime: `${dateKey}T${end}`,
-    syncStatus: schedule.googleEventId ? "pending" : schedule.syncStatus,
-  });
+function setupTimelineScroll(root){
+  const timeline = root.querySelector("#sched-timeline") || root.querySelector("#sched-week-body");
+  // 月表示・ルーティン表示にはタイムラインがない
+  if(!timeline){ timelineScrollTop = 0; return; }
+  const isWeek = timeline.id === "sched-week-body";
+  if(timelineScrollTop === null) timelineScrollTop = initialScrollTop(isWeek);
+  // 再描画でDOMが作り直された直後は 0 から始まるので、覚えていた位置へ戻す。
+  // 高さはpxで指定済みなのでこの時点で確定していて、ガクつきは起きない
+  if(timeline.scrollTop !== timelineScrollTop) timeline.scrollTop = timelineScrollTop;
+  timeline.addEventListener("scroll", () => {
+    // 作り直されて外れた古い枠のイベントは無視する
+    if(timeline.isConnected) timelineScrollTop = timeline.scrollTop;
+  }, { passive: true });
 }
 
 export { HOUR_H, WEEK_HOUR_H, viewState };

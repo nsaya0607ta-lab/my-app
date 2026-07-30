@@ -166,6 +166,7 @@
   overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
 
 .sched-timeline{max-height:60vh;overflow-y:auto;-webkit-overflow-scrolling:touch;
+  overscroll-behavior:contain;overflow-anchor:none;
   border:1px solid var(--line);border-radius:14px;background:var(--surface);}
 /* 24時間ぶんの高さを持つ内側のラッパー。予定ブロックはここを基準に
    絶対配置するので、外枠をスクロールしても時間軸とズレない */
@@ -181,11 +182,14 @@
 .sched-blocks{position:absolute;top:0;left:46px;right:0;bottom:0;pointer-events:none;}
 .sched-blocks > *{pointer-events:auto;}
 
+/* 予定ブロックは動かせない固定表示。タップで編集画面を開くだけなので、
+   touch-action は縦スクロールを通し（カードの上からでもスクロールできる）、
+   長押しの選択メニューやドラッグ開始は起こさない */
 .sched-block{position:absolute;display:flex;flex-direction:column;gap:1px;overflow:hidden;
-  border-radius:9px;padding:3px 7px;cursor:grab;touch-action:none;
+  border-radius:9px;padding:3px 7px;cursor:pointer;touch-action:pan-y;
+  user-select:none;-webkit-user-select:none;-webkit-touch-callout:none;-webkit-user-drag:none;
   background:var(--sched-ev-color,var(--sched-ev));color:#ffffff;
   box-shadow:0 2px 6px rgba(15,23,42,.14);border:1px solid rgba(255,255,255,.5);}
-.sched-block.dragging{cursor:grabbing;opacity:.9;box-shadow:0 8px 20px rgba(15,23,42,.28);z-index:5;}
 .sched-block.routine{background:linear-gradient(160deg,var(--sched-ev-color,#60a5fa),#38bdf8);}
 .sched-block.overridden{border-style:dashed;border-color:#ffffff;}
 .sched-block-time{font-size:9.5px;font-weight:800;opacity:.92;font-variant-numeric:tabular-nums;line-height:1.2;}
@@ -194,17 +198,10 @@
 .sched-block.compact{padding:2px 4px;border-radius:6px;}
 .sched-block.compact .sched-block-title{font-size:9.5px;-webkit-line-clamp:1;}
 .sched-block.compact .sched-block-time{font-size:8px;}
-/* 短い予定（30分以下など）は1行に収める。つまみも細くして本文に重ねない */
+/* 短い予定（30分以下など）は1行に収める */
 .sched-block.short{flex-direction:row;align-items:center;gap:5px;padding:0 7px;}
 .sched-block.short .sched-block-time{flex:none;}
 .sched-block.short .sched-block-title{-webkit-line-clamp:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
-.sched-block-handle{position:absolute;left:0;right:0;bottom:0;height:11px;cursor:ns-resize;}
-.sched-block-handle::after{content:"";position:absolute;left:50%;bottom:3px;transform:translateX(-50%);
-  width:22px;height:2.5px;border-radius:99px;background:rgba(255,255,255,.75);}
-/* 短いブロックのつまみは、右端の細い領域だけにして本文の上に線を引かない */
-.sched-block.short .sched-block-handle{left:auto;right:0;width:26px;height:100%;}
-.sched-block.short .sched-block-handle::after{left:auto;right:5px;bottom:50%;transform:translateY(50%);
-  width:2.5px;height:14px;}
 
 /* 現在時刻を示す赤いライン */
 .sched-nowline{position:absolute;left:0;right:0;height:0;border-top:2px solid #ef4444;pointer-events:none;z-index:4;}
@@ -230,6 +227,7 @@
 .sched-week-allday-cell{flex:1;min-width:0;display:flex;flex-direction:column;gap:2px;}
 
 .sched-week-body{display:flex;gap:2px;max-height:58vh;overflow-y:auto;-webkit-overflow-scrolling:touch;
+  overscroll-behavior:contain;overflow-anchor:none;
   border:1px solid var(--line);border-radius:12px;background:var(--surface);padding:0 2px 2px;}
 .sched-week-gutter-col{flex:none;width:26px;padding-top:0;}
 .sched-week-hour{display:flex;align-items:flex-start;justify-content:flex-end;padding-right:3px;}
