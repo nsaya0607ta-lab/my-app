@@ -8,6 +8,7 @@ import { loadCmdStats, recordCmdResults, saveCmdStats, updateAiScores } from './
 import { mpExportRaw } from './mindpalette.js';
 import { scenarioModeExportRaw } from './playground/scenarios/progressStore.js';
 import { activityBP, bpOnStudyLogged } from './bp/store.js';
+import { vgStats } from './valuegame/store.js';
 
 export let PASS = 700;   // 選択中の資格の合格ライン（loadCertで設定）
 
@@ -644,8 +645,15 @@ export function buildPublic(){
     }
   });
   const ov=overallStat();
+  // 🃏 価値観ゲームの戦績も公開要約に含める（ゲーム内ランキング用）。
+  // 個人の回答履歴などの中身は含めず、回数だけを載せる
+  let vg = { vgPlays:0, vgWins:0, vgPerfects:0, vgStreak:0 };
+  try{
+    const st = vgStats();
+    vg = { vgPlays: st.plays||0, vgWins: st.wins||0, vgPerfects: st.perfects||0, vgStreak: st.bestWinStreak||0 };
+  }catch(e){}
   return { displayName:getProfileName()||defaultName(), totalBP:ov.tbp, overallLevel:ov.lv,
-           title:ov.title, certLevels, certBP, updatedAt:new Date().toISOString() };
+           title:ov.title, certLevels, certBP, ...vg, updatedAt:new Date().toISOString() };
 }
 // ランキングへ自動公開・更新（ログイン中なら表示名の有無に関わらず自動で反映）
 

@@ -58,6 +58,45 @@ function esc(s){
   }[c]));
 }
 
+/* ---- 自分の数字を隠す共通処理 ----
+   長押し表示のボタンは再描画のたびに作り直されるので、document 側の
+   リスナーは「今表示中のボタン」を指すモジュール変数を1つ持つ形にして、
+   ここで一度だけ登録する（再描画のたびに登録するとリスナーが溜まる）。
+   タブを離れた・アプリが背面に回った瞬間に必ず数字を隠すことで、
+   画面共有やのぞき見で数字が出たままになるのを防ぐ */
+let peekEl = null;
+function hidePeek(){
+  if(!peekEl) return;
+  const v = peekEl.querySelector(".vg-peek-value");
+  if(v) v.textContent = "— —";
+  peekEl.classList.remove("peeking");
+}
+document.addEventListener("visibilitychange", hidePeek);
+window.addEventListener("blur", hidePeek);
+
+/* 長押ししている間だけ数字を表示するボタンを配線する。
+   getNumber は同期・非同期どちらでもよい（オンラインは本人ぶんを
+   サーバーから取得するため Promise を返す） */
+function wirePeekButton(btn, getNumber){
+  if(!btn) return;
+  peekEl = btn;
+  const valEl = btn.querySelector(".vg-peek-value");
+  const show = async (e) => {
+    e.preventDefault();
+    const n = await getNumber();
+    // 指を離した後に非同期の取得が終わっても表示しない
+    if(!btn.classList.contains("holding")) return;
+    valEl.textContent = (n === null || n === undefined) ? "…" : String(n);
+    btn.classList.add("peeking");
+  };
+  const down = (e) => { btn.classList.add("holding"); show(e); };
+  const up = () => { btn.classList.remove("holding"); hidePeek(); };
+  btn.addEventListener("pointerdown", down);
+  ["pointerup", "pointerleave", "pointercancel", "blur"].forEach(ev => btn.addEventListener(ev, up));
+  // 長押しでiOS/Androidの選択メニューが出ないようにする
+  btn.addEventListener("contextmenu", (e) => e.preventDefault());
+}
+
 export function valueGameHandleIdentityChange(){
   const changed = storeIdentityChange();
   if(changed){
@@ -479,25 +518,7 @@ function wireGame(s, diff){
   document.getElementById("vg-rules-btn").onclick = () => openRulesSheet();
 
   // ---- 自分の数字：押している間だけ表示する ----
-  const peek = document.getElementById("vg-peek");
-  if(peek){
-    const valEl = document.getElementById("vg-peek-value");
-    const show = (e) => {
-      e.preventDefault();
-      valEl.textContent = String(vgMyNumber(s));
-      peek.classList.add("peeking");
-    };
-    const hide = () => {
-      valEl.textContent = "— —";
-      peek.classList.remove("peeking");
-    };
-    // 画面共有・のぞき見対策として、指を離す・画面が隠れる・別要素へ
-    // フォーカスが移る、のいずれでも必ず隠す
-    peek.addEventListener("pointerdown", show);
-    ["pointerup", "pointerleave", "pointercancel", "blur"].forEach(ev => peek.addEventListener(ev, hide));
-    peek.addEventListener("contextmenu", (e) => e.preventDefault());
-    document.addEventListener("visibilitychange", hide);
-  }
+  wirePeekButton(document.getElementById("vg-peek"), () => vgMyNumber(s));
 
   if(s.phase === "answer"){
     const input = document.getElementById("vg-answer");
@@ -792,6 +813,24 @@ function paintRecords(){
       </div>
 
       <div class="vg-card">
+        <div class="vg-card-title">
+          みんなのランキング（成功回数）
+          <button type="button" class="vg-mini-btn" id="vg-rank-refresh">更新</button>
+        </div>
+        <div id="vg-ranking">
+          ${gameRanking === null ? `<div class="vg-note">「更新」を押すとランキングを読み込みます。</div>`
+            : gameRanking.length ? gameRanking.map((r, i) => `
+              <div class="vg-rank-row${r.uid === (state.currentUserId || "") ? " me" : ""}">
+                <span class="vg-rank-no">${i + 1}</span>
+                <span class="vg-rank-name">${esc(r.displayName || "エンジニア")}</span>
+                <span class="vg-rank-val">${Number(r.vgWins) || 0}回成功</span>
+              </div>`).join("")
+            : `<div class="vg-note">まだランキングに載っている人がいません。</div>`}
+        </div>
+        ${myGameRank ? `<p class="vg-note">あなたの順位：${myGameRank}位</p>` : ""}
+      </div>
+
+      <div class="vg-card">
         <div class="vg-card-title">最近のゲーム</div>
         ${hist.length ? hist.map(h => `
           <div class="vg-hist-row">
@@ -805,6 +844,33 @@ function paintRecords(){
       </div>
     </div>`;
   wireBack();
+  const refresh = document.getElementById("vg-rank-refresh");
+  if(refresh) refresh.onclick = () => loadGameRanking(refresh);
+}
+
+/* ゲーム内ランキング（成功回数の降順）。leaderboard の公開要約から読む。
+   起動時に自動では取りに行かず、ユーザーが「更新」を押したときだけ読み込む
+   （戦績画面を開くたびに通信するのを避けるため） */
+let gameRanking = null;
+let myGameRank = null;
+
+async function loadGameRanking(btn){
+  // 未ログイン（ゲストモード）ではランキングを読み込めない
+  if(!window.LB || !state.currentUserId){
+    gameRanking = [];
+    if(view === "records") repaint();
+    return;
+  }
+  if(btn){ btn.disabled = true; btn.textContent = "読込中"; }
+  try{
+    gameRanking = await window.LB.topByGameWins(30);
+    const mine = vgStats().wins || 0;
+    myGameRank = await window.LB.myRankByGameWins(mine);
+  }catch(e){
+    console.error("valuegame ranking failed:", e);
+    gameRanking = [];
+  }
+  if(view === "records") repaint();
 }
 
 /* =========================================================================
@@ -1381,22 +1447,13 @@ function wireOnlineGame(room, players){
   const o = vgOnlineState();
   document.getElementById("vg-rules-btn").onclick = () => openRulesSheet();
 
-  const peek = document.getElementById("vg-peek");
-  if(peek){
-    const valEl = document.getElementById("vg-peek-value");
-    const show = async (e) => {
-      e.preventDefault();
-      let n = vgOnlineMyNumber();
-      if(n === null || n === undefined) n = await vgOnlineFetchMyNumber();
-      valEl.textContent = (n === null || n === undefined) ? "…" : String(n);
-      peek.classList.add("peeking");
-    };
-    const hide = () => { valEl.textContent = "— —"; peek.classList.remove("peeking"); };
-    peek.addEventListener("pointerdown", show);
-    ["pointerup", "pointerleave", "pointercancel", "blur"].forEach(ev => peek.addEventListener(ev, hide));
-    peek.addEventListener("contextmenu", (e) => e.preventDefault());
-    document.addEventListener("visibilitychange", hide);
-  }
+  // 自分の数字はルームには入っていないので、まだ受け取っていなければ
+  // その場でサーバーから本人ぶんだけ取りに行く
+  wirePeekButton(document.getElementById("vg-peek"), async () => {
+    const n = vgOnlineMyNumber();
+    if(n !== null && n !== undefined) return n;
+    return await vgOnlineFetchMyNumber();
+  });
 
   const submit = document.getElementById("vg-submit");
   if(submit) submit.onclick = async () => {

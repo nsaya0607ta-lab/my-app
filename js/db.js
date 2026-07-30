@@ -75,6 +75,27 @@ import { applyCloudValueGame } from './valuegame/store.js';
         try { const d = await getDoc(doc(state.db, "leaderboard", state.currentUserId)); return d.exists() ? d.data() : null; }
         catch (e) { return null; }
       },
+      // 🃏 価値観ゲームのランキング（成功回数の降順）。leaderboardの
+      // 公開要約に含まれる vgWins を使うので、専用のコレクションは作らない
+      topByGameWins: async (n) => {
+        try {
+          const q = query(collection(state.db, "leaderboard"), orderBy("vgWins", "desc"), limit(n || 30));
+          const snap = await getDocs(q);
+          const rows = [];
+          snap.forEach(d => {
+            const r = d.data() || {};
+            if (!(r.vgWins > 0)) return;   // まだ遊んでいない人は載せない
+            rows.push(Object.assign({ uid: d.id }, r));
+          });
+          return rows;
+        } catch (e) { return []; }
+      },
+      myRankByGameWins: async (myWins) => {
+        try {
+          const c = await getCountFromServer(query(collection(state.db, "leaderboard"), where("vgWins", ">", myWins)));
+          return c.data().count + 1;
+        } catch (e) { return null; }
+      },
       // 表示名が既に他ユーザーに使われているか（自分自身は除外）
       nameTaken: async (name) => {
         const snap = await getDocs(query(collection(state.db, "leaderboard"), where("displayName", "==", name)));
