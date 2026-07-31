@@ -13,7 +13,8 @@
     "daily-report:verify-import": "node scripts/daily-report/verify-import.mjs",
     "ionq-report": "node scripts/ionq-report/generate.mjs",
     "ionq-report:html": "node scripts/ionq-report/generate.mjs --html",
-    "gemini-pdf-scheduler": "node scripts/gemini-pdf/scheduler.mjs"
+    "gemini-pdf-scheduler": "node scripts/gemini-pdf/scheduler.mjs",
+    "deploy:rules": "npx firebase-tools deploy --only firestore:rules"
   },
   "dependencies": {
     "firebase-admin": "^14.1.0"

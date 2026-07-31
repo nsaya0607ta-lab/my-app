@@ -5,7 +5,13 @@ rules_version = '2';
 //
 // このファイルはリポジトリ上のドキュメントであり、置くだけでは反映されない。
 // Firebaseコンソール（Firestore Database ＞ ルール）に貼り付けるか、
-// Firebase CLI（firebase deploy --only firestore:rules）で反映すること。
+// リポジトリ直下で次を実行して反映すること（firebase.json / .firebaserc 同梱）。
+//   npx firebase-tools login
+//   npm run deploy:rules
+//
+// ★反映を忘れると、そのコレクションへの読み書きが permission-denied になる。
+//   画面上は「ルームを作成できませんでした」のような通信エラー風の表示になるため、
+//   オンライン機能が動かないときは、まずここが最新かどうかを確認すること。
 //
 // 🃏 価値観ゲームの数字の秘匿について
 //   各プレイヤーの数字は vgSecrets にサーバー側の鍵で暗号化して保管し、
