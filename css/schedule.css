@@ -95,6 +95,9 @@
 .sched-home-list{display:flex;flex-direction:column;}
 .sched-home-list .sched-row + .sched-row{margin-top:6px;}
 
+/* 予定の完了ボタン（.sched-occ-line / .sched-done-btn）のスタイルは
+   BPシステム側の css/bp.css が持っている */
+
 .sched-add-btn{width:100%;margin-top:9px;padding:9px 0;border-radius:12px;
   border:1px dashed var(--home-badge-border,var(--line));
   background:none;color:var(--home-muted,var(--muted));font-size:12px;font-weight:700;cursor:pointer;}

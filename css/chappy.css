@@ -3,6 +3,9 @@
    パステルカラー（水色・白・クリーム・薄ピンク）／角丸多め／柔らかい影。
    既存テーマ（body[data-theme]のCSS変数）とも共存し、ダークテーマでも
    文字・キャラクターが見づらくならないよう専用変数で配色する。
+
+   このファイル … 画面の土台・お部屋・キャラクター・ステータス・モーダル
+   css/chappy-house.css … ショップ／ガチャ／着せ替え／図鑑などのシート類
    ========================================================================= */
 :root{
   --chp-sky:#bfe6fb;        /* 水色 */
@@ -23,7 +26,7 @@ body[data-theme="dark"], body[data-theme="galaxy"]{
 }
 
 /* ===== 育成画面全体 ===== */
-.chp-screen{display:flex;flex-direction:column;gap:14px;}
+.chp-screen{display:flex;flex-direction:column;gap:12px;}
 
 .chp-head{display:flex;align-items:center;justify-content:space-between;gap:10px;
   background:var(--chp-card);border:1px solid var(--chp-line);border-radius:18px;
@@ -40,28 +43,126 @@ body[data-theme="dark"] .chp-stage-badge, body[data-theme="galaxy"] .chp-stage-b
   box-shadow:0 2px 6px rgba(58,74,92,.08);transition:transform .12s;color:var(--chp-text);}
 .chp-gear:active{transform:scale(.9);}
 
-/* ===== 部屋（キャラクター表示エリア） ===== */
-.chp-room{position:relative;height:290px;border-radius:24px;overflow:hidden;
-  border:1px solid var(--chp-line);
-  background:linear-gradient(180deg,#dff2fd 0%,#eef9ff 58%,#fdeee2 58%,#fbe3d4 100%);
-  box-shadow:0 10px 24px rgba(124,199,240,.18), inset 0 1px 0 rgba(255,255,255,.6);}
-.chp-room--evening{background:linear-gradient(180deg,#fde7d8 0%,#fdf1e4 58%,#f3ddd2 58%,#eed2c4 100%);}
-.chp-room--night{background:linear-gradient(180deg,#39456b 0%,#4d5a83 58%,#5c527a 58%,#514a6e 100%);}
-.chp-room-window{position:absolute;top:22px;left:22px;width:74px;height:88px;border-radius:14px;
-  background:linear-gradient(180deg,#eafaff,#cdeffd);border:5px solid #fff;box-shadow:0 4px 10px rgba(90,140,180,.18);}
-.chp-room-window::after{content:"";position:absolute;inset:0;
-  background:linear-gradient(#fff,#fff) 50% 0/5px 100% no-repeat, linear-gradient(#fff,#fff) 0 50%/100% 5px no-repeat;}
-.chp-room--night .chp-room-window{background:linear-gradient(180deg,#2a3355,#3a4670);}
-.chp-room-shelf{position:absolute;top:40px;right:26px;width:64px;height:10px;border-radius:6px;background:#f3d9be;box-shadow:0 14px 0 #f3d9be;}
-.chp-room--night .chp-room-shelf{background:#6a5f86;box-shadow:0 14px 0 #6a5f86;}
-.chp-room-rug{position:absolute;bottom:14px;left:50%;transform:translateX(-50%);
-  width:210px;height:44px;border-radius:50%;background:rgba(251,208,218,.55);}
-.chp-room--night .chp-room-rug{background:rgba(251,208,218,.22);}
+/* 季節イベントの帯 */
+.chp-event-banner{background:linear-gradient(90deg,#ffe9f2,#eaf6ff);border:1px solid var(--chp-line);
+  border-radius:14px;padding:9px 13px;font-size:12px;font-weight:700;color:#4b6a86;line-height:1.5;}
+body[data-theme="dark"] .chp-event-banner, body[data-theme="galaxy"] .chp-event-banner{
+  background:linear-gradient(90deg,#2b2340,#1e2b44);color:#dcecfa;}
 
-/* キャラクター本体（ボタン）。通常時はゆっくり呼吸＋左右にゆれる */
-.chp-char{position:absolute;left:50%;bottom:18px;transform:translateX(-50%);
-  width:190px;height:190px;background:none;border:none;padding:0;cursor:pointer;
-  -webkit-tap-highlight-color:transparent;touch-action:none;}
+/* ===== フロア切り替えタブ（1階／2階／庭） ===== */
+.chp-floor-tabs{display:flex;gap:7px;flex-wrap:wrap;}
+.chp-floor-tab{display:inline-flex;align-items:center;gap:5px;padding:7px 13px;border-radius:99px;cursor:pointer;
+  background:var(--chp-card);border:1px solid var(--chp-line);color:var(--chp-text);
+  font-size:12px;font-weight:800;transition:transform .1s,background .15s;}
+.chp-floor-tab:active{transform:scale(.95);}
+.chp-floor-tab--on{background:var(--chp-sky);border-color:var(--chp-sky-deep);color:#1b4a67;}
+.chp-floor-tab--lock{opacity:.5;cursor:default;}
+
+/* =========================================================================
+   お部屋（キャラクター表示エリア）
+   壁・床・壁紙・床柄・窓・カーテン・照明・イベント飾りを重ねて描く
+   ========================================================================= */
+.chp-room{position:relative;height:320px;border-radius:24px;overflow:hidden;
+  border:1px solid var(--chp-line);background:var(--chp-wall,#e7f5fe);
+  box-shadow:0 10px 24px rgba(124,199,240,.18), inset 0 1px 0 rgba(255,255,255,.6);
+  contain:paint;}
+.chp-room-wall{position:absolute;left:0;right:0;top:0;height:62%;background:var(--chp-wall);}
+.chp-room-wallpattern{position:absolute;left:0;right:0;top:0;height:62%;opacity:.6;}
+.chp-room-floorbase{position:absolute;left:0;right:0;bottom:0;height:38%;background:var(--chp-floor);
+  box-shadow:inset 0 2px 6px rgba(120,100,80,.12);}
+.chp-room-floorpattern{position:absolute;left:0;right:0;bottom:0;height:38%;opacity:.7;}
+
+/* 庭は壁のかわりに空、床のかわりに芝生 */
+.chp-floorview--garden .chp-room-wall{height:58%;}
+.chp-floorview--garden .chp-room-floorbase{height:42%;border-radius:40% 40% 0 0 / 12% 12% 0 0;}
+.chp-garden-sun{position:absolute;top:14px;right:22px;font-size:26px;animation:chpSunPulse 5s ease-in-out infinite;}
+@keyframes chpSunPulse{0%,100%{transform:scale(1);opacity:.9;}50%{transform:scale(1.1);opacity:1;}}
+
+/* 照明のあかり（部屋の中央上からふわっと） */
+.chp-room-glow{position:absolute;inset:0;pointer-events:none;
+  background:radial-gradient(circle at 50% 12%, var(--chp-glow, transparent) 0%, transparent 62%);}
+.chp-room--sparkle .chp-room-glow::after{content:"";position:absolute;inset:0;
+  background:radial-gradient(circle,rgba(255,255,255,.85) 1.4px,transparent 1.6px) 0 0/34px 34px;
+  opacity:.5;animation:chpSparkle 6s linear infinite;}
+@keyframes chpSparkle{0%{background-position:0 0;}100%{background-position:34px 34px;}}
+
+/* イベントの色味＋時間帯の空気感 */
+.chp-room-tint{position:absolute;inset:0;pointer-events:none;background:var(--chp-tint, transparent);}
+.chp-room--morning .chp-room-tint{box-shadow:inset 0 0 60px rgba(255,214,150,.28);}
+.chp-room--evening .chp-room-tint{box-shadow:inset 0 0 70px rgba(255,150,90,.30);}
+.chp-room--night .chp-room-tint{background:linear-gradient(180deg,rgba(30,40,80,.42),rgba(30,40,80,.30));}
+.chp-room--night .chp-room-glow{background:radial-gradient(circle at 50% 12%, var(--chp-glow, rgba(255,225,170,.35)) 0%, transparent 60%);}
+
+/* 星空テーマ・星の背景 */
+.chp-room--starry .chp-room-wall::after, .chp-window-stars{content:"";position:absolute;inset:0;
+  background:radial-gradient(circle,rgba(255,255,255,.9) 1.1px,transparent 1.3px) 0 0/40px 40px,
+             radial-gradient(circle,rgba(255,255,255,.7) 1px,transparent 1.2px) 12px 18px/56px 56px;
+  animation:chpTwinkle 4.5s ease-in-out infinite;}
+@keyframes chpTwinkle{0%,100%{opacity:.55;}50%{opacity:1;}}
+
+/* ---- 窓・カーテン ---- */
+.chp-window{position:absolute;top:9%;left:7%;width:86px;height:96px;}
+.chp-window-sky{position:absolute;inset:0;overflow:hidden;border-radius:inherit;
+  display:flex;align-items:center;justify-content:center;}
+.chp-window-scene{font-size:24px;opacity:.85;}
+.chp-window-frame{position:absolute;inset:0;border:5px solid #fff;border-radius:inherit;
+  box-shadow:0 4px 10px rgba(90,140,180,.18);}
+.chp-window-frame::after{content:"";position:absolute;inset:0;
+  background:linear-gradient(#fff,#fff) 50% 0/5px 100% no-repeat, linear-gradient(#fff,#fff) 0 50%/100% 5px no-repeat;}
+.chp-window--round, .chp-window--round .chp-window-sky, .chp-window--round .chp-window-frame{border-radius:50%;}
+.chp-window--square, .chp-window--square .chp-window-sky, .chp-window--square .chp-window-frame{border-radius:10px;}
+.chp-window--arch, .chp-window--arch .chp-window-sky, .chp-window--arch .chp-window-frame{border-radius:44px 44px 10px 10px;}
+.chp-window--bay{width:104px;height:88px;}
+.chp-window--bay, .chp-window--bay .chp-window-sky, .chp-window--bay .chp-window-frame{border-radius:16px 16px 44px 44px;}
+body[data-theme="dark"] .chp-window-frame, body[data-theme="galaxy"] .chp-window-frame{border-color:#e8f1fa;}
+
+.chp-curtain{position:absolute;top:7%;left:4%;width:104px;height:118px;pointer-events:none;}
+.chp-curtain::before, .chp-curtain::after{content:"";position:absolute;top:0;height:100%;width:26px;
+  background:var(--chp-curtain);border-radius:0 0 20px 20px;opacity:.92;
+  box-shadow:inset -3px 0 0 rgba(0,0,0,.05);}
+.chp-curtain::before{left:0;}
+.chp-curtain::after{right:0;}
+
+/* ---- 季節イベントの飾り ---- */
+.chp-event-deco{position:absolute;inset:0;pointer-events:none;}
+.chp-event-deco-item{position:absolute;font-size:20px;opacity:.9;animation:chpFloatDeco 6s ease-in-out infinite;}
+.chp-event-deco-item--0{top:8%;right:12%;}
+.chp-event-deco-item--1{top:20%;right:28%;animation-delay:-2s;font-size:17px;}
+.chp-event-deco-item--2{top:6%;left:44%;animation-delay:-4s;font-size:16px;}
+@keyframes chpFloatDeco{0%,100%{transform:translateY(0) rotate(-4deg);}50%{transform:translateY(-8px) rotate(4deg);}}
+
+/* ---- 置いてある家具 ---- */
+.chp-furni-layer{position:absolute;inset:0;}
+.chp-furni{position:absolute;transform:translate(-50%,-50%);font-size:0;line-height:1;
+  background:none;border:none;padding:0;pointer-events:none;}
+.chp-furni-ico{font-size:32px;line-height:1;display:block;filter:drop-shadow(0 3px 4px rgba(70,90,110,.22));}
+.chp-furni--wall .chp-furni-ico{font-size:26px;}
+.chp-furni--hang .chp-furni-ico{font-size:24px;animation:chpHang 4.2s ease-in-out infinite;transform-origin:50% 0;}
+@keyframes chpHang{0%,100%{transform:rotate(-5deg);}50%{transform:rotate(5deg);}}
+.chp-furni--edit{pointer-events:auto;cursor:pointer;border-radius:14px;}
+.chp-furni--edit:active{transform:translate(-50%,-50%) scale(.9);}
+
+.chp-slot-empty{position:absolute;transform:translate(-50%,-50%);width:40px;height:40px;border-radius:50%;
+  border:2px dashed rgba(120,160,200,.75);background:rgba(255,255,255,.42);cursor:pointer;
+  color:#5b87ab;font-size:17px;font-weight:800;display:flex;align-items:center;justify-content:center;
+  transition:transform .12s,background .15s;}
+.chp-slot-empty:active{transform:translate(-50%,-50%) scale(.88);}
+.chp-slot-empty--wall{border-style:dotted;}
+.chp-room--night .chp-slot-empty{background:rgba(30,40,70,.45);color:#cfe2f5;border-color:rgba(160,190,220,.7);}
+
+/* 部屋の左下に出る小さな情報 */
+.chp-room-meta{position:absolute;left:10px;bottom:8px;display:flex;gap:9px;flex-wrap:wrap;
+  font-size:10px;font-weight:800;color:#5b7d99;background:rgba(255,255,255,.72);
+  border-radius:99px;padding:4px 10px;pointer-events:none;backdrop-filter:blur(3px);}
+.chp-room--night .chp-room-meta{background:rgba(20,30,55,.6);color:#d5e6f6;}
+
+/* =========================================================================
+   キャラクター本体
+   ========================================================================= */
+.chp-char{position:absolute;left:var(--chp-x,50%);bottom:14px;transform:translateX(-50%);
+  width:184px;height:184px;background:none;border:none;padding:0;cursor:pointer;z-index:3;
+  -webkit-tap-highlight-color:transparent;touch-action:none;
+  transition:left 1.1s cubic-bezier(.4,0,.3,1);}
 .chp-svg{width:100%;height:100%;overflow:visible;display:block;}
 .chp-shadow{fill:rgba(90,120,150,.16);}
 .chp-room--night .chp-shadow{fill:rgba(10,15,35,.3);}
@@ -69,6 +170,13 @@ body[data-theme="dark"] .chp-stage-badge, body[data-theme="galaxy"] .chp-stage-b
 .chp-char .chp-svg{transform-origin:50% 100%;animation:chpSway 5.2s ease-in-out infinite;}
 @keyframes chpBreath{0%,100%{transform:scale(1,1);}50%{transform:scale(1.015,.975);}}
 @keyframes chpSway{0%,100%{transform:rotate(-1.6deg);}50%{transform:rotate(1.6deg);}}
+
+/* いま何をしているかの小さなバッジ */
+.chp-act-badge{position:absolute;top:8px;right:16px;min-width:26px;height:26px;border-radius:50%;
+  background:rgba(255,255,255,.92);border:1px solid var(--chp-line);
+  display:flex;align-items:center;justify-content:center;font-size:14px;
+  box-shadow:0 2px 6px rgba(58,74,92,.14);pointer-events:none;}
+.chp-act-badge:empty{display:none;}
 
 /* 表情・ポーズの切り替え（SVG内のグループをclassで表示制御） */
 .chp-eyes-happy,.chp-eyes-sleepy,.chp-zzz,.chp-arms-hungry,.chp-umbrella{display:none;}
@@ -82,46 +190,114 @@ body[data-theme="dark"] .chp-stage-badge, body[data-theme="galaxy"] .chp-stage-b
 .chp-pose-hungry .chp-arms-hungry{display:block;}
 .chp-pose-hungry .chp-arms-normal{display:none;}
 
-/* ワンショットアニメーション（操作を邪魔しない短いもの） */
+/* 着せ替えパーツ（本体の上に重ねた絵文字） */
+.chp-wear-hat{animation:chpHatBob 3.6s ease-in-out infinite;transform-origin:100px 62px;}
+@keyframes chpHatBob{0%,100%{transform:rotate(-3deg);}50%{transform:rotate(3deg);}}
+.chp-aura{animation:chpAura 9s linear infinite;transform-origin:100px 112px;}
+@keyframes chpAura{0%{transform:rotate(0);}100%{transform:rotate(360deg);}}
+
+/* ---- ワンショットアニメーション（操作を邪魔しない短いもの） ---- */
 .chp-anim-bounce .chp-svg{animation:chpBounce .6s cubic-bezier(.34,1.56,.64,1);}
-@keyframes chpBounce{0%{transform:translateY(0) rotate(0);}35%{transform:translateY(-16px) rotate(0);}70%{transform:translateY(0) scale(1.04,.94);}100%{transform:translateY(0);}}
+@keyframes chpBounce{0%{transform:translateY(0) rotate(0);}35%{transform:translateY(-16px);}70%{transform:translateY(0) scale(1.04,.94);}100%{transform:translateY(0);}}
 .chp-anim-jump .chp-svg{animation:chpJump .85s cubic-bezier(.34,1.56,.64,1);}
 @keyframes chpJump{0%{transform:translateY(0);}30%{transform:translateY(-26px) rotate(-4deg);}55%{transform:translateY(0) scale(1.06,.92);}75%{transform:translateY(-10px);}100%{transform:translateY(0);}}
 .chp-anim-eat .chp-svg{animation:chpEat .85s ease-in-out;}
 @keyframes chpEat{0%,100%{transform:scale(1);}25%{transform:scale(1.05,.95) rotate(-2deg);}50%{transform:scale(.97,1.03) rotate(2deg);}75%{transform:scale(1.04,.96) rotate(-1deg);}}
-.chp-idle-sit .chp-svg{transform:translateY(7px) !important;animation:none;}
-.chp-idle-sit .chp-body-g{animation-duration:5s;}
+.chp-anim-dance .chp-svg{animation:chpDance 1.5s ease-in-out;}
+@keyframes chpDance{0%,100%{transform:rotate(0) translateY(0);}
+  15%{transform:rotate(-10deg) translateY(-6px);}35%{transform:rotate(10deg) translateY(-2px);}
+  55%{transform:rotate(-9deg) translateY(-7px);}75%{transform:rotate(9deg) translateY(-2px);}}
+.chp-anim-clap .chp-svg{animation:chpClap 1s ease-in-out;}
+@keyframes chpClap{0%,100%{transform:scale(1);}20%{transform:scale(1.07,.94);}40%{transform:scale(.95,1.06);}60%{transform:scale(1.06,.95);}80%{transform:scale(.98,1.02);}}
+.chp-anim-splash .chp-svg{animation:chpSplash 1s ease-in-out;}
+@keyframes chpSplash{0%,100%{transform:translateY(0) rotate(0);}30%{transform:translateY(-10px) rotate(-6deg);}60%{transform:translateY(4px) rotate(6deg);}}
+.chp-anim-stretch .chp-svg{animation:chpStretchBig 1.1s ease-in-out;}
+@keyframes chpStretchBig{0%,100%{transform:scale(1,1);}40%{transform:scale(.9,1.14) translateY(-8px);}70%{transform:scale(1.06,.94);}}
+.chp-anim-sleep .chp-svg{animation:chpSleepAnim 1.4s ease-in-out;}
+@keyframes chpSleepAnim{0%,100%{transform:scale(1,1);}50%{transform:scale(1.03,.94) translateY(6px);}}
 
-/* 吹き出し：一定時間で自然に消える */
-.chp-bubble{position:absolute;top:16px;left:50%;transform:translateX(-50%);max-width:78%;
+/* ---- 生活中のアニメーション（数秒ずっと続くもの） ---- */
+.chp-walking .chp-svg{animation:chpWalk .52s ease-in-out infinite;}
+@keyframes chpWalk{0%,100%{transform:translateY(0) rotate(-3deg);}50%{transform:translateY(-6px) rotate(3deg);}}
+.chp-walking.chp-flip .chp-svg{animation:chpWalkFlip .52s ease-in-out infinite;}
+@keyframes chpWalkFlip{0%,100%{transform:scaleX(-1) translateY(0) rotate(3deg);}50%{transform:scaleX(-1) translateY(-6px) rotate(-3deg);}}
+
+.chp-act-sleep .chp-svg{animation:chpActSleep 4s ease-in-out infinite;}
+.chp-act-sleep .chp-eyes-normal{display:none;}
+.chp-act-sleep .chp-eyes-sleepy, .chp-act-sleep .chp-zzz{display:block;}
+@keyframes chpActSleep{0%,100%{transform:translateY(8px) scale(1,.97);}50%{transform:translateY(10px) scale(1.02,.94);}}
+.chp-act-eat .chp-svg{animation:chpEat 1s ease-in-out infinite;}
+.chp-act-read .chp-svg{animation:chpActRead 3.4s ease-in-out infinite;}
+@keyframes chpActRead{0%,100%{transform:rotate(-2deg) translateY(2px);}50%{transform:rotate(2deg) translateY(0);}}
+.chp-act-work .chp-svg{animation:chpActWork 1.1s ease-in-out infinite;}
+@keyframes chpActWork{0%,100%{transform:rotate(-4deg);}50%{transform:rotate(4deg);}}
+.chp-act-dance .chp-svg{animation:chpDance 1.5s ease-in-out infinite;}
+.chp-act-stretch .chp-svg{animation:chpStretchBig 2.2s ease-in-out infinite;}
+.chp-act-look .chp-svg{animation:chpActLook 4.4s ease-in-out infinite;}
+@keyframes chpActLook{0%,100%{transform:translateY(0);}50%{transform:translateY(-4px) rotate(2deg);}}
+.chp-act-play .chp-svg{animation:chpActPlay 1.2s cubic-bezier(.34,1.56,.64,1) infinite;}
+@keyframes chpActPlay{0%,100%{transform:translateY(0);}45%{transform:translateY(-14px) rotate(-5deg);}}
+.chp-act-splash .chp-svg{animation:chpSplash 1.3s ease-in-out infinite;}
+.chp-act-roll .chp-svg{animation:chpActRoll 2.4s ease-in-out infinite;}
+@keyframes chpActRoll{0%{transform:rotate(0);}50%{transform:rotate(-18deg) translateY(6px);}100%{transform:rotate(0);}}
+.chp-act-walk .chp-svg{animation:chpWalk .52s ease-in-out infinite;}
+.chp-act-idle .chp-svg{animation:chpActIdle 4.6s ease-in-out infinite;}
+@keyframes chpActIdle{0%,100%{transform:translateY(4px) rotate(-1deg);}50%{transform:translateY(6px) rotate(1deg);}}
+
+/* ---- 吹き出し：一定時間で自然に消える ---- */
+.chp-bubble{position:absolute;top:14px;left:50%;transform:translateX(-50%);max-width:78%;
   background:var(--chp-card);color:var(--chp-text);border:1px solid var(--chp-line);
   border-radius:16px;padding:9px 14px;font-size:13px;font-weight:700;line-height:1.5;
-  box-shadow:0 6px 14px rgba(58,74,92,.14);opacity:0;z-index:5;pointer-events:none;}
-.chp-bubble::after{content:"";position:absolute;left:50%;bottom:-7px;transform:translateX(-50%);
+  box-shadow:0 6px 14px rgba(58,74,92,.14);opacity:0;z-index:6;pointer-events:none;text-align:center;}
+.chp-bubble::after{content:"";position:absolute;left:50%;bottom:-7px;
   width:12px;height:12px;background:var(--chp-card);border-right:1px solid var(--chp-line);
   border-bottom:1px solid var(--chp-line);transform:translateX(-50%) rotate(45deg);}
 .chp-bubble-show{animation:chpBubbleIn 3.8s ease forwards;}
 @keyframes chpBubbleIn{0%{opacity:0;transform:translateX(-50%) translateY(6px);}
   8%,86%{opacity:1;transform:translateX(-50%) translateY(0);}100%{opacity:0;transform:translateX(-50%) translateY(-4px);}}
 
-/* ハート・キラキラのエフェクト */
-.chp-fx{position:absolute;inset:0;pointer-events:none;overflow:hidden;}
-.chp-fx-item{position:absolute;bottom:44%;font-size:20px;opacity:0;animation:chpFxFloat 1.5s ease-out forwards;}
+/* ---- ハート・キラキラのエフェクト ---- */
+.chp-fx{position:absolute;inset:0;pointer-events:none;overflow:hidden;z-index:5;}
+.chp-fx-item{position:absolute;bottom:40%;font-size:20px;opacity:0;animation:chpFxFloat 1.6s ease-out forwards;}
 @keyframes chpFxFloat{0%{opacity:0;transform:translateY(10px) scale(.6);}
-  25%{opacity:1;}100%{opacity:0;transform:translateY(-64px) scale(1.15);}}
+  25%{opacity:1;}100%{opacity:0;transform:translateY(-72px) scale(1.15);}}
 
-/* ===== カード共通・ステータス ===== */
+/* ---- ⑮ 隠しイベント（タップするとごほうび） ---- */
+.chp-secret{position:absolute;width:52px;height:52px;transform:translate(-50%,-50%);
+  background:none;border:none;padding:0;cursor:pointer;z-index:7;
+  display:flex;align-items:center;justify-content:center;-webkit-tap-highlight-color:transparent;}
+.chp-secret-ico{font-size:30px;filter:drop-shadow(0 0 8px rgba(255,235,170,.9));
+  animation:chpSecretFloat 2.6s ease-in-out infinite;}
+.chp-secret-glow{position:absolute;inset:-6px;border-radius:50%;
+  background:radial-gradient(circle,rgba(255,240,190,.65),transparent 68%);animation:chpSecretPulse 1.8s ease-in-out infinite;}
+@keyframes chpSecretFloat{0%,100%{transform:translateY(0) rotate(-6deg);}50%{transform:translateY(-9px) rotate(6deg);}}
+@keyframes chpSecretPulse{0%,100%{opacity:.45;transform:scale(.92);}50%{opacity:.9;transform:scale(1.1);}}
+.chp-secret--shootingstar .chp-secret-ico{animation:chpShoot 2.4s ease-in-out infinite;}
+@keyframes chpShoot{0%{transform:translate(18px,-14px) scale(.7);opacity:.2;}
+  40%{opacity:1;}100%{transform:translate(-22px,18px) scale(1.05);opacity:.15;}}
+.chp-secret-pop{animation:chpSecretPop .4s ease forwards;}
+@keyframes chpSecretPop{0%{transform:translate(-50%,-50%) scale(1);opacity:1;}
+  100%{transform:translate(-50%,-50%) scale(1.9);opacity:0;}}
+
+/* =========================================================================
+   カード共通・ステータス
+   ========================================================================= */
 .chp-card{background:var(--chp-card);border:1px solid var(--chp-line);border-radius:20px;
   padding:16px;box-shadow:0 6px 16px rgba(124,199,240,.12);}
-.chp-stats{display:flex;flex-direction:column;gap:11px;}
+.chp-stats{display:flex;flex-direction:column;gap:9px;}
 .chp-stat-row{display:flex;align-items:center;gap:10px;}
-.chp-stat-lab{flex:none;width:104px;font-size:12.5px;font-weight:800;color:var(--chp-text);white-space:nowrap;}
-.chp-stat-track{flex:1;height:12px;border-radius:99px;background:var(--chp-cream);overflow:hidden;
+.chp-stat-lab{flex:none;width:100px;font-size:12.5px;font-weight:800;color:var(--chp-text);white-space:nowrap;}
+.chp-stat-track{flex:1;height:11px;border-radius:99px;background:var(--chp-cream);overflow:hidden;
   border:1px solid var(--chp-line);}
 .chp-stat-fill{height:100%;border-radius:99px;transition:width .5s cubic-bezier(.22,1,.36,1);}
-.chp-stat-genki{background:linear-gradient(90deg,#ffe29a,#ffd66e);}
-.chp-stat-hunger{background:linear-gradient(90deg,#ffcfae,#ffb391);}
-.chp-stat-bond{background:linear-gradient(90deg,#fbc4d4,#f9a8c2);}
+.chp-fill-genki{background:linear-gradient(90deg,#ffe29a,#ffd66e);}
+.chp-fill-hunger{background:linear-gradient(90deg,#ffcfae,#ffb391);}
+.chp-fill-bond{background:linear-gradient(90deg,#fbc4d4,#f9a8c2);}
+.chp-fill-clean{background:linear-gradient(90deg,#c6ecfb,#96d9f4);}
+.chp-fill-sleep{background:linear-gradient(90deg,#cfd4f7,#a8b1ef);}
+.chp-fill-fun{background:linear-gradient(90deg,#c9f0cf,#96dfa6);}
+.chp-fill-style{background:linear-gradient(90deg,#f2dcff,#d5aef5);}
+.chp-fill-stress{background:linear-gradient(90deg,#d9dee6,#a9b4c4);}
 .chp-stat-val{flex:none;width:32px;text-align:right;font-size:12.5px;font-weight:800;color:var(--chp-muted);font-variant-numeric:tabular-nums;}
 .chp-xp-row{margin-top:3px;padding-top:12px;border-top:1px dashed var(--chp-line);}
 .chp-xp-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:7px;}
@@ -130,6 +306,16 @@ body[data-theme="dark"] .chp-stage-badge, body[data-theme="galaxy"] .chp-stage-b
 .chp-xp-fill{background:linear-gradient(90deg,var(--chp-sky),var(--chp-sky-deep));}
 .chp-xp-remain{margin-top:7px;font-size:11.5px;font-weight:700;color:var(--chp-muted);}
 .chp-xp-stage{margin-top:3px;font-size:11.5px;font-weight:700;color:#4b96c8;}
+
+/* ===== ミッションの帯（カード型ボタン） ===== */
+.chp-mission-strip{display:flex;align-items:center;gap:12px;width:100%;text-align:left;cursor:pointer;
+  transition:transform .1s;}
+.chp-mission-strip:active{transform:scale(.985);}
+.chp-mission-strip-ico{flex:none;font-size:24px;}
+.chp-mission-strip-main{flex:1;min-width:0;display:flex;flex-direction:column;gap:3px;}
+.chp-mission-strip-title{font-size:13.5px;font-weight:800;color:var(--chp-text);}
+.chp-mission-strip-sub{font-size:11.5px;font-weight:700;color:var(--chp-muted);}
+.chp-mission-strip-go{flex:none;font-size:20px;color:var(--chp-muted);}
 
 /* ===== 操作ボタン（3列グリッド・押しやすい大きさ） ===== */
 .chp-actions{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;}
@@ -140,17 +326,19 @@ body[data-theme="dark"] .chp-stage-badge, body[data-theme="galaxy"] .chp-stage-b
 .chp-action:active{transform:scale(.94);filter:brightness(.97);}
 .chp-action-icon{font-size:24px;line-height:1;}
 .chp-action-label{font-size:12px;font-weight:800;color:var(--chp-text);}
-.chp-action--soon{opacity:.62;}
-.chp-action-soon{position:absolute;top:6px;right:6px;font-size:9px;font-weight:800;color:#b06a7f;
-  background:var(--chp-pink);border-radius:99px;padding:2px 7px;}
-body[data-theme="dark"] .chp-action-soon, body[data-theme="galaxy"] .chp-action-soon{color:#5c2436;}
+.chp-action-badge{position:absolute;top:6px;right:6px;min-width:18px;height:18px;padding:0 5px;
+  border-radius:99px;background:#f5738b;color:#fff;font-size:10.5px;font-weight:800;
+  display:flex;align-items:center;justify-content:center;}
+.chp-action-badge[hidden]{display:none;}
 
 .chp-meta{text-align:center;font-size:11.5px;font-weight:700;color:var(--chp-muted);padding-bottom:6px;}
 
-/* ===== モーダル（ごはん・設定。既存の.modal-ov/.modalを土台に使う） ===== */
-.chp-modal{max-width:360px;background:var(--chp-card);border:1px solid var(--chp-line);border-radius:22px;}
+/* =========================================================================
+   モーダル（ごはん・お世話・設定。既存の.modal-ov/.modalを土台に使う）
+   ========================================================================= */
+.chp-modal{max-width:380px;background:var(--chp-card);border:1px solid var(--chp-line);border-radius:22px;}
 .chp-modal-title{font-size:16px;font-weight:800;color:var(--chp-text);margin-bottom:10px;}
-.chp-modal-coins{font-size:12.5px;font-weight:700;color:var(--chp-muted);margin-bottom:10px;}
+.chp-modal-coins{font-size:12px;font-weight:700;color:var(--chp-muted);margin-bottom:10px;line-height:1.5;}
 .chp-food-list{display:flex;flex-direction:column;gap:9px;max-height:46vh;overflow-y:auto;
   overscroll-behavior:contain;-webkit-overflow-scrolling:touch;}
 .chp-food-row{display:flex;align-items:center;gap:11px;width:100%;text-align:left;
@@ -163,11 +351,14 @@ body[data-theme="dark"] .chp-action-soon, body[data-theme="galaxy"] .chp-action-
 .chp-food-name{font-size:13.5px;font-weight:800;color:var(--chp-text);}
 .chp-food-desc{font-size:11px;font-weight:600;color:var(--chp-muted);}
 .chp-food-cost{flex:none;font-size:12.5px;font-weight:800;color:#c99225;white-space:nowrap;}
-.chp-modal-note{min-height:16px;margin-top:9px;font-size:11.5px;font-weight:700;color:#4b96c8;}
+.chp-modal-note{min-height:16px;margin-top:9px;font-size:11.5px;font-weight:700;color:#4b96c8;line-height:1.55;}
 .chp-modal-close{width:100%;margin-top:10px;padding:12px 0;border:none;border-radius:14px;cursor:pointer;
   background:linear-gradient(90deg,var(--chp-sky),var(--chp-sky-deep));color:#1b3c55;
   font-size:13.5px;font-weight:800;transition:transform .1s;}
 .chp-modal-close:active{transform:scale(.97);}
+.chp-ghost{width:100%;margin-top:10px;padding:11px 0;border-radius:14px;cursor:pointer;
+  background:var(--chp-cream);border:1px solid var(--chp-line);color:var(--chp-text);
+  font-size:12.5px;font-weight:800;}
 
 /* 設定モーダルのトグルスイッチ */
 .chp-toggle-row{display:flex;align-items:center;justify-content:space-between;gap:10px;
@@ -180,10 +371,12 @@ body[data-theme="dark"] .chp-action-soon, body[data-theme="galaxy"] .chp-action-
 .chp-toggle-row input:checked + .chp-toggle-ui{background:var(--chp-sky-deep);}
 .chp-toggle-row input:checked + .chp-toggle-ui::after{left:22px;}
 
-/* ===== ホーム画面のミニまるチャピ（お天気カード右側・旧盆栽の位置） ===== */
+/* =========================================================================
+   ホーム画面のミニまるチャピ（お天気カード右側）
+   ========================================================================= */
 .weather-chappy{flex:1;min-width:0;border-left:1px solid var(--line);padding-left:10px;
   display:flex;flex-direction:column;justify-content:center;align-items:center;}
-.weather-chappy-btn{display:flex;align-items:center;justify-content:center;
+.weather-chappy-btn{position:relative;display:flex;align-items:center;justify-content:center;
   width:100%;height:64px;min-height:44px;border:none;border-radius:13px;
   background:linear-gradient(180deg,#eaf7ff,#ccecff);
   cursor:pointer;transition:transform .1s;overflow:hidden;}
@@ -198,16 +391,21 @@ body[data-theme="dark"] .weather-chappy-btn, body[data-theme="galaxy"] .weather-
 .chp-mini--morning .chp-svg{animation:chpStretch 2.6s ease-in-out infinite;}
 @keyframes chpStretch{0%,100%{transform:scale(1,1);}45%{transform:scale(.96,1.06);}60%{transform:scale(.96,1.06);}}
 .chp-mini--rain .chp-umbrella{display:block;}
+.chp-mini-badge{position:absolute;top:4px;right:6px;min-width:16px;height:16px;padding:0 4px;
+  border-radius:99px;background:#f5738b;color:#fff;font-size:10px;font-weight:800;
+  display:flex;align-items:center;justify-content:center;}
 
 /* ホーム設定OFF時：お天気カードを3カラムに詰める */
 .weather-card .weather-top--nochappy{grid-template-columns:repeat(3,minmax(0,1fr));}
 .weather-card .weather-top--nochappy .weather-precip-alert{border-right:none;padding-right:0;}
 
 @media (max-width:390px){
-  .chp-room{height:250px;}
-  .chp-char{width:164px;height:164px;}
-  .chp-stat-lab{width:92px;font-size:12px;}
+  .chp-room{height:272px;}
+  .chp-char{width:152px;height:152px;}
+  .chp-stat-lab{width:88px;font-size:11.5px;}
   .chp-actions{gap:8px;}
+  .chp-furni-ico{font-size:27px;}
+  .chp-window{width:74px;height:84px;}
   .weather-card .weather-top--nochappy{grid-template-columns:minmax(44px,auto) minmax(0,1fr) minmax(0,1fr);}
 }
 
@@ -215,7 +413,19 @@ body[data-theme="dark"] .weather-chappy-btn, body[data-theme="galaxy"] .weather-
 @media (prefers-reduced-motion: reduce){
   .chp-body-g, .chp-char .chp-svg, .chp-mini .chp-svg,
   .chp-anim-bounce .chp-svg, .chp-anim-jump .chp-svg, .chp-anim-eat .chp-svg,
-  .chp-mini--morning .chp-svg, .chp-mini.chp-anim-jump .chp-svg{animation:none;}
+  .chp-anim-dance .chp-svg, .chp-anim-clap .chp-svg, .chp-anim-splash .chp-svg,
+  .chp-anim-stretch .chp-svg, .chp-anim-sleep .chp-svg,
+  .chp-walking .chp-svg, .chp-walking.chp-flip .chp-svg,
+  .chp-act-sleep .chp-svg, .chp-act-eat .chp-svg, .chp-act-read .chp-svg,
+  .chp-act-work .chp-svg, .chp-act-dance .chp-svg, .chp-act-stretch .chp-svg,
+  .chp-act-look .chp-svg, .chp-act-play .chp-svg, .chp-act-splash .chp-svg,
+  .chp-act-roll .chp-svg, .chp-act-walk .chp-svg, .chp-act-idle .chp-svg,
+  .chp-mini--morning .chp-svg, .chp-mini.chp-anim-jump .chp-svg,
+  .chp-furni--hang .chp-furni-ico, .chp-event-deco-item, .chp-garden-sun,
+  .chp-secret-ico, .chp-secret-glow, .chp-wear-hat, .chp-aura,
+  .chp-room--sparkle .chp-room-glow::after,
+  .chp-room--starry .chp-room-wall::after, .chp-window-stars{animation:none;}
+  .chp-char{transition:none;}
   .chp-fx-item{animation:none;opacity:0;}
   .chp-bubble-show{animation:none;opacity:1;} /* 表示・非表示はJS側のタイマーが行う */
 }

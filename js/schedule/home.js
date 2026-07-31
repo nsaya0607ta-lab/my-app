@@ -8,7 +8,7 @@
      （Task）で管理し、完了チェックだけを行う。毎日／平日／毎週の繰り返しにも
      対応していて、繰り返しタスクの完了は日付ごとに記録される。
    ========================================================================= */
-import { chappyOnTaskCompleted } from '../chappy.js';
+import { chappyOnAllSchedulesDone, chappyOnScheduleCompleted, chappyOnTaskCompleted } from '../chappy.js';
 import { occurrencesForDate, sortForHome } from './occurrences.js';
 import { occurrenceRowHTML } from './views.js';
 import { openScheduleEditor } from './editor.js';
@@ -144,6 +144,13 @@ function bind(root, options, dk, now){
       const occ = occurrencesForDate(dk).find(o => o.scheduleId === scheduleId);
       bpOnScheduleCompleted(dk, scheduleId, occ ? occ.title : "");
       checkWeeklyBonuses();
+      if(nowDone){
+        // 🏠 予定の完了 → チャッピーの経験値・元気アップ（同じ回は1日1回だけ）
+        chappyOnScheduleCompleted(dk, scheduleId);
+        // その日の予定をぜんぶ終わらせたらボーナス
+        const all = occurrencesForDate(dk);
+        if(all.length > 0 && all.every(o => isScheduleDone(o.scheduleId, dk))) chappyOnAllSchedulesDone(dk);
+      }
     }
     if(options.onChange) options.onChange();
   });

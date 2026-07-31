@@ -1,0 +1,344 @@
+/* =========================================================================
+   🏠 チャッピーハウス：シート類のスタイル
+   模様がえ／ショップ／ガチャ／着せ替え／ミッション／図鑑・アルバム。
+   css/chappy.css で定義した --chp-* 変数をそのまま使う（世界観の統一）。
+   スマホでの片手操作を前提に、下から出るボトムシート型にしている。
+   ========================================================================= */
+
+/* ===== ボトムシートの土台 ===== */
+.chp-sheet-ov{align-items:flex-end;padding:0;}
+.chp-sheet{width:100%;max-width:560px;margin:0 auto;max-height:88vh;
+  display:flex;flex-direction:column;position:relative;
+  background:var(--chp-card);border:1px solid var(--chp-line);border-bottom:none;
+  border-radius:24px 24px 0 0;box-shadow:0 -10px 34px rgba(15,23,42,.22);
+  transform:translateY(12%);opacity:0;transition:transform .26s cubic-bezier(.22,1,.36,1),opacity .2s;}
+.chp-sheet-show{transform:translateY(0);opacity:1;}
+.chp-sheet-grip{width:44px;height:5px;border-radius:99px;background:var(--chp-line);
+  margin:9px auto 2px;flex:none;}
+.chp-sheet-head{display:flex;align-items:center;gap:10px;padding:8px 16px 10px;flex:none;
+  border-bottom:1px solid var(--chp-line);}
+.chp-sheet-title{flex:1;min-width:0;font-size:15.5px;font-weight:800;color:var(--chp-text);}
+.chp-sheet-coin{flex:none;font-size:12px;font-weight:800;color:#c99225;
+  background:var(--chp-cream);border-radius:99px;padding:5px 11px;white-space:nowrap;}
+.chp-sheet-x{flex:none;width:34px;height:34px;border-radius:50%;cursor:pointer;
+  background:var(--chp-cream);border:1px solid var(--chp-line);color:var(--chp-text);font-size:14px;font-weight:800;}
+.chp-sheet-x:active{transform:scale(.9);}
+.chp-sheet-body{position:relative;flex:1;min-height:0;overflow-y:auto;overscroll-behavior:contain;
+  -webkit-overflow-scrolling:touch;padding:14px 16px calc(22px + env(safe-area-inset-bottom));
+  display:flex;flex-direction:column;gap:12px;}
+/* 中身が縦に長いとき、タブなどが押しつぶされないようにする（縦は内容なりの高さで固定） */
+.chp-sheet-body > *{flex:0 0 auto;}
+
+/* ===== タブ ===== */
+.chp-tabs{display:flex;gap:6px;flex-wrap:wrap;}
+.chp-tabs--scroll{flex-wrap:nowrap;overflow-x:auto;padding-bottom:3px;scrollbar-width:none;}
+.chp-tabs--scroll::-webkit-scrollbar{display:none;}
+.chp-tab{position:relative;flex:none;display:inline-flex;align-items:center;gap:5px;white-space:nowrap;
+  padding:8px 13px;border-radius:99px;cursor:pointer;font-size:12px;font-weight:800;
+  background:var(--chp-cream);border:1px solid var(--chp-line);color:var(--chp-text);
+  transition:transform .1s,background .15s;}
+.chp-tab:active{transform:scale(.95);}
+.chp-tab--on{background:var(--chp-sky);border-color:var(--chp-sky-deep);color:#1b4a67;}
+.chp-tab--lock{opacity:.55;}
+.chp-lock-badge{font-size:9.5px;font-weight:800;color:#b06a7f;background:var(--chp-pink);
+  border-radius:99px;padding:2px 6px;margin-left:4px;}
+.chp-tabpanel{display:flex;flex-direction:column;gap:12px;}
+
+/* ===== 一時メッセージ（トースト） ===== */
+.chp-toast{position:sticky;bottom:4px;align-self:center;max-width:92%;
+  background:rgba(58,74,92,.94);color:#fff;font-size:12px;font-weight:700;
+  border-radius:99px;padding:8px 16px;opacity:0;pointer-events:none;z-index:9;}
+.chp-toast-show{animation:chpToast 2.4s ease forwards;}
+@keyframes chpToast{0%{opacity:0;transform:translateY(6px);}12%,80%{opacity:1;transform:translateY(0);}100%{opacity:0;}}
+
+/* =========================================================================
+   ① 模様がえ
+   ========================================================================= */
+.chp-edit-preview{position:relative;height:230px;border-radius:20px;overflow:hidden;
+  border:1px solid var(--chp-line);background:var(--chp-wall,#e7f5fe);}
+.chp-edit-note{font-size:11.5px;font-weight:700;color:var(--chp-muted);text-align:center;}
+
+.chp-item-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:9px;}
+.chp-item-grid--sm{grid-template-columns:repeat(4,minmax(0,1fr));}
+.chp-item-grid--lock{opacity:.45;}
+.chp-item{position:relative;display:flex;flex-direction:column;align-items:center;gap:3px;
+  padding:11px 6px;border-radius:15px;cursor:pointer;overflow:hidden;
+  background:var(--chp-cream);border:1px solid var(--chp-line);transition:transform .1s;}
+.chp-item:active{transform:scale(.95);}
+.chp-item--on{border-color:var(--chp-sky-deep);box-shadow:0 0 0 2px rgba(124,199,240,.4) inset;}
+.chp-item--lock{opacity:.55;}
+.chp-item-ico{font-size:22px;line-height:1;}
+.chp-item-name{font-size:11px;font-weight:800;color:var(--chp-text);text-align:center;line-height:1.3;}
+.chp-item-sub{font-size:10px;font-weight:700;color:var(--chp-muted);}
+.chp-item-swatch{width:100%;height:6px;border-radius:99px;margin-top:2px;}
+
+.chp-decor-sec{display:flex;flex-direction:column;gap:7px;}
+.chp-decor-head{font-size:12.5px;font-weight:800;color:var(--chp-text);display:flex;align-items:center;gap:6px;}
+
+/* 増築 */
+.chp-upgrade{display:flex;flex-direction:column;gap:12px;}
+.chp-upgrade-now{background:var(--chp-cream);border:1px solid var(--chp-line);border-radius:18px;padding:14px;}
+.chp-upgrade-lv{font-size:18px;font-weight:800;color:var(--chp-text);}
+.chp-upgrade-desc{font-size:12px;font-weight:700;color:#4b96c8;margin-top:2px;}
+.chp-upgrade-stats{display:flex;gap:12px;flex-wrap:wrap;margin-top:9px;font-size:11.5px;font-weight:700;color:var(--chp-muted);}
+.chp-upgrade-next{background:var(--chp-card);border:1px solid var(--chp-line);border-radius:18px;padding:14px;}
+.chp-upgrade-nexthead{font-size:13px;font-weight:800;color:var(--chp-text);}
+.chp-upgrade-unlock{font-size:12.5px;font-weight:800;color:#c99225;margin-top:4px;}
+.chp-upgrade-req{list-style:none;margin:10px 0 0;padding:0;display:flex;flex-direction:column;gap:6px;}
+.chp-upgrade-req li{font-size:11.5px;font-weight:700;color:var(--chp-muted);padding-left:20px;position:relative;}
+.chp-upgrade-req li::before{content:"○";position:absolute;left:2px;}
+.chp-upgrade-req li.ok{color:#3f9a6a;}
+.chp-upgrade-req li.ok::before{content:"●";}
+.chp-upgrade-hint{margin-top:9px;font-size:11px;font-weight:700;color:var(--chp-muted);line-height:1.6;}
+.chp-upgrade-max{background:var(--chp-cream);border:1px solid var(--chp-line);border-radius:18px;
+  padding:18px;text-align:center;font-size:13px;font-weight:800;color:var(--chp-text);}
+.chp-cta{width:100%;margin-top:12px;padding:13px 0;border:none;border-radius:14px;cursor:pointer;
+  background:linear-gradient(90deg,var(--chp-sky),var(--chp-sky-deep));color:#1b3c55;
+  font-size:13.5px;font-weight:800;transition:transform .1s;}
+.chp-cta:active{transform:scale(.97);}
+.chp-cta:disabled{background:var(--chp-line);color:var(--chp-muted);cursor:default;}
+
+/* 家具ピッカー */
+.chp-pick-list{display:flex;flex-direction:column;gap:8px;max-height:48vh;overflow-y:auto;overscroll-behavior:contain;}
+.chp-pick-row{display:flex;align-items:center;gap:10px;width:100%;text-align:left;padding:10px 12px;
+  border-radius:14px;cursor:pointer;background:var(--chp-cream);border:1px solid var(--chp-line);}
+.chp-pick-row:active{transform:scale(.97);}
+.chp-pick-row--on{border-color:var(--chp-sky-deep);}
+.chp-pick-ico{flex:none;font-size:24px;}
+.chp-pick-info{flex:1;min-width:0;display:flex;flex-direction:column;gap:2px;}
+.chp-pick-name{font-size:13px;font-weight:800;color:var(--chp-text);}
+.chp-pick-desc{font-size:10.5px;font-weight:600;color:var(--chp-muted);}
+
+/* =========================================================================
+   ② ショップ ／ ⑤ 着せ替え（共通のカードグリッド）
+   ========================================================================= */
+.chp-shop-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;}
+.chp-shop-card{display:flex;flex-direction:column;align-items:center;gap:4px;padding:12px 8px 10px;
+  border-radius:16px;background:var(--chp-cream);border:1px solid var(--chp-line);}
+.chp-shop-card--owned{opacity:.9;}
+.chp-shop-card--on{border-color:var(--chp-sky-deep);box-shadow:0 0 0 2px rgba(124,199,240,.35) inset;}
+.chp-shop-ico{font-size:28px;line-height:1;}
+.chp-shop-name{font-size:11.5px;font-weight:800;color:var(--chp-text);text-align:center;line-height:1.3;}
+.chp-shop-desc{font-size:10px;font-weight:600;color:var(--chp-muted);text-align:center;line-height:1.4;}
+.chp-shop-specs{display:flex;gap:7px;font-size:10px;font-weight:800;color:var(--chp-muted);}
+.chp-shop-buy{width:100%;margin-top:4px;padding:7px 0;border-radius:11px;cursor:pointer;
+  background:linear-gradient(90deg,var(--chp-sky),var(--chp-sky-deep));border:none;color:#1b3c55;
+  font-size:11px;font-weight:800;transition:transform .1s;}
+.chp-shop-buy:active{transform:scale(.95);}
+.chp-shop-buy:disabled{background:var(--chp-line);color:var(--chp-muted);cursor:default;}
+
+/* レア度のラベル */
+.chp-rarity{font-size:9.5px;font-weight:800;border-radius:99px;padding:2px 7px;white-space:nowrap;}
+.chp-rarity--n{background:#e8eef4;color:#63788c;}
+.chp-rarity--r{background:#dcf0ff;color:#2c7cb0;}
+.chp-rarity--sr{background:#f0e3ff;color:#7c4fb0;}
+.chp-rarity--ssr{background:linear-gradient(90deg,#ffe9b0,#ffd0e6,#cfe6ff);color:#9a6a1c;}
+body[data-theme="dark"] .chp-rarity--n, body[data-theme="galaxy"] .chp-rarity--n{background:#2b3a55;color:#b9cbdd;}
+
+/* 着せ替えのプレビュー */
+.chp-closet-preview{display:flex;align-items:center;gap:14px;padding:12px;border-radius:18px;
+  background:linear-gradient(180deg,var(--chp-cream),var(--chp-card));border:1px solid var(--chp-line);}
+.chp-closet-char{flex:none;width:118px;height:118px;}
+.chp-closet-char .chp-svg{width:100%;height:100%;}
+.chp-closet-info{flex:1;min-width:0;}
+.chp-closet-style{font-size:13px;font-weight:800;color:var(--chp-text);margin-bottom:7px;}
+.chp-closet-eq{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:3px;}
+.chp-closet-eq li{font-size:11px;font-weight:700;color:var(--chp-muted);display:flex;gap:6px;align-items:center;}
+
+/* =========================================================================
+   ⑧ ガチャ
+   ========================================================================= */
+.chp-gacha-event{background:linear-gradient(90deg,#fff0d6,#ffe3f0);border:1px solid var(--chp-line);
+  border-radius:14px;padding:10px 13px;font-size:11.5px;font-weight:700;color:#8a5f2a;line-height:1.5;}
+.chp-gacha-list{display:flex;flex-direction:column;gap:12px;}
+.chp-gacha-card{background:var(--chp-cream);border:1px solid var(--chp-line);border-radius:18px;padding:14px;}
+.chp-gacha-card--off{opacity:.6;}
+.chp-gacha-top{display:flex;align-items:center;gap:12px;}
+.chp-gacha-ico{flex:none;font-size:32px;}
+.chp-gacha-meta{flex:1;min-width:0;display:flex;flex-direction:column;gap:2px;}
+.chp-gacha-name{font-size:14px;font-weight:800;color:var(--chp-text);}
+.chp-gacha-desc{font-size:11px;font-weight:600;color:var(--chp-muted);}
+.chp-gacha-progress{font-size:10.5px;font-weight:800;color:#4b96c8;}
+.chp-gacha-rates{display:flex;gap:6px;flex-wrap:wrap;margin:10px 0;}
+.chp-rate{font-size:9.5px;font-weight:800;border-radius:99px;padding:3px 8px;background:var(--chp-card);
+  border:1px solid var(--chp-line);color:var(--chp-muted);}
+.chp-rate--sr{color:#7c4fb0;}
+.chp-rate--ssr{color:#c98a1c;}
+.chp-gacha-actions{display:grid;grid-template-columns:1fr 1fr;gap:8px;}
+.chp-gacha-btn{padding:11px 6px;border-radius:13px;border:none;cursor:pointer;
+  background:linear-gradient(90deg,var(--chp-sky),var(--chp-sky-deep));color:#1b3c55;
+  font-size:11.5px;font-weight:800;transition:transform .1s;}
+.chp-gacha-btn--ten{background:linear-gradient(90deg,#ffd9a8,#ffc178);color:#7a4a12;}
+.chp-gacha-btn:active{transform:scale(.96);}
+.chp-gacha-btn:disabled{background:var(--chp-line);color:var(--chp-muted);cursor:default;}
+.chp-gacha-off{margin-top:8px;font-size:11px;font-weight:700;color:var(--chp-muted);text-align:center;}
+.chp-gacha-note{font-size:10.5px;font-weight:700;color:var(--chp-muted);line-height:1.6;}
+
+/* ---- レア演出（全画面） ---- */
+.chp-gacha-stage{position:fixed;inset:0;z-index:1200;display:flex;flex-direction:column;
+  align-items:center;justify-content:center;gap:22px;
+  background:radial-gradient(circle at 50% 45%,rgba(40,55,85,.86),rgba(15,23,42,.95));
+  backdrop-filter:blur(4px);}
+.chp-gacha-capsule{font-size:84px;animation:chpCapsuleShake .42s ease-in-out infinite;
+  filter:drop-shadow(0 0 22px rgba(255,235,180,.55));}
+@keyframes chpCapsuleShake{0%,100%{transform:rotate(-9deg) scale(1);}50%{transform:rotate(9deg) scale(1.06);}}
+.chp-gacha-hint{font-size:13px;font-weight:800;color:#fff6e0;letter-spacing:.06em;}
+.chp-gacha-rays{position:absolute;width:340px;height:340px;border-radius:50%;opacity:.25;
+  background:conic-gradient(from 0deg,transparent 0 12deg,rgba(255,240,190,.9) 12deg 18deg,transparent 18deg 30deg);
+  animation:chpRays 7s linear infinite;}
+@keyframes chpRays{0%{transform:rotate(0);}100%{transform:rotate(360deg);}}
+.chp-gacha-stage--sr .chp-gacha-rays{opacity:.45;
+  background:conic-gradient(from 0deg,transparent 0 10deg,rgba(210,180,255,.95) 10deg 16deg,transparent 16deg 26deg);}
+.chp-gacha-stage--ssr .chp-gacha-rays{opacity:.62;
+  background:conic-gradient(from 0deg,#ffd6e8,#fff1b8,#c9f0ff,#e0d0ff,#ffd6e8);
+  animation:chpRays 3.4s linear infinite;}
+.chp-gacha-stage--ssr .chp-gacha-capsule{animation:chpCapsuleShake .24s ease-in-out infinite;
+  filter:drop-shadow(0 0 34px rgba(255,220,120,.95));}
+.chp-gacha-stage--open{animation:chpStageFlash .5s ease forwards;}
+@keyframes chpStageFlash{0%{opacity:1;}40%{background:rgba(255,255,255,.96);}100%{opacity:0;}}
+
+.chp-gacha-result{max-width:400px;}
+.chp-gacha-result--ssr{box-shadow:0 0 0 3px rgba(255,214,120,.6), 0 20px 40px rgba(15,23,42,.25);}
+.chp-gacha-items{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;
+  max-height:46vh;overflow-y:auto;overscroll-behavior:contain;}
+.chp-gacha-item{display:flex;flex-direction:column;align-items:center;gap:3px;padding:10px 6px;
+  border-radius:14px;background:var(--chp-cream);border:1px solid var(--chp-line);
+  opacity:0;animation:chpItemIn .4s ease forwards;}
+@keyframes chpItemIn{0%{opacity:0;transform:translateY(10px) scale(.9);}100%{opacity:1;transform:none;}}
+.chp-gacha-item--sr{border-color:#c69bea;}
+.chp-gacha-item--ssr{border-color:#f2b846;box-shadow:0 0 12px rgba(242,184,70,.45);}
+.chp-gacha-item-ico{font-size:26px;}
+.chp-gacha-item-name{font-size:11px;font-weight:800;color:var(--chp-text);text-align:center;line-height:1.3;}
+.chp-gacha-new{font-size:9.5px;font-weight:800;color:#c9432f;background:#ffe3dd;border-radius:99px;padding:2px 7px;}
+.chp-gacha-dupe{font-size:9.5px;font-weight:800;color:var(--chp-muted);}
+
+/* =========================================================================
+   ⑥ ミッション
+   ========================================================================= */
+.chp-mission-head{display:flex;align-items:center;justify-content:space-between;
+  font-size:11.5px;font-weight:700;color:var(--chp-muted);}
+.chp-mission-count{font-weight:800;color:#4b96c8;}
+.chp-mission-list{display:flex;flex-direction:column;gap:9px;}
+.chp-mission{display:flex;align-items:center;gap:11px;padding:12px;border-radius:16px;
+  background:var(--chp-cream);border:1px solid var(--chp-line);}
+.chp-mission--done{border-color:var(--chp-sky-deep);}
+.chp-mission--claimed{opacity:.6;}
+.chp-mission-ico{flex:none;font-size:22px;}
+.chp-mission-main{flex:1;min-width:0;display:flex;flex-direction:column;gap:4px;}
+.chp-mission-label{font-size:12.5px;font-weight:800;color:var(--chp-text);}
+.chp-mission-bar{display:block;height:7px;border-radius:99px;background:var(--chp-card);
+  border:1px solid var(--chp-line);overflow:hidden;}
+.chp-mission-fill{display:block;height:100%;border-radius:99px;
+  background:linear-gradient(90deg,var(--chp-sky),var(--chp-sky-deep));transition:width .4s;}
+.chp-mission-prog{font-size:10px;font-weight:800;color:var(--chp-muted);}
+.chp-mission-right{flex:none;display:flex;flex-direction:column;align-items:flex-end;gap:5px;}
+.chp-mission-reward{font-size:10px;font-weight:800;color:#c99225;white-space:nowrap;}
+.chp-mission-btn{padding:7px 12px;border-radius:11px;border:none;cursor:pointer;font-size:11px;font-weight:800;
+  background:linear-gradient(90deg,#ffd9a8,#ffc178);color:#7a4a12;transition:transform .1s;}
+.chp-mission-btn:active{transform:scale(.94);}
+.chp-mission-btn:disabled{background:var(--chp-line);color:var(--chp-muted);cursor:default;}
+.chp-mission-bonus{padding:11px 13px;border-radius:14px;font-size:11.5px;font-weight:700;
+  background:var(--chp-cream);border:1px dashed var(--chp-line);color:var(--chp-muted);line-height:1.5;}
+.chp-mission-bonus--on{border-style:solid;border-color:var(--chp-sky-deep);color:var(--chp-text);}
+.chp-mission-note{font-size:10.5px;font-weight:700;color:var(--chp-muted);line-height:1.7;}
+
+/* =========================================================================
+   ⑪⑫ 図鑑・アルバム
+   ========================================================================= */
+.chp-book-hero{text-align:center;padding:16px;border-radius:18px;
+  background:linear-gradient(180deg,var(--chp-cream),var(--chp-card));border:1px solid var(--chp-line);}
+.chp-book-hero-lv{font-size:22px;font-weight:800;color:var(--chp-text);}
+.chp-book-hero-stage{font-size:12.5px;font-weight:800;color:#4b96c8;margin-top:2px;}
+.chp-book-hero-xp{font-size:11px;font-weight:700;color:var(--chp-muted);margin-top:4px;}
+.chp-book-sec{font-size:12.5px;font-weight:800;color:var(--chp-text);
+  padding-bottom:5px;border-bottom:1px dashed var(--chp-line);}
+
+.chp-stage-track{display:flex;flex-direction:column;gap:6px;}
+.chp-stage-step{display:flex;align-items:center;gap:9px;font-size:11.5px;font-weight:700;color:var(--chp-muted);}
+.chp-stage-step--on{color:var(--chp-text);}
+.chp-stage-dot{flex:none;width:16px;text-align:center;color:var(--chp-line);}
+.chp-stage-step--on .chp-stage-dot{color:var(--chp-sky-deep);}
+.chp-stage-name{flex:1;font-weight:800;}
+.chp-stage-xp{flex:none;font-variant-numeric:tabular-nums;}
+
+.chp-record-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px;}
+.chp-record{display:flex;flex-direction:column;align-items:center;gap:2px;padding:10px 4px;
+  border-radius:14px;background:var(--chp-cream);border:1px solid var(--chp-line);}
+.chp-record-n{font-size:16px;font-weight:800;color:var(--chp-text);font-variant-numeric:tabular-nums;}
+.chp-record-l{font-size:9.5px;font-weight:700;color:var(--chp-muted);text-align:center;line-height:1.3;}
+
+.chp-col-list{display:flex;flex-direction:column;gap:8px;}
+.chp-col-row{display:flex;align-items:center;gap:9px;}
+.chp-col-lab{flex:none;width:118px;font-size:11.5px;font-weight:800;color:var(--chp-text);}
+.chp-col-track{flex:1;height:9px;border-radius:99px;background:var(--chp-cream);
+  border:1px solid var(--chp-line);overflow:hidden;}
+.chp-col-fill{display:block;height:100%;border-radius:99px;
+  background:linear-gradient(90deg,#c9f0cf,#8fd7a3);transition:width .4s;}
+.chp-col-num{flex:none;font-size:10.5px;font-weight:800;color:var(--chp-muted);
+  font-variant-numeric:tabular-nums;min-width:44px;text-align:right;}
+
+.chp-album{display:flex;flex-direction:column;gap:9px;}
+.chp-album-card{display:flex;align-items:center;gap:11px;padding:12px;border-radius:16px;
+  background:var(--chp-cream);border:1px solid var(--chp-line);}
+.chp-album-ico{flex:none;font-size:24px;}
+.chp-album-body{flex:1;min-width:0;display:flex;flex-direction:column;gap:2px;}
+.chp-album-title{font-size:12.5px;font-weight:800;color:var(--chp-text);}
+.chp-album-desc{font-size:10.5px;font-weight:600;color:var(--chp-muted);}
+.chp-album-date{flex:none;font-size:10px;font-weight:800;color:var(--chp-muted);}
+
+.chp-badge-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:9px;}
+.chp-badge{display:flex;flex-direction:column;align-items:center;gap:3px;padding:13px 8px;
+  border-radius:16px;background:var(--chp-cream);border:1px solid var(--chp-line);opacity:.55;}
+.chp-badge--on{opacity:1;border-color:var(--chp-sky-deep);}
+.chp-badge-ico{font-size:26px;}
+.chp-badge-name{font-size:11.5px;font-weight:800;color:var(--chp-text);text-align:center;}
+.chp-badge-desc{font-size:9.5px;font-weight:600;color:var(--chp-muted);text-align:center;line-height:1.4;}
+
+.chp-zukan-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px;}
+.chp-zukan{position:relative;display:flex;flex-direction:column;align-items:center;gap:3px;
+  padding:10px 4px;border-radius:14px;background:var(--chp-cream);border:1px solid var(--chp-line);opacity:.5;}
+.chp-zukan--on{opacity:1;}
+.chp-zukan-ico{font-size:22px;}
+.chp-zukan-name{font-size:9.5px;font-weight:800;color:var(--chp-text);text-align:center;line-height:1.3;}
+.chp-zukan-tag{position:absolute;top:4px;right:4px;font-size:8.5px;font-weight:800;color:#b06a7f;
+  background:var(--chp-pink);border-radius:99px;padding:1px 5px;}
+
+.chp-event-now{padding:14px;border-radius:18px;text-align:center;line-height:1.7;
+  background:linear-gradient(180deg,#fff0d6,#ffe3f0);border:1px solid var(--chp-line);
+  font-size:13px;font-weight:800;color:#8a5f2a;}
+.chp-event-list{display:flex;flex-direction:column;gap:7px;}
+.chp-event-row{display:flex;align-items:center;gap:10px;padding:10px 12px;border-radius:14px;
+  background:var(--chp-cream);border:1px solid var(--chp-line);}
+.chp-event-row--on{border-color:var(--chp-sky-deep);}
+.chp-event-row--joined .chp-event-state{color:#3f9a6a;}
+.chp-event-ico{flex:none;font-size:22px;}
+.chp-event-main{flex:1;min-width:0;display:flex;flex-direction:column;gap:1px;}
+.chp-event-name{font-size:12.5px;font-weight:800;color:var(--chp-text);}
+.chp-event-date{font-size:10px;font-weight:700;color:var(--chp-muted);}
+.chp-event-state{flex:none;font-size:10.5px;font-weight:800;color:var(--chp-muted);}
+
+.chp-talk-list{display:flex;flex-direction:column;gap:8px;}
+.chp-talk-row{display:flex;align-items:center;gap:9px;}
+.chp-talk-bubble{flex:1;min-width:0;position:relative;padding:9px 13px;border-radius:14px 14px 14px 4px;
+  background:var(--chp-cream);border:1px solid var(--chp-line);
+  font-size:12px;font-weight:700;color:var(--chp-text);line-height:1.5;}
+.chp-talk-date{flex:none;font-size:9.5px;font-weight:800;color:var(--chp-muted);}
+
+.chp-empty{padding:28px 16px;text-align:center;font-size:12px;font-weight:700;
+  color:var(--chp-muted);line-height:1.8;}
+
+@media (max-width:390px){
+  .chp-shop-grid, .chp-item-grid{grid-template-columns:repeat(2,minmax(0,1fr));}
+  .chp-item-grid--sm{grid-template-columns:repeat(3,minmax(0,1fr));}
+  .chp-record-grid, .chp-zukan-grid{grid-template-columns:repeat(3,minmax(0,1fr));}
+  .chp-edit-preview{height:196px;}
+  .chp-closet-char{width:96px;height:96px;}
+  .chp-col-lab{width:96px;font-size:11px;}
+}
+
+@media (prefers-reduced-motion: reduce){
+  .chp-sheet{transition:none;}
+  .chp-gacha-capsule, .chp-gacha-rays, .chp-gacha-item, .chp-toast-show{animation:none;}
+  .chp-gacha-item{opacity:1;}
+  .chp-toast-show{opacity:1;}
+}

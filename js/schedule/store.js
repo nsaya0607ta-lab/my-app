@@ -238,6 +238,9 @@ export function clearOccurrenceOverride(id, occDateKey){
   upsertSchedule({ ...s, overrides, exdates, syncStatus: s.googleEventId ? "pending" : s.syncStatus });
 }
 
+/* 予定の「完了」記録は js/schedule/completion.js が別テーブルとして持つ
+   （Googleカレンダーとの同期対象外にするため）。ここには置かない */
+
 /* ================= タスク（Task）=================
    仕様どおり時間を持たないチェックリスト。repeatType で毎日／平日／毎週の
    繰り返しに対応し、繰り返しタスクの完了は日付ごと（doneDates）に記録する */

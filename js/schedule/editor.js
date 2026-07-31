@@ -16,6 +16,7 @@ import { closeModalOverlay, createModalOverlay } from './modal.js';
 import { resolveConflict } from './gsync.js';
 import { SYNC_STATUS_LABEL, clearOccurrenceOverride, deleteOccurrence, deleteSchedule, getSchedule, loadSettings, setOccurrenceOverride, upsertSchedule } from './store.js';
 import { bpOnScheduleAdded } from '../bp/store.js';
+import { chappyOnCalendarAdded } from '../chappy.js';
 import { WEEKDAYS_JA, addDaysKey, datePartOf, esc, formatDateLabel, genId, timePartOf, todayKey } from './util.js';
 
 // 予定に付けられる色。既存アプリの淡いブルー基調を壊さないよう、
@@ -299,9 +300,12 @@ export function openScheduleEditor(opts){
       overrides: isRecurringEdit && draft.scope === "all" ? {} : (existing ? existing.overrides : {}),
     });
 
-    // 🎖️ 新規登録のときだけ活動BPを付与する（既存の予定を編集して保存し直しても
-    // 増えない）。同じ予定IDは同日1回・1日上限つき
-    if(!existing) bpOnScheduleAdded(draft.id);
+    // 🎖️🏠 新規登録のときだけ、活動BPとチャッピーのXP／コインを付与する
+    // （既存の予定を編集して保存し直しても増えない。同じ予定IDは同日1回・1日上限つき）
+    if(!existing){
+      bpOnScheduleAdded(draft.id);
+      chappyOnCalendarAdded(draft.id);
+    }
 
     closeEditor();
     if(options.onSaved) options.onSaved();
