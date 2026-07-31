@@ -58,6 +58,7 @@ import { bpHandleIdentityChange, bpOnNewsRead } from './bp/store.js';
 import { bpDailyCheck, bpDailyResetToken } from './bp/daily.js';
 import './bp/toast.js';
 import { renderValueGameScreen, valueGameHandleIdentityChange, valueGameOnScreenLeft } from './valuegame/screen.js';
+import { abortScreenTransition, captureScreenTransition, playScreenTransition } from './screenTransition.js';
 
 export const app = document.getElementById("app");
 
@@ -95,6 +96,14 @@ function certsBackTarget(){
   return (c && c.vendor === "lpic") ? "lpic-certs" : "certs";
 }
 
+// 認証前・ユーザー名未設定などプレイヤーが確定していない「ゲート画面」の判定。
+// ステータスバー・下部ナビ・画面遷移アニメーションの要否をこれ1つで揃える
+function isGatedScreen(){
+  return (!state.guestMode && !state.authReady)
+      || (!state.guestMode && !state.currentUser)
+      || (!state.guestMode && state.currentUser && (!state.profileChecked || !getProfileName()));
+}
+
 // 最上段の共通ステータスバー：render()のたびに最新化。表示する画面ごとに
 // レイアウトが変わる（左に縦積みのランク行、右にAC。.statusbarがalign-items:
 // centerのflexコンテナのため、AC表示は左側の行数（1行/2行）の高さに応じて
@@ -108,9 +117,7 @@ function certsBackTarget(){
 export function renderStatusBar(){
   const el=document.getElementById("statusbar"); if(!el) return;
   // 認証前・ユーザー名未設定などプレイヤーが確定していない画面では非表示
-  const gated = (!state.guestMode && !state.authReady)
-             || (!state.guestMode && !state.currentUser)
-             || (!state.guestMode && state.currentUser && (!state.profileChecked || !getProfileName()));
+  const gated = isGatedScreen();
   const screen = resolveScreen();
   // BP詳細（bp）と価値観ゲーム（valuegame）は、画面内に総合ランク・BPや
   // ゲーム専用のヘッダーを持つため、共通ステータスバーは重ねて出さない
@@ -226,9 +233,7 @@ const BNAV_TAB_BY_SCREEN = {
 function updateBottomNav(){
   const nav = document.getElementById("bottom-nav");
   if(!nav) return;
-  const gated = (!state.guestMode && !state.authReady)
-             || (!state.guestMode && !state.currentUser)
-             || (!state.guestMode && state.currentUser && (!state.profileChecked || !getProfileName()));
+  const gated = isGatedScreen();
   nav.classList.toggle("show", !gated);
   if(gated) return;
   const active = BNAV_TAB_BY_SCREEN[resolveScreen()] || "profile";
@@ -242,7 +247,30 @@ function applyUiTheme(){
   document.body.setAttribute("data-theme", S.uiTheme || "default");
 }
 
+/* 画面遷移アニメーションの単位となる「今どの画面を描いているか」のキー。
+   同じ画面の再描画（選択肢のタップ・クラウド同期など）ではキーが変わらないため
+   演出は起きず、実際に画面が切り替わったときだけモーフィング遷移が走る */
+function transitionKey(){
+  if(isGatedScreen()) return "gate";
+  return resolveScreen() + "|" + (S.cert || "");
+}
+
+/* 画面描画の入口。
+   描画の直前に旧画面を凍結レイヤーへ退避し（captureScreenTransition）、
+   描画の直後にスクロール位置の確定とモーフィング演出を行う（playScreenTransition）。
+   renderScreen() 自体は従来どおり同期的に #app を作り直す */
 export function render(){
+  const stx = captureScreenTransition(transitionKey());
+  try{
+    renderScreen();
+  }catch(e){
+    abortScreenTransition(stx);   // 描画に失敗しても画面が空のままにならないよう旧画面を戻す
+    throw e;
+  }
+  playScreenTransition(stx);
+}
+
+function renderScreen(){
   gcalHandleIdentityChange(); // ログインユーザーの切替を検知し、前の人のGoogle連携状態を破棄
   skinHandleIdentityChange(); // ログインユーザーの切替を検知し、前の人のスキン状態を読み直す
   chappyHandleIdentityChange(); // ログインユーザーの切替を検知し、チャッピーハウスの育成データを読み直す
