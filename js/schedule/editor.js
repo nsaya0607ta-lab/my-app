@@ -12,8 +12,10 @@ import {
   RECURRENCE_PRESETS, buildRRule, parseRRule, presetToSpec, recurrenceLabel, specToPreset,
 } from './recurrence.js';
 import { REMINDER_PRESETS, defaultReminders, reminderLabel } from './reminders.js';
+import { closeModalOverlay, createModalOverlay } from './modal.js';
 import { resolveConflict } from './gsync.js';
 import { SYNC_STATUS_LABEL, clearOccurrenceOverride, deleteOccurrence, deleteSchedule, getSchedule, loadSettings, setOccurrenceOverride, upsertSchedule } from './store.js';
+import { bpOnScheduleAdded } from '../bp/store.js';
 import { chappyOnCalendarAdded } from '../chappy.js';
 import { WEEKDAYS_JA, addDaysKey, datePartOf, esc, formatDateLabel, genId, timePartOf, todayKey } from './util.js';
 
@@ -26,7 +28,8 @@ export const SCHEDULE_COLORS = [
 let openOverlay = null;
 
 function closeEditor(){
-  if(openOverlay){ try{ openOverlay.remove(); }catch(e){} openOverlay = null; }
+  // 背景のスクロール固定と操作の遮断も、ここでまとめて解除される
+  if(openOverlay){ closeModalOverlay(openOverlay); openOverlay = null; }
 }
 
 /* opts:
@@ -81,11 +84,12 @@ export function openScheduleEditor(opts){
   const isRecurringEdit = !!(existing && existing.recurrenceRule && options.occDateKey);
 
   closeEditor();
-  const ov = document.createElement("div");
-  ov.className = "modal-ov sched-modal-ov";
+  // モーダルを開いている間は背景のカレンダーを完全に無効化する（js/schedule/modal.js）
+  const ov = createModalOverlay({
+    label: isNew ? "予定を追加" : "予定の詳細",
+    onBackdrop: () => closeEditor(),
+  });
   openOverlay = ov;
-  document.body.appendChild(ov);
-  ov.addEventListener("click", (e) => { if(e.target === ov) closeEditor(); });
 
   let error = "";
 
@@ -296,8 +300,12 @@ export function openScheduleEditor(opts){
       overrides: isRecurringEdit && draft.scope === "all" ? {} : (existing ? existing.overrides : {}),
     });
 
-    // 🏠 新しく予定を登録したら、チャッピーにXP／コイン（1日5件まで・同じ予定は1回だけ）
-    if(!existing) chappyOnCalendarAdded(draft.id);
+    // 🎖️🏠 新規登録のときだけ、活動BPとチャッピーのXP／コインを付与する
+    // （既存の予定を編集して保存し直しても増えない。同じ予定IDは同日1回・1日上限つき）
+    if(!existing){
+      bpOnScheduleAdded(draft.id);
+      chappyOnCalendarAdded(draft.id);
+    }
 
     closeEditor();
     if(options.onSaved) options.onSaved();

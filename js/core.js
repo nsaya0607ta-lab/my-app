@@ -7,6 +7,8 @@ import { chappyOnStudySession } from './chappy.js';
 import { loadCmdStats, recordCmdResults, saveCmdStats, updateAiScores } from './reviewAI.js';
 import { mpExportRaw } from './mindpalette.js';
 import { scenarioModeExportRaw } from './playground/scenarios/progressStore.js';
+import { activityBP, bpOnStudyLogged } from './bp/store.js';
+import { vgStats } from './valuegame/store.js';
 
 export let PASS = 700;   // 選択中の資格の合格ライン（loadCertで設定）
 
@@ -363,6 +365,9 @@ export function finish(){
                  mode:runMode, mult, correct, total:S.deck.length, score, scoreMax, earned:Math.ceil(earned), totalPts:total,
                  bpGain:exp, bpTotal:newBp, coinGain, coinTotal:S.coins, unlocked, review:!!S.review};
   const h=[entry,...loadHist()].slice(0,50); saveHist(h);
+  // 🎖️ 学習記録の登録として活動BPを付与（1日上限つき・同じ記録IDは1回だけ）。
+  // 資格BP(exp)とは別枠で、総合ランクだけに乗る
+  try{ bpOnStudyLogged(entry.id, `${modeLabel}／${score}点`); }catch(e){}
   // 🧠 AIおすすめ復習：コマンドにタグ付けされた問題の結果を記録し、AIスコアを自動更新。
   // 必ず saveToCloud より先に行う。後だと今回の結果を含まない古いcmdStatsが
   // クラウドへ送られ、そのsnapshotエコー（db.js→applyCloud→saveCmdStats）が
@@ -579,7 +584,18 @@ export function certStat(c){
    資格レベルが TIERS の段数なのに対し、総合は「合計BPの数式」で出す。
    資格が増えても合計BPが増えて自然にレベルが上がるだけなので破綻しない。 */
 
-export function totalBP(){ return CERTS.reduce((s,c)=>s + (parseInt(localStorage.getItem("cert_"+c.id+"_bp")||"0",10)||0), 0); }
+/* 合計BP＝「各資格の学習BP」＋「活動BP」。
+   活動BP（js/bp/store.js）は、ログイン・予定／タスクの完了・学習記録・
+   ニュース・チャッピーのお世話・価値観ゲームなど、資格の学習以外の行動から
+   貯まる別枠のBP。資格ごとの cert_*_bp には一切書き込まないため、
+   資格レベル・学習履歴・資格別ランキングの意味は今までどおり変わらない。 */
+export function certOnlyBP(){ return CERTS.reduce((s,c)=>s + (parseInt(localStorage.getItem("cert_"+c.id+"_bp")||"0",10)||0), 0); }
+
+export function totalBP(){
+  let extra = 0;
+  try{ extra = activityBP() || 0; }catch(e){}
+  return certOnlyBP() + extra;
+}
 
 export function overallLevel(tbp){ return Math.floor((Math.sqrt(1 + 8*tbp/OVERALL_STEP) - 1) / 2); }
 
@@ -635,8 +651,15 @@ export function buildPublic(){
     }
   });
   const ov=overallStat();
+  // 🃏 価値観ゲームの戦績も公開要約に含める（ゲーム内ランキング用）。
+  // 個人の回答履歴などの中身は含めず、回数だけを載せる
+  let vg = { vgPlays:0, vgWins:0, vgPerfects:0, vgStreak:0 };
+  try{
+    const st = vgStats();
+    vg = { vgPlays: st.plays||0, vgWins: st.wins||0, vgPerfects: st.perfects||0, vgStreak: st.bestWinStreak||0 };
+  }catch(e){}
   return { displayName:getProfileName()||defaultName(), totalBP:ov.tbp, overallLevel:ov.lv,
-           title:ov.title, certLevels, certBP, updatedAt:new Date().toISOString() };
+           title:ov.title, certLevels, certBP, ...vg, updatedAt:new Date().toISOString() };
 }
 // ランキングへ自動公開・更新（ログイン中なら表示名の有無に関わらず自動で反映）
 

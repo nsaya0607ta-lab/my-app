@@ -32,6 +32,12 @@ import {
   CHAPPY_BADGES, CHAPPY_SEASON_EVENTS, CHAPPY_SECRET_EVENTS, CHAPPY_SECRET_BY_ID,
   CHAPPY_ALBUM_TEMPLATES,
 } from './data/chappy-quests.js';
+import {
+  bpOnChappyBond, bpOnChappyCare, bpOnChappyFirst, bpOnChappyLevelUp, bpOnChappySeasonEvent,
+} from './bp/store.js';
+
+// 🎖️ なかよし度がこの値に達したら、一度だけBPボーナスを出す
+const CHAPPY_BOND_BP_THRESHOLDS = [25, 50, 75, 100];
 
 const STORE_KEY_BASE = "chappy_v1";
 const SCHEMA_VERSION = 2;
@@ -378,6 +384,7 @@ function touch(){
     st.seenEvents.push(ev.id);
     st.lastEventId = ev.id;
     addAlbum(st, `event:${ev.id}:${new Date().getFullYear()}`, "event", ev.name);
+    chappyOnSeasonEventJoined(ev.id);   // 🎖️ イベント参加のBP（イベントごとに一度きり）
     dirty = true;
   }
 
@@ -422,7 +429,22 @@ function grantXp(st, amount, reason){
   if(stageUp) addAlbum(st, `stage:${stageAfter.key}`, "stageUp", stageAfter.name);
   if(levelUp || stageUp) evaluateBadges(st);
 
+  // 🎖️ チャッピーのレベルが上がったら総合ランクのBPも少し入る
+  // （レベルごとに一度きり。付与判定は js/bp/store.js 側）
+  if(levelUp){
+    for(let lv = before + 1; lv <= after; lv++){
+      try{ bpOnChappyLevelUp(lv); }catch(e){}
+    }
+  }
+
   dispatch({ type: "xp", amount, reason, levelUp, level: after, stageUp, stage: stageAfter.key });
+}
+
+// 🎖️ なかよし度がしきい値を越えたら一度だけBPを付与する
+function checkBondBp(st){
+  CHAPPY_BOND_BP_THRESHOLDS.forEach(th => {
+    if(st.stats.bond >= th){ try{ bpOnChappyBond(th); }catch(e){} }
+  });
 }
 
 // 画面側（育成画面・ホームウィジェット）が演出のために購読するイベント
@@ -936,8 +958,11 @@ export function chappyPet(){
     st.stats.bond = clampStat(st.stats.bond + CHAPPY_PET_BOND_GAIN);
     st.stats.stress = clampStat(st.stats.stress - 2);
     gained = CHAPPY_PET_BOND_GAIN;
+    // 🎖️ お世話としてのBP（種別ごとに同日1回・1日上限あり）
+    try{ bpOnChappyCare("pet"); }catch(e){}
   }
   persist();
+  checkBondBp(st);
   return { gained, capped: gained === 0 };
 }
 
@@ -953,6 +978,12 @@ export function chappyFeed(foodKey){
   st.counters.feedTotal += 1;
   Object.keys(st.decayTs).forEach(k => { st.decayTs[k] = Date.now(); });
   persist();
+  // 🎖️ お世話としてのBP（同日1回）＋はじめてのごはんは一度きりのボーナス
+  try{
+    bpOnChappyFirst("feed");
+    bpOnChappyCare("feed");
+  }catch(e){}
+  checkBondBp(st);
   return { ok: true, food };
 }
 
@@ -972,6 +1003,11 @@ export function chappyCare(careKey){
     st.stats.bond = clampStat(st.stats.bond + 1);
   }
   persist();
+  // 🎖️ お世話としてのBP（種別ごとに同日1回・1日上限あり）。
+  // おふろ・ブラッシングは「きれいにした」お世話としても数える
+  try{ bpOnChappyCare(care.key); }catch(e){}
+  if(care.key === "bath" || care.key === "brush") chappyOnRoomCleaned();
+  checkBondBp(st);
   return { ok: true, care, coins };
 }
 
@@ -1038,6 +1074,8 @@ export function chappyBuy(kind, id){
   st.stats.fun = clampStat(st.stats.fun + 3);
   evaluateBadges(st);
   persist();
+  // 🎖️ はじめて家具をむかえた／はじめて着せ替えたときの一度きりのBP
+  if(kind === "furniture") chappyOnFurniturePurchased();
   dispatchChange("shop");
   return { ok: true, item };
 }
@@ -1201,6 +1239,8 @@ export function chappyEquip(slotKey, wearId){
     }
   }
   persist();
+  // 🎖️ 着せ替えのBP（同じ服は同日1回・はじめての着せ替えは一度きりのボーナス）
+  if(changed && wearId !== slot.none) chappyOnDressUp(wearId);
   dispatchChange("wear");
   return { ok: true, wear: w };
 }
@@ -1286,6 +1326,10 @@ function pullOne(st, pool, weights, rnd, forceMin){
     return { ...got, dupe: true, coins: back };
   }
   st.owned[got.kind][got.item.id] = true;
+  if(got.kind === "furniture"){
+    st.counters.furnitureBought += 1;
+    chappyOnFurniturePurchased();   // 🎖️ はじめて家具をむかえたときの一度きりのBP
+  }
   return { ...got, dupe: false, coins: 0 };
 }
 
@@ -1391,4 +1435,34 @@ export function chappyRealLifeSummary(){
     taskTotal: st.counters.taskTotal, newsTotal: st.counters.newsTotal,
     knowledge: st.points.knowledge, points: { ...st.points },
   };
+}
+
+/* =========================================================================
+   🎖️ 総合ランクのBPへの受け渡し口。
+
+   以前は「該当機能が未実装のため未接続」の入口だったが、部屋をきれいにする
+   お世話・着せ替え・家具の入手・季節イベントがすべて実装されたので、この
+   ファイル内の該当処理から実際に呼び出している。付与が1回だけかどうかの
+   判定は js/bp/store.js 側が持っているため、二重付与にはならない。
+   ========================================================================= */
+
+// お部屋・チャッピーをきれいにした（おふろ・ブラッシングのお世話から）
+export function chappyOnRoomCleaned(){
+  try{ bpOnChappyFirst("clean"); bpOnChappyCare("clean"); }catch(e){}
+}
+
+// 着せ替えをした（chappyEquip から）
+export function chappyOnDressUp(itemId){
+  try{ bpOnChappyFirst("dressUp"); bpOnChappyCare("dressUp:" + (itemId || "")); }catch(e){}
+}
+
+// 家具を手に入れた（ショップの購入・ガチャの当たりから）
+export function chappyOnFurniturePurchased(){
+  try{ bpOnChappyFirst("furniture"); }catch(e){}
+}
+
+// 季節イベントへ参加した（開催中のイベントをその年はじめて見た日に）
+export function chappyOnSeasonEventJoined(eventId){
+  if(!eventId) return;
+  try{ bpOnChappySeasonEvent(eventId); }catch(e){}
 }

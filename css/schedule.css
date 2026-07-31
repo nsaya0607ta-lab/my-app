@@ -95,14 +95,8 @@
 .sched-home-list{display:flex;flex-direction:column;}
 .sched-home-list .sched-row + .sched-row{margin-top:6px;}
 
-/* 予定の完了チェック（チェックすると🏠チャッピーの経験値・元気が上がる）。
-   チェック欄は予定行の外に置き、行そのもののタップ＝編集を邪魔しない */
-.sched-occ-line{display:flex;align-items:center;gap:8px;}
-.sched-occ-line + .sched-occ-line{margin-top:6px;}
-.sched-occ-line .sched-row{flex:1;min-width:0;}
-.sched-occ-check{flex:none;width:17px;height:17px;accent-color:var(--home-blue,var(--accent));cursor:pointer;}
-.sched-occ-line.done .sched-row{opacity:.55;}
-.sched-occ-line.done .sched-row-title{text-decoration:line-through;color:var(--home-muted,var(--muted));}
+/* 予定の完了ボタン（.sched-occ-line / .sched-done-btn）のスタイルは
+   BPシステム側の css/bp.css が持っている */
 
 .sched-add-btn{width:100%;margin-top:9px;padding:9px 0;border-radius:12px;
   border:1px dashed var(--home-badge-border,var(--line));
@@ -289,9 +283,71 @@
 .sched-routine-dow.sat{color:#2563eb;}
 .sched-routine-dow.holiday{color:#dc2626;}
 
-/* ===================== 編集モーダル ===================== */
+/* ===================== 編集モーダル =====================
 
-.sched-modal-ov .modal.sched-editor{max-width:400px;max-height:88vh;overflow-y:auto;-webkit-overflow-scrolling:touch;}
+   予定の詳細（編集）モーダルは、次の2点を構造として保証する。
+
+   1) 横方向へは一切動かさない
+      オーバーレイもモーダル本体も画面幅ぴったりに固定し、
+      overflow-x:hidden ＋ touch-action:pan-y ＋ overscroll-behavior-x:none で
+      「横スクロール」「横スワイプ」「スクロール連鎖」をすべて塞ぐ。
+      中の入力欄・ボタンは box-sizing:border-box ＋ max-width:100% で、
+      余白や枠線を含めても親の幅を超えないようにする。
+
+   2) 表示中は背景（カレンダー画面）を完全に無効化する
+      オーバーレイ自身が画面全体を覆う背景レイヤーを兼ねており、
+      背景（z-index:300の下部ナビ・z-index:500のFAB）より手前、
+      モーダル本体より奥に位置する。加えて body.sched-modal-open で
+      背景のスクロールを固定し、pointer-events も切る（js/schedule/modal.js）。 */
+
+.sched-modal-ov{
+  position:fixed;inset:0;width:100%;max-width:100%;box-sizing:border-box;
+  /* オーバーレイ自体はスクロールさせない。縦スクロールはモーダル本体の中だけ */
+  overflow:hidden;overscroll-behavior:none;
+  /* 横方向のスワイプではブラウザ側にも一切スクロールさせない */
+  touch-action:pan-y;
+  padding:max(18px,env(safe-area-inset-top)) 14px max(18px,env(safe-area-inset-bottom));
+  z-index:1200;
+}
+.sched-modal-ov .modal.sched-editor{
+  position:relative;z-index:1;
+  width:100%;max-width:min(400px,100%);box-sizing:border-box;
+  max-height:100%;
+  /* 縦だけスクロール。端まで来ても背景へスクロールが連鎖しない */
+  overflow-x:hidden;overflow-y:auto;-webkit-overflow-scrolling:touch;
+  overscroll-behavior:contain;overscroll-behavior-x:none;touch-action:pan-y;
+}
+/* 中身が枠からはみ出して横スクロールを生まないようにする。
+   width:100% の入力欄も、余白・枠線込みで親の幅に収める */
+.sched-editor *{box-sizing:border-box;max-width:100%;}
+.sched-editor input,.sched-editor select,.sched-editor textarea{max-width:100%;}
+/* 横並びの行は、中身の最小幅に押し広げられないよう縮小と折り返しを許す */
+.sched-editor .sched-time-row,.sched-editor .sched-custom-row,
+.sched-editor .sched-chip-row,.sched-editor .sched-color-row,
+.sched-editor .sched-conflict-cols,.sched-editor .sched-conflict-actions{
+  max-width:100%;flex-wrap:wrap;
+}
+.sched-editor .sched-time-row > *,.sched-editor .sched-custom-row > *,
+.sched-editor .sched-conflict-cols > *{min-width:0;}
+
+/* ---- モーダル表示中の背景ロック（js/schedule/modal.js が付け外しする） ----
+   body を position:fixed にして背景ページのスクロールを止め、
+   モーダル以外（アプリ本体・下部ナビ）はタップもスワイプも受け付けない */
+html.sched-modal-open{overflow:hidden;overscroll-behavior:none;}
+/* body に touch-action:none は付けない。touch-action は先祖の値と
+   突き合わせて効くため、付けるとモーダル内の縦スクロールまで止まってしまう。
+   背景はここで position:fixed にしているので、そもそも動く余地がない */
+body.sched-modal-open{
+  position:fixed;left:0;right:0;width:100%;max-width:100%;
+  overflow:hidden;overscroll-behavior:none;
+}
+/* 子孫まで指定するのは、親を pointer-events:none にしても
+   子が pointer-events:auto を持っていると（例：.sched-blocks > * の予定ブロック）
+   その子だけ反応してしまうため。inert に対応しない古い端末向けの保険 */
+body.sched-modal-open > *:not(.modal-ov),
+body.sched-modal-open > *:not(.modal-ov) *{pointer-events:none!important;}
+body.sched-modal-open > .modal-ov{pointer-events:auto;}
+
 /* 共通の .modal-title は警告色（--bad）なので、予定のモーダルでは
    本文色へ戻す（従来のカレンダーのモーダルもインラインで同じことをしていた） */
 .sched-editor-title{color:var(--text);margin-bottom:12px;font-size:17px;}
