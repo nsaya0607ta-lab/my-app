@@ -15,6 +15,7 @@ import { openScheduleEditor } from './editor.js';
 import { TASK_REPEAT_LABEL, TASK_REPEAT_SHORT, deleteTask, isTaskDoneOn, setTaskDone, tasksForDate, upsertTask } from './store.js';
 import { esc, formatDateLabel, todayKey } from './util.js';
 import { isScheduleDone, setScheduleDone } from './completion.js';
+import { isPopupMenuOpen, openPopupMenu } from '../popupMenu.js';
 import { bpOnAllTasksCompleted, bpOnScheduleCompleted, bpOnTaskCompleted } from '../bp/store.js';
 import { checkWeeklyBonuses } from '../bp/weekly.js';
 
@@ -24,14 +25,29 @@ export function homeCardHTML(){
   return `<div class="gcal-card" id="${HOME_CARD_ID}"></div>`;
 }
 
-// 新しいタスクの繰り返し種別（フォームで選択中）。再描画をまたいで保つ
+// 入力途中のフォームの状態（繰り返し種別・入力中のタスク名）。
+// クラウド同期・Google同期・他カードの更新などで、このカードが描き直される
+// ことがあるため、再描画をまたいで必ず持ち越す（打ちかけの文字や選んだ
+// 繰り返し設定が勝手に消えないようにするため）
 let taskRepeatDraft = "none";
+let taskTitleDraft = "";
+
+// 繰り返しメニュー（ポップアップ）を識別する名前
+const REPEAT_MENU = "task-repeat";
+
+// 直前に描いた内容と描画先。中身がまったく同じ再描画（自分の書き込みの
+// echo・定期同期など）ではDOMを作り直さない。作り直すと開いているメニュー・
+// 入力中のカーソル位置・チェック操作中の状態まで巻き添えで失われるため
+let lastRoot = null;
+let lastHTML = "";
 
 /* opts.onOpenDay(dateKey) … 「今日の予定」見出し／予定行から日表示へ移動する
    opts.onChange()        … データが変わったときの再描画コールバック */
 export function renderHomeCard(opts){
   const root = document.getElementById(HOME_CARD_ID);
   if(!root) return;
+  // 繰り返しメニューを開いている間は、その操作が終わるまで描き直さない
+  if(isPopupMenuOpen(REPEAT_MENU) && root === lastRoot && root.childElementCount) return;
   const options = opts || {};
   const dk = todayKey();
   const now = new Date();
@@ -41,7 +57,7 @@ export function renderHomeCard(opts){
   const tasks = tasksForDate(dk);
   const doneCount = tasks.filter(t => t.doneOnDate).length;
 
-  root.innerHTML = `
+  const html = `
     <div class="gcal-box sched-home">
       <button type="button" class="sched-home-head" id="sched-home-open">
         <span class="sched-home-title">今日の予定</span>
@@ -68,15 +84,39 @@ export function renderHomeCard(opts){
         </div>
         <div class="sched-task-form">
           <input type="text" class="sched-input sched-task-input" id="sched-task-input" placeholder="タスクを追加" maxlength="80">
-          <select class="sched-input sched-select sched-task-repeat" id="sched-task-repeat" aria-label="繰り返し">
-            ${Object.keys(TASK_REPEAT_SHORT).map(k => `<option value="${k}"${taskRepeatDraft === k ? " selected" : ""}>${esc(TASK_REPEAT_SHORT[k])}</option>`).join("")}
-          </select>
+          <button type="button" class="sched-input sched-task-repeat" id="sched-task-repeat"
+                  aria-label="繰り返し設定" aria-haspopup="listbox" aria-expanded="false"
+                  title="繰り返し設定">${esc(TASK_REPEAT_SHORT[taskRepeatDraft] || TASK_REPEAT_SHORT.none)}</button>
           <button type="button" class="sched-task-add" id="sched-task-add" aria-label="タスクを追加">＋</button>
         </div>
       </div>
     </div>`;
 
+  // 表示内容に変化がないときはDOMもイベント配線もそのまま使い回す
+  if(root === lastRoot && root.childElementCount && html === lastHTML) return;
+
+  // 作り直す場合でも、入力中のカーソル位置だけは元に戻す
+  const activeInput = document.activeElement;
+  const keepCaret = activeInput && activeInput.id === "sched-task-input" && root.contains(activeInput)
+    ? { start: activeInput.selectionStart, end: activeInput.selectionEnd }
+    : null;
+
+  root.innerHTML = html;
+  lastRoot = root;
+  lastHTML = html;
+
   bind(root, options, dk, now);
+
+  // 入力中の文字は毎回書き戻す（HTMLの比較対象には入れていないので、
+  // 1文字打つたびにカードが作り直されることはない）
+  const input = root.querySelector("#sched-task-input");
+  if(input){
+    input.value = taskTitleDraft;
+    if(keepCaret){
+      input.focus();
+      try{ input.setSelectionRange(keepCaret.start, keepCaret.end); }catch(e){}
+    }
+  }
 }
 
 function isFinishedNow(occ, now){
@@ -180,13 +220,53 @@ function bind(root, options, dk, now){
   });
 
   const input = root.querySelector("#sched-task-input");
-  const repeatSel = root.querySelector("#sched-task-repeat");
-  repeatSel.onchange = () => { taskRepeatDraft = repeatSel.value; };
+  const repeatBtn = root.querySelector("#sched-task-repeat");
+
+  // 入力中の文字は、このカードが描き直されても消えないよう都度控えておく
+  input.oninput = () => { taskTitleDraft = input.value; };
+
+  /* 繰り返し設定メニュー。
+     ・click で開く（pointerdown で開くと、その直後に来る click が
+       「外側タップ」と解釈されて即座に閉じてしまうため）
+     ・開くイベントはここで止め、背景の委譲リスナーへ伝えない
+     ・実際の開閉・外側タップ判定は js/popupMenu.js が受け持つ */
+  repeatBtn.onclick = (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if(isPopupMenuOpen(REPEAT_MENU)) return;
+    repeatBtn.setAttribute("aria-expanded", "true");
+    openPopupMenu({
+      name: REPEAT_MENU,
+      anchor: repeatBtn,
+      label: "繰り返し",
+      value: taskRepeatDraft,
+      items: Object.keys(TASK_REPEAT_SHORT).map(k => ({
+        value: k,
+        label: esc(TASK_REPEAT_SHORT[k]),
+        sub: TASK_REPEAT_LABEL[k] && TASK_REPEAT_LABEL[k] !== TASK_REPEAT_SHORT[k] ? esc(TASK_REPEAT_LABEL[k]) : "",
+      })),
+      // 項目を選んだときだけ設定を反映する。ボタンの表示だけを差し替え、
+      // カード全体は描き直さない（入力中の内容・スクロール位置を保つため）
+      onSelect: (value) => {
+        taskRepeatDraft = value in TASK_REPEAT_SHORT ? value : "none";
+        // メニューを開いている間にカードが作り直された場合に備えて、
+        // 実際に画面に出ているボタンを取り直してから表示を更新する
+        const live = document.getElementById("sched-task-repeat") || repeatBtn;
+        live.textContent = TASK_REPEAT_SHORT[taskRepeatDraft];
+      },
+      onClose: () => {
+        const live = document.getElementById("sched-task-repeat") || repeatBtn;
+        live.setAttribute("aria-expanded", "false");
+      },
+    });
+  };
+
   const addTask = () => {
     const title = (input.value || "").trim();
     if(!title){ input.focus(); return; }
-    upsertTask({ title, dueDate: dk, repeatType: repeatSel.value || "none", completed: false });
+    upsertTask({ title, dueDate: dk, repeatType: taskRepeatDraft || "none", completed: false });
     taskRepeatDraft = "none";
+    taskTitleDraft = "";
     if(options.onChange) options.onChange();
   };
   root.querySelector("#sched-task-add").onclick = addTask;

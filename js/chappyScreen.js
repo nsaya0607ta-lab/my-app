@@ -558,7 +558,6 @@ export function renderChappyScreen(){
 
   watchTeardown();
   if(isChappyBgmOn()) startAudio();
-  window.scrollTo(0, 0);
 }
 
 function greetLine(stats){

@@ -310,7 +310,6 @@ export function renderBpScreen(){
   });
   // 未達成のミッションをタップしたら、その行動ができる画面へ移動する
   app.querySelectorAll("[data-bp-go]").forEach(b => b.onclick = () => go(b.dataset.bpGo));
-  window.scrollTo(0, 0);
 }
 
 // BPが増えたら、この画面を開いている間だけ静かに描き直す

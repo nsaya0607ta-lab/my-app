@@ -59,6 +59,7 @@ import { bpDailyCheck, bpDailyResetToken } from './bp/daily.js';
 import './bp/toast.js';
 import { renderValueGameScreen, valueGameHandleIdentityChange, valueGameOnScreenLeft } from './valuegame/screen.js';
 import { abortScreenTransition, captureScreenTransition, playScreenTransition } from './screenTransition.js';
+import { closePopupMenu } from './popupMenu.js';
 
 export const app = document.getElementById("app");
 
@@ -78,6 +79,9 @@ const DIRX_SCREENS = ["lpic-dir-explorer", "lpic-dirx-missions", "lpic-dirx-inci
 const DIRX_SCENARIOS_ORDER = DIRX_SCENARIOS.map(s=>s.id);
 
 export function go(s){
+  // 画面を離れるときは、開きっぱなしのポップアップメニューを必ず閉じる
+  // （次の画面の上に前の画面のメニューが残らないようにする）
+  closePopupMenu();
   // 🃏 価値観ゲームから別の画面へ移るときは、ボイスチャットのマイクを必ず解放する
   if(S.screen === "valuegame" && s !== "valuegame") valueGameOnScreenLeft();
   if(s === "certs" || s === "lpic-certs" || s === "select") S.cert = null;
@@ -258,9 +262,18 @@ function transitionKey(){
 /* 画面描画の入口。
    描画の直前に旧画面を凍結レイヤーへ退避し（captureScreenTransition）、
    描画の直後にスクロール位置の確定とモーフィング演出を行う（playScreenTransition）。
-   renderScreen() 自体は従来どおり同期的に #app を作り直す */
+   renderScreen() 自体は従来どおり同期的に #app を作り直す。
+
+   スクロール位置の扱いは、この関数と js/screenTransition.js の2か所だけに
+   集約してある（各画面のrender関数はスクロールに一切触らない）。
+   ・画面が実際に切り替わったとき … 進む＝先頭／戻る＝元の位置（screenTransition）
+   ・同じ画面の描き直し（クラウド同期・株価更新・BP加算などのデータ更新）
+     … 直前の位置をそのまま保つ。#appを作り直す際に内容が一瞬短くなって
+       ブラウザ側でスクロールが詰められることがあるため、ここで元へ戻す */
 export function render(){
   const stx = captureScreenTransition(transitionKey());
+  // 画面が切り替わらない再描画のときだけ、いまのスクロール位置を控えておく
+  const keepY = stx ? null : (window.scrollY || window.pageYOffset || 0);
   try{
     renderScreen();
   }catch(e){
@@ -268,6 +281,12 @@ export function render(){
     throw e;
   }
   playScreenTransition(stx);
+  if(keepY){
+    const nowY = window.scrollY || window.pageYOffset || 0;
+    if(Math.abs(nowY - keepY) > 1){
+      try{ window.scrollTo(0, keepY); }catch(e){}
+    }
+  }
 }
 
 function renderScreen(){
@@ -400,7 +419,6 @@ export function renderAuth(){
       msg.style.color="var(--bad)"; msg.textContent=authErrorMsg(e);
     }finally{ state.authBusy=false; }
   };
-  window.scrollTo(0,0);
 }
 
 export async function logout(){
@@ -511,7 +529,6 @@ export function renderUsername(){
       msg.style.color="var(--bad)"; msg.textContent="確認に失敗しました。通信環境を確認して再度お試しください。";
     }
   };
-  window.scrollTo(0,0);
 }
 
 // ホーム画面下部の4モードボタン用アイコン（洗練されたラインアート）
@@ -1132,7 +1149,6 @@ export function renderLpicCommands(){
   app.querySelectorAll("[data-cmd]").forEach(b=>b.onclick=()=>startCommandPractice(b.dataset.cmd));
   app.querySelectorAll("[data-pc]").forEach(b=>b.onclick=()=>start("practice", +b.dataset.pc));
   app.querySelectorAll("[data-go]").forEach(b=>b.onclick=()=>go(b.dataset.go));
-  window.scrollTo(0,0);
 }
 
 /* ======================= 🗂 ディレクトリを触って学ぶ（LPIC-1 FHS探検） =======================
@@ -1524,7 +1540,6 @@ export function renderDirExplorer(){
   wireDirxMissionCard();
   wireDirxIncidentCard();
   app.querySelectorAll("[data-go]").forEach(b=>b.onclick=()=>go(b.dataset.go));
-  window.scrollTo(0,0);
 }
 
 /* =========================================================================
@@ -1951,7 +1966,6 @@ export function renderDirxMissions(){
     go("lpic-dir-explorer");
   });
   app.querySelectorAll("[data-go]").forEach(b=>b.onclick=()=>go(b.dataset.go));
-  window.scrollTo(0,0);
 }
 
 /* ======================= 🛠 障害対応モード：一覧画面 ======================= */
@@ -1987,7 +2001,6 @@ export function renderDirxIncidents(){
     go("lpic-dir-explorer");
   });
   app.querySelectorAll("[data-go]").forEach(b=>b.onclick=()=>go(b.dataset.go));
-  window.scrollTo(0,0);
 }
 
 /* ======================= 🔔 疑似Linuxイベント：通知一覧画面 ======================= */
@@ -2023,7 +2036,6 @@ export function renderDirxEvents(){
   app.querySelectorAll("[data-dirx-mark-all-read]").forEach(b=>b.onclick=()=>{ dirxMarkAllEventsRead(); renderDirxEvents(); });
   app.querySelectorAll("[data-dirx-event-open]").forEach(b=>b.onclick=()=>dirxOpenEventDetailSheet(b.dataset.dirxEventOpen));
   app.querySelectorAll("[data-go]").forEach(b=>b.onclick=()=>go(b.dataset.go));
-  window.scrollTo(0,0);
 }
 
 function dirxOpenEventDetailSheet(id){
@@ -2225,7 +2237,6 @@ export function renderReview(){
     b.textContent=`🔖 ${on?"登録済み":"後で見直す"}`;
   });
   loadReviewStats();
-  window.scrollTo(0,0);
 }
 
 // 正答率（%）：correct/attempts×100 を小数第1位（第2位四捨五入）で。データ無しはnull
@@ -2276,6 +2287,9 @@ export function renderHistory(){
 /* 各用語: t=用語, m=説明（定義）, k=重要ポイント */
 
 export let dictSort = "theme"; // theme | aiueo
+// 用語辞典の検索キーワード。並び替えやバックグラウンド更新による再描画で
+// 入力中の内容が消えないよう、画面の外（モジュール変数）に持たせる
+let dictQuery = "";
 
 export function renderDict(){
   const items = CONCEPTS.map((c,i)=>({c,i}));
@@ -2300,17 +2314,23 @@ export function renderDict(){
   const sb=document.getElementById("dict-search");
   const list=document.getElementById("dict-list");
   const cnt=document.getElementById("dict-count");
-  if(sb) sb.oninput=()=>{
-    const q=sb.value.trim().toLowerCase(); let n=0;
+  // 絞り込みの実行。並び替えやバックグラウンドの再描画が入っても
+  // 検索キーワードと絞り込み結果がそのまま残るよう、同じ処理を初期表示にも使う
+  const applyDictFilter=()=>{
+    const q=(dictQuery||"").trim().toLowerCase(); let n=0;
     list.querySelectorAll(".dict-card").forEach(card=>{
       const show=!q || card.dataset.text.indexOf(q)>=0;
       card.style.display=show?"":"none"; if(show)n++;
     });
     cnt.textContent = q ? (n+" 語 ヒット") : (CONCEPTS.length+" 語");
   };
+  if(sb){
+    sb.value = dictQuery;
+    sb.oninput=()=>{ dictQuery = sb.value; applyDictFilter(); };
+  }
+  applyDictFilter();
   const srt=document.getElementById("dict-sort");
   if(srt) srt.onclick=()=>{ dictSort = dictSort==="theme"?"aiueo":"theme"; render(); };
-  window.scrollTo(0,0);
 }
 
 /* ======================= データセンター育成 ======================= */
@@ -2425,7 +2445,6 @@ export function renderAnalytics(){
   `;
   app.querySelectorAll("[data-go]").forEach(b=>b.onclick=()=>go(b.dataset.go));
   const rf=document.getElementById("an-refresh"); if(rf) rf.onclick=()=>renderAnalytics();
-  window.scrollTo(0,0);
 }
 
 /* ======================= データ引き継ぎ（保存・復元） ======================= */
@@ -2473,7 +2492,6 @@ export function renderTransfer(){
       setMsg("⚠ "+esc(String(e.message||e))+"。コードをもう一度確認してください。","var(--bad)");
     }
   };
-  window.scrollTo(0,0);
 }
 
 /* ======================= 複数資格対応 ======================= */
@@ -3969,7 +3987,6 @@ export function renderPortfolio(){
   startWatchLiveRefresh(); // 以後は市場時間中のみ1分ごとにバックグラウンド更新
   checkPendingOrdersOnMount();
   chappyOnStocksViewed();   // 🏠 株価・経済の活動ポイント（1日上限あり・XPは付かない）
-  window.scrollTo(0,0);
 }
 
 /* 保有株一覧画面：株価画面のヒーローカード右上「保有株」ボタンから遷移する
@@ -4000,7 +4017,6 @@ export function renderHoldings(){
   refreshLiveQuotes();
   startWatchLiveRefresh();
   checkPendingOrdersOnMount();
-  window.scrollTo(0,0);
 }
 
 // Gemini AIチャット相談画面。会話履歴はgeminiChat（js/gemini.js）が保持し、
@@ -4188,7 +4204,22 @@ function scheduleGeminiStreamRender(){
   });
 }
 
+// Gemini相談の入力欄に書きかけの文章。再描画で消えないよう画面の外に持つ
+let geminiInputDraft = "";
+
 export function renderGeminiChat(){
+  // 再描画（ストリーミング更新・クラウド同期など）の前に、いま会話ログを
+  // どこまで読んでいたかを控える。ユーザーが過去の発言までさかのぼって
+  // 読んでいる最中に、勝手に最下部へ引き戻さないため
+  const prevScrollEl = document.getElementById("gemini-scroll");
+  const prevScrollTop = prevScrollEl ? prevScrollEl.scrollTop : null;
+  const wasAtBottom = !prevScrollEl
+    || (prevScrollEl.scrollHeight - prevScrollEl.scrollTop - prevScrollEl.clientHeight) < 60;
+  // 入力中だった場合のカーソル位置（再描画後に同じ場所へ戻す）
+  const prevInputEl = document.getElementById("gemini-input");
+  const keepCaret = prevInputEl && document.activeElement === prevInputEl
+    ? { start: prevInputEl.selectionStart, end: prevInputEl.selectionEnd }
+    : null;
   const messages = geminiChat.messages;
   const msgsHTML = messages.length
     ? messages.map(geminiMessageBubbleHTML).join("")
@@ -4202,9 +4233,12 @@ export function renderGeminiChat(){
     : "";
   const errorHTML = geminiChat.error ? `<div class="gemini-error">${esc(geminiChat.error)}</div>` : "";
   // 他画面から「Geminiに質問する」で遷移してきた場合の下書きテキスト。
-  // 一度読み取ったら使い切り、次回の再描画で二重に入らないようクリアする
-  const draftText = geminiChat.draft || "";
+  // 一度読み取ったら使い切り、次回の再描画で二重に入らないようクリアする。
+  // 入力途中の文章（geminiInputDraft）は、ストリーミング更新やクラウド同期に
+  // よる再描画をまたいでも消えないよう、そのまま書き戻す
+  if(geminiChat.draft) geminiInputDraft = geminiChat.draft;
   geminiChat.draft = "";
+  const draftText = geminiInputDraft;
   // 問題の解答・解説から「Geminiに質問する」で来た場合は、そのままチャットを
   // 終えたときに元の解説画面へ戻れるようにする（通常はホームへ戻る）
   const backTarget = S.geminiReturnScreen || "select";
@@ -4225,8 +4259,13 @@ export function renderGeminiChat(){
   const backBtn = app.querySelector("[data-gemini-back]");
   if(backBtn) backBtn.onclick = () => { S.geminiReturnScreen = null; go(backTarget); };
 
+  // 最下部を見ていた（＝最新の返信を追っている）ときだけ末尾へ追従し、
+  // 上の方を読んでいたときは元の位置のまま据え置く
   const scrollEl = document.getElementById("gemini-scroll");
-  if(scrollEl) scrollEl.scrollTop = scrollEl.scrollHeight;
+  if(scrollEl){
+    if(wasAtBottom) scrollEl.scrollTop = scrollEl.scrollHeight;
+    else if(prevScrollTop !== null) scrollEl.scrollTop = prevScrollTop;
+  }
 
   app.querySelectorAll(".gemini-code-copy").forEach(btn => {
     btn.onclick = () => {
@@ -4275,11 +4314,20 @@ export function renderGeminiChat(){
   // 下書き復元時など初期表示の時点で複数行入っている場合にも、最初から
   // 正しい高さで表示されるようにしておく
   autoResizeGeminiInput(inputEl);
+  // 入力中に再描画が入った場合だけ、フォーカスとカーソル位置を戻す
+  // （初期表示では自動フォーカスしない＝勝手にキーボードを出さない）
+  if(inputEl && keepCaret && !inputEl.disabled){
+    inputEl.focus();
+    try{ inputEl.setSelectionRange(keepCaret.start, keepCaret.end); }catch(e){}
+  }
   const submit = () => {
     if(!inputEl || geminiChat.busy) return;
     const text = inputEl.value;
     const trimmed = text.trim();
     if(!trimmed) return;
+    // 送信したら書きかけの控えは使い切る（次の再描画で復活させない）
+    geminiInputDraft = "";
+    inputEl.value = "";
 
     // 直前のメッセージが未確定の予定確認カードなら、「OK」「キャンセル」等の
     // 短い返答はGeminiへ送らずここで直接確定／取消として処理する
@@ -4320,7 +4368,10 @@ export function renderGeminiChat(){
   if(inputEl){
     // 入力するたびに高さを再計算し、改行や折り返しで複数行になった分だけ
     // 入力欄を（下部ナビに被らないよう上方向に）伸ばす
-    inputEl.addEventListener("input", () => autoResizeGeminiInput(inputEl));
+    inputEl.addEventListener("input", () => {
+      geminiInputDraft = inputEl.value;   // 再描画をまたいでも消えないよう控える
+      autoResizeGeminiInput(inputEl);
+    });
     // 画面表示のたびに自動でフォーカスすると、Gemini相談ボタンを押した
     // だけでスマホの仮想キーボードが勝手に立ち上がってしまうため、
     // ユーザーが入力欄自体をタップするまでフォーカスは当てない
@@ -4335,7 +4386,6 @@ export function renderGeminiChat(){
       submit();
     });
   }
-  window.scrollTo(0,0);
 }
 
 // renderGeminiEditEvent（予定修正画面）が対象とするメッセージIDを保持する。
@@ -4403,7 +4453,6 @@ export function renderGeminiEditEvent(){
     };
   }
 
-  window.scrollTo(0,0);
 }
 
 // Microsoftロゴ（4色の田の字）をイメージした角丸スクエアアイコン。学習シートのMicrosoft項目で使う
@@ -7511,7 +7560,6 @@ export function renderSelect(){
   renderNewsTodayCard();
   applyCustomButtonColors(app);
   wireButtonColorLongPress(app);
-  window.scrollTo(0,0);
   // 夜20:00〜23:59にこのダッシュボードを開いた瞬間、当日ニュースが存在し
   // まだ挑戦/スキップしていなければクイズポップアップを出す（1日1回）。
   // 判定・AC加算はサーバー側で行うため、ここでは呼び出すだけでよい。
@@ -7753,7 +7801,6 @@ export function renderCalendarScreen(){
   `;
   app.querySelectorAll("[data-go]").forEach(b=>b.onclick=()=>go(b.dataset.go));
   renderScheduleCalendar();
-  window.scrollTo(0,0);
 }
 
 
@@ -8692,7 +8739,6 @@ function createNewsScreen({ category, label, icon, screenKey }){
         }
       };
     }
-    window.scrollTo(0,0);
   }
 
   return render;
@@ -8730,7 +8776,6 @@ function renderNewsDetail(){
       <div class="njp-detail-body">${newsDetailBodyHTML(d.content)}</div>
     </div>`;
   app.querySelectorAll("[data-go]").forEach(b=>b.onclick=()=>go(b.dataset.go));
-  window.scrollTo(0,0);
 }
 
 function newsDetailDateLabel(dateKey){
@@ -8797,7 +8842,6 @@ function renderCertListByVendor(vendor, eyebrow){
   `;
   app.querySelectorAll("[data-cert]").forEach(b=>b.onclick=()=>selectCert(b.dataset.cert));
   app.querySelectorAll("[data-go]").forEach(b=>b.onclick=()=>go(b.dataset.go));
-  window.scrollTo(0,0);
 }
 
 export function renderCertList(){ renderCertListByVendor("microsoft", "MICROSOFT 認定対策"); }
@@ -8854,7 +8898,6 @@ export function renderProfile(){
       msg.style.color="var(--bad)"; msg.textContent="確認に失敗しました。通信環境を確認してください。";
     }
   };
-  window.scrollTo(0,0);
 }
 
 const RANKING_TABS = [
@@ -8874,7 +8917,6 @@ export function renderRanking(){
   app.querySelectorAll("[data-go]").forEach(b=>b.onclick=()=>go(b.dataset.go));
   app.querySelectorAll("[data-rtab]").forEach(b=>b.onclick=()=>{ state.rankingTab=b.dataset.rtab; renderRanking(); });
   loadRanking();
-  window.scrollTo(0,0);
 }
 
 export async function loadRanking(){
@@ -8995,5 +9037,4 @@ export function renderSkinShop() {
     m.style.color = res.ok ? "var(--good)" : "var(--bad)";
     m.textContent = res.ok ? "✓ 背景を適用しました。" : res.msg;
   });
-  window.scrollTo(0,0);
 }

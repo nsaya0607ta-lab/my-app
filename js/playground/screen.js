@@ -832,5 +832,4 @@ export function renderPlaygroundScreen(){
   const clearBtn = app.querySelector("#pg-terminal-clear");
   if(clearBtn) clearBtn.onclick = () => withScrollPreserved(() => clearTerminal());
 
-  window.scrollTo(0,0);
 }

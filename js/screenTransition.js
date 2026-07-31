@@ -269,8 +269,11 @@ export function captureScreenTransition(key){
   lastKey = key;
   if(prev !== null) scrollMemo.set(prev, window.scrollY || window.pageYOffset || 0);
 
-  // 起動直後・ログイン前後のゲート画面は演出しない
-  if(prev === null || prev === "gate" || key === "gate") return null;
+  // 起動直後は演出もスクロール操作もしない（ブラウザが復元した位置のまま）
+  if(prev === null) return null;
+  // ログイン前後のゲート画面は演出しないが、画面自体は切り替わっているので
+  // スクロール位置の確定（先頭出し）だけは共通処理に任せる
+  if(prev === "gate" || key === "gate") return { key, back:false, plain:true };
 
   // 戻る判定：直前に進んできた経路をそのまま引き返す場合
   const top = navStack[navStack.length - 1];
