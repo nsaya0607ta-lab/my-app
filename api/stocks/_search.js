@@ -1,4 +1,4 @@
-// 銘柄検索API（Finnhub /search をサーバー側でプロキシ）。api/stocks/quote.js と
+// 銘柄検索API（Finnhub /search をサーバー側でプロキシ）。api/stocks/_quote.js と
 // 同じ考え方で、APIキーはVercelの環境変数FINNHUB_API_KEYにのみ保持し、
 // フロントには一切渡さない。クライアントはこのエンドポイントに ?q=IONQ の
 // ように検索語を渡すだけで、幅広いティッカー・企業名から候補を引ける。

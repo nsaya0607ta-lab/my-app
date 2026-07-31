@@ -2837,7 +2837,7 @@ async function loadWeatherCard(){
 
 // ポートフォリオ画面の「株式を検索して追加」ウォッチリストや売買モーダルの
 // クイック候補として最初から出しておく主要銘柄（priceは基準値＝前日終値扱いの
-// モックデータ）。これ以外の銘柄は /api/stocks/search 経由でティッカー・企業名
+// モックデータ）。これ以外の銘柄は /api/stocks?action=search 経由でティッカー・企業名
 // を幅広く検索して見つけられる（stockSearchResultsHTML/openTradeModal参照）
 const WATCH_STOCKS = [
   { ticker:"AAPL", name:"Apple", price:213.40, sector:"テクノロジー" },
@@ -2875,7 +2875,7 @@ function sectorBadgeHTML(sector){
   return `<span class="pf-sector-badge" data-sector="${meta.key}">${meta.emoji} ${esc(sector)}</span>`;
 }
 
-// 銘柄検索（/api/stocks/search）で見つけた、WATCH_STOCKSに無い銘柄の企業名を
+// 銘柄検索（/api/stocks?action=search）で見つけた、WATCH_STOCKSに無い銘柄の企業名を
 // 端末に覚えておくための簡易キャッシュ。財務情報ではなく単なる表示名なので
 // ユーザーごとに分けず端末共通の1キーで保存する
 const STOCK_NAME_CACHE_KEY = "stock_name_cache_v1";
@@ -3122,7 +3122,7 @@ function initHybridTape(id, speedPxS){
 function tradeAmount(price, qty){ return Math.max(1, Math.round(price * qty)); }
 
 /* ---- ウォッチリスト銘柄のリアルタイム株価 ----
-   実際の株価はサーバー側の /api/stocks/quote（Finnhubの現在値を取得する
+   実際の株価はサーバー側の /api/stocks?action=quote（Finnhubの現在値を取得する
    プロキシ。APIキーはVercelの環境変数FINNHUB_API_KEYにのみ保持し、
    フロントには渡さない）から取得する。
    日本時間22:30〜翌5:30（米国市場の取引時間帯）の間だけ、1分ごとに
@@ -3164,7 +3164,7 @@ async function fetchStockQuotes(tickers){
   const symbols = [...new Set(tickers)].filter(Boolean);
   if(!symbols.length) return { quotes:{}, errors:[] };
   try{
-    const res = await fetch(`/api/stocks/quote?symbols=${encodeURIComponent(symbols.join(","))}`);
+    const res = await fetch(`/api/stocks?action=quote&symbols=${encodeURIComponent(symbols.join(","))}`);
     if(!res.ok) throw new Error("HTTP " + res.status);
     const data = await res.json();
     return { quotes: data.quotes || {}, errors: data.errors || [] };
@@ -3570,13 +3570,13 @@ document.addEventListener("visibilitychange", () => {
   }
 });
 
-// サーバー経由でFinnhubの銘柄検索（/api/stocks/search）を叩き、ティッカー・
+// サーバー経由でFinnhubの銘柄検索（/api/stocks?action=search）を叩き、ティッカー・
 // 企業名の両方から幅広く候補を引く。ネットワーク不調時は例外を投げず
 // 空配列を返して静かに諦める
 async function searchStockSymbols(q){
   if(!q) return [];
   try{
-    const res = await fetch(`/api/stocks/search?q=${encodeURIComponent(q)}`);
+    const res = await fetch(`/api/stocks?action=search&q=${encodeURIComponent(q)}`);
     if(!res.ok) throw new Error("HTTP " + res.status);
     const data = await res.json();
     const results = Array.isArray(data.results) ? data.results : [];
@@ -3609,7 +3609,7 @@ function stockSearchResultsHTML(list, watchlist, quotes, busy, query){
 
 // 「🔍 株式を検索して追加」ボタンから開く、幅広い米国株ティッカー・企業名の
 // 検索・追加ポップアップ。入力が空の間はWATCH_STOCKSの主要銘柄を候補として
-// 出し、文字を打つと/api/stocks/search（Finnhub）で実際に検索する。
+// 出し、文字を打つと/api/stocks?action=search（Finnhub）で実際に検索する。
 // 入力のたびにAPIを叩くとレート制限をすぐ消費するため300msデバウンスし、
 // 結果一覧だけを再描画して入力欄自体は作り直さない（フォーカス・カーソル
 // 位置を保つため。gcal-selday-inputの候補表示と同じ考え方）

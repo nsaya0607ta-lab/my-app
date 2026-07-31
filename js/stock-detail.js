@@ -69,7 +69,7 @@ function parseRowData(row){
 async function fetchQuote(ticker){
   let res;
   try{
-    res = await fetch(`/api/stocks/quote?symbols=${encodeURIComponent(ticker)}`);
+    res = await fetch(`/api/stocks?action=quote&symbols=${encodeURIComponent(ticker)}`);
   }catch(e){
     return { status:"error", code:"network" };
   }
@@ -99,7 +99,7 @@ async function fetchQuote(ticker){
 async function fetchMetrics(ticker){
   let res;
   try{
-    res = await fetch(`/api/stocks/metrics?symbol=${encodeURIComponent(ticker)}`);
+    res = await fetch(`/api/stocks?action=metrics&symbol=${encodeURIComponent(ticker)}`);
   }catch(e){
     return null;
   }

@@ -569,7 +569,7 @@ export function bpOnWeeklyTaskRate(weekKey, rate){
 }
 
 /* ---- 🃏 価値観ゲームの報酬 ----
-   ログイン中はサーバー（/api/valuegame/reward）が付与額を判定して返し、
+   ログイン中はサーバー（/api/valuegame?action=reward）が付与額を判定して返し、
    その結果をこの関数で台帳へ反映する。gameId を重複防止キーにしているため、
    同じゲーム結果を二重送信しても2回目以降は加算されない。
    items: [{ reason, amount }]  */

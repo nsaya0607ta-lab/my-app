@@ -6,12 +6,12 @@
 
    ★数字の秘匿について（重要）
    ルームドキュメントには「各プレイヤーの数字」を一切書かない。数字は
-   サーバー（/api/valuegame/deal）が生成し、サーバー側の鍵で暗号化して
+   サーバー（/api/valuegame?action=deal）が生成し、サーバー側の鍵で暗号化して
    保管したうえで、呼び出した本人にだけ自分の数字を返す。したがって
    ・Firestoreのルームドキュメントを読んでも他人の数字は入っていない
    ・ブラウザの開発者ツールで通信を見ても、返ってくるのは自分の数字だけ
    ・仮に暗号化前のドキュメントを覗けたとしても中身は暗号文
-   となり、公開（/api/valuegame/reveal）まで他人の数字は取得できない。
+   となり、公開（/api/valuegame?action=reveal）まで他人の数字は取得できない。
 
    再接続：参加中のルームIDを端末に保存しておき、ページを更新しても
    同じルームへ購読し直せるようにしている。
@@ -362,7 +362,7 @@ export async function vgOnlineSetReady(ready){
   await patchRoom({ players });
 }
 
-/* ホストがゲームを開始する。数字の配布はサーバー（/api/valuegame/deal）が行い、
+/* ホストがゲームを開始する。数字の配布はサーバー（/api/valuegame?action=deal）が行い、
    ルームドキュメントには「配り終えた」という事実とお題だけが入る */
 export async function vgOnlineStart(){
   if(!S.room) return { ok: false, message: "ルームに接続していません。" };
@@ -377,7 +377,7 @@ export async function vgOnlineDealRound(round){
   const token = await idToken();
   if(!token) return { ok: false, message: "ログイン情報を確認できませんでした。" };
   try{
-    const res = await fetch("/api/valuegame/deal", {
+    const res = await fetch("/api/valuegame?action=deal", {
       method: "POST",
       headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
       body: JSON.stringify({ roomId: S.roomId, round }),
@@ -455,7 +455,7 @@ export async function vgOnlineReveal(order){
   const token = await idToken();
   if(!token) return { ok: false, message: "ログイン情報を確認できませんでした。" };
   try{
-    const res = await fetch("/api/valuegame/reveal", {
+    const res = await fetch("/api/valuegame?action=reveal", {
       method: "POST",
       headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
       body: JSON.stringify({ roomId: S.roomId, round: S.room ? S.room.round : 1, order: order || [] }),

@@ -1,10 +1,10 @@
-// POST /api/valuegame/deal  body: { roomId, round }
+// POST /api/valuegame?action=deal  body: { roomId, round }
 //
 // ラウンド開始時に1〜100の数字を全員へ配る。
 //
 // ★このエンドポイントが返すのは「呼び出した本人の数字」だけ。
 // 全員ぶんの数字は暗号化して vgSecrets/{roomId}_{round} に保管し、
-// 公開のタイミング（/api/valuegame/reveal）まで誰にも返さない。
+// 公開のタイミング（/api/valuegame?action=reveal）まで誰にも返さない。
 // ルームドキュメント（クライアントが読めるvgRooms）には数字を一切書かない。
 //
 // 同じラウンドに対して複数人が同時に呼んでも配り直しが起きないよう、

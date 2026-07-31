@@ -1,7 +1,7 @@
 /* =========================================================================
    🃏 価値観ゲームのBP付与（クライアント側の入口）
 
-   BPの付与額はサーバー（/api/valuegame/reward）が判定する。クライアントは
+   BPの付与額はサーバー（/api/valuegame?action=reward）が判定する。クライアントは
    「このゲームIDのゲームが終わった」という事実だけを送り、サーバーが
    ・ゲームIDでの二重付与チェック（同じ結果を何度送っても1回だけ）
    ・1日のゲーム参加BPの上限
@@ -19,7 +19,7 @@ import { bpApplyGameRewards } from '../bp/store.js';
 import { BP_AMOUNT } from '../bp/config.js';
 import { vgRewardBreakdown } from './engine.js';
 
-const REWARD_ENDPOINT = "/api/valuegame/reward";
+const REWARD_ENDPOINT = "/api/valuegame?action=reward";
 
 // 同じゲームIDの送信が同時に走らないようにする（二重タップ・再描画対策）
 const inFlight = new Set();
