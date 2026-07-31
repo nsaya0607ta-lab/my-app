@@ -1,4 +1,4 @@
-// POST /api/valuegame/reward
+// POST /api/valuegame?action=reward
 //   body: { gameId, mode, difficulty, rounds, clearedRounds, answeredRounds,
 //           success, perfect, livesLeft, roomId, opponentIds:[uid,...] }
 //

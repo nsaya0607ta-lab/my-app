@@ -1,5 +1,5 @@
 // PER・PBR・時価総額（Finnhub /stock/profile2 と /stock/metric をサーバー側で
-// プロキシ）。株価そのもの（api/stocks/quote.js）とは違い、これらは決算ベースの
+// プロキシ）。株価そのもの（api/stocks/_quote.js）とは違い、これらは決算ベースの
 // ファンダメンタルズ情報で更新頻度が低いため、別エンドポイントに分け、
 // キャッシュも長め（6時間）にしてFinnhub無料枠のレート制限を無駄に消費しない
 // ようにする。APIキーはVercelの環境変数FINNHUB_API_KEYにのみ保持する。

@@ -220,7 +220,7 @@ export function vgNextRound(s){
     // 途中で順番を外していてもライフが残っていればクリア扱い（協力ゲーム
     // としての標準的なルール）。一度もライフを失わなかった場合だけ
     // s.perfect が true のまま残り、パーフェクトとして扱われる。
-    // サーバー側の判定（api/valuegame/reward.js）と同じ基準
+    // サーバー側の判定（api/valuegame/_reward.js）と同じ基準
     s.success = s.lives > 0;
     s.phase = "gameover";
     vgSaveSession(s);

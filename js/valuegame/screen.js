@@ -1669,7 +1669,7 @@ async function finishOnlineGame(){
   onlineFinishing = true;
 
   const players = (room.players || []).filter(p => !p.spectator);
-  // 成功の判定基準はサーバー（api/valuegame/reward.js）と同じ：
+  // 成功の判定基準はサーバー（api/valuegame/_reward.js）と同じ：
   // ライフが0になる前に規定ラウンドを最後までやり切ったらクリア
   const success = (room.lives || 0) > 0 && (room.round || 0) >= (room.rounds || 0);
   const todayKey = bpTodayKey();

@@ -1,4 +1,4 @@
-// POST /api/valuegame/reveal  body: { roomId, round, order:[uid,...] }
+// POST /api/valuegame?action=reveal  body: { roomId, round, order:[uid,...] }
 //
 // 数字の公開。ここではじめて全員ぶんの数字がクライアントへ返る。
 //
