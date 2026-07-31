@@ -1,7 +1,7 @@
 /* =========================================================================
    🃏 チャッピーの価値観ゲーム：戦績・履歴・称号の永続化
 
-   DOM操作は行わない（画面は screen.js、AIの回答生成は solo.js の責務）。
+   DOM操作は行わない（画面は screen.js の責務）。
    保存はアプリ内の他機能と同じく、ログイン中のユーザーIDごとにキーを
    分けたlocalStorage方式。users/{uid}.valueGame へもマージ同期して
    機種をまたいで引き継ぐ。
@@ -27,8 +27,6 @@ function defaultData(){
     v: 1,
     plays: 0,            // プレイ回数（完了したゲーム数）
     wins: 0,             // 成功回数（協力モードのクリア）
-    soloPlays: 0,
-    soloWins: 0,
     winStreak: 0,        // 現在の連続成功数
     bestWinStreak: 0,
     perfects: 0,         // パーフェクト成功数（ライフを1つも失わずクリア）
@@ -49,7 +47,7 @@ function normalize(raw){
   const base = defaultData();
   if(!raw || typeof raw !== "object") return base;
   const d = { ...base, ...raw };
-  ["plays", "wins", "soloPlays", "soloWins", "winStreak", "bestWinStreak", "perfects", "peopleMet", "bpEarned"]
+  ["plays", "wins", "winStreak", "bestWinStreak", "perfects", "peopleMet", "bpEarned"]
     .forEach(k => { d[k] = Math.max(0, Number(d[k]) || 0); });
   d.metUids = Array.isArray(d.metUids) ? [...new Set(d.metUids)].slice(-500) : [];
   d.topicCounts = (d.topicCounts && typeof d.topicCounts === "object") ? { ...d.topicCounts } : {};
@@ -108,7 +106,7 @@ export function applyCloudValueGame(payload){
   const inc = normalize(payload);
   const mine = load();
   const before = JSON.stringify([mine.plays, mine.wins, mine.titles.length]);
-  ["plays", "wins", "soloPlays", "soloWins", "bestWinStreak", "perfects", "peopleMet", "bpEarned"]
+  ["plays", "wins", "bestWinStreak", "perfects", "peopleMet", "bpEarned"]
     .forEach(k => { mine[k] = Math.max(mine[k], inc[k]); });
   mine.winStreak = Math.max(mine.winStreak, inc.winStreak);
   mine.metUids = [...new Set([...mine.metUids, ...inc.metUids])].slice(-500);
@@ -162,7 +160,6 @@ export function vgTitleState(){
 function currentValueFor(d, kind){
   if(kind === "plays") return d.plays;
   if(kind === "wins") return d.wins;
-  if(kind === "soloWins") return d.soloWins;
   if(kind === "perfect") return d.perfects;
   if(kind === "streak") return d.bestWinStreak;
   if(kind === "friends") return d.metUids.length || d.peopleMet;
@@ -181,8 +178,8 @@ export function vgAlreadyRecorded(gameId){
 /* ゲーム1回ぶんの結果を記録する。
 
    result: {
-     gameId, mode:"solo"|"online", difficulty, rounds, clearedRounds,
-     success, perfect, livesLeft, players:[{uid,name,isAI}],
+     gameId, mode:"online", difficulty, rounds, clearedRounds,
+     success, perfect, livesLeft, players:[{uid,name}],
      topics:[topicId], myAnswers:[{topicId,topicTitle,number,answer}],
      bpGained, todayKey
    }
@@ -198,10 +195,8 @@ export function vgRecordGame(result){
   if(d.recordedGameIds.length > RECORDED_MAX) d.recordedGameIds = d.recordedGameIds.slice(-RECORDED_MAX);
 
   d.plays += 1;
-  if(r.mode === "solo") d.soloPlays += 1;
   if(r.success){
     d.wins += 1;
-    if(r.mode === "solo") d.soloWins += 1;
     d.winStreak += 1;
     d.bestWinStreak = Math.max(d.bestWinStreak, d.winStreak);
     if(r.todayKey) d.lastWinDate = r.todayKey;
@@ -212,7 +207,7 @@ export function vgRecordGame(result){
   d.bpEarned += Math.max(0, Number(r.bpGained) || 0);
 
   (r.players || []).forEach(p => {
-    if(!p || p.isAI) return;
+    if(!p) return;
     if(p.uid && p.uid !== (state.currentUserId || "")){
       if(!d.metUids.includes(p.uid)){ d.metUids.push(p.uid); d.peopleMet += 1; }
     }
@@ -237,7 +232,7 @@ export function vgRecordGame(result){
 
   d.history.unshift({
     id: r.gameId,
-    mode: r.mode || "solo",
+    mode: r.mode || "online",
     difficulty: r.difficulty || "normal",
     rounds: Number(r.rounds) || 0,
     clearedRounds: Number(r.clearedRounds) || 0,

@@ -77,8 +77,7 @@ const DIRX_SCREENS = ["lpic-dir-explorer", "lpic-dirx-missions", "lpic-dirx-inci
 const DIRX_SCENARIOS_ORDER = DIRX_SCENARIOS.map(s=>s.id);
 
 export function go(s){
-  // 🃏 価値観ゲームから別の画面へ移るときは、制限時間のタイマーと
-  // ボイスチャットのマイクを必ず解放する
+  // 🃏 価値観ゲームから別の画面へ移るときは、ボイスチャットのマイクを必ず解放する
   if(S.screen === "valuegame" && s !== "valuegame") valueGameOnScreenLeft();
   if(s === "certs" || s === "lpic-certs" || s === "select") S.cert = null;
   // ホームへ戻ったら、Gemini相談画面の「戻る」先の記憶もリセットする

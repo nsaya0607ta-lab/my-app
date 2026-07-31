@@ -45,7 +45,7 @@ export async function vgClaimRewards(ctx){
           headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
           body: JSON.stringify({
             gameId: c.gameId,
-            mode: c.mode || "solo",
+            mode: c.mode || "online",
             difficulty: c.difficulty || "normal",
             rounds: c.rounds || 0,
             clearedRounds: c.clearedRounds || 0,

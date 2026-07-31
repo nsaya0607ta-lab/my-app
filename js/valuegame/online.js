@@ -4,8 +4,14 @@
    ルームは vgRooms/{roomId} の1ドキュメントで表し、onSnapshot で全員が
    同じ状態を購読する。
 
+   ★カードについて
+   配る枚数は人数で変わる（2〜3人なら1人2枚、4人以上なら1人1枚）。カードは
+   `${uid}#${通し番号}` というIDで表し、回答（answers）も投票（votes）も
+   プレイヤー単位ではなくカード単位で持つ。誰が何枚持っているかは公開情報
+   なので room.cards に入るが、数字はここにも入らない。
+
    ★数字の秘匿について（重要）
-   ルームドキュメントには「各プレイヤーの数字」を一切書かない。数字は
+   ルームドキュメントには「各カードの数字」を一切書かない。数字は
    サーバー（/api/valuegame?action=deal）が生成し、サーバー側の鍵で暗号化して
    保管したうえで、呼び出した本人にだけ自分の数字を返す。したがって
    ・Firestoreのルームドキュメントを読んでも他人の数字は入っていない
@@ -31,7 +37,8 @@ const S = {
   roomId: "",
   room: null,        // Firestoreのルームドキュメントの中身
   myId: "",
-  myNumber: null,    // 自分の数字（このセッションだけが持つ。DOMへは長押し時のみ）
+  myNumbers: {},     // { カードID: 数字 } 自分のカードだけ。DOMへは長押し時のみ
+  myNumbersRound: 0, // myNumbers がどのラウンドのものか（持ち越し表示の防止）
   chat: [],
   unsub: null,
   onUpdate: null,
@@ -39,6 +46,25 @@ const S = {
 };
 
 export function vgOnlineState(){ return S; }
+
+/* =========================================================================
+   カード（並べ替えの単位）
+   ========================================================================= */
+/* このラウンドのカード一覧。配布時にサーバーが room.cards へ書く。
+   まだ配布前・古い形式のルームでは「1人1枚（カードID＝UID）」とみなす */
+export function vgOnlineCards(room){
+  const r = room || S.room;
+  if(!r) return [];
+  if(Array.isArray(r.cards) && r.cards.length) return r.cards;
+  return (r.players || [])
+    .filter(p => p && !p.spectator)
+    .map(p => ({ id: p.id, ownerId: p.id, index: 0 }));
+}
+
+// 自分が持っているカード（回答欄・数字の確認はこの枚数ぶん出す）
+export function vgOnlineMyCards(room){
+  return vgOnlineCards(room).filter(c => c.ownerId === S.myId);
+}
 
 function fb(){ return window.FirebaseSync || null; }
 function db(){ return state.db || null; }
@@ -189,8 +215,10 @@ export async function vgOnlineCreateRoom(form){
     maxLives: diff.lives,
     topicId: "",
     phase: "",             // answer | order | reveal
-    answers: {},           // { uid: 回答文 }（数字は入らない）
-    votes: {},             // { uid: [uid,...] } 各自の予想順
+    cards: [],             // [{ id, ownerId, index }] 配布時にサーバーが書く
+    cardsPerPlayer: 0,
+    answers: {},           // { カードID: 回答文 }（数字は入らない）
+    votes: {},             // { uid: [カードID,...] } 各自の予想順
     finalOrder: [],
     revealed: null,        // 公開後の { numbers, rows, ok, gap }
     clearedRounds: 0,
@@ -337,6 +365,9 @@ export async function vgOnlineSubscribe(roomId, onUpdate){
       }
       const r = snap.data() || {};
       S.room = r;
+      // ラウンドが進んだら前のラウンドの数字は捨てる。カードIDはラウンドを
+      // またいで同じ（uid#0）なので、消さないと古い数字が見えてしまう
+      if((Number(r.round) || 0) !== S.myNumbersRound) S.myNumbers = {};
       S.chat = (r.chat || []).map(m => ({ ...m, mine: m.uid === S.myId }));
       if(S.onUpdate) S.onUpdate();
     }, (err) => {
@@ -358,7 +389,7 @@ export function vgOnlineUnsubscribe(){
 export async function vgOnlineLeave(){
   const roomId = S.roomId;
   vgOnlineUnsubscribe();
-  S.roomId = ""; S.room = null; S.chat = []; S.myNumber = null;
+  S.roomId = ""; S.room = null; S.chat = []; S.myNumbers = {}; S.myNumbersRound = 0;
   saveResume("");
   if(!roomId || !db() || !fb() || !state.currentUserId) return;
   try{
@@ -412,7 +443,7 @@ export async function vgOnlineStart(){
   return await vgOnlineDealRound(1);
 }
 
-/* サーバーへラウンドの配布を依頼する。戻り値に自分の数字が入る */
+/* サーバーへラウンドの配布を依頼する。戻り値に自分のカードの数字が入る */
 export async function vgOnlineDealRound(round){
   const token = await idToken();
   if(!token) return { ok: false, message: "ログイン情報を確認できませんでした。" };
@@ -427,41 +458,53 @@ export async function vgOnlineDealRound(round){
       return { ok: false, message: (err && err.message) || "配布に失敗しました。もう一度お試しください。" };
     }
     const data = await res.json();
-    S.myNumber = data.myNumber;   // 自分の数字だけがここに入る
-    return { ok: true, myNumber: data.myNumber };
+    // 自分のカードの数字だけがここに入る
+    S.myNumbers = (data.myNumbers && typeof data.myNumbers === "object") ? data.myNumbers : {};
+    S.myNumbersRound = round;
+    return { ok: true, myNumbers: S.myNumbers };
   }catch(e){
     console.error("vg deal failed:", e);
     return { ok: false, message: "通信に失敗しました。再試行してください。" };
   }
 }
 
-// 自分の数字を取り出す（画面は長押し中だけこれを表示する）
-export function vgOnlineMyNumber(){ return S.myNumber; }
-
-/* まだ配布結果を受け取っていない参加者（後から購読を始めた人・再接続した人）が
-   自分の数字を取りに行くための入口。サーバーは本人の数字しか返さない */
-export async function vgOnlineFetchMyNumber(){
-  if(!S.room || !S.room.gameId) return null;
-  const r = await vgOnlineDealRound(S.room.round || 1);
-  return r.ok ? r.myNumber : null;
+// 自分のカードの数字を取り出す（画面は長押し中だけこれを表示する）
+export function vgOnlineMyNumber(cardId){
+  const n = S.myNumbers ? S.myNumbers[cardId] : undefined;
+  return (n === undefined) ? null : n;
 }
 
-export async function vgOnlineSubmitAnswer(text){
-  if(!S.room) return;
+export function vgOnlineHasMyNumbers(){
+  return !!(S.myNumbers && Object.keys(S.myNumbers).length);
+}
+
+/* まだ配布結果を受け取っていない参加者（後から購読を始めた人・再接続した人）が
+   自分のカードを取りに行くための入口。サーバーは本人のカードしか返さない */
+export async function vgOnlineFetchMyNumbers(){
+  if(!S.room || !S.room.gameId) return null;
+  const r = await vgOnlineDealRound(S.room.round || 1);
+  return r.ok ? r.myNumbers : null;
+}
+
+/* カード1枚ぶんの回答を確定する。自分のカード以外は書き換えない */
+export async function vgOnlineSubmitAnswer(cardId, text){
+  if(!S.room) return { ok: false };
+  const id = String(cardId || "");
+  if(!vgOnlineMyCards().some(c => c.id === id)) return { ok: false };
   const answer = String(text || "").trim().slice(0, 40);
-  if(!answer) return;
-  const answers = { ...(S.room.answers || {}) };
-  answers[S.myId] = answer;
-  await patchRoom({ answers });
+  if(!answer) return { ok: false };
+  // 自分のカードのぶんだけを書き込む（手元の古い一覧で他の人の回答を
+  // 上書きしないよう、まとめて送らずキー単位で更新する）
+  const ok = await patchRoom({ answers: { [id]: answer } });
+  return { ok };
 }
 
 /* 推奨方式：各プレイヤーが自分の予想順を作り、最後に投票する。
    最も多く選ばれた並び順が最終候補になる */
 export async function vgOnlineVoteOrder(order){
   if(!S.room) return;
-  const votes = { ...(S.room.votes || {}) };
-  votes[S.myId] = order.slice();
-  await patchRoom({ votes });
+  // 回答と同じく、自分のぶんだけをキー単位で更新する
+  await patchRoom({ votes: { [S.myId]: order.slice() } });
 }
 
 export async function vgOnlineSetOrder(order){
