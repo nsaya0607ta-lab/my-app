@@ -1108,6 +1108,7 @@ function showError(id, msg){
 
 let joinCode = "";
 let publicRooms = null;
+let publicRoomsError = "";
 
 function paintOnlineJoin(){
   app.innerHTML = `
@@ -1128,6 +1129,7 @@ function paintOnlineJoin(){
         <div class="vg-card-title">公開ルーム<button type="button" class="vg-mini-btn" id="vg-refresh-rooms">更新</button></div>
         <div id="vg-public-rooms">
           ${publicRooms === null ? `<div class="vg-note">読み込み中…</div>`
+            : publicRoomsError ? `<div class="vg-error">${esc(publicRoomsError)}</div>`
             : publicRooms.length ? publicRooms.map(r => `
               <button type="button" class="vg-room-row" data-room="${esc(r.id)}">
                 <span class="vg-room-main">
@@ -1170,7 +1172,9 @@ async function tryJoin(btn, joinFn){
 }
 
 async function loadPublicRooms(){
-  publicRooms = await vgOnlineListPublicRooms();
+  const res = await vgOnlineListPublicRooms();
+  publicRooms = res.rooms || [];
+  publicRoomsError = res.ok ? "" : (res.message || "");
   if(view === "online-join") repaint();
 }
 

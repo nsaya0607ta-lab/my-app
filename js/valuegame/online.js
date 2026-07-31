@@ -104,8 +104,41 @@ function genRoomId(){
 function requireLogin(){
   if(!db() || !fb()) return { ok: false, message: "通信の準備ができていません。少し待ってからお試しください。" };
   if(!state.currentUserId) return { ok: false, message: "オンラインで遊ぶにはログインが必要です。" };
+  if(isOffline()) return { ok: false, message: "端末がオフラインのようです。通信できる場所でお試しください。" };
   return { ok: true };
 }
+
+function isOffline(){
+  try{ return typeof navigator !== "undefined" && navigator.onLine === false; }catch(e){ return false; }
+}
+
+/* Firestoreの失敗を、原因が分かる文にして返す。
+   すべて「通信状況をご確認ください」にしてしまうと、実際には
+   セキュリティルールが未反映（permission-denied）でも同じ表示になり、
+   電波を疑い続けることになるため、理由ごとに文言を分ける。
+   最後の手段として、判別できないものはエラーコードをそのまま添える */
+export function vgErrorMessage(e, what){
+  const raw = String((e && (e.code || e.name)) || "");
+  const code = raw.replace(/^firestore\//, "");
+  switch(code){
+    case "permission-denied":
+      return `${what}（権限エラー）。Firestoreのセキュリティルールが最新か確認してください。`;
+    case "unauthenticated":
+      return `${what}（ログインの期限切れ）。ログインし直してからお試しください。`;
+    case "failed-precondition":
+      return `${what}（データベースの設定不足）。Firestoreのインデックスを確認してください。`;
+    case "resource-exhausted":
+      return `${what}（利用量の上限に達しています）。時間をおいてお試しください。`;
+    case "unavailable":
+    case "deadline-exceeded":
+    case "cancelled":
+      return `${what}。通信状況をご確認ください。`;
+    default:
+      return code ? `${what}（${code}）。時間をおいてお試しください。` : `${what}。通信状況をご確認ください。`;
+  }
+}
+
+export function vgOnlineLastError(){ return S.lastError; }
 
 function nowISO(){ return new Date().toISOString(); }
 
@@ -174,12 +207,16 @@ export async function vgOnlineCreateRoom(form){
     return { ok: true, roomId, code: room.code };
   }catch(e){
     console.error("vg create room failed:", e);
-    return { ok: false, message: "ルームを作成できませんでした。通信状況をご確認ください。" };
+    S.lastError = vgErrorMessage(e, "ルームを作成できませんでした");
+    return { ok: false, message: S.lastError, code: e && e.code };
   }
 }
 
+/* 公開ルームの一覧。読み取りに失敗したときは空一覧ではなく理由を返す。
+   （空一覧のままだと「ルームが無い」のか「読めていない」のか区別できない） */
 export async function vgOnlineListPublicRooms(){
-  if(!db() || !fb()) return [];
+  if(!db() || !fb()) return { ok: false, rooms: [], message: "通信の準備ができていません。少し待ってからお試しください。" };
+  if(isOffline()) return { ok: false, rooms: [], message: "端末がオフラインのようです。通信できる場所でお試しください。" };
   try{
     const q = fb().query(
       fb().collection(db(), ROOMS),
@@ -205,10 +242,10 @@ export async function vgOnlineListPublicRooms(){
         maxPlayers: r.maxPlayers || 0,
       });
     });
-    return rows;
+    return { ok: true, rooms: rows };
   }catch(e){
     console.error("vg list rooms failed:", e);
-    return [];
+    return { ok: false, rooms: [], message: vgErrorMessage(e, "公開ルームを読み込めませんでした") };
   }
 }
 
@@ -226,7 +263,8 @@ export async function vgOnlineJoinByCode(code, myName, password){
     return await vgOnlineJoinRoom(target.id, myName, password);
   }catch(e){
     console.error("vg join by code failed:", e);
-    return { ok: false, message: "参加できませんでした。通信状況をご確認ください。" };
+    S.lastError = vgErrorMessage(e, "参加できませんでした");
+    return { ok: false, message: S.lastError, code: e && e.code };
   }
 }
 
@@ -276,7 +314,8 @@ export async function vgOnlineJoinRoom(roomId, myName, password){
     return { ok: true, roomId, code: result.code };
   }catch(e){
     console.error("vg join room failed:", e);
-    return { ok: false, message: "参加できませんでした。通信状況をご確認ください。" };
+    S.lastError = vgErrorMessage(e, "参加できませんでした");
+    return { ok: false, message: S.lastError, code: e && e.code };
   }
 }
 
@@ -302,7 +341,7 @@ export async function vgOnlineSubscribe(roomId, onUpdate){
       if(S.onUpdate) S.onUpdate();
     }, (err) => {
       console.error("vg room snapshot failed:", err);
-      S.lastError = "通信が切れました。再接続してください。";
+      S.lastError = vgErrorMessage(err, "ルームの状態を受け取れませんでした");
       if(S.onUpdate) S.onUpdate();
     });
     return true;
@@ -352,6 +391,7 @@ async function patchRoom(patch){
     return true;
   }catch(e){
     console.error("vg patch room failed:", e);
+    S.lastError = vgErrorMessage(e, "ルームを更新できませんでした");
     return false;
   }
 }
