@@ -263,6 +263,9 @@ import { applyCloudValueGame } from './valuegame/store.js';
         }
         if (state.unsub) { state.unsub(); state.unsub = null; }
         state.lbAutoDone = false;
+        // 直前のsnapshotで受け取った資格データの内容。値が動いていない
+        // echoで画面を作り直さないための比較用（アカウントが切り替わったら空に戻す）
+        let lastCertsSig = "";
         // 自分宛てのカレンダー通知（共有カレンダーの登録・削除）の受信を開始
         if (user.email) gcalStartNotifyListener(user.email);
         state.unsub = onSnapshot(doc(state.db, "users", state.currentUserId), (docSnap) => {
@@ -316,7 +319,16 @@ import { applyCloudValueGame } from './valuegame/store.js';
             if (data.certs) {
               state.cloudData = data.certs;            // クラウドの全資格データを保持
               if (S.cert) applyCloud(S.cert);    // 選択中の資格をこの端末へ反映
-              if (S.screen==="home" || S.screen==="dc" || S.screen==="history" || S.screen==="select") { render(); }
+              /* このonSnapshotは自分自身の書き込み（コイン加算・予定の保存など）の
+                 echoでも毎回発火する。中身が前回と同じなのにrender()（画面全体の
+                 再構築）を呼ぶと、ホーム画面を見ているだけでカードが作り直され、
+                 スクロール位置・入力中の文字・開いているメニューが巻き添えで
+                 失われてしまう。実際に資格データが変わったときだけ描き直す */
+              let certsSig = "";
+              try { certsSig = JSON.stringify(data.certs); } catch (e) { certsSig = String(Date.now()); }
+              const certsChanged = certsSig !== lastCertsSig;
+              lastCertsSig = certsSig;
+              if (certsChanged && (S.screen==="home" || S.screen==="dc" || S.screen==="history" || S.screen==="select")) { render(); }
               if (!state.lbAutoDone) { state.lbAutoDone = true; try{ publishLeaderboard(); }catch(e){} }  // ログイン時に自動でランキング反映
             } else {
               seedCloudFromLocal();              // 中身が空 → ローカルから初期投入
