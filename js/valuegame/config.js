@@ -13,25 +13,31 @@ export const VG_MAX_NUMBER = 100;
 export const VG_MIN_PLAYERS = 2;
 export const VG_MAX_PLAYERS = 10;
 
+/* ---- 1人が持つカードの枚数 ----
+   人数が少ないと並べる枚数が足りず、すぐに終わってしまう。そこで
+   2〜3人のときは1人2枚、4人以上のときは1人1枚を配る。
+   サーバー側（api/valuegame/_deal.js）にも同じ規則を置いている。 */
+export function vgCardsPerPlayer(playerCount){
+  const n = Math.max(0, Number(playerCount) || 0);
+  return (n > 0 && n <= 3) ? 2 : 1;
+}
+
 /* ---- 難易度 ---- */
 export const VG_DIFFICULTIES = [
   {
     key: "easy", name: "やさしい", icon: "🌱",
     lives: 5, timeLimit: 0,
     desc: "ライフ5・制限時間なし。はじめての人におすすめ。",
-    aiClarity: 0.85,   // チャッピーAIの回答の分かりやすさ（1に近いほど数字を推測しやすい）
   },
   {
     key: "normal", name: "ふつう", icon: "🌤️",
     lives: 3, timeLimit: 0,
     desc: "ライフ3。標準のバランス。",
-    aiClarity: 0.6,
   },
   {
     key: "hard", name: "むずかしい", icon: "🔥",
     lives: 2, timeLimit: 90,
     desc: "ライフ2・制限時間あり（1ラウンド90秒）。",
-    aiClarity: 0.38,
   },
 ];
 
@@ -47,10 +53,10 @@ export const VG_DEFAULT_ROUNDS = 3;
    具体例つきで先に共有してもらう方式にしている ---- */
 export const VG_RULES = {
   flow: [
-    "各プレイヤーに1〜100の数字が1枚ずつ配られます。",
-    "自分の数字は自分だけが確認できます（ボタンを長押ししている間だけ表示）。",
+    "各プレイヤーに1〜100の数字が配られます（2〜3人なら1人2枚、4人以上なら1人1枚）。",
+    "自分のカードの数字は自分だけが確認できます（ボタンを長押ししている間だけ表示）。",
     "全員に共通のお題が1つ出ます。お題には「1がどんな状態か」「100がどんな状態か」が必ず書いてあります。",
-    "自分の数字を直接言わず、その大きさを表す言葉で表現します。",
+    "数字を直接言わず、その大きさを表す言葉で表現します。2枚あるときはカードごとに表現します。",
     "会話しながら、数字が小さいと思う順にカードを並べます。",
     "全員が確定したら数字を公開。小さい順に並んでいれば成功です。",
   ],
@@ -89,13 +95,13 @@ export const VG_STAMPS = [
 ];
 
 /* ---- 称号（実績） ----
-   kind:"plays"|"wins"|"streak"|"perfect"|"friends"|"soloWins" */
+   kind:"plays"|"wins"|"streak"|"perfect"|"friends" */
 export const VG_TITLES = [
   { id: "t-first",    icon: "🌱", name: "はじめての価値観",     desc: "はじめて1ゲームを完了する",       kind: "plays",    need: 1 },
   { id: "t-reader",   icon: "🔍", name: "意図を読む人",         desc: "5回成功する",                     kind: "wins",     need: 5 },
   { id: "t-win10",    icon: "🏆", name: "10回成功",             desc: "10回成功する",                    kind: "wins",     need: 10 },
   { id: "t-master",   icon: "👑", name: "価値観マスター",       desc: "30回成功する",                    kind: "wins",     need: 30 },
-  { id: "t-buddy",    icon: "🐾", name: "チャッピーとの名コンビ", desc: "1人用モードで10回成功する",      kind: "soloWins", need: 10 },
+  { id: "t-regular",  icon: "🐾", name: "常連プレイヤー",       desc: "10ゲームを完了する",              kind: "plays",    need: 10 },
   { id: "t-perfect",  icon: "✨", name: "パーフェクト達成",     desc: "一度もライフを減らさずに成功する", kind: "perfect",  need: 1 },
   { id: "t-streak5",  icon: "🔥", name: "連勝の勢い",           desc: "5連続で成功する",                 kind: "streak",   need: 5 },
   { id: "t-social",   icon: "🤝", name: "100人と交流",          desc: "のべ100人と一緒に遊ぶ",           kind: "friends",  need: 100 },

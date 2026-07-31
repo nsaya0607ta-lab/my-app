@@ -1,11 +1,12 @@
-// POST /api/valuegame?action=reveal  body: { roomId, round, order:[uid,...] }
+// POST /api/valuegame?action=reveal  body: { roomId, round, order:[cardId,...] }
 //
 // 数字の公開。ここではじめて全員ぶんの数字がクライアントへ返る。
+// 並べ替えの単位はプレイヤーではなくカード（2〜3人なら1人2枚ある）。
 //
 // 公開してよいかの判定はすべてサーバー側で行う：
 //   ・呼び出した人がそのルームのプレイヤーであること
 //   ・そのラウンドの数字が既に配られていること
-//   ・全プレイヤーが回答を確定していること（＝まだ考えている人がいる間は返さない）
+//   ・すべてのカードの回答が確定していること（＝まだ考えている人がいる間は返さない）
 // これを満たさない限り、たとえリクエストを偽装しても数字は返らない。
 //
 // 判定結果（成功／失敗・残りライフ）もサーバーが計算してルームへ書き込むため、
@@ -61,20 +62,25 @@ module.exports = async (req, res) => {
         return room.revealed;
       }
 
-      const answers = room.answers || {};
-      const missing = players.filter((p) => !answers[p.id]);
-      if (missing.length) {
-        const e = new Error("not-all-answered"); e.statusCode = 409; throw e;
-      }
-
       const secretSnap = await tx.get(secretRef);
       if (!secretSnap.exists) { const e = new Error("not-dealt"); e.statusCode = 409; throw e; }
       const payload = decryptJSON((secretSnap.data() || {}).enc);
       const numbers = payload.numbers || {};
+      // カードの一覧は配布時のもの（暗号化して保管したもの）を正とする。
+      // cards を持たない古い形式は「1人1枚・カードID＝UID」として扱う
+      const cards = (Array.isArray(payload.cards) && payload.cards.length)
+        ? payload.cards
+        : players.map((p) => ({ id: p.id, ownerId: p.id, index: 0 }));
 
-      // 並び順は「送られてきた順」をそのまま使うが、参加者の集合が一致するかは
+      const answers = room.answers || {};
+      const missing = cards.filter((c) => !answers[c.id]);
+      if (missing.length) {
+        const e = new Error("not-all-answered"); e.statusCode = 409; throw e;
+      }
+
+      // 並び順は「送られてきた順」をそのまま使うが、カードの集合が一致するかは
       // サーバー側で検証する（存在しないIDや重複を混ぜられないように）
-      const ids = players.map((p) => p.id);
+      const ids = cards.map((c) => c.id);
       const cleaned = order.filter((id, i) => ids.includes(id) && order.indexOf(id) === i);
       const finalOrder = cleaned.length === ids.length ? cleaned : ids.slice();
 
@@ -87,10 +93,17 @@ module.exports = async (req, res) => {
       const trueRankOf = {};
       trueOrder.forEach((id, i) => { trueRankOf[id] = i + 1; });
 
+      const ownerOf = {};
+      cards.forEach((c) => { ownerOf[c.id] = c.ownerId; });
+      const cardIndexOf = {};
+      cards.forEach((c) => { cardIndexOf[c.id] = Number(c.index) || 0; });
+
       const rows = finalOrder.map((id, i) => {
-        const p = players.find((x) => x.id === id) || {};
+        const p = players.find((x) => x.id === ownerOf[id]) || {};
         return {
-          playerId: id,
+          cardId: id,
+          cardIndex: cardIndexOf[id] || 0,
+          playerId: ownerOf[id] || id,
           name: p.name || "",
           answer: answers[id] || "",
           number: numbers[id],

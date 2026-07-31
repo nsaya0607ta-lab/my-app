@@ -141,7 +141,7 @@ module.exports = async (req, res) => {
       // 6) 記録（付与額が0でも「このゲームIDは処理済み」として必ず残す）
       tx.set(grantRef, {
         gameId,
-        mode: String(body.mode || "solo").slice(0, 16),
+        mode: String(body.mode || "online").slice(0, 16),
         difficulty: String(body.difficulty || "normal").slice(0, 16),
         roomId,
         items: capped.items,

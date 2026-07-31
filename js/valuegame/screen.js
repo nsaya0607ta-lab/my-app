@@ -2,12 +2,11 @@
    🃏 チャッピーの価値観ゲーム：画面（S.screen === "valuegame"）
 
    ito形式の協力カードゲーム。1〜100の数字を直接言わず、お題に沿った
-   言葉で表現して、全員で小さい順に並べる。
+   言葉で表現して、全員で小さい順に並べる。オンラインのルームで
+   2人以上が集まって遊ぶ（配るカードは2〜3人なら1人2枚、4人以上なら1人1枚）。
 
    このファイルの責務：画面の組み立てと操作の配線。
-   ・ルール計算 … engine.js
-   ・AIの回答   … ai.js
-   ・進行状態   … solo.js（1人用）／ online.js（オンライン）
+   ・進行状態   … online.js（ルームの同期）
    ・戦績       … store.js
    ・BP付与     … reward.js（サーバー判定）
 
@@ -19,13 +18,9 @@
 import { app, go } from '../render.js';
 import { state } from '../state.js';
 import {
-  VG_DIFFICULTIES, VG_MAX_PLAYERS, VG_MAX_ROUNDS, VG_MIN_PLAYERS,
-  VG_REACTIONS, VG_RESULT_LINES, VG_RULES, VG_STAMPS, vgDifficulty,
+  VG_DIFFICULTIES, VG_MAX_PLAYERS, VG_MIN_PLAYERS,
+  VG_REACTIONS, VG_RESULT_LINES, VG_RULES, VG_STAMPS, vgCardsPerPlayer, vgDifficulty,
 } from './config.js';
-import {
-  vgClearSession, vgCurrentTopic, vgMoveCard, vgMyNumber, vgNextRound,
-  vgRestoreSession, vgRevealRound, vgStartSolo, vgSubmitMyAnswer, vgTimeUp,
-} from './solo.js';
 import { vgGapComment } from './engine.js';
 import {
   valueGameHandleIdentityChange as storeIdentityChange,
@@ -39,7 +34,8 @@ import {
   vgOnlineLeave, vgOnlineSetReady, vgOnlineStart, vgOnlineSubmitAnswer,
   vgOnlineVoteOrder, vgOnlineNextRound, vgOnlineSendChat, vgOnlineSendReaction,
   vgOnlineListPublicRooms, vgOnlineRestore, vgOnlineShareUrl, vgOnlineSubscribe,
-  vgOnlineMyNumber, vgOnlineFetchMyNumber, vgOnlineReveal, vgOnlineTallyVotes,
+  vgOnlineMyNumber, vgOnlineFetchMyNumbers, vgOnlineHasMyNumbers, vgOnlineReveal,
+  vgOnlineTallyVotes, vgOnlineCards, vgOnlineMyCards,
   vgOnlinePendingInvite, vgOnlineClearInvite,
 } from './online.js';
 import {
@@ -52,13 +48,10 @@ import {
 } from './friends.js';
 
 /* ---- 表示中のビュー（このモジュール内で保持する） ---- */
-let view = "lobby";   // lobby | rules | solo-setup | game | result | records | online-*
+let view = "lobby";   // lobby | rules | result | records | friends | online-*
 let mountedKey = null;
 
-let session = null;       // 1人用の進行状態（solo.js）
 let finalResult = null;   // 結果画面に出す内容
-let timerHandle = null;
-let timeLeft = 0;
 
 function esc(s){
   return String(s == null ? "" : s).replace(/[&<>"']/g, c => ({
@@ -68,16 +61,19 @@ function esc(s){
 
 /* ---- 自分の数字を隠す共通処理 ----
    長押し表示のボタンは再描画のたびに作り直されるので、document 側の
-   リスナーは「今表示中のボタン」を指すモジュール変数を1つ持つ形にして、
+   リスナーは「今表示中のボタン」を指すモジュール変数を持つ形にして、
    ここで一度だけ登録する（再描画のたびに登録するとリスナーが溜まる）。
+   カードを2枚持つ人数ではボタンも2つになるため、配列で持つ。
    タブを離れた・アプリが背面に回った瞬間に必ず数字を隠すことで、
    画面共有やのぞき見で数字が出たままになるのを防ぐ */
-let peekEl = null;
+let peekEls = [];
 function hidePeek(){
-  if(!peekEl) return;
-  const v = peekEl.querySelector(".vg-peek-value");
-  if(v) v.textContent = "— —";
-  peekEl.classList.remove("peeking");
+  peekEls.forEach(btn => {
+    const v = btn.querySelector(".vg-peek-value");
+    if(v) v.textContent = "— —";
+    btn.classList.remove("peeking");
+    btn.classList.remove("holding");
+  });
 }
 document.addEventListener("visibilitychange", hidePeek);
 window.addEventListener("blur", hidePeek);
@@ -87,7 +83,7 @@ window.addEventListener("blur", hidePeek);
    サーバーから取得するため Promise を返す） */
 function wirePeekButton(btn, getNumber){
   if(!btn) return;
-  peekEl = btn;
+  peekEls.push(btn);
   const valEl = btn.querySelector(".vg-peek-value");
   const show = async (e) => {
     e.preventDefault();
@@ -111,11 +107,12 @@ export function valueGameHandleIdentityChange(){
     // ユーザーが切り替わったら、前の人のゲームを引き継がない。
     // マイクも必ず解放する（別アカウントに音声が引き継がれないように）
     vgVoiceLeave();
-    session = null;
     finalResult = null;
     view = "lobby";
     mountedKey = null;
-    stopTimer();
+    myOnlineOrder = [];
+    myOnlineOrderRound = 0;
+    answerDrafts = {};
     // 前の人あての招待を受け取り続けないよう、購読を張り直す
     stopInviteListener();
     friendData = null;
@@ -131,7 +128,6 @@ export function valueGameHandleIdentityChange(){
    「ボイスチャットに入ったまま別の画面に行って、マイクが生きたままだった」
    という状態を作らないための保険（render()から毎回呼ばれる軽量チェック） */
 export function valueGameOnScreenLeft(){
-  stopTimer();
   vgVoiceLeave();
 }
 
@@ -146,7 +142,7 @@ export function renderValueGameScreen(){
 }
 
 function viewKey(){
-  return `${view}:${session ? session.gameId + ":" + session.round + ":" + session.phase : "-"}:${vgOnlineState().roomId || "-"}`;
+  return `${view}:${vgOnlineState().roomId || "-"}`;
 }
 
 // 強制的に描き直す（このモジュール自身の操作から呼ぶ）
@@ -156,9 +152,9 @@ function repaint(){
 }
 
 function paint(){
+  // 画面を作り直すと長押しボタンのDOMも入れ替わるので、参照を捨てる
+  peekEls = [];
   if(view === "rules") return paintRules();
-  if(view === "solo-setup") return paintSoloSetup();
-  if(view === "game") return paintGame();
   if(view === "result") return paintResult();
   if(view === "records") return paintRecords();
   if(view === "friends") return paintFriends();
@@ -199,7 +195,6 @@ function wireBack(){
    ========================================================================= */
 function paintLobby(){
   const st = vgStats();
-  const resume = vgRestoreSession();
   const onlineResume = vgOnlineRestore();
   app.innerHTML = `
     <div class="vg-root">
@@ -209,14 +204,9 @@ function paintLobby(){
       </div>
       <div class="vg-lead">
         <div class="vg-lead-badge">ito形式の協力カードゲーム</div>
-        <p class="vg-lead-text">1〜100の数字が1枚ずつ配られます。数字は直接言わず、お題に沿った言葉で表現して、みんなで小さい順に並べましょう。</p>
+        <p class="vg-lead-text">1〜100の数字が配られます（2〜3人なら1人2枚、4人以上なら1人1枚）。数字は直接言わず、お題に沿った言葉で表現して、みんなで小さい順に並べましょう。</p>
       </div>
 
-      ${resume ? `
-        <button type="button" class="vg-resume" id="vg-resume">
-          <span class="vg-resume-title">中断したゲームがあります</span>
-          <span class="vg-resume-sub">1人用・ラウンド ${resume.round} / ${resume.rounds}　続きから遊ぶ ›</span>
-        </button>` : ""}
       ${onlineResume ? `
         <button type="button" class="vg-resume" id="vg-online-resume">
           <span class="vg-resume-title">参加中のルームがあります</span>
@@ -224,19 +214,11 @@ function paintLobby(){
         </button>` : ""}
 
       <div class="vg-menu">
-        <button type="button" class="vg-menu-btn vg-menu-btn--primary" id="vg-go-solo">
-          <span class="vg-menu-icon" aria-hidden="true">🐾</span>
-          <span class="vg-menu-main">
-            <span class="vg-menu-title">1人であそぶ（練習）</span>
-            <span class="vg-menu-sub">チャッピーがAIプレイヤーとして参加します</span>
-          </span>
-          <span class="vg-menu-arrow">›</span>
-        </button>
-        <button type="button" class="vg-menu-btn" id="vg-go-create">
+        <button type="button" class="vg-menu-btn vg-menu-btn--primary" id="vg-go-create">
           <span class="vg-menu-icon" aria-hidden="true">🏠</span>
           <span class="vg-menu-main">
             <span class="vg-menu-title">ルームを作る</span>
-            <span class="vg-menu-sub">2〜${VG_MAX_PLAYERS}人・合言葉や公開設定を選べます</span>
+            <span class="vg-menu-sub">${VG_MIN_PLAYERS}〜${VG_MAX_PLAYERS}人・合言葉や公開設定を選べます</span>
           </span>
           <span class="vg-menu-arrow">›</span>
         </button>
@@ -276,14 +258,11 @@ function paintLobby(){
     </div>`;
 
   wireBack();
-  document.getElementById("vg-go-solo").onclick = () => switchView("solo-setup");
   document.getElementById("vg-go-create").onclick = () => switchView("online-create");
   document.getElementById("vg-go-join").onclick = () => switchView("online-join");
   document.getElementById("vg-go-rules").onclick = () => switchView("rules");
   document.getElementById("vg-go-friends").onclick = () => { friendData = null; switchView("friends"); };
   document.getElementById("vg-go-records").onclick = () => switchView("records");
-  const r = document.getElementById("vg-resume");
-  if(r) r.onclick = () => { session = resume; switchView("game"); };
   const orz = document.getElementById("vg-online-resume");
   if(orz) orz.onclick = async () => {
     await vgOnlineSubscribe(onlineResume.roomId, onOnlineUpdate);
@@ -334,424 +313,13 @@ function paintRules(){
   wireBack();
 }
 
-/* =========================================================================
-   1人用モードの設定
-   ========================================================================= */
-let soloSetup = { aiCount: 2, difficulty: "easy", rounds: 3 };
-
-function paintSoloSetup(){
-  app.innerHTML = `
-    <div class="vg-root">
-      ${headHTML("1人であそぶ", "lobby")}
-      <div class="vg-card">
-        <div class="vg-card-title">チャッピーの人数</div>
-        <div class="vg-chiprow">
-          ${[1, 2, 3, 4].map(n => `
-            <button type="button" class="vg-chip${soloSetup.aiCount === n ? " active" : ""}" data-ai="${n}">${n}人</button>`).join("")}
-        </div>
-        <p class="vg-note">あなたとチャッピーの合計人数ぶんのカードが配られます。</p>
-      </div>
-      <div class="vg-card">
-        <div class="vg-card-title">難易度</div>
-        ${VG_DIFFICULTIES.map(d => `
-          <button type="button" class="vg-diff-pick${soloSetup.difficulty === d.key ? " active" : ""}" data-diff="${esc(d.key)}">
-            <span class="vg-diff-icon" aria-hidden="true">${d.icon}</span>
-            <span class="vg-diff-main">
-              <span class="vg-diff-name">${esc(d.name)}</span>
-              <span class="vg-diff-desc">${esc(d.desc)}</span>
-            </span>
-          </button>`).join("")}
-      </div>
-      <div class="vg-card">
-        <div class="vg-card-title">ラウンド数</div>
-        <div class="vg-chiprow">
-          ${[1, 2, 3, 4, 5].slice(0, VG_MAX_ROUNDS).map(n => `
-            <button type="button" class="vg-chip${soloSetup.rounds === n ? " active" : ""}" data-rounds="${n}">${n}</button>`).join("")}
-        </div>
-      </div>
-      <button type="button" class="vg-primary" id="vg-solo-start">この設定ではじめる</button>
-      <button type="button" class="vg-secondary" id="vg-solo-rules">先にルールを読む</button>
-    </div>`;
-
-  wireBack();
-  app.querySelectorAll("[data-ai]").forEach(b => b.onclick = () => { soloSetup.aiCount = Number(b.dataset.ai); repaint(); });
-  app.querySelectorAll("[data-diff]").forEach(b => b.onclick = () => { soloSetup.difficulty = b.dataset.diff; repaint(); });
-  app.querySelectorAll("[data-rounds]").forEach(b => b.onclick = () => { soloSetup.rounds = Number(b.dataset.rounds); repaint(); });
-  document.getElementById("vg-solo-rules").onclick = () => switchView("rules");
-  document.getElementById("vg-solo-start").onclick = () => {
-    session = vgStartSolo({ ...soloSetup, playerName: myName() });
-    finalResult = null;
-    switchView("game");
-  };
-}
-
 function myName(){
   try{ return localStorage.getItem("profile_name") || "あなた"; }catch(e){ return "あなた"; }
 }
 
 /* =========================================================================
-   ゲーム画面
+   結果画面（ゲーム終了後）
    ========================================================================= */
-function paintGame(){
-  const s = session;
-  if(!s){ switchView("lobby"); return; }
-  if(s.phase === "gameover"){ finishGame(); return; }
-  const topic = vgCurrentTopic(s);
-  const diff = vgDifficulty(s.difficulty);
-
-  app.innerHTML = `
-    <div class="vg-root vg-game">
-      <div class="vg-status">
-        <span class="vg-status-item">R <b>${s.round}</b>/${s.rounds}</span>
-        <span class="vg-status-item vg-lives" aria-label="残りライフ">${livesHTML(s)}</span>
-        <span class="vg-status-item" id="vg-timer">${s.timeLimit ? "…" : "時間 なし"}</span>
-        <span class="vg-status-item">👥 ${s.players.length}</span>
-        <button type="button" class="vg-status-rules" id="vg-rules-btn" aria-label="ルールを確認">?</button>
-      </div>
-
-      <div class="vg-topic">
-        <div class="vg-topic-title">${esc(topic ? topic.title : "")}</div>
-        <div class="vg-topic-scale">
-          <span class="vg-scale-low"><b>1</b>：${esc(topic ? topic.low : "")}</span>
-          <span class="vg-scale-high"><b>100</b>：${esc(topic ? topic.high : "")}</span>
-        </div>
-        ${topic && topic.hint ? `<div class="vg-topic-hint">${esc(topic.hint)}</div>` : ""}
-      </div>
-
-      <div class="vg-center" id="vg-center">
-        ${s.phase === "answer" ? answerPhaseHTML(s) : s.phase === "order" ? orderPhaseHTML(s) : revealPhaseHTML(s)}
-      </div>
-
-      ${s.phase === "reveal" ? "" : `
-        <div class="vg-bottom">
-          <div class="vg-bottom-row">
-            <button type="button" class="vg-peek" id="vg-peek" aria-label="自分の数字を確認（押している間だけ表示）">
-              <span class="vg-peek-label">長押しで数字を見る</span>
-              <span class="vg-peek-value" id="vg-peek-value" aria-hidden="true">— —</span>
-            </button>
-          </div>
-          ${s.phase === "answer" ? `
-            <div class="vg-bottom-row">
-              <input type="text" class="vg-answer-input" id="vg-answer" maxlength="40"
-                     placeholder="お題に沿った言葉で表現する" autocomplete="off"
-                     value="${esc(s.answers.me || "")}">
-              <button type="button" class="vg-confirm" id="vg-submit">確定</button>
-            </div>` : `
-            <div class="vg-bottom-row">
-              <button type="button" class="vg-confirm vg-confirm--wide" id="vg-reveal">この並びで数字を公開する</button>
-            </div>`}
-          <div class="vg-bottom-row vg-bottom-tools">
-            <button type="button" class="vg-tool" id="vg-chat-btn">💬 チャット</button>
-            <button type="button" class="vg-tool" id="vg-react-btn">😊 リアクション</button>
-          </div>
-        </div>`}
-    </div>`;
-
-  wireGame(s, diff);
-}
-
-function livesHTML(s){
-  let out = "";
-  for(let i = 0; i < s.maxLives; i++){
-    out += `<span class="vg-life${i < s.lives ? "" : " lost"}" aria-hidden="true">♥</span>`;
-  }
-  return `${out}<span class="vg-life-count">${s.lives}</span>`;
-}
-
-function answerPhaseHTML(s){
-  const answered = s.players.filter(p => s.answers[p.id]).length;
-  return `
-    <div class="vg-phase-label">回答フェーズ　${answered} / ${s.players.length} 人が確定</div>
-    <div class="vg-answer-list">
-      ${s.players.map(p => `
-        <div class="vg-answer-card${s.answers[p.id] ? " done" : ""}">
-          <span class="vg-avatar" aria-hidden="true">${esc(p.icon || "🙂")}</span>
-          <span class="vg-answer-main">
-            <span class="vg-answer-name">${esc(p.name)}${p.isAI ? `<span class="vg-tag">AI</span>` : ""}</span>
-            <span class="vg-answer-text">${s.answers[p.id] ? esc(s.answers[p.id]) : "考え中…"}</span>
-          </span>
-          <span class="vg-answer-state">${s.answers[p.id] ? "確定" : "未確定"}</span>
-        </div>`).join("")}
-    </div>
-    <p class="vg-note">自分の数字を直接言わず、その大きさが伝わる言葉で表現してください。数字・範囲・順位・数式・単位の置き換えはルール違反です。</p>`;
-}
-
-function orderPhaseHTML(s){
-  return `
-    <div class="vg-phase-label">並べ替えフェーズ　小さいと思う順に上から並べてください</div>
-    ${s.reactions.length ? `
-      <div class="vg-reaction">
-        <span class="vg-reaction-face" aria-hidden="true">${esc(s.reactions[0].face)}</span>
-        <span class="vg-reaction-text">${esc(s.reactions[0].name)}：${esc(s.reactions[0].text)}</span>
-      </div>` : ""}
-    <div class="vg-order" id="vg-order">
-      ${s.order.map((pid, i) => {
-        const p = s.players.find(x => x.id === pid) || {};
-        return `
-          <div class="vg-order-card" data-pid="${esc(pid)}" data-index="${i}">
-            <span class="vg-order-rank">${i + 1}</span>
-            <span class="vg-avatar" aria-hidden="true">${esc(p.icon || "🙂")}</span>
-            <span class="vg-order-main">
-              <span class="vg-order-name">${esc(p.name)}${p.isAI ? `<span class="vg-tag">AI</span>` : ""}</span>
-              <span class="vg-order-answer">${esc(s.answers[pid] || "")}</span>
-            </span>
-            <span class="vg-order-moves">
-              <button type="button" class="vg-move" data-move-up="${i}" aria-label="ひとつ上へ"${i === 0 ? " disabled" : ""}>▲</button>
-              <button type="button" class="vg-move" data-move-down="${i}" aria-label="ひとつ下へ"${i === s.order.length - 1 ? " disabled" : ""}>▼</button>
-            </span>
-            <span class="vg-order-grip" data-grip aria-hidden="true">⋮⋮</span>
-          </div>`;
-      }).join("")}
-    </div>
-    <p class="vg-note">カードは右端をつまんで動かすか、▲▼ボタンでも並べ替えられます。上が小さい数字です。</p>`;
-}
-
-function revealPhaseHTML(s){
-  const r = s.lastResult;
-  if(!r) return "";
-  if(r.timeUp){
-    return `
-      <div class="vg-reveal">
-        <div class="vg-reveal-head vg-reveal-head--fail">
-          <div class="vg-reveal-title">時間切れ！</div>
-          <div class="vg-reveal-body">次のラウンドで取り返そう。</div>
-        </div>
-        <button type="button" class="vg-primary" id="vg-next">次へ</button>
-      </div>`;
-  }
-  return `
-    <div class="vg-reveal">
-      <div class="vg-reveal-head${r.ok ? "" : " vg-reveal-head--fail"}">
-        <div class="vg-reveal-title">${esc(r.ok ? VG_RESULT_LINES.successTitle : VG_RESULT_LINES.failTitle)}</div>
-        <div class="vg-reveal-body">${esc(r.ok ? VG_RESULT_LINES.successBody : VG_RESULT_LINES.failBody)}</div>
-      </div>
-      <div class="vg-reveal-list">
-        ${r.rows.map((row, i) => `
-          <div class="vg-reveal-row" style="animation-delay:${i * 140}ms">
-            <span class="vg-reveal-number">${row.number}</span>
-            <span class="vg-reveal-main">
-              <span class="vg-reveal-name">${esc(row.name)}${row.isAI ? `<span class="vg-tag">AI</span>` : ""}</span>
-              <span class="vg-reveal-answer">${esc(row.answer)}</span>
-            </span>
-            <span class="vg-reveal-ranks">
-              <span class="vg-rank-lab">予想 ${row.guessRank}</span>
-              <span class="vg-rank-lab${row.guessRank === row.trueRank ? " hit" : ""}">正解 ${row.trueRank}</span>
-            </span>
-          </div>`).join("")}
-      </div>
-      <div class="vg-gap">
-        <div class="vg-gap-head">今回の価値観のズレ　<b>${r.gap}</b></div>
-        <span class="vg-gap-bar"><span class="vg-gap-fill" style="width:${Math.min(100, r.gap)}%"></span></span>
-        <div class="vg-gap-note">${esc(vgGapComment(r.gap))}</div>
-      </div>
-      <div class="vg-reveal-lives">残りライフ ${livesHTML(s)}</div>
-      <button type="button" class="vg-primary" id="vg-next">${s.lives <= 0 || s.round >= s.rounds ? "結果を見る" : "次のラウンドへ"}</button>
-    </div>`;
-}
-
-function wireGame(s, diff){
-  document.getElementById("vg-rules-btn").onclick = () => openRulesSheet();
-
-  // ---- 自分の数字：押している間だけ表示する ----
-  wirePeekButton(document.getElementById("vg-peek"), () => vgMyNumber(s));
-
-  if(s.phase === "answer"){
-    const input = document.getElementById("vg-answer");
-    const submit = document.getElementById("vg-submit");
-    const doSubmit = () => {
-      if(submit.disabled) return;
-      const text = (input.value || "").trim();
-      if(!text){ input.focus(); return; }
-      submit.disabled = true;   // 二重タップ・通信遅延での重複確定を防ぐ
-      vgSubmitMyAnswer(s, text);
-      stopTimer();
-      repaint();
-    };
-    submit.onclick = doSubmit;
-    input.onkeydown = (e) => { if(e.key === "Enter") doSubmit(); };
-  }
-
-  if(s.phase === "order"){
-    wireOrder(s);
-    const rev = document.getElementById("vg-reveal");
-    rev.onclick = () => {
-      if(rev.disabled) return;
-      rev.disabled = true;
-      vgRevealRound(s);
-      stopTimer();
-      repaint();
-    };
-  }
-
-  if(s.phase === "reveal"){
-    const next = document.getElementById("vg-next");
-    if(next) next.onclick = () => {
-      if(next.disabled) return;
-      next.disabled = true;
-      vgNextRound(s);
-      if(s.phase === "gameover") finishGame();
-      else { repaint(); startTimer(s, diff); }
-    };
-  }
-
-  const chatBtn = document.getElementById("vg-chat-btn");
-  if(chatBtn) chatBtn.onclick = () => openChatSheet(s);
-  const reactBtn = document.getElementById("vg-react-btn");
-  if(reactBtn) reactBtn.onclick = () => openReactionSheet(s);
-
-  if(s.phase !== "reveal") startTimer(s, diff);
-}
-
-/* ---- 並べ替え：ドラッグ＆ドロップ＋▲▼ボタン ----
-   スマートフォンでの確実性を優先し、ポインタイベントでの入れ替えと
-   ボタン操作の両方を用意する（片手でも操作できるように） */
-function wireOrder(s){
-  app.querySelectorAll("[data-move-up]").forEach(b => b.onclick = (e) => {
-    e.stopPropagation();
-    const i = Number(b.dataset.moveUp);
-    vgMoveCard(s, i, i - 1);
-    repaint();
-  });
-  app.querySelectorAll("[data-move-down]").forEach(b => b.onclick = (e) => {
-    e.stopPropagation();
-    const i = Number(b.dataset.moveDown);
-    vgMoveCard(s, i, i + 1);
-    repaint();
-  });
-
-  const list = document.getElementById("vg-order");
-  if(!list) return;
-  let dragEl = null, dragFrom = -1, startY = 0, cardH = 0;
-
-  list.querySelectorAll("[data-grip]").forEach(grip => {
-    grip.addEventListener("pointerdown", (e) => {
-      e.preventDefault();
-      dragEl = grip.closest(".vg-order-card");
-      if(!dragEl) return;
-      dragFrom = Number(dragEl.dataset.index);
-      startY = e.clientY;
-      cardH = dragEl.getBoundingClientRect().height + 8;
-      dragEl.classList.add("dragging");
-      grip.setPointerCapture(e.pointerId);
-    });
-    grip.addEventListener("pointermove", (e) => {
-      if(!dragEl) return;
-      e.preventDefault();
-      const dy = e.clientY - startY;
-      dragEl.style.transform = `translateY(${dy}px)`;
-    });
-    const endDrag = (e) => {
-      if(!dragEl) return;
-      const dy = e.clientY - startY;
-      const shift = Math.round(dy / (cardH || 1));
-      dragEl.style.transform = "";
-      dragEl.classList.remove("dragging");
-      dragEl = null;
-      if(shift !== 0){
-        vgMoveCard(s, dragFrom, dragFrom + shift);
-        repaint();
-      }
-    };
-    grip.addEventListener("pointerup", endDrag);
-    grip.addEventListener("pointercancel", endDrag);
-  });
-}
-
-/* ---- 制限時間 ---- */
-function startTimer(s, diff){
-  stopTimer();
-  if(!s.timeLimit) return;
-  const elapsed = Math.floor((Date.now() - (s.roundStartedAt || Date.now())) / 1000);
-  timeLeft = Math.max(0, s.timeLimit - elapsed);
-  const tick = () => {
-    const el = document.getElementById("vg-timer");
-    if(!el){ stopTimer(); return; }
-    el.textContent = `⏱ ${timeLeft}s`;
-    el.classList.toggle("vg-timer--warn", timeLeft <= 15);
-    if(timeLeft <= 0){
-      stopTimer();
-      vgTimeUp(s);
-      repaint();
-      return;
-    }
-    timeLeft--;
-  };
-  tick();
-  timerHandle = setInterval(tick, 1000);
-}
-
-function stopTimer(){
-  if(timerHandle){ clearInterval(timerHandle); timerHandle = null; }
-}
-
-/* =========================================================================
-   ゲーム終了 → 戦績の記録・BPの受け取り・結果画面
-   ========================================================================= */
-let finishing = false;
-
-async function finishGame(){
-  const s = session;
-  if(!s || finishing) return;
-  finishing = true;
-  stopTimer();
-  vgClearSession();
-
-  const todayKey = bpTodayKey();
-  const firstWinToday = s.success && vgIsFirstWinToday(todayKey);
-
-  // BPの確定はサーバー側で行う（ゲームIDによる二重付与防止つき）。
-  // 1ラウンドも回答していない＝開始直後に抜けた場合は参加報酬も付かない
-  let rewards = { items: [], total: 0, source: "local" };
-  try{
-    rewards = await vgClaimRewards({
-      gameId: s.gameId,
-      mode: s.mode,
-      difficulty: s.difficulty,
-      rounds: s.rounds,
-      clearedRounds: s.clearedRounds,
-      answeredRounds: s.answeredRounds,
-      success: s.success,
-      perfect: s.success && s.perfect,
-      livesLeft: s.lives,
-      participated: s.answeredRounds > 0,
-      finished: s.finished && s.answeredRounds > 0,
-      firstWinToday,
-      opponentIds: [],
-    });
-  }catch(e){ console.error("valuegame reward failed:", e); }
-
-  const rec = vgRecordGame({
-    gameId: s.gameId,
-    mode: s.mode,
-    difficulty: s.difficulty,
-    rounds: s.rounds,
-    clearedRounds: s.clearedRounds,
-    success: s.success,
-    perfect: s.success && s.perfect,
-    livesLeft: s.lives,
-    players: s.players,
-    topics: s.usedTopicIds,
-    myAnswers: s.myAnswers,
-    bpGained: rewards.total,
-    todayKey,
-  });
-
-  finalResult = {
-    success: s.success,
-    perfect: s.success && s.perfect,
-    lives: s.lives,
-    maxLives: s.maxLives,
-    clearedRounds: s.clearedRounds,
-    rounds: s.rounds,
-    rewards,
-    newTitles: rec.newTitles,
-    lastRows: (s.lastResult && s.lastResult.rows) || [],
-  };
-  session = null;
-  finishing = false;
-  switchView("result");
-}
-
 function paintResult(){
   const r = finalResult;
   if(!r){ switchView("lobby"); return; }
@@ -796,14 +364,13 @@ function paintResult(){
             </div>`).join("")}
         </div>` : ""}
 
-      <button type="button" class="vg-primary" id="vg-again">もう一度あそぶ</button>
+      <button type="button" class="vg-primary" id="vg-again">もう一度ルームを作る</button>
       <button type="button" class="vg-secondary" id="vg-to-lobby">ロビーへ戻る</button>
     </div>`;
 
   document.getElementById("vg-again").onclick = () => {
-    session = vgStartSolo({ ...soloSetup, playerName: myName() });
     finalResult = null;
-    switchView("game");
+    switchView("online-create");
   };
   document.getElementById("vg-to-lobby").onclick = () => { finalResult = null; switchView("lobby"); };
 }
@@ -993,7 +560,7 @@ function paintRecords(){
           <div class="vg-hist-row">
             <span class="vg-hist-badge${h.success ? " win" : ""}">${h.success ? "成功" : "失敗"}</span>
             <span class="vg-hist-main">
-              <span class="vg-hist-title">${h.mode === "solo" ? "1人用" : "オンライン"}・${esc(vgDifficulty(h.difficulty).name)}</span>
+              <span class="vg-hist-title">${h.mode === "solo" ? "1人用（旧）" : "オンライン"}・${esc(vgDifficulty(h.difficulty).name)}</span>
               <span class="vg-hist-sub">${h.clearedRounds}/${h.rounds}ラウンド　${h.players}人${h.perfect ? "　パーフェクト" : ""}</span>
             </span>
             <span class="vg-hist-bp">+${h.bpGained}</span>
@@ -1066,20 +633,17 @@ function openRulesSheet(){
     <p class="vg-note">${esc(VG_RULES.note)}</p>`);
 }
 
-/* ---- チャット（1人用はメモ、オンラインは全員へ送信） ---- */
-let soloChat = [];
-
-function openChatSheet(s){
+/* ---- チャット（ルームの全員へ送信） ---- */
+function openChatSheet(){
   const online = vgOnlineState();
-  const isOnline = !!online.roomId;
-  const msgs = isOnline ? online.chat : soloChat;
+  const msgs = online.chat || [];
   const { ov, close } = openSheet("チャット", `
     <div class="vg-chat-list" id="vg-chat-list">
       ${msgs.length ? msgs.map(m => `
         <div class="vg-chat-msg${m.mine ? " mine" : ""}">
           <span class="vg-chat-name">${esc(m.name)}</span>
           <span class="vg-chat-text">${esc(m.text)}</span>
-        </div>`).join("") : `<div class="vg-note">${isOnline ? "まだメッセージがありません。" : "1人用モードでは、思いついたことをメモとして残せます。"}</div>`}
+        </div>`).join("") : `<div class="vg-note">まだメッセージがありません。</div>`}
     </div>
     <div class="vg-chat-form">
       <input type="text" class="vg-answer-input" id="vg-chat-input" maxlength="60" placeholder="メッセージを入力" autocomplete="off">
@@ -1091,16 +655,15 @@ function openChatSheet(s){
     const text = (input.value || "").trim();
     if(!text) return;
     input.value = "";
-    if(isOnline) vgOnlineSendChat(text);
-    else soloChat.push({ name: myName(), text, mine: true });
+    vgOnlineSendChat(text);
     close();
-    openChatSheet(s);
+    openChatSheet();
   };
   ov.querySelector("#vg-chat-send").onclick = send;
   input.onkeydown = (e) => { if(e.key === "Enter") send(); };
 }
 
-function openReactionSheet(s){
+function openReactionSheet(){
   const { ov, close } = openSheet("リアクション", `
     <div class="vg-react-grid">
       ${VG_REACTIONS.map(r => `
@@ -1120,21 +683,14 @@ function openReactionSheet(s){
 
   ov.querySelectorAll("[data-react]").forEach(b => b.onclick = () => {
     const r = VG_REACTIONS.find(x => x.key === b.dataset.react);
-    sendReaction(s, `${r.icon} ${r.label}`);
+    vgOnlineSendReaction(`${r.icon} ${r.label}`);
     close();
   });
   ov.querySelectorAll("[data-stamp]").forEach(b => b.onclick = () => {
     const st2 = VG_STAMPS.find(x => x.key === b.dataset.stamp);
-    sendReaction(s, st2.face);
+    vgOnlineSendReaction(st2.face);
     close();
   });
-}
-
-function sendReaction(s, text){
-  if(vgOnlineState().roomId){ vgOnlineSendReaction(text); return; }
-  if(!s) return;
-  s.reactions = [{ name: myName(), face: "", text }, ...(s.reactions || [])].slice(0, 3);
-  repaint();
 }
 
 /* =========================================================================
@@ -1174,6 +730,7 @@ function paintOnlineCreate(){
             ${[2, 3, 4, 5, 6, 8, 10].filter(n => n >= VG_MIN_PLAYERS && n <= VG_MAX_PLAYERS).map(n => `
               <button type="button" class="vg-chip${roomForm.maxPlayers === n ? " active" : ""}" data-max="${n}">${n}</button>`).join("")}
           </div>
+          <p class="vg-note">配るカードは実際に集まった人数で決まります。2〜3人なら1人2枚、4人以上なら1人1枚です。</p>
         </div>
         <div class="vg-field">
           <span class="vg-label">難易度</span>
@@ -1239,7 +796,7 @@ function toggleHTML(key, label, on){
 
 function loginNoticeHTML(){
   if(state.currentUser) return "";
-  return `<div class="vg-notice">オンラインで遊ぶにはログインが必要です。1人用モードはログインなしでも遊べます。</div>`;
+  return `<div class="vg-notice">このゲームで遊ぶにはログインが必要です。</div>`;
 }
 
 function showError(id, msg){
@@ -1336,6 +893,8 @@ function paintOnlineLobby(){
   const players = room.players || [];
   const isHost = room.hostId === o.myId;
   const me = players.find(p => p.id === o.myId);
+  // 観戦者はカードを配られないので、枚数の案内は実際に遊ぶ人数で出す
+  const playingCount = players.filter(p => !p.spectator).length;
   const allReady = players.length >= VG_MIN_PLAYERS && players.every(p => p.ready || p.id === room.hostId);
 
   app.innerHTML = `
@@ -1367,6 +926,7 @@ function paintOnlineLobby(){
       </div>
       <div class="vg-card">
         <div class="vg-card-title">この部屋の設定</div>
+        <div class="vg-guide-row"><span>1人あたりのカード</span><span>${vgCardsPerPlayer(playingCount)}枚</span></div>
         <div class="vg-guide-row"><span>難易度</span><span>${esc(vgDifficulty(room.difficulty).name)}</span></div>
         <div class="vg-guide-row"><span>ラウンド数</span><span>${room.rounds}</span></div>
         <div class="vg-guide-row"><span>制限時間</span><span>${room.useTimeLimit ? "あり" : "なし"}</span></div>
@@ -1395,7 +955,7 @@ function paintOnlineLobby(){
   document.getElementById("vg-share").onclick = () => shareRoom(room);
   document.getElementById("vg-invite-friend").onclick = () => openInviteSheet(room);
   document.getElementById("vg-lobby-rules").onclick = () => openRulesSheet();
-  document.getElementById("vg-lobby-chat").onclick = () => openChatSheet(null);
+  document.getElementById("vg-lobby-chat").onclick = () => openChatSheet();
   const readyBtn = document.getElementById("vg-ready");
   if(readyBtn) readyBtn.onclick = () => vgOnlineSetReady(!(me && me.ready));
   const startBtn = document.getElementById("vg-start");
@@ -1529,10 +1089,7 @@ function onOnlineUpdate(){
     return;
   }
   if(room.status === "playing" && view !== "online-game"){
-    // 自分の数字はサーバーから本人だけが受け取る（ルームには入っていない）
-    if(vgOnlineMyNumber() === null || vgOnlineMyNumber() === undefined){
-      vgOnlineFetchMyNumber().then(() => { if(view === "online-game") repaint(); });
-    }
+    fetchMyNumbersIfNeeded();
     switchView("online-game");
     return;
   }
@@ -1540,15 +1097,53 @@ function onOnlineUpdate(){
     finishOnlineGame();
     return;
   }
+  // ラウンドが進むと前のラウンドの数字は捨てられるので、取り直す
+  if(room.status === "playing") fetchMyNumbersIfNeeded();
   if(view === "online-lobby" || view === "online-join" || view === "online-game") repaint();
+}
+
+/* 自分のカードの数字はサーバーから本人だけが受け取る（ルームには入っていない）。
+   同じラウンドで何度も取りに行かないよう、取得中は印を立てておく */
+let fetchingNumbers = false;
+function fetchMyNumbersIfNeeded(){
+  const o = vgOnlineState();
+  if(!o.room || o.room.status !== "playing") return;
+  if(fetchingNumbers || vgOnlineHasMyNumbers()) return;
+  // 観戦者と、配布後に入ってきた人にはこのラウンドのカードが無いので取りに行かない
+  if(!(o.room.players || []).some(p => p.id === o.myId && !p.spectator)) return;
+  if(Array.isArray(o.room.cards) && o.room.cards.length && !vgOnlineMyCards(o.room).length) return;
+  fetchingNumbers = true;
+  vgOnlineFetchMyNumbers().finally(() => {
+    fetchingNumbers = false;
+    if(view === "online-game") repaint();
+  });
 }
 
 /* =========================================================================
    オンラインのゲーム画面
-   1人用と同じ画面構成だが、状態はルームドキュメント（全員で共有）から読む。
-   自分の数字だけはサーバーから本人が直接受け取り、共有状態には含まれない。
+
+   状態はルームドキュメント（全員で共有）から読む。自分のカードの数字だけは
+   サーバーから本人が直接受け取り、共有状態には含まれない。
+   回答も並べ替えもプレイヤー単位ではなく「カード単位」で扱う
+   （2〜3人のときは1人2枚のカードを持つ）。
    ========================================================================= */
-let myOnlineOrder = [];   // 自分が作った予想順（投票前のローカル状態）
+let myOnlineOrder = [];        // 自分が作った予想順（カードIDの配列・投票前のローカル状態）
+let myOnlineOrderRound = 0;    // その並びがどのラウンドのものか
+/* 入力途中の回答（カードIDごと）。ほかの人の確定が届くたびに画面を
+   描き直すため、まだ確定していない文字を持っておかないと消えてしまう */
+let answerDrafts = {};
+
+// 2つのID配列が同じ顔ぶれか（順番は問わない）
+function sameIdSet(a, b){
+  if(!Array.isArray(a) || a.length !== b.length) return false;
+  return b.every(id => a.includes(id));
+}
+
+// カードの見出し（1人2枚のときだけ「カード1／カード2」を出す）
+function cardLabel(card, perPlayer){
+  if(perPlayer <= 1) return "";
+  return `カード${(Number(card.index) || 0) + 1}`;
+}
 
 function paintOnlineGame(){
   const o = vgOnlineState();
@@ -1556,17 +1151,25 @@ function paintOnlineGame(){
   if(!room){ switchView("lobby"); return; }
   const topic = vgTopicById(room.topicId);
   const players = (room.players || []).filter(p => !p.spectator);
-  const me = players.find(p => p.id === o.myId);
-  const spectating = !me;
+  const cards = vgOnlineCards(room);
+  const myCards = vgOnlineMyCards(room);
+  const spectating = !myCards.length;
   const answers = room.answers || {};
-  const myAnswered = !!answers[o.myId];
-  const allAnswered = players.every(p => answers[p.id]);
+  const allAnswered = cards.length > 0 && cards.every(c => answers[c.id]);
   const tally = vgOnlineTallyVotes(room);
   const myVoted = !!(room.votes || {})[o.myId];
   const isHost = room.hostId === o.myId;
+  const perPlayer = Number(room.cardsPerPlayer) || vgCardsPerPlayer(players.length);
+  // 配り終えたあとに入ってきた人はこのラウンドのカードを持たない。
+  // その人を数に入れると投票がそろわなくなるので、カードの持ち主だけを数える
+  const owners = new Set(cards.map(c => c.ownerId));
+  const voterCount = players.filter(p => owners.has(p.id)).length;
 
-  if(!myOnlineOrder.length || myOnlineOrder.length !== players.length){
-    myOnlineOrder = players.map(p => p.id);
+  // ラウンドが進んだ・カードの顔ぶれが変わったら並びを作り直す
+  if(myOnlineOrderRound !== (room.round || 0) || !sameIdSet(myOnlineOrder, cards.map(c => c.id))){
+    myOnlineOrder = cards.map(c => c.id);
+    myOnlineOrderRound = room.round || 0;
+    answerDrafts = {};
   }
 
   app.innerHTML = `
@@ -1576,6 +1179,7 @@ function paintOnlineGame(){
         <span class="vg-status-item vg-lives">${onlineLivesHTML(room)}</span>
         <span class="vg-status-item">${room.useTimeLimit ? "⏱ あり" : "時間 なし"}</span>
         <span class="vg-status-item">👥 ${players.length}</span>
+        <span class="vg-status-item">🃏 ${cards.length}</span>
         <button type="button" class="vg-status-rules" id="vg-rules-btn" aria-label="ルールを確認">?</button>
       </div>
 
@@ -1589,13 +1193,15 @@ function paintOnlineGame(){
       </div>
 
       <div class="vg-center">
-        ${spectating ? `<div class="vg-notice">観戦中です。数字は配られていません。</div>` : ""}
+        ${spectating ? `<div class="vg-notice">${players.some(p => p.id === o.myId)
+          ? "カードが配られたあとに参加したため、次のラウンドから加わります。"
+          : "観戦中です。数字は配られていません。"}</div>` : ""}
         ${room.useVoice ? voiceBarHTML(players) : ""}
         ${room.phase === "reveal"
-          ? onlineRevealHTML(room)
+          ? onlineRevealHTML(room, perPlayer)
           : !allAnswered
-            ? onlineAnswerHTML(room, players, answers, o.myId)
-            : onlineOrderHTML(room, players, answers, tally, myVoted)}
+            ? onlineAnswerHTML(cards, players, answers, o.myId, perPlayer)
+            : onlineOrderHTML(cards, players, answers, tally, myVoted, perPlayer, voterCount)}
       </div>
 
       ${room.phase === "reveal" ? `
@@ -1607,23 +1213,12 @@ function paintOnlineGame(){
           </div>
         </div>` : spectating ? "" : `
         <div class="vg-bottom">
-          <div class="vg-bottom-row">
-            <button type="button" class="vg-peek" id="vg-peek" aria-label="自分の数字を確認（押している間だけ表示）">
-              <span class="vg-peek-label">長押しで数字を見る</span>
-              <span class="vg-peek-value" id="vg-peek-value" aria-hidden="true">— —</span>
-            </button>
-          </div>
-          ${!allAnswered ? `
-            <div class="vg-bottom-row">
-              <input type="text" class="vg-answer-input" id="vg-answer" maxlength="40"
-                     placeholder="お題に沿った言葉で表現する" autocomplete="off"
-                     value="${esc(answers[o.myId] || "")}"${myAnswered ? " disabled" : ""}>
-              <button type="button" class="vg-confirm" id="vg-submit"${myAnswered ? " disabled" : ""}>${myAnswered ? "確定済" : "確定"}</button>
-            </div>` : `
+          ${myCards.map(c => myCardSlotHTML(c, answers, allAnswered, perPlayer)).join("")}
+          ${allAnswered ? `
             <div class="vg-bottom-row">
               <button type="button" class="vg-confirm" id="vg-vote"${myVoted ? " disabled" : ""}>${myVoted ? "投票済み" : "この並びで投票"}</button>
-              <button type="button" class="vg-confirm vg-confirm--alt" id="vg-online-reveal"${tally.total >= players.length ? "" : " disabled"}>決定</button>
-            </div>`}
+              <button type="button" class="vg-confirm vg-confirm--alt" id="vg-online-reveal"${tally.total >= voterCount ? "" : " disabled"}>決定</button>
+            </div>` : ""}
           <div class="vg-bottom-row vg-bottom-tools">
             <button type="button" class="vg-tool" id="vg-chat-btn">💬 チャット${o.chat.length ? `(${o.chat.length})` : ""}</button>
             <button type="button" class="vg-tool" id="vg-react-btn">😊 リアクション</button>
@@ -1636,6 +1231,31 @@ function paintOnlineGame(){
   wireOnlineGame(room, players);
 }
 
+/* 自分のカード1枚ぶんの操作（数字の確認と回答欄）。
+   1人2枚のときはこれが2つ並ぶので、カードごとに見出しを付ける */
+function myCardSlotHTML(card, answers, allAnswered, perPlayer){
+  const label = cardLabel(card, perPlayer);
+  const done = !!answers[card.id];
+  return `
+    <div class="vg-slot">
+      ${label ? `<div class="vg-slot-head">${esc(label)}</div>` : ""}
+      <div class="vg-bottom-row">
+        <button type="button" class="vg-peek" data-peek="${esc(card.id)}"
+                aria-label="${esc(label || "自分")}の数字を確認（押している間だけ表示）">
+          <span class="vg-peek-label">長押しで数字を見る</span>
+          <span class="vg-peek-value" aria-hidden="true">— —</span>
+        </button>
+      </div>
+      ${allAnswered ? "" : `
+        <div class="vg-bottom-row">
+          <input type="text" class="vg-answer-input" data-answer="${esc(card.id)}" maxlength="40"
+                 placeholder="お題に沿った言葉で表現する" autocomplete="off"
+                 value="${esc(answers[card.id] || answerDrafts[card.id] || "")}"${done ? " disabled" : ""}>
+          <button type="button" class="vg-confirm" data-submit="${esc(card.id)}"${done ? " disabled" : ""}>${done ? "確定済" : "確定"}</button>
+        </div>`}
+    </div>`;
+}
+
 function onlineLivesHTML(room){
   let out = "";
   for(let i = 0; i < (room.maxLives || 3); i++){
@@ -1644,38 +1264,44 @@ function onlineLivesHTML(room){
   return `${out}<span class="vg-life-count">${room.lives || 0}</span>`;
 }
 
-function onlineAnswerHTML(room, players, answers, myId){
-  const done = players.filter(p => answers[p.id]).length;
+function onlineAnswerHTML(cards, players, answers, myId, perPlayer){
+  const done = cards.filter(c => answers[c.id]).length;
   return `
-    <div class="vg-phase-label">回答フェーズ　${done} / ${players.length} 人が確定</div>
+    <div class="vg-phase-label">回答フェーズ　${done} / ${cards.length} 枚が確定</div>
     <div class="vg-answer-list">
-      ${players.map(p => `
-        <div class="vg-answer-card${answers[p.id] ? " done" : ""}">
-          <span class="vg-avatar" aria-hidden="true">🙂</span>
-          <span class="vg-answer-main">
-            <span class="vg-answer-name">${esc(p.name)}${p.id === myId ? `<span class="vg-tag">あなた</span>` : ""}</span>
-            <span class="vg-answer-text">${answers[p.id] ? esc(answers[p.id]) : "考え中…"}</span>
-          </span>
-          <span class="vg-answer-state">${answers[p.id] ? "確定" : "未確定"}</span>
-        </div>`).join("")}
+      ${cards.map(c => {
+        const p = players.find(x => x.id === c.ownerId) || {};
+        const label = cardLabel(c, perPlayer);
+        return `
+          <div class="vg-answer-card${answers[c.id] ? " done" : ""}">
+            <span class="vg-avatar" aria-hidden="true">🙂</span>
+            <span class="vg-answer-main">
+              <span class="vg-answer-name">${esc(p.name || "")}${c.ownerId === myId ? `<span class="vg-tag">あなた</span>` : ""}${label ? `<span class="vg-tag">${esc(label)}</span>` : ""}</span>
+              <span class="vg-answer-text">${answers[c.id] ? esc(answers[c.id]) : "考え中…"}</span>
+            </span>
+            <span class="vg-answer-state">${answers[c.id] ? "確定" : "未確定"}</span>
+          </div>`;
+      }).join("")}
     </div>
-    <p class="vg-note">自分の数字を直接言わず、その大きさが伝わる言葉で表現してください。数字・範囲・順位・数式・単位の置き換えはルール違反です。</p>`;
+    <p class="vg-note">自分の数字を直接言わず、その大きさが伝わる言葉で表現してください。数字・範囲・順位・数式・単位の置き換えはルール違反です。${perPlayer > 1 ? "カードは1枚ずつ別々に表現します。" : ""}</p>`;
 }
 
-function onlineOrderHTML(room, players, answers, tally, myVoted){
+function onlineOrderHTML(cards, players, answers, tally, myVoted, perPlayer, voters){
   return `
     <div class="vg-phase-label">並べ替えフェーズ　自分の予想順を作って投票してください</div>
-    <div class="vg-vote-state">投票 ${tally.total} / ${players.length} 人${tally.count > 1 ? `　最多の並びに ${tally.count} 票` : ""}</div>
+    <div class="vg-vote-state">投票 ${tally.total} / ${voters} 人${tally.count > 1 ? `　最多の並びに ${tally.count} 票` : ""}</div>
     <div class="vg-order" id="vg-order">
-      ${myOnlineOrder.map((pid, i) => {
-        const p = players.find(x => x.id === pid) || {};
+      ${myOnlineOrder.map((cid, i) => {
+        const c = cards.find(x => x.id === cid) || { id: cid, ownerId: cid, index: 0 };
+        const p = players.find(x => x.id === c.ownerId) || {};
+        const label = cardLabel(c, perPlayer);
         return `
-          <div class="vg-order-card${myVoted ? " locked" : ""}" data-pid="${esc(pid)}" data-index="${i}">
+          <div class="vg-order-card${myVoted ? " locked" : ""}" data-cid="${esc(cid)}" data-index="${i}">
             <span class="vg-order-rank">${i + 1}</span>
             <span class="vg-avatar" aria-hidden="true">🙂</span>
             <span class="vg-order-main">
-              <span class="vg-order-name">${esc(p.name || "")}</span>
-              <span class="vg-order-answer">${esc(answers[pid] || "")}</span>
+              <span class="vg-order-name">${esc(p.name || "")}${label ? `　${esc(label)}` : ""}</span>
+              <span class="vg-order-answer">${esc(answers[cid] || "")}</span>
             </span>
             <span class="vg-order-moves">
               <button type="button" class="vg-move" data-move-up="${i}" aria-label="ひとつ上へ"${i === 0 || myVoted ? " disabled" : ""}>▲</button>
@@ -1687,7 +1313,7 @@ function onlineOrderHTML(room, players, answers, tally, myVoted){
     <p class="vg-note">各自が予想順を作って投票し、最も多く選ばれた並びが最終候補になります。全員の投票がそろったら「決定」で数字を公開します。</p>`;
 }
 
-function onlineRevealHTML(room){
+function onlineRevealHTML(room, perPlayer){
   const r = room.revealed;
   if(!r) return `<div class="vg-note">結果を読み込んでいます…</div>`;
   return `
@@ -1701,7 +1327,7 @@ function onlineRevealHTML(room){
           <div class="vg-reveal-row" style="animation-delay:${i * 140}ms">
             <span class="vg-reveal-number">${row.number}</span>
             <span class="vg-reveal-main">
-              <span class="vg-reveal-name">${esc(row.name)}</span>
+              <span class="vg-reveal-name">${esc(row.name)}${perPlayer > 1 ? `<span class="vg-tag">カード${(Number(row.cardIndex) || 0) + 1}</span>` : ""}</span>
               <span class="vg-reveal-answer">${esc(row.answer)}</span>
             </span>
             <span class="vg-reveal-ranks">
@@ -1720,26 +1346,50 @@ function onlineRevealHTML(room){
 }
 
 function wireOnlineGame(room, players){
-  const o = vgOnlineState();
   document.getElementById("vg-rules-btn").onclick = () => openRulesSheet();
 
-  // 自分の数字はルームには入っていないので、まだ受け取っていなければ
-  // その場でサーバーから本人ぶんだけ取りに行く
-  wirePeekButton(document.getElementById("vg-peek"), async () => {
-    const n = vgOnlineMyNumber();
-    if(n !== null && n !== undefined) return n;
-    return await vgOnlineFetchMyNumber();
+  // カードIDには記号が入るので、セレクタで探さずに走査して照合する
+  const answerInputFor = (cardId) =>
+    [...app.querySelectorAll("[data-answer]")].find(el => el.dataset.answer === cardId) || null;
+
+  // 自分のカードの数字はルームには入っていないので、まだ受け取っていなければ
+  // その場でサーバーから本人ぶんだけ取りに行く（カードごとに1つずつ配線する）
+  app.querySelectorAll("[data-peek]").forEach(btn => {
+    const cardId = btn.dataset.peek;
+    wirePeekButton(btn, async () => {
+      const n = vgOnlineMyNumber(cardId);
+      if(n !== null) return n;
+      const nums = await vgOnlineFetchMyNumbers();
+      return (nums && nums[cardId] !== undefined) ? nums[cardId] : null;
+    });
   });
 
-  const submit = document.getElementById("vg-submit");
-  if(submit) submit.onclick = async () => {
-    if(submit.disabled) return;
-    const input = document.getElementById("vg-answer");
-    const text = (input.value || "").trim();
-    if(!text){ input.focus(); return; }
-    submit.disabled = true;   // 通信遅延中の二重送信を防ぐ
-    await vgOnlineSubmitAnswer(text);
-  };
+  // 回答はカードごとに確定する（1人2枚のときは2回ぶん）
+  app.querySelectorAll("[data-submit]").forEach(btn => btn.onclick = async () => {
+    if(btn.disabled) return;
+    const cardId = btn.dataset.submit;
+    const input = answerInputFor(cardId);
+    const text = ((input && input.value) || "").trim();
+    if(!text){ if(input) input.focus(); return; }
+    btn.disabled = true;   // 通信遅延中の二重送信を防ぐ
+    const res = await vgOnlineSubmitAnswer(cardId, text);
+    if(!res.ok){
+      showError("vg-online-error", "回答を送れませんでした。もう一度お試しください。");
+      btn.disabled = false;
+      return;
+    }
+    delete answerDrafts[cardId];
+  });
+  app.querySelectorAll("[data-answer]").forEach(input => {
+    // 入力中の文字は、ほかの人の更新で画面が描き直されても残す
+    input.oninput = () => { answerDrafts[input.dataset.answer] = input.value; };
+    input.onkeydown = (e) => {
+      if(e.key !== "Enter") return;
+      const btn = [...app.querySelectorAll("[data-submit]")]
+        .find(b => b.dataset.submit === input.dataset.answer);
+      if(btn) btn.click();
+    };
+  });
 
   app.querySelectorAll("[data-move-up]").forEach(b => b.onclick = () => {
     const i = Number(b.dataset.moveUp);
@@ -1790,9 +1440,9 @@ function wireOnlineGame(room, players){
   };
 
   const chatBtn = document.getElementById("vg-chat-btn");
-  if(chatBtn) chatBtn.onclick = () => openChatSheet(null);
+  if(chatBtn) chatBtn.onclick = () => openChatSheet();
   const reactBtn = document.getElementById("vg-react-btn");
-  if(reactBtn) reactBtn.onclick = () => openReactionSheet(null);
+  if(reactBtn) reactBtn.onclick = () => openReactionSheet();
   const leave = document.getElementById("vg-online-leave");
   if(leave) leave.onclick = async () => {
     if(!confirm("ルームから退出しますか？")) return;
@@ -1852,7 +1502,7 @@ async function finishOnlineGame(){
     success,
     perfect: success && room.perfect !== false,
     livesLeft: room.lives,
-    players: players.map(p => ({ uid: p.id, name: p.name, isAI: false })),
+    players: players.map(p => ({ uid: p.id, name: p.name })),
     topics: room.usedTopicIds || [],
     myAnswers: [],
     bpGained: rewards.total,
