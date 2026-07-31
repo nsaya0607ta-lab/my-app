@@ -9,6 +9,7 @@ import { S, state } from './state.js';
 import { checkNewsQuizPopup } from './newsQuiz.js';
 import { updateAiScores } from './reviewAI.js';
 import { initSchedule } from './schedule/index.js';
+import { bpDailyCheck } from './bp/daily.js';
 
 // 全資格の経験値初期同期が完了した時点で、読み込み画面から正しい総合ランクへ切り替える。
 window.addEventListener("learning-data-ready", () => render());
@@ -63,5 +64,10 @@ setTimeout(function(){
 // 20時をまたいだ場合の再訪トリガーに対応するため、render()経由の呼び出し
 // だけでなくここでも明示的にチェックする）
 document.addEventListener("visibilitychange", () => {
-  if(document.visibilityState === "visible") checkNewsQuizPopup();
+  if(document.visibilityState === "visible"){
+    checkNewsQuizPopup();
+    // 🎖️ 日付をまたいだまま開きっぱなしにしていた場合にも、
+    // 戻ってきた時点で当日のログインボーナス・週次ボーナスを判定する
+    bpDailyCheck();
+  }
 });

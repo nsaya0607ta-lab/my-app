@@ -14,6 +14,9 @@ import { occurrenceRowHTML } from './views.js';
 import { openScheduleEditor } from './editor.js';
 import { TASK_REPEAT_LABEL, TASK_REPEAT_SHORT, deleteTask, isTaskDoneOn, setTaskDone, tasksForDate, upsertTask } from './store.js';
 import { esc, formatDateLabel, todayKey } from './util.js';
+import { isScheduleDone, setScheduleDone } from './completion.js';
+import { bpOnAllTasksCompleted, bpOnScheduleCompleted, bpOnTaskCompleted } from '../bp/store.js';
+import { checkWeeklyBonuses } from '../bp/weekly.js';
 
 export const HOME_CARD_ID = "sched-home-card";
 
@@ -48,7 +51,7 @@ export function renderHomeCard(opts){
 
       <div class="sched-home-list">
         ${occs.length
-          ? occs.map((o, i) => occurrenceRowHTML(o, { finished: i >= 0 && finishedFrom >= 0 && i >= finishedFrom })).join("")
+          ? occs.map((o, i) => occLineHTML(o, dk, { finished: i >= 0 && finishedFrom >= 0 && i >= finishedFrom })).join("")
           : `<div class="sched-empty">今日は予定がありません</div>`}
       </div>
       <button type="button" class="sched-add-btn" id="sched-home-add">＋ 予定を追加</button>
@@ -83,6 +86,27 @@ function isFinishedNow(occ, now){
   return ref <= hhmm;
 }
 
+/* 予定1件の行＋「完了」チェックボタン。
+   予定の行自体は既存の occurrenceRowHTML（<button>）をそのまま使い、
+   ボタンの入れ子にならないよう横に並べる形で完了ボタンを添える。
+   完了状態はSchedule本体ではなく別テーブル（completion.js）に持つので、
+   Googleカレンダーとの同期には一切影響しない */
+function occLineHTML(occ, dateKey, opts){
+  const done = isScheduleDone(occ.scheduleId, dateKey);
+  const row = occurrenceRowHTML(occ, opts).replace(
+    'class="sched-row',
+    `class="sched-row${done ? " sched-row--done" : ""}`,
+  );
+  return `
+    <div class="sched-occ-line">
+      ${row}
+      <button type="button" class="sched-done-btn" data-occ-done="${esc(occ.scheduleId)}"
+              aria-pressed="${done ? "true" : "false"}"
+              aria-label="${done ? "完了を取り消す" : "この予定を完了にする"}"
+              title="${done ? "完了を取り消す" : "この予定を完了にする"}">✓</button>
+    </div>`;
+}
+
 function taskRowHTML(task){
   return `
     <div class="sched-task${task.doneOnDate ? " done" : ""}">
@@ -109,11 +133,36 @@ function bind(root, options, dk, now){
     openScheduleEditor({ scheduleId, occDateKey: occDate, onSaved: () => { if(options.onChange) options.onChange(); } });
   });
 
+  // ✅ 予定の完了ボタン。二重タップで報酬が重複しないよう、実際に
+  // 「未完了→完了」へ変わったときだけBPを付与する（setScheduleDoneが判定）
+  root.querySelectorAll("[data-occ-done]").forEach(btn => btn.onclick = (e) => {
+    e.stopPropagation();
+    const scheduleId = btn.dataset.occDone;
+    const nowDone = btn.getAttribute("aria-pressed") !== "true";
+    const changed = setScheduleDone(scheduleId, dk, nowDone);
+    if(changed){
+      const occ = occurrencesForDate(dk).find(o => o.scheduleId === scheduleId);
+      bpOnScheduleCompleted(dk, scheduleId, occ ? occ.title : "");
+      checkWeeklyBonuses();
+    }
+    if(options.onChange) options.onChange();
+  });
+
   root.querySelectorAll("[data-task-toggle]").forEach(cb => cb.onchange = () => {
     const id = cb.dataset.taskToggle;
     setTaskDone(id, dk, cb.checked);
     // ✅ 本日のタスク完了 → まるチャピにXP/コイン（同じタスクIDは1日1回だけ）
-    if(cb.checked) chappyOnTaskCompleted(dk, id);
+    if(cb.checked){
+      chappyOnTaskCompleted(dk, id);
+      // 🎖️ 活動BPも付与（同じタスクの同じ日は1回だけ。チェックを外して
+      // 付け直しても再付与されない）
+      const t = tasksForDate(dk).find(x => x.id === id);
+      bpOnTaskCompleted(dk, id, t ? t.title : "");
+      // 🎉 その日のタスクをすべて完了したら追加ボーナス（1日1回）
+      const after = tasksForDate(dk);
+      if(after.length > 0 && after.every(x => x.doneOnDate)) bpOnAllTasksCompleted(dk);
+      checkWeeklyBonuses();
+    }
     if(options.onChange) options.onChange();
   });
 
