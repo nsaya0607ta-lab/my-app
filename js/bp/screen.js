@@ -34,10 +34,26 @@ function progressBarHTML(pct, variant){
   return `<span class="bp-bar"><span class="bp-bar-fill${variant ? " bp-bar-fill--" + variant : ""}" style="width:${w}%"></span></span>`;
 }
 
+/* ミッションの「その行動ができる画面」への行き先。
+   未達成のミッションをタップすると、そこへ直接移動できる
+   （「価値観ゲームを1回遊ぶ」と出ているのに行き方が分からない、を防ぐ） */
+const MISSION_TARGET = {
+  taskDone: "select",        // 本日のタスク（ホーム）
+  scheduleAdd: "calendar",
+  scheduleDone: "select",
+  studyLog: "certs",         // 資格を選んで学習する
+  newsRead: "news-japan",
+  chappyCare: "chappy",
+  gameFinish: "valuegame",
+};
+
 function missionRowHTML(m){
   const pct = Math.min(100, Math.round(m.cur / m.need * 100));
+  const target = m.done ? "" : (MISSION_TARGET[m.reason] || "");
+  const tag = target ? "button" : "div";
+  const attrs = target ? ` type="button" data-bp-go="${esc(target)}"` : "";
   return `
-    <div class="bp-mission${m.done ? " done" : ""}">
+    <${tag} class="bp-mission${m.done ? " done" : ""}${target ? " bp-mission--link" : ""}"${attrs}>
       <span class="bp-mission-icon" aria-hidden="true">${m.icon || "🎯"}</span>
       <span class="bp-mission-main">
         <span class="bp-mission-title">${esc(m.title)}</span>
@@ -45,7 +61,8 @@ function missionRowHTML(m){
         <span class="bp-mission-count">${m.cur} / ${m.need}${m.bonus > 0 ? `　ボーナス +${m.bonus} BP` : ""}</span>
       </span>
       <span class="bp-mission-state">${m.done ? "達成" : `${Math.max(0, m.need - m.cur)}回`}</span>
-    </div>`;
+      ${target ? `<span class="bp-mission-arrow" aria-hidden="true">›</span>` : ""}
+    </${tag}>`;
 }
 
 function achievementRowHTML(a){
@@ -291,6 +308,8 @@ export function renderBpScreen(){
     activeTab = b.dataset.bpTab;
     renderBpScreen();
   });
+  // 未達成のミッションをタップしたら、その行動ができる画面へ移動する
+  app.querySelectorAll("[data-bp-go]").forEach(b => b.onclick = () => go(b.dataset.bpGo));
   window.scrollTo(0, 0);
 }
 

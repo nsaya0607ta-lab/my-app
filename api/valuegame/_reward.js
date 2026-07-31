@@ -17,6 +17,8 @@
 //     一定時間内に同じ相手と再度遊んだ場合は報酬を減額する。
 //   ・オンラインの成否は自己申告を信用しない … roomId があるときは、
 //     サーバーが管理しているルームの状態（lives/clearedRounds）で上書き検証する。
+//   ・「フレンドとプレイ」の水増し防止 … 同席者のうち、実際にフレンド登録が
+//     成立している相手がいる場合だけボーナスを付ける（vgFriends を参照）。
 //
 // 付与理由とゲームIDは users/{uid}/bpGrants に残るため、後から履歴を追える。
 const { verifyFirebaseIdToken, getAdmin } = require("../_lib/firebaseAdmin");
@@ -82,6 +84,7 @@ module.exports = async (req, res) => {
       let finished = !!body.success || Number(body.clearedRounds || 0) > 0 || Number(body.answeredRounds || 0) > 0;
       let answeredRounds = Math.max(0, Math.min(5, Number(body.answeredRounds) || 0));
       let withFriend = false;
+      let friendCheckRefs = [];
 
       if (roomRef) {
         const roomSnap = await tx.get(roomRef);
@@ -91,8 +94,15 @@ module.exports = async (req, res) => {
           if (!players.some((p) => p.id === uid)) {
             const e = new Error("not-a-player"); e.statusCode = 403; throw e;
           }
-          // 実プレイヤーが自分以外にいれば「フレンドとプレイ」の対象
-          withFriend = players.some((p) => p.id !== uid);
+          // 「フレンドとプレイ」は、実際にフレンド登録が成立している相手と
+          // 遊んだ場合だけ対象にする。以前は「自分以外の実プレイヤーがいれば」
+          // という判定だったため、初対面の人と遊んでもボーナスが入っていた。
+          // フレンド関係は vgFriends の1件（2人で共有）で表すので、
+          // 同席者ぶんのIDを組み立ててまとめて確認する。
+          friendCheckRefs = players
+            .map((p) => p.id)
+            .filter((id) => id && id !== uid)
+            .map((id) => db.collection("vgFriends").doc([uid, id].sort().join("__")));
           // 成功＝「ライフが0になる前に規定ラウンドを最後までやり切った」。
           // 途中のラウンドで順番を外してライフが減っていても、最後まで
           // ライフが残っていればクリア扱い（協力ゲームとしての標準的なルール）。
@@ -106,10 +116,18 @@ module.exports = async (req, res) => {
         }
       }
 
-      // 3) 本日の初勝利かどうか（当日の記録で判定する）
+      // 3) 同席者のうち、実際にフレンドが成立している人がいるかを確認する。
+      // トランザクション内の読み取りは書き込みより前に済ませる必要があるため、
+      // ここでまとめて取得する（vgFriends は Admin SDK からのみ触る）。
+      for (const ref of friendCheckRefs) {
+        const snap = await tx.get(ref);
+        if (snap.exists && (snap.data() || {}).status === "accepted") { withFriend = true; break; }
+      }
+
+      // 4) 本日の初勝利かどうか（当日の記録で判定する）
       const firstWinToday = success && !daily.wonToday;
 
-      // 4) 同じ相手との短時間の連続プレイなら減額する
+      // 5) 同じ相手との短時間の連続プレイなら減額する
       const recent = (daily.recentOpponents && typeof daily.recentOpponents === "object") ? daily.recentOpponents : {};
       const now = Date.now();
       const repeat = opponentIds.some((id) => {
@@ -120,7 +138,7 @@ module.exports = async (req, res) => {
       const raw = buildRewards({ answeredRounds, finished, success, perfect, firstWinToday, withFriend, repeat });
       const capped = applyDailyCap(raw, alreadyToday);
 
-      // 5) 記録（付与額が0でも「このゲームIDは処理済み」として必ず残す）
+      // 6) 記録（付与額が0でも「このゲームIDは処理済み」として必ず残す）
       tx.set(grantRef, {
         gameId,
         mode: String(body.mode || "solo").slice(0, 16),

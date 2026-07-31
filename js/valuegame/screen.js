@@ -46,6 +46,10 @@ import {
   VOICE_MAX_PEERS, vgVoiceJoin, vgVoiceLeave, vgVoiceState,
   vgVoiceSyncPeers, vgVoiceToggleMic, vgVoiceToggleMute,
 } from './voice.js';
+import {
+  friendAccept, friendInvite, friendList, friendListenInvites,
+  friendRemove, friendRequest, friendSearchByName,
+} from './friends.js';
 
 /* ---- 表示中のビュー（このモジュール内で保持する） ---- */
 let view = "lobby";   // lobby | rules | solo-setup | game | result | records | online-*
@@ -112,7 +116,14 @@ export function valueGameHandleIdentityChange(){
     view = "lobby";
     mountedKey = null;
     stopTimer();
+    // 前の人あての招待を受け取り続けないよう、購読を張り直す
+    stopInviteListener();
+    friendData = null;
+    friendSearchRows = null;
+    friendMsg = "";
   }
+  // ログイン中のときだけ、自分あてのフレンド招待を購読する
+  if(state.currentUserId) startInviteListener();
   return changed;
 }
 
@@ -150,6 +161,7 @@ function paint(){
   if(view === "game") return paintGame();
   if(view === "result") return paintResult();
   if(view === "records") return paintRecords();
+  if(view === "friends") return paintFriends();
   if(view === "online-create") return paintOnlineCreate();
   if(view === "online-join") return paintOnlineJoin();
   if(view === "online-lobby") return paintOnlineLobby();
@@ -244,6 +256,14 @@ function paintLobby(){
           </span>
           <span class="vg-menu-arrow">›</span>
         </button>
+        <button type="button" class="vg-menu-btn" id="vg-go-friends">
+          <span class="vg-menu-icon" aria-hidden="true">🤝</span>
+          <span class="vg-menu-main">
+            <span class="vg-menu-title">フレンド</span>
+            <span class="vg-menu-sub">フレンドを追加して、ルームに招待できます</span>
+          </span>
+          <span class="vg-menu-arrow">›</span>
+        </button>
         <button type="button" class="vg-menu-btn" id="vg-go-records">
           <span class="vg-menu-icon" aria-hidden="true">🏅</span>
           <span class="vg-menu-main">
@@ -260,6 +280,7 @@ function paintLobby(){
   document.getElementById("vg-go-create").onclick = () => switchView("online-create");
   document.getElementById("vg-go-join").onclick = () => switchView("online-join");
   document.getElementById("vg-go-rules").onclick = () => switchView("rules");
+  document.getElementById("vg-go-friends").onclick = () => { friendData = null; switchView("friends"); };
   document.getElementById("vg-go-records").onclick = () => switchView("records");
   const r = document.getElementById("vg-resume");
   if(r) r.onclick = () => { session = resume; switchView("game"); };
@@ -788,6 +809,128 @@ function paintResult(){
 }
 
 /* =========================================================================
+   🤝 フレンド画面
+   フレンドは相互承認制。申請を送っただけでは成立せず、相手が承認して
+   はじめてフレンドになる（勝手に登録されることがない）。
+   ========================================================================= */
+let friendData = null;       // { friends, incoming, outgoing }
+let friendSearchRows = null; // 検索結果
+let friendMsg = "";
+
+function paintFriends(){
+  const d = friendData;
+  app.innerHTML = `
+    <div class="vg-root">
+      ${headHTML("フレンド", "lobby")}
+      ${loginNoticeHTML()}
+
+      <div class="vg-card">
+        <div class="vg-card-title">フレンドを探す</div>
+        <div class="vg-join-form">
+          <input type="text" class="vg-answer-input" id="vg-friend-q" maxlength="20"
+                 placeholder="相手の表示名" autocomplete="off">
+          <button type="button" class="vg-confirm" id="vg-friend-search">検索</button>
+        </div>
+        <p class="vg-note">表示名はランキングに出る公開情報です。完全に一致する名前で探します。</p>
+        ${friendSearchRows === null ? "" : friendSearchRows.length ? `
+          <div class="vg-friend-list">
+            ${friendSearchRows.map(r => `
+              <div class="vg-friend-row">
+                <span class="vg-friend-main">
+                  <span class="vg-friend-name">${esc(r.name)}</span>
+                  <span class="vg-friend-sub">総合ランク Lv.${r.level}　${r.wins}回成功</span>
+                </span>
+                <button type="button" class="vg-mini-btn" data-friend-add="${esc(r.uid)}" data-friend-name="${esc(r.name)}">申請</button>
+              </div>`).join("")}
+          </div>` : `<div class="vg-note">該当する人が見つかりませんでした。</div>`}
+      </div>
+
+      ${friendMsg ? `<div class="vg-notice">${esc(friendMsg)}</div>` : ""}
+
+      ${d === null ? `<div class="vg-note">読み込み中…</div>` : `
+        ${d.incoming.length ? `
+          <div class="vg-card vg-card--next">
+            <div class="vg-card-title">届いている申請<span class="vg-card-count">${d.incoming.length}</span></div>
+            ${d.incoming.map(f => `
+              <div class="vg-friend-row">
+                <span class="vg-friend-main"><span class="vg-friend-name">${esc(f.name)}</span></span>
+                <button type="button" class="vg-mini-btn" data-friend-accept="${esc(f.uid)}">承認</button>
+                <button type="button" class="vg-mini-btn" data-friend-deny="${esc(f.uid)}">辞退</button>
+              </div>`).join("")}
+          </div>` : ""}
+
+        <div class="vg-card">
+          <div class="vg-card-title">フレンド<span class="vg-card-count">${d.friends.length}</span></div>
+          ${d.friends.length ? d.friends.map(f => `
+            <div class="vg-friend-row">
+              <span class="vg-friend-main"><span class="vg-friend-name">${esc(f.name)}</span></span>
+              <button type="button" class="vg-mini-btn" data-friend-del="${esc(f.uid)}">解除</button>
+            </div>`).join("") : `<div class="vg-note">まだフレンドがいません。上の検索から申請してみましょう。</div>`}
+        </div>
+
+        ${d.outgoing.length ? `
+          <div class="vg-card">
+            <div class="vg-card-title">承認待ち<span class="vg-card-count">${d.outgoing.length}</span></div>
+            ${d.outgoing.map(f => `
+              <div class="vg-friend-row">
+                <span class="vg-friend-main">
+                  <span class="vg-friend-name">${esc(f.name)}</span>
+                  <span class="vg-friend-sub">相手の承認を待っています</span>
+                </span>
+                <button type="button" class="vg-mini-btn" data-friend-del="${esc(f.uid)}">取消</button>
+              </div>`).join("")}
+          </div>` : ""}`}
+
+      <p class="vg-note">フレンドとルームで一緒に遊ぶと、ゲーム終了時に「フレンドとプレイ」のボーナスBPが入ります。</p>
+    </div>`;
+
+  wireBack();
+  const q = document.getElementById("vg-friend-q");
+  const searchBtn = document.getElementById("vg-friend-search");
+  const doSearch = async () => {
+    if(searchBtn.disabled) return;
+    searchBtn.disabled = true;
+    friendMsg = "";
+    const r = await friendSearchByName(q.value);
+    friendSearchRows = r.rows || [];
+    if(r.message) friendMsg = r.message;
+    repaint();
+  };
+  searchBtn.onclick = doSearch;
+  q.onkeydown = (e) => { if(e.key === "Enter") doSearch(); };
+
+  app.querySelectorAll("[data-friend-add]").forEach(b => b.onclick = () => runFriendAction(b,
+    () => friendRequest(b.dataset.friendAdd, myName(), b.dataset.friendName)));
+  app.querySelectorAll("[data-friend-accept]").forEach(b => b.onclick = () => runFriendAction(b,
+    () => friendAccept(b.dataset.friendAccept)));
+  app.querySelectorAll("[data-friend-deny]").forEach(b => b.onclick = () => runFriendAction(b,
+    () => friendRemove(b.dataset.friendDeny)));
+  app.querySelectorAll("[data-friend-del]").forEach(b => b.onclick = () => runFriendAction(b,
+    () => friendRemove(b.dataset.friendDel)));
+
+  if(friendData === null) loadFriends();
+}
+
+/* フレンド操作の共通処理。処理中はボタンを無効化して、
+   二重タップで申請が二重に飛ぶのを防ぐ */
+async function runFriendAction(btn, fn){
+  if(btn.disabled) return;
+  btn.disabled = true;
+  const r = await fn();
+  friendMsg = (r && r.message) || "";
+  friendData = null;      // 一覧を取り直す
+  friendSearchRows = null;
+  if(view === "friends") repaint();
+}
+
+async function loadFriends(){
+  const r = await friendList();
+  friendData = { friends: r.friends, incoming: r.incoming, outgoing: r.outgoing };
+  if(!r.ok && r.message) friendMsg = r.message;
+  if(view === "friends") repaint();
+}
+
+/* =========================================================================
    戦績・称号
    ========================================================================= */
 function paintRecords(){
@@ -1203,6 +1346,7 @@ function paintOnlineLobby(){
         <div class="vg-code-actions">
           <button type="button" class="vg-mini-btn" id="vg-copy-code">コードをコピー</button>
           <button type="button" class="vg-mini-btn" id="vg-share">URLで招待</button>
+          <button type="button" class="vg-mini-btn" id="vg-invite-friend">フレンドを招待</button>
         </div>
       </div>
       <div class="vg-card">
@@ -1245,6 +1389,7 @@ function paintOnlineLobby(){
   if(room.useVoice) wireVoicePanel(players);
   document.getElementById("vg-copy-code").onclick = () => copyText(room.code || "");
   document.getElementById("vg-share").onclick = () => shareRoom(room);
+  document.getElementById("vg-invite-friend").onclick = () => openInviteSheet(room);
   document.getElementById("vg-lobby-rules").onclick = () => openRulesSheet();
   document.getElementById("vg-lobby-chat").onclick = () => openChatSheet(null);
   const readyBtn = document.getElementById("vg-ready");
@@ -1736,6 +1881,66 @@ function copyText(text){
       document.execCommand("copy"); ta.remove();
     }
   }catch(e){}
+}
+
+/* 待機画面の「フレンドを招待」。フレンド一覧から選ぶと、その人だけに
+   ルームコードが届く（他の人には見えない） */
+async function openInviteSheet(room){
+  const { ov } = openSheet("フレンドを招待", `<div class="vg-note">読み込み中…</div>`);
+  const body = ov.querySelector(".vg-sheet-body");
+  const r = await friendList();
+  if(!r.ok){
+    body.innerHTML = `<div class="vg-note">${esc(r.message || "フレンドを読み込めませんでした。")}</div>`;
+    return;
+  }
+  if(!r.friends.length){
+    body.innerHTML = `<div class="vg-note">まだフレンドがいません。ロビーの「フレンド」から追加できます。<br>ルームコード <b>${esc(room.code || "")}</b> を直接伝えても参加してもらえます。</div>`;
+    return;
+  }
+  body.innerHTML = `
+    <div class="vg-friend-list">
+      ${r.friends.map(f => `
+        <div class="vg-friend-row">
+          <span class="vg-friend-main"><span class="vg-friend-name">${esc(f.name)}</span></span>
+          <button type="button" class="vg-mini-btn" data-invite="${esc(f.uid)}">招待</button>
+        </div>`).join("")}
+    </div>`;
+  body.querySelectorAll("[data-invite]").forEach(b => b.onclick = async () => {
+    if(b.disabled) return;
+    b.disabled = true;
+    b.textContent = "送信中";
+    const res = await friendInvite(b.dataset.invite, room.code, myName(), room.name);
+    b.textContent = res.ok ? "送信済" : "失敗";
+  });
+}
+
+/* 自分宛ての招待を受け取ったら、画面の邪魔にならない小さな案内を出す。
+   「参加」を押したときだけルームへ入る（勝手に移動はしない） */
+let inviteUnsub = null;
+function stopInviteListener(){
+  if(inviteUnsub){ try{ inviteUnsub(); }catch(e){} inviteUnsub = null; }
+}
+function startInviteListener(){
+  if(inviteUnsub) return;
+  inviteUnsub = friendListenInvites((inv) => {
+    const host = document.createElement("div");
+    host.className = "vg-invite-toast";
+    host.innerHTML = `
+      <span class="vg-invite-text">${esc(inv.fromName || "フレンド")}さんが${inv.roomName ? `「${esc(inv.roomName)}」へ` : "ルームへ"}招待しています</span>
+      <button type="button" class="vg-invite-join">参加</button>
+      <button type="button" class="vg-invite-close" aria-label="閉じる">✕</button>`;
+    document.body.appendChild(host);
+    const close = () => { try{ host.remove(); }catch(e){} };
+    host.querySelector(".vg-invite-close").onclick = close;
+    host.querySelector(".vg-invite-join").onclick = async () => {
+      close();
+      go("valuegame");
+      joinCode = inv.roomCode || "";
+      switchView("online-join");
+    };
+    // 40秒たっても操作がなければ静かに消す
+    setTimeout(close, 40000);
+  });
 }
 
 function shareRoom(room){
