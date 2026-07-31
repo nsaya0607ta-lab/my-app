@@ -66,6 +66,36 @@ service cloud.firestore {
       }
     }
 
+    // ---- 🤝 フレンド関係 ----
+    // 2人で1件のドキュメント（IDは2つのUIDを辞書順につないだもの）。
+    // 当事者だけが読み書きでき、第三者からは見えない。
+    // 作成時は「自分が申請者であること」「自分が当事者に含まれること」を求め、
+    // 他人どうしの関係を勝手に作れないようにする。
+    match /vgFriends/{pairId} {
+      allow read, delete: if request.auth != null
+                          && request.auth.uid in resource.data.members;
+      allow create: if request.auth != null
+                    && request.auth.uid in request.resource.data.members
+                    && request.resource.data.requestedBy == request.auth.uid
+                    && request.resource.data.status == 'pending';
+      // 承認（pending → accepted）は、申請を送った側以外だけが行える
+      allow update: if request.auth != null
+                    && request.auth.uid in resource.data.members
+                    && resource.data.requestedBy != request.auth.uid
+                    && request.resource.data.status == 'accepted';
+    }
+
+    // ---- 🤝 ルームへの招待 ----
+    // 宛先本人だけが読める。差出人は自分名義でのみ送れる。
+    // 受け取った側が表示後に削除する。
+    match /vgInvites/{inviteId} {
+      allow read, delete: if request.auth != null
+                          && resource.data.toUid == request.auth.uid;
+      allow create: if request.auth != null
+                    && request.resource.data.fromUid == request.auth.uid;
+      allow update: if false;
+    }
+
     // ---- 公開ランキング：全員が読め、本人だけが自分の行を書ける ----
     match /leaderboard/{uid} {
       allow read: if true;

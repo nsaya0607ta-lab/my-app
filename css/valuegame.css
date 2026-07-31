@@ -627,3 +627,41 @@
 .vg-react-icon{ font-size:17px; }
 .vg-react-label, .vg-stamp-label{ font-size:10px; color:var(--text); text-align:center; }
 .vg-stamp-face{ font-size:12px; color:var(--text); white-space:nowrap; }
+
+/* ================= 🤝 フレンド ================= */
+.vg-friend-list{ display:flex; flex-direction:column; }
+.vg-friend-row{
+  display:flex; align-items:center; gap:8px;
+  padding:8px 0; border-bottom:1px solid var(--line);
+}
+.vg-friend-row:last-child{ border-bottom:none; }
+.vg-friend-main{ flex:1; min-width:0; display:flex; flex-direction:column; gap:1px; }
+.vg-friend-name{
+  font-size:12.5px; font-weight:700; color:var(--text);
+  overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
+}
+.vg-friend-sub{ font-size:10.5px; color:var(--muted); }
+
+/* 招待の受信バー。#app の外・画面下部に出す。固定ナビとは重ならない位置 */
+.vg-invite-toast{
+  position:fixed; z-index:1150;
+  left:50%; transform:translateX(-50%);
+  bottom:calc(10px + var(--bnav-h) + env(safe-area-inset-bottom));
+  width:min(420px, calc(100vw - 24px));
+  display:flex; align-items:center; gap:8px;
+  padding:10px 12px; border-radius:13px;
+  border:1px solid var(--line); background:var(--surface);
+  box-shadow:0 6px 22px rgba(15,23,42,.18);
+}
+.vg-invite-text{
+  flex:1; min-width:0; font-size:12px; color:var(--text); line-height:1.5;
+}
+.vg-invite-join{
+  flex-shrink:0; border:none; border-radius:9px; padding:7px 13px;
+  background:var(--accent); color:#fff; font-size:12px; font-weight:800; cursor:pointer;
+}
+.vg-invite-close{
+  flex-shrink:0; width:26px; height:26px; border-radius:50%;
+  border:1px solid var(--line); background:var(--bg); color:var(--muted);
+  font-size:12px; cursor:pointer;
+}
