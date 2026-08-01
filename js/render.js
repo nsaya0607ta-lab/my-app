@@ -4523,7 +4523,8 @@ const INTROQUIZ_LAUNCHER_ICON_SVG = `
 /* =========================================================================
    📱 「各種機能」「学習」タブ用ボトムシート
    BottomNavigationの2タブから開く、画面下からスライドインするiOS風の
-   メニュー。タップ後は既存の go()／openSettingsModal()／openRulesModal()
+   メニュー。中身はiPhoneのホーム画面のような丸型アイコンのグリッド表示。
+   タップ後は既存の go()／openSettingsModal()／openRulesModal()
    をそのまま呼び出すだけで、遷移先の画面・モーダル自体はこれまでと同じ。
    ========================================================================= */
 // ボトムシート表示中は、iOS Safari／PWAでも背後のホーム画面が一切スクロール
@@ -4679,13 +4680,31 @@ function openSheet(title, itemsHTML){
   return ov;
 }
 
-function sheetItemHTML({ icon, label, key, variant }){
+/* iPhoneのホーム画面のような、丸型アイコン＋下に中央揃えのラベルで1マスを
+   構成するグリッドセル。セル全体（<button>）がタップ領域で、押している間は
+   中の.sheet-grid-innerだけを0.97倍に縮めてiOS風の手応えを出す。
+   --iは表示時に1つずつ遅らせてフェードインさせるための並び順 */
+function sheetGridItemHTML({ icon, label, key, variant }, i){
   return `
-    <button type="button" class="sheet-item" data-sheet-item="${esc(key)}">
-      <span class="sheet-icon launcher-icon-${variant}">${icon}</span>
-      <span class="sheet-item-label">${esc(label)}</span>
-      <span class="sheet-item-chevron">›</span>
+    <button type="button" class="sheet-grid-item" data-sheet-item="${esc(key)}" style="--i:${i}">
+      <span class="sheet-grid-inner">
+        <span class="sheet-grid-icon launcher-icon-${variant}">${icon}</span>
+        <span class="sheet-grid-label">${esc(label)}</span>
+      </span>
     </button>`;
+}
+
+// 5列が基本だが、項目が5個未満のシート（学習＝4項目）で右側だけ空いて
+// 偏って見えないよう、項目数が5未満のときは列数をその数に合わせる
+function sheetGridHTML(items){
+  const cols = Math.min(5, items.length);
+  return `<div class="sheet-grid" style="--cols:${cols}">${items.map(sheetGridItemHTML).join("")}</div>`;
+}
+
+// タップ時の軽いHaptic Feedback。非対応ブラウザ（iOS Safari等）では
+// navigator.vibrateが無いだけで何も起きないため、機能には影響しない
+function sheetTapHaptic(){
+  try{ navigator.vibrate && navigator.vibrate(10); }catch(e){}
 }
 
 const LIGHTPUZZLE_LAUNCHER_ICON_SVG = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="3.5" y="3.5" width="6" height="6" rx="1.2"></rect><rect x="14.5" y="3.5" width="6" height="6" rx="1.2"></rect><rect x="3.5" y="14.5" width="6" height="6" rx="1.2"></rect><rect x="14.5" y="14.5" width="6" height="6" rx="1.2" fill="currentColor"></rect></svg>`;
@@ -4708,9 +4727,10 @@ const QUICK_MENU_ITEMS = [
 ];
 
 export function openQuickMenuSheet(){
-  const ov = openSheet("各種機能", QUICK_MENU_ITEMS.map(sheetItemHTML).join(""));
+  const ov = openSheet("各種機能", sheetGridHTML(QUICK_MENU_ITEMS));
   ov.querySelectorAll("[data-sheet-item]").forEach(b => b.onclick = () => {
     const key = b.dataset.sheetItem;
+    sheetTapHaptic();
     closeSheet(ov);
     if(key === "settings") openSettingsModal();
     else if(key === "rules") openRulesModal();
@@ -4726,9 +4746,10 @@ const STUDY_MENU_ITEMS = [
 ];
 
 export function openStudyMenuSheet(){
-  const ov = openSheet("学習", STUDY_MENU_ITEMS.map(sheetItemHTML).join(""));
+  const ov = openSheet("学習", sheetGridHTML(STUDY_MENU_ITEMS));
   ov.querySelectorAll("[data-sheet-item]").forEach(b => b.onclick = () => {
     const key = b.dataset.sheetItem;
+    sheetTapHaptic();
     closeSheet(ov);
     go(key);
   });
