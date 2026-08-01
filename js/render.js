@@ -4476,49 +4476,13 @@ const PLAYGROUND_LAUNCHER_ICON_SVG = `
 // シナリオモード（実務の依頼を読んで自分でコマンドを組み立てる学習モード）用アイコン
 const SCENARIO_LAUNCHER_ICON_HTML = `<span class="launcher-emoji" aria-hidden="true">🧑‍💼</span>`;
 
-// J-NEWS/F-NEWS/株価/カレンダー/イントロドン/設定/ルールで使うアイコン群
-const STOCK_LAUNCHER_ICON_SVG = `
-  <svg viewBox="0 0 24 24" width="21" height="21" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round">
-    <polyline points="3 17 9.5 10.5 13.5 14.5 21 6"></polyline>
-    <polyline points="14.5 6 21 6 21 12.5"></polyline>
-  </svg>`;
-// Googleカレンダーのアプリアイコンを思わせる「今日の日付を表示する
-// カレンダー」デザイン（青いヘッダーバー＋今日の日付の数字）。予定管理
-// アイコン（線画のみ）とは見た目を分け、単独の「カレンダー」画面への
-// 入口だと一目でわかるようにする
-const CALENDAR_APP_LAUNCHER_ICON_SVG = `
-  <svg viewBox="0 0 24 24" width="21" height="21">
-    <rect x="2.5" y="4" width="19" height="17" rx="3" fill="#ffffff" stroke="var(--line)" stroke-width="1.2"></rect>
-    <path d="M2.5 7a3 3 0 0 1 3-3h13a3 3 0 0 1 3 3v2H2.5V7z" fill="#4285f4"></path>
-    <line x1="7.5" y1="2" x2="7.5" y2="6.5" stroke="#1a56c4" stroke-width="1.7" stroke-linecap="round"></line>
-    <line x1="16.5" y1="2" x2="16.5" y2="6.5" stroke="#1a56c4" stroke-width="1.7" stroke-linecap="round"></line>
-    <text x="12" y="18" text-anchor="middle" font-size="9" font-weight="700" fill="#3c4043" font-family="Arial, sans-serif">${new Date().getDate()}</text>
-  </svg>`;
-
-// 設定（ギア）専用アイコン
-const SETTINGS_GEAR_ICON_SVG = `
-  <svg viewBox="0 0 24 24" width="21" height="21" fill="none" stroke="var(--accent)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-    <circle cx="12" cy="12" r="3.2"></circle>
-    <path d="M19.4 13.5a1.7 1.7 0 0 0 .34 1.87l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.7 1.7 0 0 0-1.87-.34 1.7 1.7 0 0 0-1.04 1.56V19.5a2 2 0 1 1-4 0v-.09A1.7 1.7 0 0 0 8.96 17.85a1.7 1.7 0 0 0-1.87.34l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.7 1.7 0 0 0 4.6 13.5 1.7 1.7 0 0 0 3.04 12.46H2.95a2 2 0 1 1 0-4h.09A1.7 1.7 0 0 0 4.6 7.42 1.7 1.7 0 0 0 4.26 5.55l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.7 1.7 0 0 0 8.96 3.06 1.7 1.7 0 0 0 10 1.5V1.41a2 2 0 1 1 4 0v.09A1.7 1.7 0 0 0 15.04 3.06a1.7 1.7 0 0 0 1.87-.34l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.7 1.7 0 0 0 19.4 7.42 1.7 1.7 0 0 0 20.96 8.46h.09a2 2 0 1 1 0 4h-.09a1.7 1.7 0 0 0-1.56 1.04Z"></path>
-  </svg>`;
-
-// ルール専用アイコン（規約・一覧を表す書類アイコン）
-const RULES_LIST_ICON_SVG = `
-  <svg viewBox="0 0 24 24" width="21" height="21" fill="none" stroke="var(--accent)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-    <path d="M6 2.8h9.2L19 6.6V21a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1V3.8a1 1 0 0 1 1-1Z"></path>
-    <path d="M15 2.8V6.6h3.8"></path>
-    <line x1="7.6" y1="11" x2="15.6" y2="11"></line>
-    <line x1="7.6" y1="14.4" x2="15.6" y2="14.4"></line>
-    <line x1="7.6" y1="17.8" x2="13" y2="17.8"></line>
-  </svg>`;
-
-// イントロドン専用アイコン（音符の線画。絵文字は使わない）
-const INTROQUIZ_LAUNCHER_ICON_SVG = `
-  <svg viewBox="0 0 24 24" width="21" height="21" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-    <path d="M9 18V6l10-2v12"></path>
-    <circle cx="6.5" cy="18" r="2.5"></circle>
-    <circle cx="16.5" cy="16" r="2.5"></circle>
-  </svg>`;
+// J-NEWS/F-NEWS/株価/カレンダー/イントロドン/設定/ルールで使うアイコン群。
+// ユーザーから提供されたリファレンス画像（イラスト風のアイコン一式）をそのまま
+// 切り出したPNGをassets/icon/quickmenu/配下に置き、線画SVGではなくこの画像を
+// そのまま表示する（背景の円もアイコンごと画像に焼き込み済み）
+function quickMenuPhotoIconHTML(name){
+  return `<img class="sheet-grid-photo" src="assets/icon/quickmenu/${name}.png" alt="" width="68" height="68" loading="lazy">`;
+}
 
 /* =========================================================================
    📱 「各種機能」「学習」タブ用ボトムシート
@@ -4682,13 +4646,17 @@ function openSheet(title, itemsHTML){
 
 /* iPhoneのホーム画面のような、丸型アイコン＋下に中央揃えのラベルで1マスを
    構成するグリッドセル。セル全体（<button>）がタップ領域で、押している間は
-   中の.sheet-grid-innerだけを0.97倍に縮めてiOS風の手応えを出す。
-   --iは表示時に1つずつ遅らせてフェードインさせるための並び順 */
-function sheetGridItemHTML({ icon, label, key, variant }, i){
+   中の.sheet-grid-innerがわずかに浮き上がってiOS風の手応えを出す。
+   --iは表示時に1つずつ遅らせてフェードインさせるための並び順。
+   photo:trueの項目は、線画SVGではなくユーザー提供のイラストアイコン画像
+   （円の背景も画像に焼き込み済み）をそのまま表示するため、共通のガラス質
+   背景を打ち消す.sheet-grid-icon-photoを追加で付与する */
+function sheetGridItemHTML({ icon, label, key, variant, photo }, i){
+  const iconClass = `sheet-grid-icon launcher-icon-${variant}${photo ? " sheet-grid-icon-photo" : ""}`;
   return `
     <button type="button" class="sheet-grid-item" data-sheet-item="${esc(key)}" style="--i:${i}">
       <span class="sheet-grid-inner">
-        <span class="sheet-grid-icon launcher-icon-${variant}">${icon}</span>
+        <span class="${iconClass}">${icon}</span>
         <span class="sheet-grid-label">${esc(label)}</span>
       </span>
     </button>`;
@@ -4707,23 +4675,17 @@ function sheetTapHaptic(){
   try{ navigator.vibrate && navigator.vibrate(10); }catch(e){}
 }
 
-const LIGHTPUZZLE_LAUNCHER_ICON_SVG = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="3.5" y="3.5" width="6" height="6" rx="1.2"></rect><rect x="14.5" y="3.5" width="6" height="6" rx="1.2"></rect><rect x="3.5" y="14.5" width="6" height="6" rx="1.2"></rect><rect x="14.5" y="14.5" width="6" height="6" rx="1.2" fill="currentColor"></rect></svg>`;
-
-// 🃏 チャッピーの価値観ゲーム（ito形式の協力カードゲーム）のランチャーアイコン。
-// 重ねた2枚のカードを線画で表した、このアプリのオリジナル図案
-const VALUEGAME_LAUNCHER_ICON_SVG = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="6.5" width="10" height="14" rx="2.2" transform="rotate(-9 8 13.5)"></rect><rect x="11" y="3.5" width="10" height="14" rx="2.2" transform="rotate(9 16 10.5)"></rect><circle cx="16" cy="10.5" r="1.6" fill="currentColor" stroke="none"></circle></svg>`;
-
 const QUICK_MENU_ITEMS = [
-  { key: "news-japan", icon: `<span class="launcher-emoji" aria-hidden="true">🇯🇵</span>`, label: "J-NEWS", variant: "news-jp" },
-  { key: "news-world", icon: `<span class="launcher-emoji" aria-hidden="true">🌐</span>`, label: "F-NEWS", variant: "news-world" },
-  { key: "portfolio", icon: STOCK_LAUNCHER_ICON_SVG, label: "株価", variant: "stock" },
-  { key: "calendar", icon: CALENDAR_APP_LAUNCHER_ICON_SVG, label: "カレンダー", variant: "calendar" },
-  { key: "introquiz", icon: INTROQUIZ_LAUNCHER_ICON_SVG, label: "イントロドン", variant: "introquiz" },
-  { key: "lightpuzzle", icon: LIGHTPUZZLE_LAUNCHER_ICON_SVG, label: "ライト消しパズル", variant: "lightpuzzle" },
-  { key: "valuegame", icon: VALUEGAME_LAUNCHER_ICON_SVG, label: "カードゲーム", variant: "valuegame" },
-  { key: "chappy", icon: `<span class="launcher-emoji" aria-hidden="true">🏠</span>`, label: "チャッピーハウス", variant: "chappy" },
-  { key: "settings", icon: SETTINGS_GEAR_ICON_SVG, label: "設定", variant: "settings" },
-  { key: "rules", icon: RULES_LIST_ICON_SVG, label: "ルール", variant: "rules" },
+  { key: "news-japan", icon: quickMenuPhotoIconHTML("news-jp"), label: "J-NEWS", variant: "news-jp", photo: true },
+  { key: "news-world", icon: quickMenuPhotoIconHTML("news-world"), label: "F-NEWS", variant: "news-world", photo: true },
+  { key: "portfolio", icon: quickMenuPhotoIconHTML("stock"), label: "株価", variant: "stock", photo: true },
+  { key: "calendar", icon: quickMenuPhotoIconHTML("calendar"), label: "カレンダー", variant: "calendar", photo: true },
+  { key: "introquiz", icon: quickMenuPhotoIconHTML("introquiz"), label: "イントロドン", variant: "introquiz", photo: true },
+  { key: "lightpuzzle", icon: quickMenuPhotoIconHTML("lightpuzzle"), label: "ライト消しパズル", variant: "lightpuzzle", photo: true },
+  { key: "valuegame", icon: quickMenuPhotoIconHTML("valuegame"), label: "カードゲーム", variant: "valuegame", photo: true },
+  { key: "chappy", icon: quickMenuPhotoIconHTML("chappy"), label: "チャッピーハウス", variant: "chappy", photo: true },
+  { key: "settings", icon: quickMenuPhotoIconHTML("settings"), label: "設定", variant: "settings", photo: true },
+  { key: "rules", icon: quickMenuPhotoIconHTML("rules"), label: "ルール", variant: "rules", photo: true },
 ];
 
 export function openQuickMenuSheet(){

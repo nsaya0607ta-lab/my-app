@@ -471,21 +471,47 @@ h1.title.title--badge{margin:2px 0 0;}
   opacity:0;animation:sheet-grid-item-in .36s cubic-bezier(.22,1,.36,1) forwards;
   animation-delay:calc(80ms + var(--i,0) * 40ms);}
 .sheet-grid-inner{display:flex;flex-direction:column;align-items:center;gap:9px;
-  transition:transform .18s cubic-bezier(.22,1,.36,1);}
-.sheet-grid-item:active .sheet-grid-inner{transform:scale(.97);}
-/* 円の背景はどのテーマでも淡いパステルなので、currentColorで描かれた線画アイコンは
+  transition:transform .22s cubic-bezier(.22,1,.36,1);}
+/* 「押した時だけ少し浮く」印象を出すため、押し込んで縮めるのではなく
+   わずかに拡大＋持ち上げる。実際の浮遊感は.sheet-grid-icon側のshadow強調が担う */
+.sheet-grid-item:active .sheet-grid-inner{transform:translateY(-2px) scale(1.035);}
+/* iOS 26のLiquid Glassを思わせる、淡いパステル×半透明×光沢のガラス質アイコン。
+   色はvariantクラス側で --icon-a/--icon-b（グラデーション）だけを差し替える設計にし、
+   線の太さ・角丸・余白・影の付き方は全アイコンで完全に統一する。
+   円の背景はどのテーマでも淡いパステルなので、currentColorで描かれた線画アイコンは
    var(--text)ではなく固定の濃紺にする（ダークテーマだと文字色が明るく、淡い背景の
-   上でアイコンがほとんど見えなくなるため）。白抜きが必要な株価などは
+   上でアイコンがほとんど見えなくなるため）。白抜きが必要なものは
    .launcher-icon-*側でcolorを上書きしている */
-.sheet-grid-icon{width:min(68px,100%);aspect-ratio:1/1;border-radius:50%;color:#0f172a;
-  display:flex;align-items:center;justify-content:center;
-  border:1px solid rgba(15,23,42,.06);background:linear-gradient(150deg,#f8fafc,#e2e8f0);
-  box-shadow:0 6px 16px rgba(15,23,42,.12),inset 0 1px 0 rgba(255,255,255,.6);}
+.sheet-grid-icon{position:relative;width:min(68px,100%);aspect-ratio:1/1;border-radius:50%;color:#0f172a;
+  display:flex;align-items:center;justify-content:center;overflow:hidden;isolation:isolate;
+  border:1px solid rgba(255,255,255,.65);
+  background:linear-gradient(155deg,var(--icon-a,#f8fafc),var(--icon-b,#e2e8f0));
+  backdrop-filter:blur(16px) saturate(160%);-webkit-backdrop-filter:blur(16px) saturate(160%);
+  box-shadow:0 2px 7px rgba(15,23,42,.08),0 0 0 1px rgba(15,23,42,.03),inset 0 1px 0 rgba(255,255,255,.55);
+  transition:box-shadow .24s cubic-bezier(.22,1,.36,1);}
+/* 上部に淡い光沢（ハイライト）を重ね、ガラスのような透明感を演出する */
+.sheet-grid-icon::before{content:"";position:absolute;inset:0;border-radius:inherit;pointer-events:none;z-index:0;
+  background:radial-gradient(120% 85% at 30% 4%,rgba(255,255,255,.85),rgba(255,255,255,0) 58%);
+  mix-blend-mode:soft-light;}
+.sheet-grid-item:active .sheet-grid-icon{
+  box-shadow:0 12px 20px -6px rgba(15,23,42,.22),0 0 0 1px rgba(15,23,42,.04),inset 0 1px 0 rgba(255,255,255,.7);}
 /* アイコン素材（SVG・絵文字・MSロゴ）はリスト表示時の21px前提で作られているため、
    丸型アイコンの中で見栄えするサイズへこのグリッド内だけで拡大する */
+.sheet-grid-icon svg,.sheet-grid-icon .launcher-emoji,.sheet-grid-icon .ms-logo-grid{position:relative;z-index:1;}
 .sheet-grid-icon svg{width:30px;height:30px;}
 .sheet-grid-icon .launcher-emoji{font-size:29px;}
 .sheet-grid-icon .ms-logo-grid{width:28px;height:28px;gap:3px;}
+/* 「各種機能」シートの10項目は、線画SVGではなくユーザー提供のイラストアイコン
+   画像（円の背景も含めて画像に焼き込み済み）をそのまま表示する。共通のガラス質
+   枠線・光沢・影は二重表示を避けるためこのモディファイアで打ち消すが、背景の
+   パステルグラデーションだけは残し、画像が読み込めなかった場合のフォールバック
+   （空白の円になるのを防ぐ）として機能させる */
+.sheet-grid-icon.sheet-grid-icon-photo{border:none;
+  backdrop-filter:none;-webkit-backdrop-filter:none;box-shadow:none;}
+.sheet-grid-icon.sheet-grid-icon-photo::before{content:none;}
+.sheet-grid-item:active .sheet-grid-icon.sheet-grid-icon-photo{
+  box-shadow:0 8px 16px -4px rgba(15,23,42,.18);}
+.sheet-grid-photo{position:relative;z-index:1;width:100%;height:100%;display:block;object-fit:contain;}
 /* 長いラベル（「ライト消しパズル」等）は2行に折り返す。overflow-wrap:break-word
    （anywhereではない）＋line-break:strictで日本語の禁則処理（行頭に「ー」「ッ」等が
    来ない）を効かせ、word-break:auto-phrase／text-wrap:prettyで文節寄りかつ最終行に
@@ -502,8 +528,8 @@ h1.title.title--badge{margin:2px 0 0;}
   .sheet-grid-item{opacity:1;animation:none;}
   .sheet-grid-inner{transition:none;}
 }
-.launcher-icon-playground{background:linear-gradient(150deg,#ecfeff,#a5f3fc);box-shadow:0 5px 14px rgba(8,145,178,.20),inset 0 1px 0 rgba(255,255,255,.6);}
-.launcher-icon-scenario{background:linear-gradient(150deg,#fff7ed,#fed7aa);box-shadow:0 5px 14px rgba(217,119,6,.20),inset 0 1px 0 rgba(255,255,255,.6);}
+.launcher-icon-playground{--icon-a:#ecfeff;--icon-b:#a5f3fc;}
+.launcher-icon-scenario{--icon-a:#fff7ed;--icon-b:#fed7aa;}
 
 /* ===== 📰 今日のニュース検定（.modal-ov/.modalを土台に使う） ===== */
 .nq-modal{text-align:center;}
@@ -1231,12 +1257,14 @@ h1.title.title--badge{margin:2px 0 0;}
 .ms-logo-btn:active{transform:scale(.90);box-shadow:0 2px 6px rgba(15,23,42,.14),inset 0 1px 0 rgba(255,255,255,.6);}
 /* カテゴリごとのグラデーション配色。角丸スクエア＋シャドウでスタイリッシュに統一しつつ、
    一目でジャンルを識別できるようアクセントカラーだけ変える */
-.launcher-icon-news-jp{background:linear-gradient(150deg,#fff1f2,#fecaca);box-shadow:0 5px 14px rgba(220,38,38,.20),inset 0 1px 0 rgba(255,255,255,.6);}
-.launcher-icon-news-world{background:linear-gradient(150deg,#eff6ff,#bfdbfe);box-shadow:0 5px 14px rgba(37,99,235,.20),inset 0 1px 0 rgba(255,255,255,.6);}
-.launcher-icon-stock{background:linear-gradient(150deg,#6ee7a0,#34a866);border-color:transparent;color:#fff;box-shadow:0 5px 14px rgba(52,168,102,.24),inset 0 1px 0 rgba(255,255,255,.3);}
-.launcher-icon-calendar{background:linear-gradient(150deg,#eff6ff,#dbeafe);box-shadow:0 5px 14px rgba(37,99,235,.16),inset 0 1px 0 rgba(255,255,255,.6);}
-.launcher-icon-ms{background:linear-gradient(150deg,#ffffff,#eef2f7);box-shadow:0 5px 14px rgba(15,23,42,.12),inset 0 1px 0 rgba(255,255,255,.7);}
-.launcher-icon-lpic{background:linear-gradient(150deg,#fef3c7,#fcd34d);box-shadow:0 5px 14px rgba(217,119,6,.22),inset 0 1px 0 rgba(255,255,255,.5);}
+.launcher-icon-news-jp{--icon-a:#fff1f2;--icon-b:#fecaca;}
+.launcher-icon-news-world{--icon-a:#eff6ff;--icon-b:#bfdbfe;}
+/* 株価だけ塗りつぶし濃色にせず、他アイコンと同じ淡いパステル背景に統一し、
+   線画自体をグリーンにして「上昇」を伝える */
+.launcher-icon-stock{--icon-a:#ecfdf5;--icon-b:#bbf7d0;color:#0f9d58;}
+.launcher-icon-calendar{--icon-a:#eff6ff;--icon-b:#dbeafe;}
+.launcher-icon-ms{--icon-a:#ffffff;--icon-b:#eef2f7;}
+.launcher-icon-lpic{--icon-a:#fef3c7;--icon-b:#fcd34d;}
 .ms-logo-grid{display:grid;grid-template-columns:1fr 1fr;grid-template-rows:1fr 1fr;gap:2px;width:21px;height:21px;}
 .ms-logo-sq{border-radius:2px;}
 .ms-logo-sq.r{background:#f25022;}
@@ -1268,21 +1296,21 @@ h1.title.title--badge{margin:2px 0 0;}
 /* ⚙️ 設定ボタン：カレンダーボタンの隣に並ぶ、他の起動アイコンと同じ.ms-logo-btn
    （角丸スクエア）を土台にした専用バリエーション。ニュートラルなスレート系の
    グラデーションで、コンテンツ色（赤/青/緑等）と並んでも「操作系」だとひと目でわかる */
-.launcher-icon-settings{background:linear-gradient(150deg,#f1f5f9,#cbd5e1);box-shadow:0 5px 14px rgba(100,116,139,.20),inset 0 1px 0 rgba(255,255,255,.6);}
+.launcher-icon-settings{--icon-a:#f1f5f9;--icon-b:#cbd5e1;}
 .settings-gear-btn:active{transform:scale(.90);box-shadow:0 2px 6px rgba(100,116,139,.24),inset 0 1px 0 rgba(255,255,255,.6);}
 
 /* 📋 ルールボタン：設定ボタンの隣に並ぶ、同じ.ms-logo-btnベースの専用バリエーション */
-.launcher-icon-rules{background:linear-gradient(150deg,#eef2ff,#c7d2fe);box-shadow:0 5px 14px rgba(79,70,229,.20),inset 0 1px 0 rgba(255,255,255,.6);}
+.launcher-icon-rules{--icon-a:#eef2ff;--icon-b:#c7d2fe;}
 .rules-list-btn:active{transform:scale(.90);box-shadow:0 2px 6px rgba(79,70,229,.24),inset 0 1px 0 rgba(255,255,255,.6);}
 
 /* 🎵 イントロドンボタン：同じ.ms-logo-btnベースの専用バリエーション */
-.launcher-icon-introquiz{background:linear-gradient(150deg,#fae8ff,#f0abfc);box-shadow:0 5px 14px rgba(162,28,175,.22),inset 0 1px 0 rgba(255,255,255,.6);}
-.launcher-icon-chappy{background:linear-gradient(150deg,#eaf7ff,#bfe6fb);box-shadow:0 5px 14px rgba(124,199,240,.28),inset 0 1px 0 rgba(255,255,255,.6);}
+.launcher-icon-introquiz{--icon-a:#fae8ff;--icon-b:#f0abfc;}
+.launcher-icon-chappy{--icon-a:#eaf7ff;--icon-b:#bfe6fb;}
 
 /* 💡 ライト消しパズル：点灯／消灯を連想させる淡いアンバー系 */
-.launcher-icon-lightpuzzle{background:linear-gradient(150deg,#fffbeb,#fde68a);box-shadow:0 5px 14px rgba(217,119,6,.20),inset 0 1px 0 rgba(255,255,255,.6);}
+.launcher-icon-lightpuzzle{--icon-a:#fffbeb;--icon-b:#fde68a;}
 /* 🃏 カードゲーム：テーブルゲームらしい淡いエメラルド系 */
-.launcher-icon-valuegame{background:linear-gradient(150deg,#f0fdf4,#bbf7d0);box-shadow:0 5px 14px rgba(16,185,129,.22),inset 0 1px 0 rgba(255,255,255,.6);}
+.launcher-icon-valuegame{--icon-a:#f0fdf4;--icon-b:#bbf7d0;}
 
 /* 「MS」「LPIC」の2項目を1枚のカードに横並びで表示する行。
    外枠は.ms-cert-cardを流用し、中身だけ.launcher-item2個を等間隔で

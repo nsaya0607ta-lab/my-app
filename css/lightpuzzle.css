@@ -7,7 +7,9 @@
    はっきりコントラストを付ける。絵文字は使用しない。
    ========================================================================= */
 
-.launcher-icon-lightpuzzle{ background:linear-gradient(150deg,#fef3c7,#fbbf24); box-shadow:0 5px 14px rgba(217,119,6,.25), inset 0 1px 0 rgba(255,255,255,.6); }
+/* アイコンの見た目そのもの（ガラス質の背景・影・光沢）はcss/style.cssの
+   .sheet-grid-icon側で全アイコン共通に定義しているため、ここでは配色だけを指定する */
+.launcher-icon-lightpuzzle{ --icon-a:#fffbeb; --icon-b:#fde68a; }
 
 .lp-root{ display:flex; flex-direction:column; }
 
