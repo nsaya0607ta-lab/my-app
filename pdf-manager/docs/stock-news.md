@@ -189,18 +189,40 @@ npm run deploy:rules      # = firebase deploy --only firestore:rules
 **Firebase コンソール → Storage → Rules** に貼り付けて公開してください。
 `users/{userId}/stock-reports/{fileName}` のブロックが今回の追加分です。
 
-### 6-3. 複合インデックス
+### 6-3. 複合インデックス（後回しで構いません）
 
-`users/{uid}/stockReports` を `importState` と `cleanupAt` で絞り込む
-コレクショングループクエリに必要です。
+必要なのは 1 つだけです。
 
-```bash
-npx firebase-tools deploy --only firestore:indexes --project my-az900-app
-# ※ 定義は pdf-manager/firebase/firestore.indexes.json
+| コレクショングループ | フィールド | 用途 |
+| --- | --- | --- |
+| `stockReports` | `importState`（昇順）＋ `cleanupAt`（昇順） | 端末へ取り込み済みのPDFを保管領域から片付ける処理 |
+
+> このインデックスが無くても、**レポートの生成・保存・取り込みはすべて動きます**。
+> 影響を受けるのは後片付け処理だけで、その場合 Actions のログにエラーと
+> 「インデックスを作成する」リンクが出ます。
+
+**推奨：リンクをクリックする**
+定期処理を 1 回動かし、Actions のログに出る `https://console.firebase.google.com/...create_composite=...`
+を開いて「作成」を押すのが、いちばん確実で手戻りがありません。
+
+**または：コンソールで手作業で作る**
+Firebase コンソール → Firestore Database → **インデックス** → 複合 → インデックスを作成
+- コレクションID: `stockReports`
+- フィールド: `importState`（昇順）→ `cleanupAt`（昇順）
+- クエリのスコープ: **コレクショングループ**
+
+**CLI は現状そのままでは使えません。**
+リポジトリ直下の `firebase.json` には `firestore.indexes` の指定が無いため、
+`firebase deploy --only firestore:indexes` を実行しても何も反映されません。
+CLI で配りたい場合は `firebase.json` に
+
+```json
+{ "firestore": { "rules": "firestore.rules", "indexes": "pdf-manager/firebase/firestore.indexes.json" } }
 ```
 
-未作成のまま定期処理が動いた場合、後片付け処理だけがエラーになり、
-コンソールのログに作成用リンクが表示されます（レポート生成自体は動きます）。
+を追記する必要がありますが、そのファイルに載っていない既存のインデックス
+（このリポジトリの他機能でコンソールに手作業で作ったもの）が
+削除対象として提示される場合があります。上の 2 つの方法のほうが安全です。
 
 Firebase Authentication（メール／パスワード）が有効になっている必要があります。
 定期取得はユーザー単位で動くため、**アプリの設定画面からクラウド連携（ログイン）を有効にする**ことが前提です。
