@@ -161,6 +161,25 @@ export function buildGeminiPdfHtml(options: {
 </html>`;
 }
 
+async function waitForLayout(): Promise<void> {
+  if (document.fonts?.ready) await document.fonts.ready;
+  await new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve())));
+}
+
+/**
+ * iOS Safariにはcanvasの辺長・総画素数の上限があるため、長い資料を常にscale=2で
+ * 描画すると末尾が欠落する。実際の文書寸法から安全な倍率を算出して全ページを残す。
+ */
+function safeCanvasScale(element: HTMLElement): number {
+  const width = Math.max(element.scrollWidth, element.getBoundingClientRect().width, 1);
+  const height = Math.max(element.scrollHeight, element.getBoundingClientRect().height, 1);
+  const maxCanvasArea = 12_000_000;
+  const maxCanvasEdge = 15_000;
+  const byArea = Math.sqrt(maxCanvasArea / (width * height));
+  const byEdge = Math.min(maxCanvasEdge / width, maxCanvasEdge / height);
+  return Math.max(0.5, Math.min(2, byArea, byEdge));
+}
+
 export async function createGeminiPdfBlob(options: {
   title: string;
   chatDate: string;
@@ -177,16 +196,24 @@ export async function createGeminiPdfBlob(options: {
   document.body.append(wrapper);
 
   try {
+    await waitForLayout();
+    const documentElement = wrapper.querySelector<HTMLElement>('.document');
+    if (!documentElement) throw new Error('PDF本文を準備できませんでした');
+    const scale = safeCanvasScale(documentElement);
     const html2pdf = (window as any).html2pdf;
     const worker = html2pdf()
       .set({
         margin: 0,
         image: { type: 'jpeg', quality: 0.98 },
         html2canvas: {
-          scale: 2,
+          scale,
           useCORS: true,
           letterRendering: true,
           backgroundColor: '#ffffff',
+          scrollX: 0,
+          scrollY: 0,
+          windowWidth: documentElement.scrollWidth,
+          windowHeight: documentElement.scrollHeight,
         },
         jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait', compress: true },
         pagebreak: {
@@ -194,7 +221,7 @@ export async function createGeminiPdfBlob(options: {
           avoid: ['table', 'tr', '.code-card', 'blockquote', '.avoid-break'],
         },
       })
-      .from(wrapper.querySelector('.document'));
+      .from(documentElement);
     return (await worker.outputPdf('blob')) as Blob;
   } finally {
     wrapper.remove();
