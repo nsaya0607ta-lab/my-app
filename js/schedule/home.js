@@ -48,6 +48,13 @@ export function renderHomeCard(opts){
   if(!root) return;
   // 繰り返しメニューを開いている間は、その操作が終わるまで描き直さない
   if(isPopupMenuOpen(REPEAT_MENU) && root === lastRoot && root.childElementCount) return;
+  // タスク入力欄にフォーカスがある間も描き直さない。DOMを作り直すと
+  // 入力欄ごと消えてしまい、JSからfocus()をやり直してもiOSでは
+  // ソフトキーボードが再表示されない（＝入力中に勝手にキーボードが
+  // 閉じたように見える）ため、裏の同期・通知チェックなどによる
+  // 再描画では入力を邪魔しないようにする
+  const taskInputFocused = document.activeElement && document.activeElement.id === "sched-task-input" && root.contains(document.activeElement);
+  if(taskInputFocused && root === lastRoot && root.childElementCount) return;
   const options = opts || {};
   const dk = todayKey();
   const now = new Date();
