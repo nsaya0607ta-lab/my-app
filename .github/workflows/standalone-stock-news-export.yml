@@ -1,0 +1,195 @@
+name: 株式ニュースフォルダー独立版の作成
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/standalone-stock-news-export.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  export:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: リポジトリを取得
+        uses: actions/checkout@v5
+
+      - name: Node.jsを準備
+        uses: actions/setup-node@v5
+        with:
+          node-version: 24.x
+
+      - name: 独立リポジトリ用の構成を作成
+        shell: bash
+        run: |
+          set -euo pipefail
+          OUT="$RUNNER_TEMP/stock-news-folder"
+          mkdir -p "$OUT"
+
+          # Next.jsアプリをリポジトリ直下へ移す。
+          rsync -a --delete \
+            --exclude node_modules \
+            --exclude .next \
+            --exclude audit.json \
+            pdf-manager/ "$OUT/"
+
+          # サーバー側の定期取得処理を同じ独立リポジトリへ移す。
+          mkdir -p "$OUT/scripts"
+          cp -R scripts/stock-news "$OUT/scripts/stock-news"
+          cp -R scripts/ionq-report "$OUT/scripts/ionq-report"
+
+          # Firebase設定・ルールも独立側へコピーする。
+          cp firebase.json "$OUT/firebase.json"
+          cp firestore.rules "$OUT/firestore.rules"
+          if [ -f firestore.indexes.json ]; then cp firestore.indexes.json "$OUT/firestore.indexes.json"; fi
+
+          # 旧モノレポの pdf-manager/ 参照を独立版のルート構成へ変更する。
+          grep -RIl "pdf-manager/src" "$OUT/scripts" | xargs -r sed -i 's#../../pdf-manager/src/#../../src/#g'
+          grep -RIl "pdf-manager/public" "$OUT/scripts" | xargs -r sed -i 's#../../pdf-manager/public/#../../public/#g'
+          grep -RIl "pdf-manager/" "$OUT/scripts" | xargs -r sed -i 's#pdf-manager/##g'
+
+          # 独立版用 package.json を生成する。
+          node --input-type=module <<'NODE'
+          import fs from 'node:fs';
+          import path from 'node:path';
+
+          const out = process.env.RUNNER_TEMP + '/stock-news-folder';
+          const app = JSON.parse(fs.readFileSync(path.join(out, 'package.json'), 'utf8'));
+          const root = JSON.parse(fs.readFileSync('package.json', 'utf8'));
+
+          app.name = 'stock-news-folder';
+          app.description = '銘柄別の株式ニュースを収集・整理するPWAアプリ';
+          app.scripts = {
+            ...app.scripts,
+            'stock-news': 'node scripts/stock-news/scheduler.mjs',
+            'stock-news:test': 'node scripts/stock-news/test-core.mjs',
+            'ionq-report': 'node scripts/ionq-report/generate.mjs',
+            'ionq-report:html': 'node scripts/ionq-report/generate.mjs --html'
+          };
+          app.dependencies = {
+            ...app.dependencies,
+            'firebase-admin': root.dependencies['firebase-admin']
+          };
+          app.devDependencies = {
+            ...app.devDependencies,
+            puppeteer: root.devDependencies.puppeteer
+          };
+          fs.writeFileSync(path.join(out, 'package.json'), JSON.stringify(app, null, 2) + '\n');
+          NODE
+
+          # 独立版のActionsを作成する。
+          mkdir -p "$OUT/.github/workflows"
+          cat > "$OUT/.github/workflows/ci.yml" <<'YAML'
+          name: 株式ニュースフォルダー CI
+          on:
+            pull_request:
+            push:
+              branches: [main]
+          permissions:
+            contents: read
+          jobs:
+            verify:
+              runs-on: ubuntu-latest
+              steps:
+                - uses: actions/checkout@v5
+                - uses: actions/setup-node@v5
+                  with:
+                    node-version: 24.x
+                    cache: npm
+                - run: npm ci
+                - run: npm run stock-news:test
+                - run: npm run test:stock
+                - run: npm run typecheck
+                - run: npm run build
+          YAML
+
+          cat > "$OUT/.github/workflows/stock-news-scheduler.yml" <<'YAML'
+          name: 銘柄ニュースの定期取得
+          on:
+            schedule:
+              - cron: '*/10 * * * *'
+            workflow_dispatch:
+          permissions:
+            contents: read
+          concurrency:
+            group: stock-news-scheduler
+            cancel-in-progress: false
+          jobs:
+            generate:
+              runs-on: ubuntu-latest
+              timeout-minutes: 25
+              steps:
+                - uses: actions/checkout@v5
+                - uses: actions/setup-node@v5
+                  with:
+                    node-version: 24.x
+                    cache: npm
+                - name: 日本語フォントを準備
+                  run: |
+                    sudo apt-get update
+                    sudo apt-get install -y --no-install-recommends fonts-noto-cjk
+                - run: npm ci
+                - run: npm run stock-news:test
+                - run: npx puppeteer browsers install chrome
+                - name: 実行時刻を迎えた銘柄のレポートを生成
+                  env:
+                    GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+                    GEMINI_MODEL: ${{ vars.GEMINI_MODEL || 'gemini-3.6-flash' }}
+                    ALPHA_VANTAGE_API_KEY: ${{ secrets.ALPHA_VANTAGE_API_KEY }}
+                    FIREBASE_SERVICE_ACCOUNT_JSON: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_JSON }}
+                    FIREBASE_STORAGE_BUCKET: ${{ vars.FIREBASE_STORAGE_BUCKET || 'my-az900-app.firebasestorage.app' }}
+                  run: npm run stock-news
+          YAML
+
+          cat > "$OUT/MIGRATION.md" <<'MD'
+          # my-app からの切り離し
+
+          このリポジトリは `nsaya0607ta-lab/my-app` の `pdf-manager/` と、
+          株式ニュースの定期処理を独立リポジトリ向けに再構成したものです。
+
+          ## データを維持する条件
+
+          - Vercelでは既存の `stock-news-folder` プロジェクトを継続利用する
+          - 本番ドメイン `https://stock-news-folder.vercel.app` を変更しない
+          - 同じFirebaseプロジェクトと同じコレクション・Storageパスを利用する
+          - 新リポジトリ側の定期処理を有効化後、旧リポジトリ側を停止する
+
+          この条件を守れば、IndexedDB、PWAデータ、Firestore、Cloud Storageの
+          保存済みデータを削除せずに移行できます。
+          MD
+
+          cd "$OUT"
+          npm install --package-lock-only --ignore-scripts
+
+      - name: 独立版を検証
+        working-directory: ${{ runner.temp }}/stock-news-folder
+        run: |
+          npm ci
+          npm run stock-news:test
+          npm run test:stock
+          npm run typecheck
+          npm run build
+
+      - name: Git履歴を初期化
+        working-directory: ${{ runner.temp }}/stock-news-folder
+        run: |
+          git init -b main
+          git config user.name "OpenAI Migration"
+          git config user.email "noreply@openai.com"
+          git add .
+          git commit -m "株式ニュースフォルダーを独立リポジトリ化"
+          git bundle create ../stock-news-folder.bundle --all
+
+      - name: 移行パッケージを保存
+        uses: actions/upload-artifact@v4
+        with:
+          name: stock-news-folder-standalone
+          path: |
+            ${{ runner.temp }}/stock-news-folder
+            ${{ runner.temp }}/stock-news-folder.bundle
+          include-hidden-files: true
+          retention-days: 1
