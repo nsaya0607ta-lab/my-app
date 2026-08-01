@@ -157,19 +157,50 @@ PDF 本体は、これまでどおり既存の `files` / `blobs` ストアへ保
 
 ## 6. Firebase 側で必要な設定
 
+### 6-1. Firestore ルール
+
+`firebase.json` が参照しているのは **リポジトリ直下の `firestore.rules`** です。
+株式ニュース用のルール（`stockSubscriptions` / `stockReports` / `stockReportRuns`）は
+このファイルにも追記済みなので、リポジトリ直下で次を実行すれば反映されます。
+
 ```bash
-# Firestore ルール（銘柄購読・レポート・実行履歴を追加済み）
-npx firebase-tools deploy --only firestore:rules --project my-az900-app
-# ※ ルールファイルは pdf-manager/firebase/gemini.firestore.rules
-
-# Storage ルール（users/{uid}/stock-reports を追加済み）
-npx firebase-tools deploy --only storage --project my-az900-app
-# ※ ルールファイルは pdf-manager/firebase/pdf-cloud-storage.storage.rules
-
-# 複合インデックス
-npx firebase-tools deploy --only firestore:indexes --project my-az900-app
-# ※ pdf-manager/firebase/firestore.indexes.json
+npx firebase-tools login
+npm run deploy:rules      # = firebase deploy --only firestore:rules
 ```
+
+> ⚠️ **反映前に必ず確認してください。**
+> リポジトリ直下の `firestore.rules` には、Gemini 機能のルール
+> （`geminiChats` / `pdfGenerationRules` / `geminiGeneratedPdfs` など）が入っていません。
+> それらは `pdf-manager/firebase/gemini.firestore.rules` に別ファイルとして置かれており、
+> Firebase コンソールへ手作業で反映されている可能性があります。
+> この状態で `npm run deploy:rules` を実行すると、コンソール側のルールが
+> リポジトリ直下の内容で**置き換わり**、Gemini 自動PDFが `permission-denied` になる恐れがあります。
+>
+> 安全な進め方:
+> 1. Firebase コンソール（Firestore Database → ルール）で**現在のルールをコピーして保管**する
+> 2. そこへ `firestore.rules` の「📈 株式ニュースフォルダー」ブロックだけを貼り足して公開する
+>
+> （リポジトリ直下の `firestore.rules` を正としてよい場合のみ、`npm run deploy:rules` を使ってください）
+
+### 6-2. Storage ルール
+
+`firebase.json` に `storage` の設定が無いため、CLI でのデプロイはできません。
+`pdf-manager/firebase/pdf-cloud-storage.storage.rules` の内容を
+**Firebase コンソール → Storage → Rules** に貼り付けて公開してください。
+`users/{userId}/stock-reports/{fileName}` のブロックが今回の追加分です。
+
+### 6-3. 複合インデックス
+
+`users/{uid}/stockReports` を `importState` と `cleanupAt` で絞り込む
+コレクショングループクエリに必要です。
+
+```bash
+npx firebase-tools deploy --only firestore:indexes --project my-az900-app
+# ※ 定義は pdf-manager/firebase/firestore.indexes.json
+```
+
+未作成のまま定期処理が動いた場合、後片付け処理だけがエラーになり、
+コンソールのログに作成用リンクが表示されます（レポート生成自体は動きます）。
 
 Firebase Authentication（メール／パスワード）が有効になっている必要があります。
 定期取得はユーザー単位で動くため、**アプリの設定画面からクラウド連携（ログイン）を有効にする**ことが前提です。

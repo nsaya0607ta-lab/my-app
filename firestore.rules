@@ -43,6 +43,20 @@ service cloud.firestore {
       }
     }
 
+    // ---- 📈 株式ニュースフォルダー ----
+    // 銘柄購読設定・レポート・実行履歴。いずれも本人だけが読み書きできる。
+    // 定期処理（GitHub Actions + Admin SDK）はこのルールの対象外なので、
+    // サーバー側からの書き込みには影響しない。
+    match /users/{uid}/stockSubscriptions/{ticker} {
+      allow read, write: if request.auth != null && request.auth.uid == uid;
+    }
+    match /users/{uid}/stockReports/{reportId} {
+      allow read, write: if request.auth != null && request.auth.uid == uid;
+    }
+    match /users/{uid}/stockReportRuns/{runId} {
+      allow read, write: if request.auth != null && request.auth.uid == uid;
+    }
+
     // ---- 🃏 価値観ゲームの数字：クライアントからは一切読ませない ----
     // ここに入るのは暗号文だが、そもそも読む必要がないので完全に閉じる。
     // 配布・公開はサーバー（Admin SDK）経由でのみ行う。
