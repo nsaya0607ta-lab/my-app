@@ -79,7 +79,15 @@ function GeminiBackdrop() {
   );
 }
 
-export function GeminiWorkspace() {
+export function GeminiWorkspace({
+  showLauncher = true,
+  openSignal = 0,
+}: {
+  /** 右下の起動ボタンを出すか（株式ニュース画面ではAIボタンを別機能に使う）。 */
+  showLauncher?: boolean;
+  /** 値が変わったときに画面を開く（設定画面などから開くために使う）。 */
+  openSignal?: number;
+} = {}) {
   const app = useApp();
   const cloud = useCloudRequired();
   const { files, folders, notify, navigate } = app;
@@ -109,6 +117,12 @@ export function GeminiWorkspace() {
   const sendFingerprint = useRef('');
 
   const uid = cloud.user?.uid;
+
+  // 設定画面などから開く要求を受け取る（初期値の 0 では開かない）。
+  useEffect(() => {
+    if (openSignal > 0) setOpen(true);
+  }, [openSignal]);
+
   const availableDates = useMemo(() => allowedDates(today), [today]);
   const selectedChat = chats.find((chat) => chat.date === selectedDate);
   const activeFiles = useMemo(
@@ -329,6 +343,7 @@ export function GeminiWorkspace() {
   };
 
   if (!open) {
+    if (!showLauncher) return null;
     return (
       <button
         type="button"

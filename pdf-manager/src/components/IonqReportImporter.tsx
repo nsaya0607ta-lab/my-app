@@ -1,18 +1,27 @@
 'use client';
 
+/**
+ * 公開フォルダー（/ionq）にある既存のIONQレポートを取り込む。
+ *
+ * IONQの日次レポートは、共通の銘柄ニュース処理（scripts/stock-news）へ移行した。
+ * ここでは移行前に公開されたPDFを取りこぼさないために残しており、
+ * 取り込み先は他の銘柄と同じ「IONQ」フォルダーにそろえている。
+ */
 import { useEffect, useRef } from 'react';
 import { getPageCount } from '@/lib/pdf';
 import * as repo from '@/lib/repository';
-import { activeFiles, activeFolders, toParentKey } from '@/lib/tree';
-import { ROOT_ID, UNSORTED_ID } from '@/lib/types';
-import type { Folder } from '@/lib/types';
+import { activeFiles, toParentKey } from '@/lib/tree';
+import { nowIso } from '@/lib/naming';
+import { ensureTickerFolder } from '@/lib/stock/folders';
+import { reportId as makeReportId } from '@/lib/stock/core/report.mjs';
+import { listReports, saveReport } from '@/lib/stock/store';
+import type { StockReportEntry } from '@/lib/stock/types';
 import { useApp } from '@/store/AppStore';
+import { useStock } from '@/store/StockStore';
 
 const INDEX_URL = '/ionq/index.json';
 const MAX_PER_RUN = 5;
-const INVESTMENT_FOLDER_NAME = '01_投資';
-const IONQ_REPORT_NAME = /^投資_IQ_\d{8}\.pdf$/;
-const LEGACY_REPORT_NAME = /^\d{4}-\d{2}-\d{2}_IONQデイリーレポート\.pdf$/;
+const IONQ_REPORT_NAME = /^投資_IQ_(\d{4})(\d{2})(\d{2})\.pdf$/;
 
 type IonqReportEntry = {
   id: string;
@@ -40,36 +49,67 @@ function isEntry(value: unknown): value is IonqReportEntry {
   return true;
 }
 
-function reportName(entry: IonqReportEntry): string {
-  return entry.name || entry.file;
-}
-
 /** 同じ日付IDでも再生成されたPDFを区別するため、公開ファイルの版を含める。 */
 function reportKey(entry: IonqReportEntry): string {
   return [entry.id, entry.file, entry.size ?? '', entry.generatedAt ?? ''].join('|');
 }
 
-function normalizedName(value: string): string {
-  return value.trim().toLocaleLowerCase('ja-JP');
+function reportDateOf(entry: IonqReportEntry): string {
+  return entry.id.slice(0, 10);
 }
 
-/** ルート直下にある「01_投資」フォルダーのIDを返す。 */
-function investmentFolderId(folders: Folder[]): string | null {
-  return (
-    activeFolders(folders).find(
-      (folder) =>
-        toParentKey(folder.parentId) === ROOT_ID &&
-        normalizedName(folder.name) === normalizedName(INVESTMENT_FOLDER_NAME),
-    )?.id ?? null
-  );
+/** 内訳データを持たない公開PDFを、レポート一覧に並べられる形にする。 */
+function legacyEntry(input: {
+  fileId: string;
+  fileName: string;
+  folderId: string;
+  reportDate: string;
+  generatedAt?: string;
+}): StockReportEntry {
+  return {
+    reportId: makeReportId('IONQ', input.reportDate),
+    ticker: 'IONQ',
+    companyName: 'IonQ, Inc.',
+    reportDate: input.reportDate,
+    periodFrom: input.reportDate,
+    periodTo: input.reportDate,
+    generatedAt: input.generatedAt ?? nowIso(),
+    fileName: input.fileName,
+    language: 'ja',
+    detail: 'standard',
+    articleCount: 0,
+    headline: '公開フォルダーから取り込んだIONQレポート',
+    summary:
+      'このレポートは、共通のニュース処理へ移行する前に公開されたPDFです。ニュースの内訳データは保存されていないため、内容はPDFでご確認ください。',
+    priceComment: '',
+    importance: 0,
+    sentiment: 'neutral',
+    articles: [],
+    watchItems: [],
+    uncertainties: [],
+    nextEvent: { date: '', title: '' },
+    sources: [],
+    quote: null,
+    fetchedCount: 0,
+    acceptedCount: 0,
+    source: 'scheduled',
+    status: 'ready',
+    version: 1,
+    localFileId: input.fileId,
+    folderId: input.folderId,
+    isRead: false,
+    isFavorite: false,
+    savedAt: nowIso(),
+  };
 }
 
 export function IonqReportImporter() {
   const { ready, fatalError, settings, updateSettings, reload, refreshStorage, notify } = useApp();
+  const { ready: stockReady, reloadStock } = useStock();
   const started = useRef(false);
 
   useEffect(() => {
-    if (!ready || fatalError || started.current) return;
+    if (!ready || !stockReady || fatalError || started.current) return;
     started.current = true;
     let cancelled = false;
 
@@ -85,124 +125,75 @@ export function IonqReportImporter() {
       } catch {
         // 一覧を取得できない場合は、次回起動時に再試行する。
       }
+      if (cancelled || entries.length === 0) return;
 
+      const folder = await ensureTickerFolder('IONQ');
       const importedKeys = new Set(settings.importedReports ?? []);
-      const beforeImport = await repo.refresh();
-
-      // 旧仕様の自動生成レポートは、正式版が公開されている場合だけごみ箱へ移す。
-      let removedLegacy = 0;
-      if (entries.length > 0) {
-        const legacyReports = activeFiles(beforeImport.files).filter(
-          (file) => file.origin === 'report' && LEGACY_REPORT_NAME.test(file.name),
-        );
-        for (const file of legacyReports) {
-          if (cancelled) return;
-          try {
-            await repo.trashFile(file.id);
-            removedLegacy += 1;
-          } catch {
-            // 旧形式の移動に失敗しても正式版の取り込みは続ける。
-          }
-        }
-      }
-
-      let currentSnapshot = removedLegacy > 0 ? await repo.refresh() : beforeImport;
-      const initialDestinationId = investmentFolderId(currentSnapshot.folders);
-
-      // 旧版でルート直下または未分類へ入ったIONQレポートは、次回起動時に移し直す。
-      // ユーザーが別フォルダーへ手動整理したレポートまでは戻さない。
-      let relocated = 0;
-      if (initialDestinationId) {
-        const misplacedReports = activeFiles(currentSnapshot.files).filter((file) => {
-          const parentId = toParentKey(file.parentId);
-          return (
-            file.origin === 'report' &&
-            IONQ_REPORT_NAME.test(file.name) &&
-            (parentId === ROOT_ID || parentId === UNSORTED_ID)
-          );
-        });
-
-        for (const file of misplacedReports) {
-          if (cancelled) return;
-          try {
-            await repo.moveFile(file.id, initialDestinationId, { clearRule: true });
-            relocated += 1;
-          } catch {
-            // 配置変更に失敗した場合は、次回起動時に再試行する。
-          }
-        }
-      }
-
-      if (relocated > 0) currentSnapshot = await repo.refresh();
-
-      const localReportsByName = new Map(
-        activeFiles(currentSnapshot.files)
-          .filter((file) => file.origin === 'report')
-          .map((file) => [normalizedName(file.name), file]),
+      const knownReports = new Set((await listReports()).map((entry) => entry.reportId));
+      const snapshot = await repo.refresh();
+      const localNames = new Map(
+        activeFiles(snapshot.files).map((file) => [file.name.toLocaleLowerCase('ja-JP'), file]),
       );
 
+      // 旧版でルート直下などに入ったIONQレポートを、銘柄フォルダーへそろえる。
+      let relocated = 0;
+      for (const file of activeFiles(snapshot.files)) {
+        if (!IONQ_REPORT_NAME.test(file.name)) continue;
+        if (toParentKey(file.parentId) === folder.id) continue;
+        try {
+          await repo.moveFile(file.id, folder.id, { clearRule: true });
+          relocated += 1;
+        } catch {
+          // 配置変更に失敗した場合は、次回起動時に再試行する。
+        }
+      }
+
       const targets = entries
-        .filter((entry) => {
-          const key = reportKey(entry);
-          if (importedKeys.has(key)) return false;
-
-          const local = localReportsByName.get(normalizedName(reportName(entry)));
-          const legacyIdWasImported = importedKeys.has(entry.id);
-
-          if (legacyIdWasImported && !local) return true;
-          if (legacyIdWasImported && local && entry.size && local.size !== entry.size) return true;
-          return !legacyIdWasImported;
-        })
+        .filter((entry) => !importedKeys.has(reportKey(entry)))
         .sort((a, b) => b.id.localeCompare(a.id))
         .slice(0, MAX_PER_RUN);
 
       const imported: string[] = [];
       let added = 0;
-      let updated = 0;
 
       for (const entry of targets) {
         if (cancelled) return;
         try {
-          const response = await fetch(`/ionq/${entry.file}`, { cache: 'no-store' });
-          if (!response.ok) continue;
-          const blob = await response.blob();
-          if (blob.size === 0) continue;
-          const pageCount = await getPageCount(blob);
-          const expectedName = reportName(entry);
+          const reportDate = reportDateOf(entry);
+          const existingFile = localNames.get(entry.file.toLocaleLowerCase('ja-JP'));
+          let fileId = existingFile?.id;
 
-          const latest = await repo.refresh();
-          const destinationId = investmentFolderId(latest.folders) ?? UNSORTED_ID;
-          const existingReport = activeFiles(latest.files).find(
-            (file) => file.origin === 'report' && normalizedName(file.name) === normalizedName(expectedName),
-          );
-
-          if (existingReport) {
-            if (existingReport.size !== blob.size || existingReport.pageCount !== pageCount) {
-              await repo.replaceFileContent(existingReport.id, blob, { pageCount });
-              updated += 1;
-            }
-            await repo.updateFile(existingReport.id, {
-              tags: [...new Set([...existingReport.tags, 'IONQ', '株式レポート'])],
+          if (!existingFile || (entry.size && existingFile.size !== entry.size)) {
+            const response = await fetch(`/ionq/${encodeURIComponent(entry.file)}`, { cache: 'no-store' });
+            if (!response.ok) continue;
+            const blob = await response.blob();
+            if (blob.size === 0 || !repo.isPdf(blob, entry.file)) continue;
+            const pageCount = await getPageCount(blob).catch(() => undefined);
+            const meta = await repo.addPdf(blob, entry.file, {
+              parentId: folder.id,
+              onDuplicate: 'overwrite',
+              pageCount,
+              origin: 'report',
+              sharedFrom: '株式ニュースフォルダー',
             });
-            if (toParentKey(existingReport.parentId) !== destinationId) {
-              await repo.moveFile(existingReport.id, destinationId, { clearRule: true });
-              relocated += 1;
-            }
-            imported.push(reportKey(entry));
-            continue;
+            await repo.updateFile(meta.id, { tags: ['IONQ', '株式レポート'] });
+            fileId = meta.id;
+            added += 1;
           }
 
-          const meta = await repo.addPdf(blob, expectedName, {
-            // 毎朝生成されるIONQレポートは「01_投資」の直下へ直接配置する。
-            // フォルダーが見つからない場合だけ未分類へ退避する。
-            parentId: destinationId,
-            onDuplicate: 'rename',
-            pageCount,
-            origin: 'report',
-          });
-          await repo.updateFile(meta.id, { tags: ['IONQ', '株式レポート'] });
+          if (fileId && !knownReports.has(makeReportId('IONQ', reportDate))) {
+            await saveReport(
+              legacyEntry({
+                fileId,
+                fileName: entry.file,
+                folderId: folder.id,
+                reportDate,
+                generatedAt: entry.generatedAt,
+              }),
+            );
+            knownReports.add(makeReportId('IONQ', reportDate));
+          }
           imported.push(reportKey(entry));
-          added += 1;
         } catch {
           // 失敗したレポートは取り込み済みにせず、次回起動時に再試行する。
         }
@@ -214,19 +205,14 @@ export function IonqReportImporter() {
         const nextImported = [...new Set([...(settings.importedReports ?? []), ...imported])].slice(-240);
         await updateSettings({ importedReports: nextImported });
       }
-
-      // 分類はFolderRuleRunnerへ集約する。
-      // 起動時はルート直下だけ、以後はユーザーが表示したフォルダーだけを1階層移動する。
-      if (imported.length > 0 || removedLegacy > 0 || relocated > 0) await reload();
-      void refreshStorage();
-
-      const changed = added + updated;
-      if (changed > 0 || removedLegacy > 0 || relocated > 0) {
-        const messages: string[] = [];
-        if (changed > 0) messages.push(`IONQレポートを ${changed} 件取り込み・更新`);
-        if (relocated > 0) messages.push(`${relocated} 件を「${INVESTMENT_FOLDER_NAME}」へ配置`);
-        if (removedLegacy > 0) messages.push(`旧形式を ${removedLegacy} 件ごみ箱へ移動`);
-        notify(`${messages.join('、')}しました`, 'success');
+      if (added > 0 || relocated > 0) {
+        await reload();
+        await reloadStock();
+        void refreshStorage();
+        const parts: string[] = [];
+        if (added > 0) parts.push(`既存のIONQレポートを ${added} 件取り込み`);
+        if (relocated > 0) parts.push(`${relocated} 件を「IONQ」フォルダーへ配置`);
+        notify(`${parts.join('、')}しました`, 'success');
       }
     })();
 
@@ -239,7 +225,9 @@ export function IonqReportImporter() {
     ready,
     refreshStorage,
     reload,
+    reloadStock,
     settings.importedReports,
+    stockReady,
     updateSettings,
   ]);
 

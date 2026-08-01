@@ -1,22 +1,49 @@
 {
-  "name": "PDFフォルダー — スマホでフォルダー管理",
-  "short_name": "PDFフォルダー",
-  "description": "スマートフォンでも、パソコンのエクスプローラーと同じ感覚でPDFをフォルダー管理できるアプリ。",
+  "name": "株式ニュースフォルダー — 銘柄別ニュースレポート",
+  "short_name": "株式ニュース",
+  "description": "追跡したい株式銘柄を登録すると、毎日その銘柄のニュースを整理した日次レポートが自動で作成され、銘柄ごとのフォルダーに保存されます。",
   "lang": "ja",
   "dir": "ltr",
   "start_url": "/",
   "scope": "/",
   "display": "standalone",
-  "display_override": ["standalone", "minimal-ui"],
+  "display_override": [
+    "standalone",
+    "minimal-ui"
+  ],
   "orientation": "portrait-primary",
   "background_color": "#f4f6f8",
   "theme_color": "#f4f6f8",
-  "categories": ["productivity", "utilities"],
+  "categories": [
+    "finance",
+    "news",
+    "productivity"
+  ],
   "icons": [
-    { "src": "/icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
-    { "src": "/icons/icon-256.png", "sizes": "256x256", "type": "image/png", "purpose": "any" },
-    { "src": "/icons/icon-384.png", "sizes": "384x384", "type": "image/png", "purpose": "any" },
-    { "src": "/icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    {
+      "src": "/icons/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/icons/icon-256.png",
+      "sizes": "256x256",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/icons/icon-384.png",
+      "sizes": "384x384",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/icons/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
     {
       "src": "/icons/icon-maskable-512.png",
       "sizes": "512x512",
@@ -35,7 +62,10 @@
       "files": [
         {
           "name": "files",
-          "accept": ["application/pdf", ".pdf"]
+          "accept": [
+            "application/pdf",
+            ".pdf"
+          ]
         }
       ]
     }
@@ -44,7 +74,9 @@
     {
       "action": "/",
       "accept": {
-        "application/pdf": [".pdf"]
+        "application/pdf": [
+          ".pdf"
+        ]
       }
     }
   ]

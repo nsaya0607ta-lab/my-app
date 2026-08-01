@@ -4,10 +4,16 @@
 import { useEffect, useRef, useState } from 'react';
 import {
   ArrowLeft,
+  Archive,
+  Bell,
+  Clock,
   DatabaseBackup,
   HardDrive,
+  History,
   Info,
   Moon,
+  Search,
+  Sparkles,
   Sunrise,
   Trash2,
   Upload,
@@ -21,6 +27,7 @@ import { formatBytes } from '@/lib/format';
 import { ROOT_NAME, SORT_LABELS, pathString } from '@/lib/tree';
 import { ROOT_ID, type SortKey, type ThemeMode, type ViewMode } from '@/lib/types';
 import { useApp } from '@/store/AppStore';
+import { useStock } from '@/store/StockStore';
 import { Button, IconButton, SectionTitle, Spinner, Switch, cx } from '@/components/ui/Primitives';
 import { ConfirmDialog } from '@/components/dialogs/CommonDialogs';
 import { CloudSettings } from '@/components/cloud/CloudSettings';
@@ -69,7 +76,21 @@ function Row({
   );
 }
 
-export function SettingsView() {
+export function SettingsView({
+  onOpenPdfArchive,
+  onOpenPdfSearch,
+  onOpenGemini,
+  onOpenNotifications,
+}: {
+  /** 旧PDFアーカイブを開く。 */
+  onOpenPdfArchive: () => void;
+  /** 旧PDF向けのファイル検索を開く。 */
+  onOpenPdfSearch: () => void;
+  /** Geminiの資料作成画面を開く。 */
+  onOpenGemini: () => void;
+  /** 通知履歴を開く。 */
+  onOpenNotifications: () => void;
+}) {
   const {
     settings,
     updateSettings,
@@ -87,7 +108,7 @@ export function SettingsView() {
   const restoreInput = useRef<HTMLInputElement | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [sheet, setSheet] = useState<
-    'view' | 'sort' | 'theme' | 'retention' | 'versionCount' | 'versionDays' | null
+    'view' | 'sort' | 'theme' | 'retention' | 'versionCount' | 'versionDays' | 'stockTime' | null
   >(null);
   const [confirmWipe, setConfirmWipe] = useState(false);
   const [restoreMode, setRestoreMode] = useState<RestoreMode>('merge');
@@ -106,6 +127,9 @@ export function SettingsView() {
   useEffect(() => {
     void refreshStorage();
   }, [refreshStorage]);
+
+  const stock = useStock();
+  const unreadNotices = stock.notifications.filter((entry) => !entry.isRead).length;
 
   const activeFiles = files.filter((file) => !file.deletedAt).length;
   const activeFolders = folders.filter((folder) => !folder.deletedAt).length;
@@ -154,6 +178,86 @@ export function SettingsView() {
           ) : undefined
         }
       />
+
+      <SectionTitle>株式ニュース</SectionTitle>
+      <div className="bg-surface dark:bg-[#181e26]">
+        <Row
+          label="追跡中の銘柄"
+          description={
+            stock.subscriptions.length === 0
+              ? 'まだありません（ホーム画面の「銘柄追加」から登録できます）'
+              : stock.subscriptions.map((entry) => entry.ticker).join('、')
+          }
+        />
+        <button type="button" className="w-full text-left" onClick={() => setSheet('stockTime')}>
+          <Row label="銘柄追加時の既定の取得時刻" description={settings.stockDefaultTime}>
+            <Clock size={20} className="text-ink-sub" />
+          </Row>
+        </button>
+        <Row
+          label="レポート作成時に端末の通知を出す"
+          description={
+            settings.stockPushEnabled
+              ? '許可済みです'
+              : '未許可です。許可しない場合も、通知履歴から確認できます。'
+          }
+        >
+          <Switch
+            checked={settings.stockPushEnabled}
+            onChange={(value) => {
+              if (value) void stock.enablePushNotifications();
+              else void updateSettings({ stockPushEnabled: false });
+            }}
+            label="レポート作成時に通知を出す"
+          />
+        </Row>
+        <button type="button" className="w-full text-left" onClick={onOpenNotifications}>
+          <Row
+            label="通知履歴"
+            description={unreadNotices > 0 ? `未読 ${unreadNotices} 件` : `${stock.notifications.length} 件`}
+          >
+            <Bell size={20} className="text-ink-sub" />
+          </Row>
+        </button>
+        <button type="button" className="w-full text-left" onClick={() => navigate({ view: 'history' })}>
+          <Row label="実行履歴" description="定期処理の結果・取得件数・エラーを確認します">
+            <History size={20} className="text-ink-sub" />
+          </Row>
+        </button>
+        <p className="px-4 pb-3 text-xs leading-relaxed text-ink-sub dark:text-[#98a3b0]">
+          定時取得はサーバー側（GitHub Actions）で10分ごとに実行され、取得時刻を迎えた銘柄だけを処理します。
+          ブラウザーを閉じていても動作しますが、下の「クラウド連携」でログインしている必要があります。
+        </p>
+      </div>
+
+      <SectionTitle>PDF・そのほかの機能</SectionTitle>
+      <div className="bg-surface dark:bg-[#181e26]">
+        <button type="button" className="w-full text-left" onClick={onOpenPdfArchive}>
+          <Row label="旧PDFアーカイブ" description="株式と関係のない、以前のPDFはこちらにまとめています">
+            <Archive size={20} className="text-ink-sub" />
+          </Row>
+        </button>
+        <button type="button" className="w-full text-left" onClick={onOpenPdfSearch}>
+          <Row label="PDFを検索" description="ファイル名・本文・メモから探します">
+            <Search size={20} className="text-ink-sub" />
+          </Row>
+        </button>
+        <button type="button" className="w-full text-left" onClick={() => navigate({ view: 'recent' })}>
+          <Row label="最近開いたPDF" description="直近に開いたPDFの一覧">
+            <Clock size={20} className="text-ink-sub" />
+          </Row>
+        </button>
+        <button type="button" className="w-full text-left" onClick={onOpenGemini}>
+          <Row label="Geminiで資料を作成" description="チャットの内容からPDFを作る既存機能">
+            <Sparkles size={20} className="text-ink-sub" />
+          </Row>
+        </button>
+        <button type="button" className="w-full text-left" onClick={() => navigate({ view: 'trash' })}>
+          <Row label="ごみ箱" description="削除したレポートとPDFはここにあります">
+            <Trash2 size={20} className="text-ink-sub" />
+          </Row>
+        </button>
+      </div>
 
       <SectionTitle>表示</SectionTitle>
       <div className="bg-surface dark:bg-[#181e26]">
@@ -391,6 +495,29 @@ export function SettingsView() {
             }}
           />
         ))}
+      </BottomSheet>
+
+      {/* 銘柄追加時の既定の取得時刻 */}
+      <BottomSheet
+        open={sheet === 'stockTime'}
+        title="既定の取得時刻"
+        description="新しく銘柄を追加するときの初期値です。追加後は銘柄ごとに変更できます。"
+        onClose={() => setSheet(null)}
+      >
+        <label className="block px-4 py-4">
+          <span className="mb-1 block text-sm text-ink dark:text-[#e6eaef]">取得時刻（Asia/Tokyo）</span>
+          <input
+            type="time"
+            value={settings.stockDefaultTime}
+            onChange={(event) => void updateSettings({ stockDefaultTime: event.target.value })}
+            className="w-full rounded-card border border-line bg-surface px-3 py-2 text-base text-ink dark:border-[#333d49] dark:bg-[#1b222a] dark:text-[#e6eaef]"
+          />
+        </label>
+        <div className="px-4 pb-4">
+          <Button variant="primary" className="w-full" onClick={() => setSheet(null)}>
+            閉じる
+          </Button>
+        </div>
       </BottomSheet>
 
       {/* ごみ箱の保持日数 */}

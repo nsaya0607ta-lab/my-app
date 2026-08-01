@@ -2,34 +2,34 @@
 
 /** 初回起動時のチュートリアル。 */
 import { useState } from 'react';
-import { FilePlus2, FolderPlus, Hand, Share2, ShieldCheck } from 'lucide-react';
+import { Bell, Clock, FolderPlus, Newspaper, ShieldCheck } from 'lucide-react';
 import { Button, cx } from '@/components/ui/Primitives';
 
 const STEPS = [
   {
-    icon: FilePlus2,
-    title: 'PDF追加ボタンからPDFを登録',
-    body: '画面下中央の「PDF追加」から、端末のファイルアプリにあるPDFを選びます。複数まとめて選択できます。',
-  },
-  {
     icon: FolderPlus,
-    title: 'フォルダーを作成して整理',
-    body: 'パソコンのエクスプローラーと同じように、フォルダーの中にサブフォルダーを作って階層で整理できます。',
+    title: '追跡したい銘柄を追加',
+    body: '画面下中央の「銘柄追加」から、ニュースを追いたい銘柄を選びます。一覧にない銘柄は、ティッカーを直接入力しても追加できます。',
   },
   {
-    icon: Hand,
-    title: '長押しで名前変更や移動',
-    body: 'PDFやフォルダーを長押し（または右側の「…」）すると、名前変更・移動・コピー・削除のメニューが開きます。',
+    icon: Clock,
+    title: '取得時刻を決める',
+    body: '既定は毎日8:00（日本時間）です。頻度・時刻・レポートの詳しさは、銘柄ごとにあとから変更できます。',
   },
   {
-    icon: Share2,
-    title: '共有ボタンから端末に書き出す',
-    body: 'PDFは共有シートから他のアプリへ送れます。iPhoneでは「ファイルに保存」、Androidではダウンロードや共有先の選択ができます。',
+    icon: Newspaper,
+    title: '毎日レポートが自動で届く',
+    body: '取得時刻になるとサーバー側でニュースを集め、整理した日次レポートが銘柄フォルダーに保存されます。アプリを閉じていても作成されます。',
+  },
+  {
+    icon: Bell,
+    title: '未読と重要度で見分ける',
+    body: 'レポートには重要度・カテゴリー・ポジティブ／ネガティブの区分が付きます。通知履歴からも作成状況を確認できます。',
   },
   {
     icon: ShieldCheck,
-    title: '大切なPDFはバックアップする',
-    body: 'データはこの端末のブラウザー内に保存されます。設定画面からバックアップファイルを書き出しておくと安心です。',
+    title: '投資助言ではありません',
+    body: 'レポートは公開情報を自動で整理した情報提供資料です。事実とAIによる分析は分けて記載しており、売買を推奨するものではありません。',
   },
 ];
 

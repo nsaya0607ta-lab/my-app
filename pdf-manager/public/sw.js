@@ -10,7 +10,7 @@
  *  - 同じ URL で更新される可能性があるファイル: ネットワーク優先
  */
 
-const CACHE_VERSION = 'v6';
+const CACHE_VERSION = 'v7';
 const CACHE_NAME = `pdf-folder-${CACHE_VERSION}`;
 const CACHE_PREFIX = 'pdf-folder-';
 

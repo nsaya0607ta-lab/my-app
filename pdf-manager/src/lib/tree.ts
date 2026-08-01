@@ -6,7 +6,7 @@
 import { ROOT_ID } from './types';
 import type { ExplorerItem, Folder, PdfFileMeta, SortKey } from './types';
 
-export const ROOT_NAME = 'PDFフォルダー';
+export const ROOT_NAME = '株式ニュースフォルダー';
 
 export function toParentKey(parentId: string | null | undefined): string {
   return parentId ?? ROOT_ID;
@@ -53,7 +53,7 @@ export function breadcrumbs(
   return [{ id: ROOT_ID, name: ROOT_NAME }, ...trail];
 }
 
-/** 「PDFフォルダー ＞ 仕事 ＞ Azure」形式の文字列パス。 */
+/** 「株式ニュースフォルダー ＞ NVDA」形式の文字列パス。 */
 export function pathString(folders: Folder[], folderId: string): string {
   return breadcrumbs(folders, folderId)
     .map((node) => node.name)

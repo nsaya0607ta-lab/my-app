@@ -1,24 +1,12 @@
-name: 火〜土のIONQデイリーレポートPDF
+name: IONQデイリーレポートPDF（公開フォルダー版・予備）
 
+# IONQの日次レポートは、他の銘柄と同じ共通処理
+# （.github/workflows/stock-news-scheduler.yml）へ移行した。
+# このワークフローは、公開フォルダー版（pdf-manager/public/ionq）を
+# 手動で作り直したいときのための予備として残している。
+# 定期実行を止めているのは、同じ日のレポートが二重に作られるのを防ぐため。
 on:
-  schedule:
-    # 日本時間の火〜土7:00に通常実行し、未作成の場合だけ7:10・7:20・7:30に再試行する。
-    - cron: '0 7 * * 2-6'
-      timezone: 'Asia/Tokyo'
-    - cron: '10 7 * * 2-6'
-      timezone: 'Asia/Tokyo'
-    - cron: '20 7 * * 2-6'
-      timezone: 'Asia/Tokyo'
-    - cron: '30 7 * * 2-6'
-      timezone: 'Asia/Tokyo'
   workflow_dispatch:
-  # ワークフローまたは生成処理を変更した際は、当日分を即時確認・生成する。
-  push:
-    branches:
-      - main
-    paths:
-      - '.github/workflows/ionq-report.yml'
-      - 'scripts/ionq-report/**'
 
 concurrency:
   group: ionq-daily-report

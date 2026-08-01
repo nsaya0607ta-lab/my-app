@@ -43,13 +43,8 @@ export type Snapshot = {
   settings: Settings;
 };
 
+// 銘柄フォルダーは購読を追加したときに作るため、初回は受け皿だけを用意する。
 const INITIAL_FOLDERS: { id?: string; name: string; color: FolderColor }[] = [
-  { name: '仕事', color: 'yellow' },
-  { name: '学習', color: 'yellow' },
-  { name: '資格', color: 'yellow' },
-  { name: 'マニュアル', color: 'yellow' },
-  { name: '契約書', color: 'yellow' },
-  { name: 'その他', color: 'yellow' },
   { id: UNSORTED_ID, name: '未分類', color: 'gray' },
 ];
 

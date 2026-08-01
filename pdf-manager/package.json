@@ -14,7 +14,8 @@
     "lint": "eslint .",
     "typecheck": "tsc --noEmit",
     "test:cloud": "node scripts/test-cloud-storage.cjs",
-    "test:classify": "node scripts/test-auto-classify.cjs"
+    "test:classify": "node scripts/test-auto-classify.cjs",
+    "test:stock": "node scripts/test-stock-news.mjs"
   },
   "dependencies": {
     "fflate": "^0.8.2",

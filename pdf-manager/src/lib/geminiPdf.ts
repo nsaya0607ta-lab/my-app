@@ -1,47 +1,7 @@
 'use client';
 
 import { escapeHtml, markdownToSafeHtml, parseMarkdown } from './geminiMarkdown';
-
-const HTML2PDF_URL =
-  'https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js';
-
-/* eslint-disable @typescript-eslint/no-explicit-any */
-let loader: Promise<void> | null = null;
-
-function loadHtml2Pdf(): Promise<void> {
-  if ((window as any).html2pdf) return Promise.resolve();
-  if (loader) return loader;
-
-  const promise = new Promise<void>((resolve, reject) => {
-    const existing = document.querySelector<HTMLScriptElement>(`script[src="${HTML2PDF_URL}"]`);
-    if (existing) {
-      existing.addEventListener('load', () => resolve(), { once: true });
-      existing.addEventListener(
-        'error',
-        () => reject(new Error('PDF作成ライブラリを読み込めませんでした')),
-        { once: true },
-      );
-      return;
-    }
-
-    const script = document.createElement('script');
-    script.src = HTML2PDF_URL;
-    script.async = true;
-    script.addEventListener('load', () => resolve(), { once: true });
-    script.addEventListener(
-      'error',
-      () => reject(new Error('PDF作成ライブラリを読み込めませんでした')),
-      { once: true },
-    );
-    document.head.append(script);
-  }).catch((error) => {
-    loader = null;
-    throw error;
-  });
-
-  loader = promise;
-  return promise;
-}
+import { htmlToPdfBlob } from './htmlToPdf';
 
 function toc(markdown: string): string {
   const headings = parseMarkdown(markdown).filter(
@@ -148,7 +108,7 @@ export function buildGeminiPdfHtml(options: {
     <div class="meta-grid">
       <div><strong>対象日：</strong>${escapeHtml(options.chatDate)}</div>
       <div><strong>作成日：</strong>${escapeHtml(created)}</div>
-      <div><strong>作成元：</strong>PDFフォルダー内 Gemini チャット</div>
+      <div><strong>作成元：</strong>株式ニュースフォルダー内 Gemini チャット</div>
     </div>
   </section>
   <main>
@@ -167,36 +127,8 @@ export async function createGeminiPdfBlob(options: {
   markdown: string;
   documentType?: string;
 }): Promise<Blob> {
-  await loadHtml2Pdf();
-  const wrapper = document.createElement('div');
-  wrapper.style.position = 'fixed';
-  wrapper.style.left = '-100000px';
-  wrapper.style.top = '0';
-  wrapper.style.width = '210mm';
-  wrapper.innerHTML = buildGeminiPdfHtml(options);
-  document.body.append(wrapper);
-
-  try {
-    const html2pdf = (window as any).html2pdf;
-    const worker = html2pdf()
-      .set({
-        margin: 0,
-        image: { type: 'jpeg', quality: 0.98 },
-        html2canvas: {
-          scale: 2,
-          useCORS: true,
-          letterRendering: true,
-          backgroundColor: '#ffffff',
-        },
-        jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait', compress: true },
-        pagebreak: {
-          mode: ['css', 'legacy'],
-          avoid: ['table', 'tr', '.code-card', 'blockquote', '.avoid-break'],
-        },
-      })
-      .from(wrapper.querySelector('.document'));
-    return (await worker.outputPdf('blob')) as Blob;
-  } finally {
-    wrapper.remove();
-  }
+  return htmlToPdfBlob(buildGeminiPdfHtml(options), {
+    selector: '.document',
+    avoid: ['table', 'tr', '.code-card', 'blockquote', '.avoid-break'],
+  });
 }

@@ -37,13 +37,23 @@ import {
 import { toParentKey } from '@/lib/tree';
 
 export type Route =
+  /** 銘柄フォルダーを並べるホーム画面。 */
   | { view: 'home' }
+  /** 1銘柄のレポート一覧。 */
+  | { view: 'ticker'; ticker: string }
+  /** 今日のニュース（全銘柄の横断表示）。 */
+  | { view: 'today' }
+  /** 定期処理の実行履歴。 */
+  | { view: 'history' }
+  /** 旧PDFアーカイブなど、通常のフォルダー表示。 */
   | { view: 'folder'; folderId: string }
   | { view: 'recent' }
   | { view: 'favorites' }
   | { view: 'trash' }
   | { view: 'settings' }
   | { view: 'search' }
+  /** 旧PDFアーカイブ向けのファイル検索。 */
+  | { view: 'pdfSearch' }
   | { view: 'rules' };
 
 export type Toast = { id: number; message: string; tone: 'info' | 'error' | 'success' };
