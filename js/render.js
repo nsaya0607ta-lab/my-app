@@ -4455,31 +4455,10 @@ export function renderGeminiEditEvent(){
 
 }
 
-// Microsoftロゴ（4色の田の字）をイメージした角丸スクエアアイコン。学習シートのMicrosoft項目で使う
-const MS_LOGO_ICON_HTML = `<span class="ms-logo-grid">
-      <span class="ms-logo-sq r"></span>
-      <span class="ms-logo-sq g"></span>
-      <span class="ms-logo-sq b"></span>
-      <span class="ms-logo-sq y"></span>
-    </span>`;
-
-// LPIC（Linux技術者認定）をイメージしたペンギン（Linuxの象徴）アイコン。プレースホルダー的な絵文字表現。
-const LPIC_LOGO_ICON_HTML = `<span class="launcher-emoji" aria-hidden="true">🐧</span>`;
-
-// Linuxプレイグラウンド（既存のターミナル風サンドボックス画面）用アイコン。
-// 旧「プレイグラウンド」タブのSVGをそのまま踏襲する
-const PLAYGROUND_LAUNCHER_ICON_SVG = `
-  <svg viewBox="0 0 24 24" width="21" height="21" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-    <rect x="3" y="4.5" width="18" height="15" rx="2.4"></rect><path d="m7 9.5 3 2.7-3 2.7"></path><path d="M12.5 15h4.5"></path>
-  </svg>`;
-
-// シナリオモード（実務の依頼を読んで自分でコマンドを組み立てる学習モード）用アイコン
-const SCENARIO_LAUNCHER_ICON_HTML = `<span class="launcher-emoji" aria-hidden="true">🧑‍💼</span>`;
-
-// J-NEWS/F-NEWS/株価/カレンダー/イントロドン/設定/ルールで使うアイコン群。
-// ユーザーから提供されたリファレンス画像（イラスト風のアイコン一式）をそのまま
-// 切り出したPNGをassets/icon/quickmenu/配下に置き、線画SVGではなくこの画像を
-// そのまま表示する（背景の円もアイコンごと画像に焼き込み済み）
+// J-NEWS/F-NEWS/株価/カレンダー/イントロドン/設定/ルール／学習シートの各項目で
+// 使うアイコン群。ユーザーから提供されたリファレンス画像（イラスト風のアイコン
+// 一式）をそのまま切り出したPNGをassets/icon/quickmenu/配下に置き、線画SVGや
+// 絵文字ではなくこの画像をそのまま表示する（背景の円もアイコンごと画像に焼き込み済み）
 function quickMenuPhotoIconHTML(name){
   return `<img class="sheet-grid-photo" src="assets/icon/quickmenu/${name}.png" alt="" width="68" height="68" loading="lazy">`;
 }
@@ -4701,10 +4680,10 @@ export function openQuickMenuSheet(){
 }
 
 const STUDY_MENU_ITEMS = [
-  { key: "certs", icon: MS_LOGO_ICON_HTML, label: "Microsoft", variant: "ms" },
-  { key: "lpic-certs", icon: LPIC_LOGO_ICON_HTML, label: "Linux(LPIC)", variant: "lpic" },
-  { key: "playground", icon: PLAYGROUND_LAUNCHER_ICON_SVG, label: "Linuxプレイグラウンド", variant: "playground" },
-  { key: "scenario", icon: SCENARIO_LAUNCHER_ICON_HTML, label: "シナリオモード", variant: "scenario" },
+  { key: "certs", icon: quickMenuPhotoIconHTML("study-ms"), label: "Microsoft", variant: "ms", photo: true },
+  { key: "lpic-certs", icon: quickMenuPhotoIconHTML("study-lpic"), label: "Linux(LPIC)", variant: "lpic", photo: true },
+  { key: "playground", icon: quickMenuPhotoIconHTML("study-playground"), label: "Linuxプレイグラウンド", variant: "playground", photo: true },
+  { key: "scenario", icon: quickMenuPhotoIconHTML("study-scenario"), label: "シナリオモード", variant: "scenario", photo: true },
 ];
 
 export function openStudyMenuSheet(){

@@ -495,12 +495,9 @@ h1.title.title--badge{margin:2px 0 0;}
   mix-blend-mode:soft-light;}
 .sheet-grid-item:active .sheet-grid-icon{
   box-shadow:0 12px 20px -6px rgba(15,23,42,.22),0 0 0 1px rgba(15,23,42,.04),inset 0 1px 0 rgba(255,255,255,.7);}
-/* アイコン素材（SVG・絵文字・MSロゴ）はリスト表示時の21px前提で作られているため、
+/* アイコン素材（SVG）はリスト表示時の21px前提で作られているため、
    丸型アイコンの中で見栄えするサイズへこのグリッド内だけで拡大する */
-.sheet-grid-icon svg,.sheet-grid-icon .launcher-emoji,.sheet-grid-icon .ms-logo-grid{position:relative;z-index:1;}
-.sheet-grid-icon svg{width:30px;height:30px;}
-.sheet-grid-icon .launcher-emoji{font-size:29px;}
-.sheet-grid-icon .ms-logo-grid{width:28px;height:28px;gap:3px;}
+.sheet-grid-icon svg{position:relative;z-index:1;width:30px;height:30px;}
 /* 「各種機能」シートの10項目は、線画SVGではなくユーザー提供のイラストアイコン
    画像（円の背景も含めて画像に焼き込み済み）をそのまま表示する。共通のガラス質
    枠線・光沢・影は二重表示を避けるためこのモディファイアで打ち消すが、背景の
@@ -1265,13 +1262,6 @@ h1.title.title--badge{margin:2px 0 0;}
 .launcher-icon-calendar{--icon-a:#eff6ff;--icon-b:#dbeafe;}
 .launcher-icon-ms{--icon-a:#ffffff;--icon-b:#eef2f7;}
 .launcher-icon-lpic{--icon-a:#fef3c7;--icon-b:#fcd34d;}
-.ms-logo-grid{display:grid;grid-template-columns:1fr 1fr;grid-template-rows:1fr 1fr;gap:2px;width:21px;height:21px;}
-.ms-logo-sq{border-radius:2px;}
-.ms-logo-sq.r{background:#f25022;}
-.ms-logo-sq.g{background:#7fba00;}
-.ms-logo-sq.b{background:#00a4ef;}
-.ms-logo-sq.y{background:#ffb900;}
-.launcher-emoji{font-size:21px;line-height:1;}
 
 /* アイコン＋テキスト1組の最小単位。単独カード（MS）では.ms-cert-card直下に
    1つだけ、統合カード（.home-launcher-row）では複数が横並びで使われる */
