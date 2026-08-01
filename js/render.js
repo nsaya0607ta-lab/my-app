@@ -4476,48 +4476,75 @@ const PLAYGROUND_LAUNCHER_ICON_SVG = `
 // シナリオモード（実務の依頼を読んで自分でコマンドを組み立てる学習モード）用アイコン
 const SCENARIO_LAUNCHER_ICON_HTML = `<span class="launcher-emoji" aria-hidden="true">🧑‍💼</span>`;
 
-// J-NEWS/F-NEWS/株価/カレンダー/イントロドン/設定/ルールで使うアイコン群
-const STOCK_LAUNCHER_ICON_SVG = `
-  <svg viewBox="0 0 24 24" width="21" height="21" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round">
-    <polyline points="3 17 9.5 10.5 13.5 14.5 21 6"></polyline>
-    <polyline points="14.5 6 21 6 21 12.5"></polyline>
-  </svg>`;
-// Googleカレンダーのアプリアイコンを思わせる「今日の日付を表示する
-// カレンダー」デザイン（青いヘッダーバー＋今日の日付の数字）。予定管理
-// アイコン（線画のみ）とは見た目を分け、単独の「カレンダー」画面への
-// 入口だと一目でわかるようにする
-const CALENDAR_APP_LAUNCHER_ICON_SVG = `
-  <svg viewBox="0 0 24 24" width="21" height="21">
-    <rect x="2.5" y="4" width="19" height="17" rx="3" fill="#ffffff" stroke="var(--line)" stroke-width="1.2"></rect>
-    <path d="M2.5 7a3 3 0 0 1 3-3h13a3 3 0 0 1 3 3v2H2.5V7z" fill="#4285f4"></path>
-    <line x1="7.5" y1="2" x2="7.5" y2="6.5" stroke="#1a56c4" stroke-width="1.7" stroke-linecap="round"></line>
-    <line x1="16.5" y1="2" x2="16.5" y2="6.5" stroke="#1a56c4" stroke-width="1.7" stroke-linecap="round"></line>
-    <text x="12" y="18" text-anchor="middle" font-size="9" font-weight="700" fill="#3c4043" font-family="Arial, sans-serif">${new Date().getDate()}</text>
+// J-NEWS/F-NEWS/株価/カレンダー/イントロドン/設定/ルールで使うアイコン群。
+// Apple純正アプリを思わせる「線画ベース＋均一な線の太さ（1.6）＋最小限のアクセント
+// カラー」で統一し、丸背景の色だけでジャンルを見分けられるようにしている
+const ICON_STROKE = "1.6";
+
+// 日本のニュース：日の丸（赤い太陽）を載せた新聞のミニマルな線画
+const NEWS_JP_LAUNCHER_ICON_SVG = `
+  <svg viewBox="0 0 24 24" width="21" height="21" fill="none" stroke="currentColor" stroke-width="${ICON_STROKE}" stroke-linecap="round" stroke-linejoin="round">
+    <rect x="4" y="4" width="16" height="16" rx="3.2"></rect>
+    <circle cx="12" cy="10.3" r="3" fill="#e0483e" stroke="none"></circle>
+    <path d="M7.4 16.1h9.2"></path>
+    <path d="M7.4 18.5h6"></path>
   </svg>`;
 
-// 設定（ギア）専用アイコン
+// 海外ニュース：緯度・経度線を持つ地球儀＋右上の速報バッジ（アクセントは1色のみ）
+const NEWS_WORLD_LAUNCHER_ICON_SVG = `
+  <svg viewBox="0 0 24 24" width="21" height="21" fill="none" stroke="currentColor" stroke-width="${ICON_STROKE}" stroke-linecap="round" stroke-linejoin="round">
+    <circle cx="10.4" cy="13.6" r="7.2"></circle>
+    <ellipse cx="10.4" cy="13.6" rx="3.1" ry="7.2"></ellipse>
+    <path d="M3.4 13.6h14"></path>
+    <path d="M4.5 9.5h11.8"></path>
+    <path d="M4.5 17.7h11.8"></path>
+    <circle cx="18" cy="5.6" r="2.7" fill="#2563eb" stroke="none"></circle>
+    <path d="M18 4.3v1.5l1 .9" stroke="#fff" stroke-width="1.3"></path>
+  </svg>`;
+
+// 株価：シンプルな上昇折れ線＋矢印（アクセント色は背景側のグラデーションに任せる）
+const STOCK_LAUNCHER_ICON_SVG = `
+  <svg viewBox="0 0 24 24" width="21" height="21" fill="none" stroke="currentColor" stroke-width="${ICON_STROKE}" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M3.4 17.6 9 11.5l3.8 3.5 7.8-8.3"></path>
+    <path d="M14.8 6.5h5.8v5.8"></path>
+  </svg>`;
+
+// カレンダー：ミニマルな線画のカレンダー（「今日」を示す小さなドットのみアクセント）
+const CALENDAR_APP_LAUNCHER_ICON_SVG = `
+  <svg viewBox="0 0 24 24" width="21" height="21" fill="none" stroke="currentColor" stroke-width="${ICON_STROKE}" stroke-linecap="round" stroke-linejoin="round">
+    <rect x="3.6" y="5" width="16.8" height="15" rx="3.2"></rect>
+    <path d="M3.6 9.6h16.8"></path>
+    <path d="M8 3.2v3.6"></path>
+    <path d="M16 3.2v3.6"></path>
+    <circle cx="16.1" cy="14.6" r="1.5" fill="#2563eb" stroke="none"></circle>
+  </svg>`;
+
+// 設定：細めの線で描いた歯車
 const SETTINGS_GEAR_ICON_SVG = `
-  <svg viewBox="0 0 24 24" width="21" height="21" fill="none" stroke="var(--accent)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+  <svg viewBox="0 0 24 24" width="21" height="21" fill="none" stroke="currentColor" stroke-width="${ICON_STROKE}" stroke-linecap="round" stroke-linejoin="round">
     <circle cx="12" cy="12" r="3.2"></circle>
     <path d="M19.4 13.5a1.7 1.7 0 0 0 .34 1.87l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.7 1.7 0 0 0-1.87-.34 1.7 1.7 0 0 0-1.04 1.56V19.5a2 2 0 1 1-4 0v-.09A1.7 1.7 0 0 0 8.96 17.85a1.7 1.7 0 0 0-1.87.34l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.7 1.7 0 0 0 4.6 13.5 1.7 1.7 0 0 0 3.04 12.46H2.95a2 2 0 1 1 0-4h.09A1.7 1.7 0 0 0 4.6 7.42 1.7 1.7 0 0 0 4.26 5.55l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.7 1.7 0 0 0 8.96 3.06 1.7 1.7 0 0 0 10 1.5V1.41a2 2 0 1 1 4 0v.09A1.7 1.7 0 0 0 15.04 3.06a1.7 1.7 0 0 0 1.87-.34l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.7 1.7 0 0 0 19.4 7.42 1.7 1.7 0 0 0 20.96 8.46h.09a2 2 0 1 1 0 4h-.09a1.7 1.7 0 0 0-1.56 1.04Z"></path>
   </svg>`;
 
-// ルール専用アイコン（規約・一覧を表す書類アイコン）
+// ルール：紙1枚ではなく、見開きの説明書（マニュアル）を思わせる線画
 const RULES_LIST_ICON_SVG = `
-  <svg viewBox="0 0 24 24" width="21" height="21" fill="none" stroke="var(--accent)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-    <path d="M6 2.8h9.2L19 6.6V21a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1V3.8a1 1 0 0 1 1-1Z"></path>
-    <path d="M15 2.8V6.6h3.8"></path>
-    <line x1="7.6" y1="11" x2="15.6" y2="11"></line>
-    <line x1="7.6" y1="14.4" x2="15.6" y2="14.4"></line>
-    <line x1="7.6" y1="17.8" x2="13" y2="17.8"></line>
+  <svg viewBox="0 0 24 24" width="21" height="21" fill="none" stroke="currentColor" stroke-width="${ICON_STROKE}" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M4.2 5.6a1.6 1.6 0 0 1 1.6-1.6h5.2v15.8H5.8a1.6 1.6 0 0 1-1.6-1.6Z"></path>
+    <path d="M19.8 5.6a1.6 1.6 0 0 0-1.6-1.6H13v15.8h5.2a1.6 1.6 0 0 0 1.6-1.6Z"></path>
+    <path d="M7 7.6h3"></path>
+    <path d="M7 10.2h3"></path>
+    <path d="M15 7.6h2"></path>
+    <path d="M15 10.2h2"></path>
   </svg>`;
 
-// イントロドン専用アイコン（音符の線画。絵文字は使わない）
+// イントロドン専用アイコン（再生ボタン＋音符の線画。絵文字は使わない）
 const INTROQUIZ_LAUNCHER_ICON_SVG = `
-  <svg viewBox="0 0 24 24" width="21" height="21" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-    <path d="M9 18V6l10-2v12"></path>
-    <circle cx="6.5" cy="18" r="2.5"></circle>
-    <circle cx="16.5" cy="16" r="2.5"></circle>
+  <svg viewBox="0 0 24 24" width="21" height="21" fill="none" stroke="currentColor" stroke-width="${ICON_STROKE}" stroke-linecap="round" stroke-linejoin="round">
+    <circle cx="9" cy="14.6" r="6"></circle>
+    <path d="M7.4 11.9 11.4 14.6 7.4 17.3Z" fill="currentColor" stroke="none"></path>
+    <path d="M13.6 12.6V4.3l6.8-1.4v7.8"></path>
+    <circle cx="12.4" cy="13.2" r="1.7" fill="currentColor" stroke="none"></circle>
+    <circle cx="19.1" cy="11.9" r="1.7" fill="currentColor" stroke="none"></circle>
   </svg>`;
 
 /* =========================================================================
@@ -4707,21 +4734,27 @@ function sheetTapHaptic(){
   try{ navigator.vibrate && navigator.vibrate(10); }catch(e){}
 }
 
-const LIGHTPUZZLE_LAUNCHER_ICON_SVG = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="3.5" y="3.5" width="6" height="6" rx="1.2"></rect><rect x="14.5" y="3.5" width="6" height="6" rx="1.2"></rect><rect x="3.5" y="14.5" width="6" height="6" rx="1.2"></rect><rect x="14.5" y="14.5" width="6" height="6" rx="1.2" fill="currentColor"></rect></svg>`;
+// 💡 ライト消しパズルのランチャーアイコン。パズルの盤面ではなく「電球」の
+// シンプルな線画にして、内容（ライトのオンオフ）を一目で連想できるようにする
+const LIGHTPUZZLE_LAUNCHER_ICON_SVG = `<svg viewBox="0 0 24 24" width="21" height="21" fill="none" stroke="currentColor" stroke-width="${ICON_STROKE}" stroke-linecap="round" stroke-linejoin="round"><path d="M8.2 15.3a5.6 5.6 0 1 1 7.6 0c-.9.9-1.4 1.6-1.4 2.7v.4h-4.8v-.4c0-1.1-.5-1.8-1.4-2.7Z"></path><path d="M9.6 21h4.8"></path><path d="M10.2 18.4h3.6"></path><path d="M12 5.1V3.1"></path><path d="M5.1 8.3 3.5 6.7"></path><path d="M18.9 8.3l1.6-1.6"></path></svg>`;
 
 // 🃏 チャッピーの価値観ゲーム（ito形式の協力カードゲーム）のランチャーアイコン。
 // 重ねた2枚のカードを線画で表した、このアプリのオリジナル図案
-const VALUEGAME_LAUNCHER_ICON_SVG = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="6.5" width="10" height="14" rx="2.2" transform="rotate(-9 8 13.5)"></rect><rect x="11" y="3.5" width="10" height="14" rx="2.2" transform="rotate(9 16 10.5)"></rect><circle cx="16" cy="10.5" r="1.6" fill="currentColor" stroke="none"></circle></svg>`;
+const VALUEGAME_LAUNCHER_ICON_SVG = `<svg viewBox="0 0 24 24" width="21" height="21" fill="none" stroke="currentColor" stroke-width="${ICON_STROKE}" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="6.5" width="10" height="14" rx="2.2" transform="rotate(-9 8 13.5)"></rect><rect x="11" y="3.5" width="10" height="14" rx="2.2" transform="rotate(9 16 10.5)"></rect><path d="M15.9 8.9 17.7 11.3 15.9 13.7 14.1 11.3Z" fill="currentColor" stroke="none"></path></svg>`;
+
+// 🏠 チャッピーハウスのランチャーアイコン。絵文字ではなく、ハート型の窓を
+// あしらった線画の一軒家にして「かわいさ」を表現する
+const CHAPPY_HOUSE_LAUNCHER_ICON_SVG = `<svg viewBox="0 0 24 24" width="21" height="21" fill="none" stroke="currentColor" stroke-width="${ICON_STROKE}" stroke-linecap="round" stroke-linejoin="round"><path d="M4 11.4 12 4.6l8 6.8"></path><path d="M6 10V19a1 1 0 0 0 1 1h10a1 1 0 0 0 1-1v-9"></path><path d="M10 20v-4.6a1 1 0 0 1 1-1h2a1 1 0 0 1 1 1V20"></path><path d="M16.3 14.1c-.7-.8-1.9-.4-1.9.6 0 .8.7 1.3 1.9 2.2 1.2-.9 1.9-1.4 1.9-2.2 0-1-1.2-1.4-1.9-.6Z" fill="#ef476f" stroke="none"></path></svg>`;
 
 const QUICK_MENU_ITEMS = [
-  { key: "news-japan", icon: `<span class="launcher-emoji" aria-hidden="true">🇯🇵</span>`, label: "J-NEWS", variant: "news-jp" },
-  { key: "news-world", icon: `<span class="launcher-emoji" aria-hidden="true">🌐</span>`, label: "F-NEWS", variant: "news-world" },
+  { key: "news-japan", icon: NEWS_JP_LAUNCHER_ICON_SVG, label: "J-NEWS", variant: "news-jp" },
+  { key: "news-world", icon: NEWS_WORLD_LAUNCHER_ICON_SVG, label: "F-NEWS", variant: "news-world" },
   { key: "portfolio", icon: STOCK_LAUNCHER_ICON_SVG, label: "株価", variant: "stock" },
   { key: "calendar", icon: CALENDAR_APP_LAUNCHER_ICON_SVG, label: "カレンダー", variant: "calendar" },
   { key: "introquiz", icon: INTROQUIZ_LAUNCHER_ICON_SVG, label: "イントロドン", variant: "introquiz" },
   { key: "lightpuzzle", icon: LIGHTPUZZLE_LAUNCHER_ICON_SVG, label: "ライト消しパズル", variant: "lightpuzzle" },
   { key: "valuegame", icon: VALUEGAME_LAUNCHER_ICON_SVG, label: "カードゲーム", variant: "valuegame" },
-  { key: "chappy", icon: `<span class="launcher-emoji" aria-hidden="true">🏠</span>`, label: "チャッピーハウス", variant: "chappy" },
+  { key: "chappy", icon: CHAPPY_HOUSE_LAUNCHER_ICON_SVG, label: "チャッピーハウス", variant: "chappy" },
   { key: "settings", icon: SETTINGS_GEAR_ICON_SVG, label: "設定", variant: "settings" },
   { key: "rules", icon: RULES_LIST_ICON_SVG, label: "ルール", variant: "rules" },
 ];

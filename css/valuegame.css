@@ -10,10 +10,9 @@
    ・下部の操作エリアは、画面下部の固定ナビ（--bnav-h）と重ならない位置に置く
    ========================================================================= */
 
-.launcher-icon-valuegame{
-  background:linear-gradient(150deg,#ede9fe,#a78bfa);
-  box-shadow:0 5px 14px rgba(109,40,217,.24), inset 0 1px 0 rgba(255,255,255,.6);
-}
+/* アイコンの見た目そのもの（ガラス質の背景・影・光沢）はcss/style.cssの
+   .sheet-grid-icon側で全アイコン共通に定義しているため、ここでは配色だけを指定する */
+.launcher-icon-valuegame{ --icon-a:#f0fdf4; --icon-b:#bbf7d0; }
 
 .vg-root{
   display:flex; flex-direction:column; gap:13px;
