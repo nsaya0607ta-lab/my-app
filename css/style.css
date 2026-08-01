@@ -501,6 +501,17 @@ h1.title.title--badge{margin:2px 0 0;}
 .sheet-grid-icon svg{width:30px;height:30px;}
 .sheet-grid-icon .launcher-emoji{font-size:29px;}
 .sheet-grid-icon .ms-logo-grid{width:28px;height:28px;gap:3px;}
+/* 「各種機能」シートの10項目は、線画SVGではなくユーザー提供のイラストアイコン
+   画像（円の背景も含めて画像に焼き込み済み）をそのまま表示する。共通のガラス質
+   枠線・光沢・影は二重表示を避けるためこのモディファイアで打ち消すが、背景の
+   パステルグラデーションだけは残し、画像が読み込めなかった場合のフォールバック
+   （空白の円になるのを防ぐ）として機能させる */
+.sheet-grid-icon.sheet-grid-icon-photo{border:none;
+  backdrop-filter:none;-webkit-backdrop-filter:none;box-shadow:none;}
+.sheet-grid-icon.sheet-grid-icon-photo::before{content:none;}
+.sheet-grid-item:active .sheet-grid-icon.sheet-grid-icon-photo{
+  box-shadow:0 8px 16px -4px rgba(15,23,42,.18);}
+.sheet-grid-photo{position:relative;z-index:1;width:100%;height:100%;display:block;object-fit:contain;}
 /* 長いラベル（「ライト消しパズル」等）は2行に折り返す。overflow-wrap:break-word
    （anywhereではない）＋line-break:strictで日本語の禁則処理（行頭に「ー」「ッ」等が
    来ない）を効かせ、word-break:auto-phrase／text-wrap:prettyで文節寄りかつ最終行に
