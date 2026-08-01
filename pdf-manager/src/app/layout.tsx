@@ -19,14 +19,14 @@ const SPLASH = [
 ];
 
 export const metadata: Metadata = {
-  title: 'PDFフォルダー',
+  title: '株式ニュースフォルダー',
   description:
-    'スマートフォンでも、パソコンのエクスプローラーと同じ感覚でPDFをフォルダー管理できるアプリ。',
-  applicationName: 'PDFフォルダー',
+    '追跡したい株式銘柄を登録すると、毎日その銘柄のニュースを整理した日次レポートが自動で作成され、銘柄ごとのフォルダーに保存されるアプリ。',
+  applicationName: '株式ニュースフォルダー',
   manifest: '/manifest.webmanifest',
   appleWebApp: {
     capable: true,
-    title: 'PDFフォルダー',
+    title: '株式ニュースフォルダー',
     statusBarStyle: 'default',
   },
   icons: {

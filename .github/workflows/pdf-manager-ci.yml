@@ -5,18 +5,24 @@ on:
     paths:
       - 'pdf-manager/**'
       - 'scripts/gemini-pdf/**'
+      - 'scripts/stock-news/**'
+      - 'scripts/ionq-report/**'
       - 'package.json'
       - '.github/workflows/pdf-manager-ci.yml'
       - '.github/workflows/gemini-pdf-scheduler.yml'
+      - '.github/workflows/stock-news-scheduler.yml'
   push:
     branches:
       - main
     paths:
       - 'pdf-manager/**'
       - 'scripts/gemini-pdf/**'
+      - 'scripts/stock-news/**'
+      - 'scripts/ionq-report/**'
       - 'package.json'
       - '.github/workflows/pdf-manager-ci.yml'
       - '.github/workflows/gemini-pdf-scheduler.yml'
+      - '.github/workflows/stock-news-scheduler.yml'
 
 permissions:
   contents: read
@@ -37,11 +43,16 @@ jobs:
       - name: 監査結果を保存
         working-directory: pdf-manager
         run: npm audit --json > audit.json || true
-      - name: Gemini定期処理の構文確認
+      - name: 定期処理スクリプトの構文確認
         run: |
-          for file in scripts/gemini-pdf/*.mjs; do
+          for file in scripts/gemini-pdf/*.mjs scripts/stock-news/*.mjs scripts/ionq-report/*.mjs; do
             node --check "$file"
           done
+      - name: 銘柄ニュース共通処理の検証
+        run: node scripts/stock-news/test-core.mjs
+      - name: 端末内データ処理の検証
+        working-directory: pdf-manager
+        run: npm run test:stock
       - name: 型チェック
         working-directory: pdf-manager
         run: |

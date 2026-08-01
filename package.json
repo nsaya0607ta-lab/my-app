@@ -13,6 +13,8 @@
     "daily-report:verify-import": "node scripts/daily-report/verify-import.mjs",
     "ionq-report": "node scripts/ionq-report/generate.mjs",
     "ionq-report:html": "node scripts/ionq-report/generate.mjs --html",
+    "stock-news": "node scripts/stock-news/scheduler.mjs",
+    "stock-news:test": "node scripts/stock-news/test-core.mjs",
     "gemini-pdf-scheduler": "node scripts/gemini-pdf/scheduler.mjs",
     "deploy:rules": "npx firebase-tools deploy --only firestore:rules"
   },

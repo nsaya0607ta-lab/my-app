@@ -15,7 +15,7 @@ import {
   type PdfGenerationRule,
 } from '@/lib/geminiTypes';
 import { ROOT_ID, type Folder } from '@/lib/types';
-import { pathString } from '@/lib/tree';
+import { ROOT_NAME, pathString } from '@/lib/tree';
 import { Button, IconButton, Spinner, Switch } from '@/components/ui/Primitives';
 
 type EditableRule = Omit<PdfGenerationRule, 'id' | 'createdAt' | 'updatedAt'> & { id?: string };
@@ -31,7 +31,7 @@ function newRule(): EditableRule {
     timeZone: GEMINI_TIME_ZONE,
     chatTarget: 'sameDay',
     folderId: ROOT_ID,
-    folderPath: 'PDFフォルダー',
+    folderPath: ROOT_NAME,
     fileNameTemplate: '学習_yyyymmdd.pdf',
     titleTemplate: '学習まとめ yyyy-mm-dd',
     purpose: '復習・試験対策',
@@ -102,8 +102,8 @@ function RuleEditor({
           </div>
           <label className="block">
             <span className="mb-1 block text-sm font-medium">保存先</span>
-            <select className={inputClass} value={draft.folderId} onChange={(e) => { const folderId = e.target.value; setDraft({ ...draft, folderId, folderPath: folderId === ROOT_ID ? 'PDFフォルダー' : pathString(folders, folderId) }); }}>
-              <option value={ROOT_ID}>PDFフォルダー</option>
+            <select className={inputClass} value={draft.folderId} onChange={(e) => { const folderId = e.target.value; setDraft({ ...draft, folderId, folderPath: folderId === ROOT_ID ? ROOT_NAME : pathString(folders, folderId) }); }}>
+              <option value={ROOT_ID}>{ROOT_NAME}</option>
               {choices.map((folder) => <option key={folder.id} value={folder.id}>{pathString(folders, folder.id)}</option>)}
             </select>
           </label>

@@ -1,8 +1,8 @@
 'use client';
 
-/** 最近使った項目 / お気に入り / ごみ箱 の各画面。 */
+/** 最近開いたPDF / ごみ箱 の各画面（お気に入りは株式レポート用の画面へ移行）。 */
 import { useMemo, useState } from 'react';
-import { ArrowLeft, Clock, RotateCcw, Star, Trash2, XCircle } from 'lucide-react';
+import { ArrowLeft, Clock, RotateCcw, Trash2, XCircle } from 'lucide-react';
 import { daysUntilPurge, formatDateTime, formatRelative } from '@/lib/format';
 import { pathString, toParentKey } from '@/lib/tree';
 import type { ExplorerItem } from '@/lib/types';
@@ -90,61 +90,6 @@ export function RecentView({ handlers }: { handlers: ItemHandlers }) {
             />
           ))}
         </div>
-      )}
-    </>
-  );
-}
-
-/* ------------------------------------------------------------------ */
-/* お気に入り                                                          */
-/* ------------------------------------------------------------------ */
-
-export function FavoritesView({ handlers }: { handlers: ItemHandlers }) {
-  const { files, folders, settings, goBack, canGoBack } = useApp();
-
-  const items = useMemo<ExplorerItem[]>(
-    () => [
-      ...folders
-        .filter((folder) => !folder.deletedAt && folder.isFavorite)
-        .map((folder) => ({ kind: 'folder' as const, folder })),
-      ...files
-        .filter((file) => !file.deletedAt && file.isFavorite)
-        .map((file) => ({ kind: 'file' as const, file })),
-    ],
-    [files, folders],
-  );
-
-  return (
-    <>
-      <Header
-        title="お気に入り"
-        subtitle={`${items.length} 件`}
-        left={
-          canGoBack ? (
-            <IconButton label="戻る" onClick={goBack}>
-              <ArrowLeft size={22} />
-            </IconButton>
-          ) : undefined
-        }
-      />
-      {items.length === 0 ? (
-        <EmptyState
-          icon={<Star size={48} strokeWidth={1.2} />}
-          title="お気に入りはまだありません"
-          description="PDFやフォルダーを長押しして「お気に入りに登録」を選ぶと、ここに集まります。"
-        />
-      ) : (
-        <ItemList
-          items={items}
-          viewMode={settings.viewMode}
-          handlers={handlers}
-          locationOf={(item) =>
-            pathString(
-              folders,
-              toParentKey(item.kind === 'folder' ? item.folder.parentId : item.file.parentId),
-            )
-          }
-        />
       )}
     </>
   );

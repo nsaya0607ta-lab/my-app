@@ -6,11 +6,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Camera,
-  Clock,
   FilePlus2,
   FolderPlus,
   Home,
   ImagePlus,
+  MessageSquareText,
+  Newspaper,
   Plus,
   Settings as SettingsIcon,
   Star,
@@ -61,11 +62,25 @@ import { MemoSheet } from '@/components/memo/MemoSheet';
 import { PdfEditView } from '@/components/editor/PdfEditView';
 import { VersionHistorySheet } from '@/components/editor/VersionHistorySheet';
 import { Onboarding } from '@/components/Onboarding';
-import { HomeView } from '@/components/views/HomeView';
 import { FolderView } from '@/components/views/FolderView';
-import { RecentView, FavoritesView, TrashView } from '@/components/views/CollectionViews';
+import { RecentView, TrashView } from '@/components/views/CollectionViews';
 import { SearchView } from '@/components/views/SearchView';
 import { SettingsView } from '@/components/views/SettingsView';
+import { GeminiWorkspace } from '@/components/gemini/GeminiWorkspace';
+import { StockHomeView } from '@/components/stock/StockHomeView';
+import { TickerReportsView } from '@/components/stock/TickerReportsView';
+import { TodayNewsView } from '@/components/stock/TodayNewsView';
+import { FavoriteReportsView } from '@/components/stock/FavoriteReportsView';
+import { NewsSearchView } from '@/components/stock/NewsSearchView';
+import { RunHistoryView } from '@/components/stock/RunHistoryView';
+import { ReportDetailView } from '@/components/stock/ReportDetailView';
+import { AddTickerSheet } from '@/components/stock/AddTickerSheet';
+import { TickerSettingsSheet } from '@/components/stock/TickerSettingsSheet';
+import { NotificationsSheet } from '@/components/stock/NotificationsSheet';
+import { NewsAssistantSheet } from '@/components/stock/NewsAssistantSheet';
+import { useStock } from '@/store/StockStore';
+import { ARCHIVE_FOLDER_NAME, findRootFolder } from '@/lib/stock/folders';
+import type { StockReportEntry } from '@/lib/stock/types';
 
 type DuplicateChoice = 'overwrite' | 'rename' | 'cancel';
 
@@ -78,6 +93,7 @@ type PickerState =
 export function AppShell() {
   const app = useApp();
   const cloud = useCloud();
+  const stock = useStock();
   const {
     files,
     folders,
@@ -111,6 +127,14 @@ export function AppShell() {
   const [tagTarget, setTagTarget] = useState<PdfFileMeta | null>(null);
   const [detailTarget, setDetailTarget] = useState<PdfFileMeta | null>(null);
   const [sortSheet, setSortSheet] = useState(false);
+  /* --- 株式ニュース --- */
+  const [addTickerOpen, setAddTickerOpen] = useState(false);
+  const [tickerSettings, setTickerSettings] = useState<string | null>(null);
+  const [notificationsOpen, setNotificationsOpen] = useState(false);
+  const [assistantOpen, setAssistantOpen] = useState(false);
+  const [reportDetail, setReportDetail] = useState<StockReportEntry | null>(null);
+  /** 設定画面からGeminiの資料作成画面を開くための合図。 */
+  const [geminiSignal, setGeminiSignal] = useState(0);
   /** 画像からPDFを作成する画面 (null なら閉じている)。 */
   const [imagePdf, setImagePdf] = useState<'camera' | 'gallery' | null>(null);
   /* --- 自動分類 --- */
@@ -635,6 +659,32 @@ export function AppShell() {
     [notify, refreshStorage, reload, resolveBlob],
   );
 
+  /* ---------------------------------------------------------------- */
+  /* 株式レポート                                                      */
+  /* ---------------------------------------------------------------- */
+
+  /** レポートを開く（開いた時点で既読にする）。 */
+  const openReport = useCallback(
+    (report: StockReportEntry) => {
+      setReportDetail(report);
+      if (!report.isRead) void stock.setReportRead(report.reportId, true);
+    },
+    [stock],
+  );
+
+  /** レポートに紐づくPDFをビューアーで開く。 */
+  const openReportPdf = useCallback(
+    async (report: StockReportEntry) => {
+      const file = report.localFileId ? files.find((entry) => entry.id === report.localFileId) : undefined;
+      if (!file || file.deletedAt) {
+        notify('このレポートのPDFは端末にありません。内容はレポート画面で確認できます。', 'info');
+        return;
+      }
+      await openFile(file);
+    },
+    [files, notify, openFile],
+  );
+
   const handlers = useMemo(
     () => ({
       onOpen: (item: ExplorerItem) => {
@@ -780,25 +830,37 @@ export function AppShell() {
     switch (route.view) {
       case 'home':
         return (
-          <HomeView
-            handlers={handlers}
-            onCreateFolder={() => setNewFolderParent(ROOT_ID)}
-            onOpenSort={() => setSortSheet(true)}
+          <StockHomeView
+            onAddTicker={() => setAddTickerOpen(true)}
+            onOpenNotifications={() => setNotificationsOpen(true)}
+            onOpenTickerSettings={(ticker) => setTickerSettings(ticker)}
           />
         );
+      case 'ticker':
+        return (
+          <TickerReportsView
+            ticker={route.ticker}
+            onOpenReport={openReport}
+            onOpenSettings={() => setTickerSettings(route.ticker)}
+          />
+        );
+      case 'today':
+        return <TodayNewsView onOpenReport={openReport} onAskAssistant={() => setAssistantOpen(true)} />;
+      case 'history':
+        return <RunHistoryView />;
       case 'folder':
         return (
           <FolderView
             folderId={route.folderId}
             handlers={handlers}
             onOpenSort={() => setSortSheet(true)}
-            onAdd={openAddPdf}
+            onAdd={() => setAddSheet(true)}
           />
         );
       case 'recent':
         return <RecentView handlers={handlers} />;
       case 'favorites':
-        return <FavoritesView handlers={handlers} />;
+        return <FavoriteReportsView onOpenReport={openReport} />;
       case 'trash':
         return (
           <TrashView
@@ -816,14 +878,23 @@ export function AppShell() {
           />
         );
       case 'search':
+        return <NewsSearchView onOpenReport={openReport} />;
+      case 'pdfSearch':
         return (
-          <SearchView
-            handlers={handlers}
-            onOpenMemoHit={(file, page) => void openFile(file, page)}
-          />
+          <SearchView handlers={handlers} onOpenMemoHit={(file, page) => void openFile(file, page)} />
         );
       case 'settings':
-        return <SettingsView />;
+        return (
+          <SettingsView
+            onOpenPdfArchive={() => {
+              const archive = findRootFolder(folders, ARCHIVE_FOLDER_NAME);
+              navigate(archive ? { view: 'folder', folderId: archive.id } : { view: 'pdfSearch' });
+            }}
+            onOpenPdfSearch={() => navigate({ view: 'pdfSearch' })}
+            onOpenGemini={() => setGeminiSignal((current) => current + 1)}
+            onOpenNotifications={() => setNotificationsOpen(true)}
+          />
+        );
       case 'rules':
         return <RulesView />;
       default:
@@ -882,11 +953,44 @@ export function AppShell() {
       <BottomNav
         current={route.view}
         onHome={() => navigate({ view: 'home' })}
-        onRecent={() => navigate({ view: 'recent' })}
-        onAdd={() => setAddSheet(true)}
+        onToday={() => navigate({ view: 'today' })}
+        onAdd={() => setAddTickerOpen(true)}
         onFavorites={() => navigate({ view: 'favorites' })}
         onSettings={() => navigate({ view: 'settings' })}
       />
+
+      {/* ニュースAIアシスタント（保存済みレポートへの質問・比較・要約） */}
+      {route.view !== 'settings' ? (
+        <button
+          type="button"
+          onClick={() => setAssistantOpen(true)}
+          aria-label="ニュースAIアシスタントを開く"
+          className="fixed right-4 z-30 flex h-14 w-14 items-center justify-center rounded-full bg-[#4c65a8] text-white shadow-fab active:scale-95"
+          style={{ bottom: 'calc(var(--bottom-nav-height) + var(--safe-bottom) + 18px)' }}
+        >
+          <MessageSquareText size={24} />
+        </button>
+      ) : null}
+
+      {/* 株式ニュースの各シート */}
+      <AddTickerSheet open={addTickerOpen} onClose={() => setAddTickerOpen(false)} />
+      <TickerSettingsSheet ticker={tickerSettings} onClose={() => setTickerSettings(null)} />
+      <NotificationsSheet open={notificationsOpen} onClose={() => setNotificationsOpen(false)} />
+      <NewsAssistantSheet open={assistantOpen} onClose={() => setAssistantOpen(false)} />
+
+      {/* Geminiの資料作成（設定画面から開く既存機能） */}
+      <GeminiWorkspace showLauncher={false} openSignal={geminiSignal} />
+
+      {reportDetail ? (
+        <ReportDetailView
+          report={
+            stock.reports.find((entry) => entry.reportId === reportDetail.reportId) ?? reportDetail
+          }
+          onClose={() => setReportDetail(null)}
+          onOpenPdf={() => void openReportPdf(reportDetail)}
+          onToggleFavorite={() => void stock.toggleReportFavorite(reportDetail.reportId)}
+        />
+      ) : null}
 
       {/* 追加メニュー */}
       <BottomSheet
@@ -938,7 +1042,7 @@ export function AppShell() {
           </p>
         ) : (
           <p className="px-4 py-3 text-xs leading-relaxed text-ink-sub dark:text-[#98a3b0]">
-            ホーム画面に追加すると、他のアプリの共有メニューに「PDFフォルダー」が表示され、
+            ホーム画面に追加すると、他のアプリの共有メニューに「株式ニュースフォルダー」が表示され、
             PDFを直接送れるようになります。
           </p>
         )}
@@ -1409,14 +1513,14 @@ export function AppShell() {
 function BottomNav({
   current,
   onHome,
-  onRecent,
+  onToday,
   onAdd,
   onFavorites,
   onSettings,
 }: {
   current: string;
   onHome: () => void;
-  onRecent: () => void;
+  onToday: () => void;
   onAdd: () => void;
   onFavorites: () => void;
   onSettings: () => void;
@@ -1450,19 +1554,25 @@ function BottomNav({
       style={{ paddingBottom: 'var(--safe-bottom)' }}
     >
       <div className="mx-auto flex h-[var(--bottom-nav-height)] max-w-3xl items-stretch">
-        {item('home', 'ホーム', Home, onHome, current === 'home' || current === 'folder')}
-        {item('recent', '最近', Clock, onRecent, current === 'recent')}
+        {item(
+          'home',
+          'ホーム',
+          Home,
+          onHome,
+          current === 'home' || current === 'ticker' || current === 'folder',
+        )}
+        {item('today', '今日のニュース', Newspaper, onToday, current === 'today')}
 
         <div className="relative flex w-20 shrink-0 items-start justify-center">
           <button
             type="button"
             onClick={onAdd}
-            aria-label="PDFを追加"
+            aria-label="銘柄を追加"
             className="absolute -top-5 flex h-[58px] w-[58px] flex-col items-center justify-center rounded-full border-4 border-surface bg-brand-500 text-white shadow-fab active:bg-brand-600 dark:border-[#181e26]"
           >
             <Plus size={24} />
           </button>
-          <span className="mt-[38px] text-xs text-ink-sub dark:text-[#98a3b0]">PDF追加</span>
+          <span className="mt-[38px] text-xs text-ink-sub dark:text-[#98a3b0]">銘柄追加</span>
         </div>
 
         {item('favorites', 'お気に入り', Star, onFavorites, current === 'favorites')}

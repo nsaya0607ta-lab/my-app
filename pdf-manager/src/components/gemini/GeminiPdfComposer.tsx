@@ -9,7 +9,7 @@ import { ensurePdfExtension, sanitizeName } from '@/lib/naming';
 import { getPageCount } from '@/lib/pdf';
 import * as repo from '@/lib/repository';
 import { ROOT_ID, type Folder } from '@/lib/types';
-import { pathString } from '@/lib/tree';
+import { ROOT_NAME, pathString } from '@/lib/tree';
 import { useApp } from '@/store/AppStore';
 import { Button, IconButton, Spinner } from '@/components/ui/Primitives';
 import { MarkdownContent } from './MarkdownContent';
@@ -270,7 +270,7 @@ export function GeminiPdfComposer({
               <label className="block">
                 <span className="mb-1 block text-sm font-medium">保存先フォルダー</span>
                 <select className={fieldClass()} value={folderId} onChange={(event) => setFolderId(event.target.value)}>
-                  <option value={ROOT_ID}>PDFフォルダー</option>
+                  <option value={ROOT_ID}>{ROOT_NAME}</option>
                   {activeFolders.map((folder) => (
                     <option key={folder.id} value={folder.id}>
                       {pathString(folders, folder.id)}

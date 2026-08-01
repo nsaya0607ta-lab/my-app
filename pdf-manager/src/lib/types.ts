@@ -4,7 +4,7 @@
  * 差分同期の判定に使えるようにしている。
  */
 
-/** 仮想ルート (「PDFフォルダー」) の ID。 */
+/** 仮想ルート (「株式ニュースフォルダー」) の ID。 */
 export const ROOT_ID = 'root';
 
 /** 初期作成される「未分類」フォルダーの固定 ID。 */
@@ -449,6 +449,14 @@ export type Settings = {
   /** 前回使った作成設定 (次回の初期値)。 */
   imagePdfOptions: ImagePdfOptions;
 
+  /* --- 株式ニュース --- */
+  /** 実行済みのデータ移行バージョン (0 = 未実行)。 */
+  stockMigrationVersion: number;
+  /** レポート作成時にブラウザーの通知を出すか (許可の取得はユーザー操作で行う)。 */
+  stockPushEnabled: boolean;
+  /** 銘柄追加時の既定の取得時刻 (HH:MM)。 */
+  stockDefaultTime: string;
+
   /* --- クラウド保管 --- */
   /**
    * クラウド保管機能を使うか。
@@ -483,6 +491,9 @@ export const DEFAULT_SETTINGS: Settings = {
   imagePdfOptions: DEFAULT_IMAGE_PDF_OPTIONS,
   versionKeepCount: 3,
   versionKeepDays: 30,
+  stockMigrationVersion: 0,
+  stockPushEnabled: false,
+  stockDefaultTime: '08:00',
   cloudEnabled: false,
   cloudIdleDays: 1,
   cloudWifiOnly: true,
