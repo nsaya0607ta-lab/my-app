@@ -361,10 +361,17 @@ body{
   text-align:center;
 }
 .gcal-card .gcal-day-empty::before{
-  content:"✐”;
+  content:"+";
   margin-right:6px;
-  font-size:19px;
-  filter:saturate(.65);
+  display:inline-grid;
+  width:20px;
+  height:20px;
+  place-items:center;
+  border:1px solid #9ac6f3;
+  border-radius:50%;
+  color:var(--home-blue);
+  font-size:16px;
+  font-weight:700;
 }
 .gcal-card .gcal-day-add-btn{
   width:100%;
@@ -445,7 +452,7 @@ body{
   overflow:hidden;
 }
 #app>.acct-bar::before{
-  content:"👤";
+  content:"ID";
   display:grid;
   width:22px;
   height:22px;
@@ -453,7 +460,9 @@ body{
   place-items:center;
   border-radius:50%;
   background:linear-gradient(145deg,#edf6ff,#cde6ff);
-  font-size:13px;
+  color:var(--home-blue);
+  font-size:8px;
+  font-weight:850;
 }
 #app>.acct-bar>.link2{
   margin-left:auto;

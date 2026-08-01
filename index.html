@@ -8,13 +8,13 @@
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
-<meta name="apple-mobile-web-app-title" content="AZ-900">
+<meta name="apple-mobile-web-app-title" content="マイプル">
 <link rel="icon" type="image/png" sizes="32x32" href="assets/icon/app-icon-32.png">
 <link rel="icon" type="image/png" sizes="192x192" href="assets/icon/app-icon-192.png">
 <link rel="apple-touch-icon" href="assets/icon/app-icon-180.png">
 <link rel="preload" as="image" href="assets/icon/splash-logo.jpg">
-<link rel="stylesheet" href="css/style.css?v=20260801e">
-<link rel="stylesheet" href="css/home-dashboard-finished.css?v=20260715e">
+<link rel="stylesheet" href="css/style.css?v=20260802a">
+<link rel="stylesheet" href="css/home-dashboard-finished.css?v=20260802a">
 <link rel="stylesheet" href="css/news-title-home-badge.css?v=20260715b">
 <link rel="stylesheet" href="css/stock-detail.css?v=20260715a">
 <link rel="stylesheet" href="css/mindpalette-explorer.css?v=20260715a">
@@ -37,12 +37,22 @@
   <img class="splash-photo" src="assets/icon/splash-logo.jpg" alt="">
 </div>
 <script>
-setTimeout(function(){
+var splashTimer;
+function dismissSplash(){
   var splash = document.getElementById("splash-screen");
   if(!splash) return;
+  clearTimeout(splashTimer);
   splash.classList.add("splash-hide");
-  setTimeout(function(){ splash.remove(); }, 600);
-}, 3000);
+  setTimeout(function(){ splash.remove(); }, 260);
+  try { sessionStorage.setItem("mypl-splash-seen", "1"); } catch(e) {}
+}
+var splashSeen = false;
+try { splashSeen = sessionStorage.getItem("mypl-splash-seen") === "1"; } catch(e) {}
+splashTimer = setTimeout(dismissSplash, splashSeen ? 80 : 900);
+document.addEventListener("pointerdown", dismissSplash, { once:true, passive:true });
+window.addEventListener("load", function(){
+  if(splashSeen) dismissSplash();
+}, { once:true });
 </script>
 <div class="shell">
   <div id="statusbar" class="statusbar"></div>
@@ -91,16 +101,16 @@ setTimeout(function(){
     </span>
     <span class="bnav-lab">学習</span>
   </button>
-  <button type="button" class="bnav-btn" data-nav="profile" aria-label="その他">
+  <button type="button" class="bnav-btn" data-nav="profile" aria-label="プロフィール">
     <span class="bnav-ico">
-      <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="5" cy="12" r="1.6"></circle><circle cx="12" cy="12" r="1.6"></circle><circle cx="19" cy="12" r="1.6"></circle></svg>
+      <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="4"></circle><path d="M4.5 21a7.5 7.5 0 0 1 15 0"></path></svg>
     </span>
-    <span class="bnav-lab">その他</span>
+    <span class="bnav-lab">プロフィール</span>
   </button>
 </nav>
 
 <script type="module" src="js/mindpalette-explorer.js?v=20260715a"></script>
-<script type="module" src="js/main.js?v=20260801f"></script>
+<script type="module" src="js/main.js?v=20260802a"></script>
 <script type="module" src="js/mindpalette-ui-fix.js?v=20260715a"></script>
 <script type="module" src="js/mindpalette-productivity.js?v=20260715a"></script>
 <script type="module" src="js/advanced-practice.js?v=20260716b"></script>

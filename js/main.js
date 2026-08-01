@@ -10,6 +10,11 @@ import { checkNewsQuizPopup } from './newsQuiz.js';
 import { updateAiScores } from './reviewAI.js';
 import { initSchedule } from './schedule/index.js';
 import { bpDailyCheck } from './bp/daily.js';
+import { startIconUpgrade } from './icons.js';
+
+// iPhoneなど端末ごとに見た目が変わる絵文字を、統一ラインアイコンへ変換する。
+// MutationObserverもここで開始し、モーダルや非同期更新で後から増えたUIにも適用する。
+startIconUpgrade();
 
 // 全資格の経験値初期同期が完了した時点で、読み込み画面から正しい総合ランクへ切り替える。
 window.addEventListener("learning-data-ready", () => render());
