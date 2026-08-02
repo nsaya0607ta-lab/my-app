@@ -40,6 +40,29 @@ function normalize(str) {
   return hira.replace(STRIP_CHARS_RE, "").trim();
 }
 
+// 音声回答に付きやすい「答えは〜です」などを外した比較候補も作る。
+// 正式な曲名そのものは変更せず、入力側だけに適用する。
+function answerVariants(str) {
+  const normalized = normalize(str);
+  if (!normalized) return [];
+  const withoutFraming = normalized
+    .replace(/^(?:えっと|あの|たぶん|おそらく)+/, "")
+    .replace(/^(?:こたえ|答え|きょくめい|曲名)(?:は|わ)?/, "")
+    .replace(/(?:です|だよ|だとおもいます|だと思います|とおもいます|と思います|かな)+$/, "");
+  return Array.from(new Set([normalized, withoutFraming].filter(Boolean)));
+}
+
+// 音声認識で揺れやすい、読みとしてほぼ同じ文字だけを寄せる。
+// 濁点を一律に外すような強すぎる変換は誤正解を増やすため行わない。
+function looseReadingKey(str) {
+  return normalize(str)
+    .replace(/[ぁ]/g, "あ").replace(/[ぃ]/g, "い")
+    .replace(/[ぅ]/g, "う").replace(/[ぇ]/g, "え").replace(/[ぉ]/g, "お")
+    .replace(/[ゃ]/g, "や").replace(/[ゅ]/g, "ゆ").replace(/[ょ]/g, "よ")
+    .replace(/[ゎ]/g, "わ").replace(/を/g, "お")
+    .replace(/づ/g, "ず").replace(/ぢ/g, "じ").replace(/ゔ/g, "ぶ");
+}
+
 // レーベンシュタイン距離（編集距離）。O(n*m)の2行だけ保持するDP実装
 function levenshtein(a, b) {
   const m = a.length, n = b.length;
@@ -66,7 +89,7 @@ function levenshtein(a, b) {
 // 0〜1の類似度（1が完全一致）。正規化した文字列同士を比較し、長さで割ることで
 // 曲名の長短によるバイアスを抑える
 function similarity(rawA, rawB) {
-  const a = normalize(rawA), b = normalize(rawB);
+  const a = looseReadingKey(rawA), b = looseReadingKey(rawB);
   if (!a && !b) return 1;
   const maxLen = Math.max(a.length, b.length, 1);
   return 1 - levenshtein(a, b) / maxLen;
@@ -77,26 +100,58 @@ function similarity(rawA, rawB) {
 //   candidates: [{ field: "title", value: "紅蓮華" }, ...]
 // 戻り値: { exact, score(0-1), field, value }
 function matchAnswer(answerText, candidates) {
-  const normalizedInput = normalize(answerText);
-  let best = { exact: false, score: 0, field: null, value: null };
-  if (!normalizedInput) return best;
+  const inputs = answerVariants(answerText);
+  let best = {
+    exact: false, confident: false, score: 0, distance: Infinity,
+    inputLength: 0, candidateLength: 0, field: null, value: null,
+  };
+  if (!inputs.length) return best;
   for (const c of candidates || []) {
     if (!c || !c.value) continue;
     const normalizedCandidate = normalize(c.value);
     if (!normalizedCandidate) continue;
-    if (normalizedCandidate === normalizedInput) {
-      return { exact: true, score: 1, field: c.field, value: c.value };
+    for (const input of inputs) {
+      if (normalizedCandidate === input) {
+        return {
+          exact: true, confident: true, score: 1, distance: 0,
+          inputLength: input.length, candidateLength: normalizedCandidate.length,
+          field: c.field, value: c.value,
+        };
+      }
+      // 「YOASOBI 夜に駆ける」のように、正式なタイトルの前後にアーティスト名や
+      // 「歌ってください」等の余計な語が付いていても、タイトルそのものが丸ごと
+      // 含まれていれば正解にする（音声認識結果は特にこの形になりやすい）
+      if (normalizedCandidate.length >= 2 && input.includes(normalizedCandidate)) {
+        return {
+          exact: true, confident: true, score: 1, distance: 0,
+          inputLength: input.length, candidateLength: normalizedCandidate.length,
+          field: c.field, value: c.value,
+        };
+      }
+
+      const inputKey = looseReadingKey(input);
+      const candidateKey = looseReadingKey(normalizedCandidate);
+      const distance = levenshtein(inputKey, candidateKey);
+      const maxLength = Math.max(inputKey.length, candidateKey.length, 1);
+      const score = 1 - distance / maxLength;
+      const candidateLength = candidateKey.length;
+      // 4文字以上の曲名は1文字、8文字以上なら2文字までの聞き違いを自動で
+      // 正解にする。短い曲名は別の曲と衝突しやすいため完全一致を優先する。
+      const confident = (candidateLength >= 4 && distance <= 1)
+        || (candidateLength >= 8 && distance <= 2 && score >= 0.75);
+      if (score > best.score || (score === best.score && distance < best.distance)) {
+        best = {
+          exact: false, confident, score, distance,
+          inputLength: inputKey.length, candidateLength,
+          field: c.field, value: c.value,
+        };
+      }
     }
-    // 「YOASOBI 夜に駆ける」のように、正式なタイトルの前後にアーティスト名や
-    // 「歌ってください」等の余計な語が付いていても、タイトルそのものが丸ごと
-    // 含まれていれば正解にする（音声認識結果は特にこの形になりやすい）
-    if (normalizedCandidate.length >= 2 && normalizedInput.includes(normalizedCandidate)) {
-      return { exact: true, score: 1, field: c.field, value: c.value };
-    }
-    const score = similarity(answerText, c.value);
-    if (score > best.score) best = { exact: false, score, field: c.field, value: c.value };
   }
   return best;
 }
 
-module.exports = { normalize, katakanaToHiragana, levenshtein, similarity, matchAnswer };
+module.exports = {
+  normalize, answerVariants, looseReadingKey,
+  katakanaToHiragana, levenshtein, similarity, matchAnswer,
+};

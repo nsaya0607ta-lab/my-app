@@ -8,6 +8,7 @@
   "scripts": {
     "import:introquiz-songs": "node scripts/importIntroQuizSongs.js",
     "fetch:youtube-playlist": "node scripts/fetchYouTubePlaylist.js",
+    "intro-quiz:test": "node scripts/testIntroQuizTextMatch.js",
     "daily-report": "node scripts/daily-report/generate.mjs",
     "daily-report:dry-run": "node scripts/daily-report/generate.mjs --dry-run --html",
     "daily-report:verify-import": "node scripts/daily-report/verify-import.mjs",

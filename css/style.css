@@ -2081,6 +2081,8 @@ body[data-theme="dark"] .menu-btn:active, body[data-theme="galaxy"] .menu-btn:ac
 .iq-setting-label{font-size:15.5px;font-weight:700;color:var(--home-text);}
 .iq-setting-sub{font-size:11.5px;color:var(--home-muted);margin-top:2px;line-height:1.4;}
 .iq-volume-pct{flex:none;font-size:14px;font-weight:700;color:var(--home-blue);font-variant-numeric:tabular-nums;}
+.iq-volume-warning{padding:9px 11px;border-radius:10px;background:#fff4e5;color:#9a5a00;font-size:11.5px;font-weight:700;line-height:1.5;}
+.iq-volume-warning[hidden]{display:none;}
 
 .iq-stepper{display:flex;align-items:center;justify-content:center;gap:22px;}
 .iq-stepper-btn{
@@ -2111,6 +2113,9 @@ body[data-theme="dark"] .menu-btn:active, body[data-theme="galaxy"] .menu-btn:ac
 
 /* ===== 遊び方カード ===== */
 .iq-howto-text{margin:0;font-size:15px;line-height:1.8;color:var(--home-muted);}
+.iq-howto-list{margin:0;padding-left:22px;color:var(--home-text);font-size:13px;line-height:1.75;}
+.iq-howto-list li+li{margin-top:4px;}
+.iq-voice-guide{margin:14px 0 0;padding:11px 12px;border-radius:12px;background:#eef7ff;color:var(--home-muted);font-size:11.5px;line-height:1.6;}
 
 /* ===== ゲームモード：カード＋ラジオボタン（今後追加しやすいよう配列駆動） ===== */
 .iq-section-title{font-size:13px;font-weight:800;letter-spacing:.04em;color:var(--home-muted);margin:0 0 12px 4px;}
@@ -2170,6 +2175,8 @@ body[data-theme="dark"] .menu-btn:active, body[data-theme="galaxy"] .menu-btn:ac
 .iq-player-hidden{position:absolute;width:1px;height:1px;overflow:hidden;left:-9999px;top:-9999px;}
 
 .iq-hint{font-size:12px;color:var(--home-muted);text-align:center;margin-bottom:16px;}
+.iq-mic-status{width:100%;box-sizing:border-box;margin:-4px 0 12px;padding:8px 10px;border-radius:10px;background:#eef7ff;color:var(--home-blue);font-size:11.5px;font-weight:700;text-align:center;line-height:1.45;}
+.iq-mic-status--error{background:#fff1f1;color:var(--bad);}
 .iq-opt-artist{color:var(--home-muted);font-size:11.5px;font-weight:600;}
 
 /* 早押しステージ（再生中／回答受付中）共通 */
@@ -2215,7 +2222,7 @@ body[data-theme="dark"] .menu-btn:active, body[data-theme="galaxy"] .menu-btn:ac
 .iq-waveform span:nth-child(5){height:85%;animation-delay:.4s;}
 @keyframes iq-wave{0%,100%{transform:scaleY(.4);}50%{transform:scaleY(1);}}
 
-.iq-live-transcript{min-height:20px;font-size:13.5px;font-weight:700;color:var(--home-muted);text-align:center;padding:0 8px;word-break:break-word;}
+.iq-live-transcript{min-height:20px;margin-bottom:8px;font-size:13.5px;font-weight:700;color:var(--home-muted);text-align:center;padding:0 8px;word-break:break-word;}
 
 .iq-giveup-link-wrap{text-align:center;margin-top:10px;}
 .iq-giveup-link{background:none;border:none;padding:8px;font-size:11.5px;color:var(--home-muted);text-decoration:underline;cursor:pointer;}
