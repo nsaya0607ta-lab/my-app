@@ -1209,7 +1209,21 @@ h1.title.title--badge{margin:2px 0 0;}
   text-decoration:none;color:inherit;border:none;background:none;padding:0;margin:0;font:inherit;
   text-align:left;cursor:pointer;}
 .njp-news-title{font-size:13px;font-weight:600;color:var(--text);line-height:1.5;}
+.njp-news-thumb{width:68px;height:52px;flex:none;border-radius:10px;object-fit:cover;background:var(--bg2);}
+.njp-news-thumb--empty{display:flex;align-items:center;justify-content:center;color:var(--muted);font-size:20px;}
+.njp-news-copy{display:flex;flex:1;min-width:0;flex-direction:column;gap:4px;}
+.njp-news-summary{display:-webkit-box;overflow:hidden;-webkit-box-orient:vertical;-webkit-line-clamp:2;color:var(--muted);font-size:11.5px;line-height:1.45;}
+.njp-news-meta{display:flex;align-items:center;gap:3px;color:var(--muted);font-size:10.5px;font-weight:600;}
 .njp-news-arrow{flex:none;color:var(--accent);font-weight:800;font-size:14px;}
+
+.njp-sync-card{display:flex;flex-direction:column;gap:10px;margin-bottom:14px;padding:12px;border:1px solid var(--line);border-radius:14px;background:var(--surface);}
+.njp-sync-status{color:var(--muted);font-size:11.5px;font-weight:600;line-height:1.5;}
+.njp-sync-status.is-error{color:var(--bad);}
+.njp-sync-actions{display:grid;grid-template-columns:1.25fr 1fr;gap:8px;}
+.njp-sync-actions button{min-height:40px;border-radius:11px;font-size:12.5px;font-weight:800;cursor:pointer;}
+.njp-sync-fetch{border:0;background:var(--accent);color:#fff;}
+.njp-sync-settings{border:1px solid var(--line);background:var(--surface2);color:var(--text);}
+.njp-sync-actions button:disabled{opacity:.55;cursor:wait;}
 
 .njp-bulk-row{margin-top:14px;}
 .njp-bulk-btn{width:100%;padding:11px 0;border-radius:12px;border:1px solid var(--bad);
@@ -1239,6 +1253,26 @@ h1.title.title--badge{margin:2px 0 0;}
 .njp-detail-body{font-size:13.5px;color:var(--text);line-height:1.9;}
 .njp-detail-body p{margin:0 0 12px;}
 .njp-detail-body p:last-child{margin-bottom:0;}
+.njp-detail-thumb{display:block;width:100%;max-height:240px;object-fit:cover;border-radius:13px;margin-bottom:14px;background:var(--bg2);}
+.njp-detail-meta{margin:-7px 0 14px;color:var(--muted);font-size:11px;font-weight:600;}
+.njp-detail-summary{margin:0 0 14px;padding:11px 12px;border-left:3px solid var(--accent);border-radius:0 10px 10px 0;background:var(--bg2);color:var(--text);font-size:13px;font-weight:600;line-height:1.7;}
+.njp-source-link{display:flex;align-items:center;justify-content:center;margin-top:18px;padding:12px;border-radius:12px;background:var(--accent);color:#fff;text-decoration:none;font-size:13px;font-weight:800;}
+
+.njp-settings-card{display:flex;flex-direction:column;gap:14px;padding:16px;border:1px solid var(--line);border-radius:16px;background:var(--surface);}
+.njp-setting-switch{display:flex;align-items:center;justify-content:space-between;gap:14px;}
+.njp-setting-switch span{display:flex;flex-direction:column;gap:3px;}
+.njp-setting-switch b{color:var(--text);font-size:14px;}
+.njp-setting-switch small{color:var(--muted);font-size:10.5px;line-height:1.45;}
+.njp-setting-switch input{width:22px;height:22px;accent-color:var(--accent);}
+.njp-setting-field{display:grid;grid-template-columns:1fr minmax(128px,1.2fr);align-items:center;gap:12px;color:var(--text);font-size:12.5px;font-weight:700;}
+.njp-setting-field select,.njp-setting-field input,.njp-feed-details input{width:100%;box-sizing:border-box;padding:10px;border:1px solid var(--line);border-radius:10px;background:var(--surface2);color:var(--text);font:inherit;}
+.njp-feed-details{padding:12px;border:1px solid var(--line);border-radius:12px;background:var(--surface2);}
+.njp-feed-details[hidden]{display:none;}
+.njp-feed-details summary{cursor:pointer;color:var(--text);font-size:12px;font-weight:800;}
+.njp-feed-details label{display:flex;flex-direction:column;gap:5px;margin-top:11px;color:var(--muted);font-size:11px;font-weight:700;}
+.njp-feed-details p{margin:10px 0 0;color:var(--muted);font-size:10.5px;line-height:1.55;}
+.njp-settings-status{padding:10px 11px;border-radius:10px;background:var(--bg2);color:var(--muted);font-size:11.5px;font-weight:700;line-height:1.5;}
+.njp-settings-fetch{width:100%;margin-top:-4px;}
 
 /* ホーム画面：今日のニュースカード。日本ニュース／海外ニュース画面と
    同じキャッシュ（js/news.js）から今日分だけを抜き出して見せる、天気カード
@@ -1256,6 +1290,7 @@ h1.title.title--badge{margin:2px 0 0;}
   font-size:11px;font-weight:800;line-height:1.5;cursor:pointer;}
 .news-today-tag-jp{color:#0b5fb0;background:rgba(11,95,176,.10);border-color:rgba(11,95,176,.22);}
 .news-today-tag-world{color:#6d28d9;background:rgba(109,40,217,.10);border-color:rgba(109,40,217,.22);}
+.news-today-tag-stocks{color:#047857;background:rgba(4,120,87,.10);border-color:rgba(4,120,87,.22);}
 .news-today-list{display:flex;flex-direction:column;gap:1px;list-style:none;margin:0;padding:0;}
 .news-today-item{display:block;width:100%;padding:3px 2px;border:0;border-radius:8px;
   background:transparent;text-align:left;cursor:pointer;}

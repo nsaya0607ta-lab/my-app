@@ -5,6 +5,9 @@
     },
     "api/news-quiz/today.js": {
       "maxDuration": 30
+    },
+    "api/news-sync.js": {
+      "maxDuration": 120
     }
   },
   "headers": [

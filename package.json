@@ -16,6 +16,8 @@
     "ionq-report:html": "node scripts/ionq-report/generate.mjs --html",
     "stock-news": "node scripts/stock-news/scheduler.mjs",
     "stock-news:test": "node scripts/stock-news/test-core.mjs",
+    "news:scheduled": "node scripts/newsScheduler.js",
+    "news:test": "node scripts/testNewsIngestion.js",
     "gemini-pdf-scheduler": "node scripts/gemini-pdf/scheduler.mjs",
     "deploy:rules": "npx firebase-tools deploy --only firestore:rules"
   },

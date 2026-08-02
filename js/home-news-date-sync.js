@@ -13,8 +13,9 @@ import { S } from './state.js';
 import { go } from './render.js';
 
 const HOME_NEWS_CATEGORIES = [
-  { category: "japan", screenKey: "news-japan", icon: "🇯🇵", tag: "日本", detailLabel: "日本経済", tagClass: "news-today-tag-jp" },
-  { category: "world", screenKey: "news-world", icon: "🌐", tag: "海外", detailLabel: "世界経済", tagClass: "news-today-tag-world" },
+  { category: "japan", screenKey: "news-japan", icon: "🇯🇵", tag: "国内", detailLabel: "国内ニュース", tagClass: "news-today-tag-jp" },
+  { category: "world", screenKey: "news-world", icon: "🌐", tag: "海外", detailLabel: "海外ニュース", tagClass: "news-today-tag-world" },
+  { category: "stocks", screenKey: "news-stocks", icon: "📈", tag: "株式", detailLabel: "株式ニュース", tagClass: "news-today-tag-stocks" },
 ];
 const HOME_NEWS_LIMIT = 2;
 const pendingFetches = new Set();
@@ -128,7 +129,12 @@ function bindCard(card, key){
       S.newsDetail = {
         title: item.title,
         content: item.content,
+        summary: item.summary || "",
         dateKey: item.dateKey,
+        publishedAt: item.publishedAt || item.createdAt || "",
+        sourceName: item.sourceName || "",
+        url: item.url || "",
+        thumbnailUrl: item.thumbnailUrl || "",
         label: cat.detailLabel,
         icon: cat.icon,
         returnScreen: "select",

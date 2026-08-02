@@ -50,7 +50,7 @@ import {
 } from './schedule/store.js';
 import { occurrencesForDate as scheduleOccurrencesForDate } from './schedule/occurrences.js';
 import { buildRRule as scheduleBuildRRule, presetToSpec as schedulePresetToSpec } from './schedule/recurrence.js';
-import { fetchNewsCategory, getNewsCategoryState, todaysNewsForCategory } from './news.js';
+import { fetchNewsCategory, getNewsCategoryState, getNewsSyncSettings, saveNewsSyncSettings, todaysNewsForCategory, triggerNewsFetch } from './news.js';
 import { renderLightPuzzleScreen } from './lightpuzzle/screen.js';
 import { lightPuzzleHandleIdentityChange } from './lightpuzzle/store.js';
 import { renderBpScreen } from './bp/screen.js';
@@ -125,7 +125,7 @@ export function renderStatusBar(){
   const screen = resolveScreen();
   // BP詳細（bp）と価値観ゲーム（valuegame）は、画面内に総合ランク・BPや
   // ゲーム専用のヘッダーを持つため、共通ステータスバーは重ねて出さない
-  const otherScreens = ["ranking","profile","settings","skins","analytics","portfolio","holdings","news-japan","news-world","news-detail","calendar","gemini","gemini-edit-event","mind-palette","mind-palette-folders","playground","scenario","chappy","bp","valuegame"];
+  const otherScreens = ["ranking","profile","settings","skins","analytics","portfolio","holdings","news-japan","news-world","news-stocks","news-settings","news-detail","calendar","gemini","gemini-edit-event","mind-palette","mind-palette-folders","playground","scenario","chappy","bp","valuegame"];
   if(gated || otherScreens.includes(screen)){ el.classList.remove("show"); el.innerHTML=""; return; }
   const ov = overallStat();          // 総合Lvと次Lvまでの進捗(%)
   const coins = (S.coins||0);
@@ -178,7 +178,7 @@ export function renderStatusBar(){
 // render()末尾の分岐と同じ優先順位で判定する）ため、ヘッダー周りの表示制御は
 // この「実際に描画される画面名」を使って判断する。
 function resolveScreen(){
-  const noCertScreens = ["ranking","profile","settings","skins","analytics","certs","lpic-certs","portfolio","news-japan","news-world","news-detail","calendar","gemini","gemini-edit-event","mind-palette","mind-palette-folders","introquiz","playground","scenario","chappy","bp","valuegame"];
+  const noCertScreens = ["ranking","profile","settings","skins","analytics","certs","lpic-certs","portfolio","news-japan","news-world","news-stocks","news-settings","news-detail","calendar","gemini","gemini-edit-event","mind-palette","mind-palette-folders","introquiz","playground","scenario","chappy","bp","valuegame"];
   if(noCertScreens.includes(S.screen)) return S.screen;
   if(S.screen==="select" || !S.cert) return "select";
   return S.screen; // home/quiz/result/review/dict/transfer/history
@@ -228,7 +228,7 @@ const BNAV_TAB_BY_SCREEN = {
   home:"select", "lpic-commands":"select", quiz:"select", result:"select", review:"select", dict:"select", transfer:"select", history:"select", "lpic-dir-explorer":"select", "review-list":"select",
   "lpic-dirx-missions":"select", "lpic-dirx-incidents":"select", "lpic-dirx-events":"select",
   certs:"study-menu", "lpic-certs":"study-menu", playground:"study-menu", scenario:"study-menu",
-  "news-japan":"quick-menu", "news-world":"quick-menu", "news-detail":"quick-menu", portfolio:"quick-menu", holdings:"quick-menu", introquiz:"quick-menu", lightpuzzle:"quick-menu",
+  "news-japan":"quick-menu", "news-world":"quick-menu", "news-stocks":"quick-menu", "news-settings":"quick-menu", "news-detail":"quick-menu", portfolio:"quick-menu", holdings:"quick-menu", introquiz:"quick-menu", lightpuzzle:"quick-menu",
   valuegame:"quick-menu",
   chappy:"select",
   bp:"select",
@@ -342,6 +342,8 @@ function renderScreen(){
   if(S.screen==="holdings") return renderHoldings();
   if(S.screen==="news-japan") return renderNewsJapan();
   if(S.screen==="news-world") return renderNewsWorld();
+  if(S.screen==="news-stocks") return renderNewsStocks();
+  if(S.screen==="news-settings") return renderNewsSettings();
   if(S.screen==="news-detail") return renderNewsDetail();
   if(S.screen==="calendar") return renderCalendarScreen();
   if(S.screen==="mind-palette") return renderMindPalette();
@@ -4668,6 +4670,7 @@ const QUICK_MENU_GROUPS = [
     items: [
       { key: "news-japan", icon: quickMenuPhotoIconHTML("news-jp"), label: "J-NEWS", variant: "news-jp", photo: true },
       { key: "news-world", icon: quickMenuPhotoIconHTML("news-world"), label: "F-NEWS", variant: "news-world", photo: true },
+      { key: "news-stocks", icon: quickMenuPhotoIconHTML("stock"), label: "S-NEWS", variant: "stock", photo: true },
       { key: "portfolio", icon: quickMenuPhotoIconHTML("stock"), label: "株価", variant: "stock", photo: true },
       { key: "calendar", icon: quickMenuPhotoIconHTML("calendar"), label: "カレンダー", variant: "calendar", photo: true },
     ],
@@ -8478,6 +8481,12 @@ export function mpFoldersReset(){ mpFoldersScreen.resetToRoot(); }
 
 const NEWS_WEEKDAYS = ["日","月","火","水","木","金","土"];
 
+const NEWS_CATEGORY_DETAILS = [
+  { category: "japan", screenKey: "news-japan", icon: "🇯🇵", tag: "国内", detailLabel: "国内ニュース", tagClass: "news-today-tag-jp" },
+  { category: "world", screenKey: "news-world", icon: "🌐", tag: "海外", detailLabel: "海外ニュース", tagClass: "news-today-tag-world" },
+  { category: "stocks", screenKey: "news-stocks", icon: "📈", tag: "株式", detailLabel: "株式ニュース", tagClass: "news-today-tag-stocks" },
+];
+
 function newsDateKey(y, m, d){ return `${y}-${String(m+1).padStart(2,"0")}-${String(d).padStart(2,"0")}`; }
 
 function newsCalendarHTML(y, m, selectedDay, hasNewsSet, todayKey){
@@ -8510,8 +8519,16 @@ function newsListHTML(items, admin, selectedIds){
     return `<div class="njp-empty">この日のニュースはまだ登録されていません。</div>`;
   }
   return `<div class="njp-news-list">${items.map(n => {
+    const source = n.sourceName ? `<span>${esc(n.sourceName)}</span>` : "";
+    const published = newsPublishedLabel(n.publishedAt || n.createdAt);
+    const meta = source || published ? `<span class="njp-news-meta">${source}${source && published ? `<span aria-hidden="true">・</span>` : ""}${published ? `<time>${esc(published)}</time>` : ""}</span>` : "";
+    const summary = n.summary ? `<span class="njp-news-summary">${esc(n.summary)}</span>` : "";
+    const thumb = n.thumbnailUrl
+      ? `<img class="njp-news-thumb" src="${esc(n.thumbnailUrl)}" alt="" loading="lazy" referrerpolicy="no-referrer">`
+      : `<span class="njp-news-thumb njp-news-thumb--empty" aria-hidden="true">${n.category === "stocks" ? "📈" : "📰"}</span>`;
     const link = `<button type="button" class="njp-news-link" data-news-id="${esc(n.id)}">
-      <span class="njp-news-title">${esc(n.title)}</span>
+      ${thumb}
+      <span class="njp-news-copy"><span class="njp-news-title">${esc(n.title)}</span>${summary}${meta}</span>
       <span class="njp-news-arrow">→</span>
     </button>`;
     const checkbox = admin
@@ -8519,6 +8536,21 @@ function newsListHTML(items, admin, selectedIds){
       : "";
     return `<div class="njp-news-item has-link">${checkbox}${link}</div>`;
   }).join("")}</div>`;
+}
+
+function newsPublishedLabel(value){
+  const date = new Date(value || "");
+  if(!Number.isFinite(date.getTime())) return "";
+  return new Intl.DateTimeFormat("ja-JP", { month:"numeric", day:"numeric", hour:"2-digit", minute:"2-digit" }).format(date);
+}
+
+function newsDetailPayload(item, conf, returnScreen){
+  return {
+    title:item.title, content:item.content, summary:item.summary || "", dateKey:item.dateKey,
+    publishedAt:item.publishedAt || item.createdAt || "", sourceName:item.sourceName || "",
+    url:item.url || "", thumbnailUrl:item.thumbnailUrl || "",
+    label:conf.detailLabel || conf.label, icon:conf.icon, returnScreen,
+  };
 }
 
 function newsAdminFormHTML(){
@@ -8546,10 +8578,7 @@ function newsBulkDeleteHTML(){
    その枠のidに対してデータを流し込む構成にすることで、ホーム画面全体を
    作り直さずにこのカードだけを更新できるようにしてある。
    ========================================================================= */
-const NEWS_HOME_CATEGORIES = [
-  { category: "japan", screenKey: "news-japan", icon: "🇯🇵", tag: "日本", detailLabel: "日本経済", tagClass: "news-today-tag-jp" },
-  { category: "world", screenKey: "news-world", icon: "🌐", tag: "海外", detailLabel: "世界経済", tagClass: "news-today-tag-world" },
-];
+const NEWS_HOME_CATEGORIES = NEWS_CATEGORY_DETAILS;
 const NEWS_HOME_ITEMS_PER_CATEGORY = 2;
 
 function newsTodayCardHTML(){
@@ -8618,9 +8647,46 @@ function renderNewsTodayCard(){
     const item = todaysNewsForCategory(b.dataset.newsTodayCat, NEWS_HOME_ITEMS_PER_CATEGORY)
       .find(n => n.id === b.dataset.newsTodayId);
     if(!item || !catConf) return;
-    S.newsDetail = { title: item.title, content: item.content, dateKey: item.dateKey, label: catConf.detailLabel, icon: catConf.icon, returnScreen: "select" };
+    S.newsDetail = newsDetailPayload(item, catConf, "select");
     go("news-detail");
   });
+}
+
+let newsSyncSettingsState = null;
+let newsSyncSettingsPromise = null;
+let newsSyncSettingsError = false;
+let newsSyncUiMessage = "";
+
+function ensureNewsSyncSettings(onReady){
+  if(newsSyncSettingsState){ if(onReady) onReady(); return; }
+  if(newsSyncSettingsPromise){ if(onReady) newsSyncSettingsPromise.finally(onReady); return; }
+  newsSyncSettingsPromise = getNewsSyncSettings()
+    .then(settings => { newsSyncSettingsState = settings; newsSyncSettingsError = false; newsSyncUiMessage = ""; })
+    .catch(error => { newsSyncSettingsError = true; newsSyncUiMessage = error && error.message === "forbidden" ? "管理者のみ設定できます" : "取得設定を読み込めませんでした"; })
+    .finally(() => { newsSyncSettingsPromise = null; if(onReady) onReady(); });
+}
+
+function newsSyncStatusText(){
+  const settings = newsSyncSettingsState;
+  if(newsSyncUiMessage) return newsSyncUiMessage;
+  if(!settings) return "取得状態を確認中…";
+  if(settings.lastStatus === "fetching") return "ニュースを取得中…";
+  if(settings.lastStatus === "failed") return "前回の取得に失敗しました（保存済みの記事は保持されています）";
+  if(settings.lastStatus === "partial") return "一部のニュースを取得しました";
+  if(settings.lastSuccessAt) return `最終取得：${newsPublishedLabel(settings.lastSuccessAt)}`;
+  return "まだ自動取得されていません";
+}
+
+function newsSyncControlsHTML(admin){
+  if(!admin) return "";
+  const status = newsSyncSettingsState && newsSyncSettingsState.lastStatus;
+  return `<div class="njp-sync-card">
+    <div class="njp-sync-status${status === "failed" ? " is-error" : ""}" id="njp-sync-status" aria-live="polite">${esc(newsSyncStatusText())}</div>
+    <div class="njp-sync-actions">
+      <button type="button" class="njp-sync-fetch" id="njp-sync-fetch">ニュースを取得</button>
+      <button type="button" class="njp-sync-settings" data-go="news-settings">取得設定</button>
+    </div>
+  </div>`;
 }
 
 // 日本経済・世界経済の両画面が使う共通ロジックを1箇所にまとめたファクトリー。
@@ -8659,6 +8725,9 @@ function createNewsScreen({ category, label, icon, screenKey }){
     const hasNewsSet = new Set(allItems.map(n => n.dateKey));
     const todayKey = newsDateKey(now.getFullYear(), now.getMonth(), now.getDate());
     const admin = isAdminAccount();
+    if(admin && !newsSyncSettingsState && !newsSyncSettingsPromise && !newsSyncSettingsError){
+      ensureNewsSyncSettings(() => { if(S.screen === screenKey) render(); });
+    }
 
     // その日のニュースに存在しないidの選択は持ち越さない（削除済み・日付
     // 切り替え後の残留選択を防ぐ）
@@ -8667,6 +8736,7 @@ function createNewsScreen({ category, label, icon, screenKey }){
 
     app.innerHTML = `
       <div class="q-head"><button class="quit" data-go="select">← ホーム</button><span class="q-count">${icon} ${label}</span></div>
+      ${newsSyncControlsHTML(admin)}
       ${newsCalendarHTML(y, m, d, hasNewsSet, todayKey)}
       <div class="section-lab" style="margin-top:16px">${m+1}月${d}日のニュース</div>
       <div id="njp-news-area">${cache===null ? `<div class="njp-empty">読み込み中…</div>` : newsListHTML(items, admin, selectedIds)}</div>
@@ -8684,9 +8754,30 @@ function createNewsScreen({ category, label, icon, screenKey }){
     app.querySelectorAll("[data-news-id]").forEach(b=>b.onclick=()=>{
       const item = items.find(n => n.id === b.dataset.newsId);
       if(!item) return;
-      S.newsDetail = { title:item.title, content:item.content, dateKey:item.dateKey, label, icon, returnScreen:S.screen };
+      S.newsDetail = newsDetailPayload(item, { label, icon }, S.screen);
       go("news-detail");
     });
+
+    const syncFetchBtn = document.getElementById("njp-sync-fetch");
+    if(syncFetchBtn) syncFetchBtn.onclick = async () => {
+      if(syncFetchBtn.disabled) return;
+      syncFetchBtn.disabled = true;
+      syncFetchBtn.textContent = "取得中…";
+      newsSyncUiMessage = "ニュースを取得中…";
+      const statusEl = document.getElementById("njp-sync-status");
+      if(statusEl) statusEl.textContent = newsSyncUiMessage;
+      try{
+        const result = await triggerNewsFetch();
+        await Promise.all(NEWS_CATEGORY_DETAILS.map(conf => fetchNewsCategory(conf.category, { force:true })));
+        newsSyncSettingsState = await getNewsSyncSettings({ force:true });
+        newsSyncUiMessage = result.status === "partial"
+          ? `一部取得：新しい記事 ${result.saved || 0}件（取得できなかった情報元があります）`
+          : `取得成功：新しい記事 ${result.saved || 0}件`;
+      }catch(error){
+        newsSyncUiMessage = "取得に失敗しました。保存済みの記事はそのまま表示します";
+      }
+      if(S.screen === screenKey) render();
+    };
 
     if(admin){
       const bulkBtn = document.getElementById("njp-bulk-delete");
@@ -8745,17 +8836,133 @@ function createNewsScreen({ category, label, icon, screenKey }){
 
 export const renderNewsJapan = createNewsScreen({
   category: "japan",
-  label: "日本経済",
+  label: "国内ニュース",
   icon: "🇯🇵",
   screenKey: "news-japan",
 });
 
 export const renderNewsWorld = createNewsScreen({
   category: "world",
-  label: "世界経済",
+  label: "海外ニュース",
   icon: "🌐",
   screenKey: "news-world",
 });
+
+export const renderNewsStocks = createNewsScreen({
+  category: "stocks",
+  label: "株式ニュース",
+  icon: "📈",
+  screenKey: "news-stocks",
+});
+
+function newsFrequencyOptions(selected){
+  return [
+    ["manual", "手動のみ"], ["hourly", "1時間ごと"], ["every3h", "3時間ごと"],
+    ["every6h", "6時間ごと"], ["daily", "毎日（指定時刻）"],
+  ].map(([value, label]) => `<option value="${value}"${selected === value ? " selected" : ""}>${label}</option>`).join("");
+}
+
+function renderNewsSettings(){
+  if(!isAdminAccount()){
+    app.innerHTML = `<div class="q-head"><button class="quit" data-go="news-japan">← 戻る</button><span class="q-count">ニュース取得設定</span></div><div class="njp-empty">この設定は管理者のみ変更できます。</div>`;
+    app.querySelectorAll("[data-go]").forEach(button => button.onclick = () => go(button.dataset.go));
+    return;
+  }
+  if(!newsSyncSettingsState){
+    app.innerHTML = `<div class="q-head"><button class="quit" data-go="news-japan">← 戻る</button><span class="q-count">ニュース取得設定</span></div><div class="njp-empty">${newsSyncSettingsError ? "設定を読み込めませんでした。" : "設定を読み込んでいます…"}${newsSyncSettingsError ? `<br><button type="button" class="ghost" id="news-settings-retry" style="margin-top:10px">再試行</button>` : ""}</div>`;
+    app.querySelectorAll("[data-go]").forEach(button => button.onclick = () => go(button.dataset.go));
+    const retry = document.getElementById("news-settings-retry");
+    if(retry) retry.onclick = () => { newsSyncSettingsError = false; newsSyncUiMessage = ""; renderNewsSettings(); };
+    if(!newsSyncSettingsError) ensureNewsSyncSettings(() => { if(S.screen === "news-settings") renderNewsSettings(); });
+    return;
+  }
+
+  const settings = newsSyncSettingsState;
+  const feeds = settings.feeds || {};
+  app.innerHTML = `
+    <div class="q-head"><button class="quit" data-go="news-japan">← 戻る</button><span class="q-count">ニュース取得設定</span></div>
+    <div class="njp-settings-card">
+      <label class="njp-setting-switch"><span><b>自動取得</b><small>アプリを閉じていてもバックグラウンドで取得します</small></span><input type="checkbox" id="news-setting-enabled"${settings.enabled ? " checked" : ""}></label>
+      <label class="njp-setting-field"><span>取得頻度</span><select id="news-setting-frequency">${newsFrequencyOptions(settings.frequency)}</select></label>
+      <label class="njp-setting-field" id="news-setting-time-row"><span>取得時刻</span><input type="time" id="news-setting-time" value="${esc(settings.time || "07:00")}"></label>
+      <label class="njp-setting-field"><span>1カテゴリの取得件数</span><select id="news-setting-limit">${[5,10,12,20,30].map(value => `<option value="${value}"${Number(settings.maxPerCategory) === value ? " selected" : ""}>${value}件</option>`).join("")}</select></label>
+      <label class="njp-setting-field"><span>取得方法</span><select id="news-setting-provider">
+        <option value="rss"${settings.provider === "rss" ? " selected" : ""}>RSS / Atom</option>
+        <option value="newsapi"${settings.provider === "newsapi" ? " selected" : ""}${settings.newsApiConfigured ? "" : " disabled"}>NewsAPI${settings.newsApiConfigured ? "" : "（環境変数の設定が必要）"}</option>
+      </select></label>
+      <details class="njp-feed-details"${settings.provider === "rss" ? "" : " hidden"}>
+        <summary>ニュースサイト（RSS）を指定</summary>
+        <label><span>国内ニュース</span><input type="url" id="news-feed-japan" value="${esc(feeds.japan || "")}" inputmode="url"></label>
+        <label><span>海外ニュース</span><input type="url" id="news-feed-world" value="${esc(feeds.world || "")}" inputmode="url"></label>
+        <label><span>株式ニュース</span><input type="url" id="news-feed-stocks" value="${esc(feeds.stocks || "")}" inputmode="url"></label>
+        <p>APIキーやトークンをURLへ入力しないでください。機密情報はサーバーの環境変数で管理します。</p>
+      </details>
+      <div class="njp-settings-status" id="news-settings-status" aria-live="polite">${esc(newsSyncStatusText())}</div>
+      <button type="button" class="njp-admin-btn" id="news-settings-save">設定を保存</button>
+      <button type="button" class="ghost njp-settings-fetch" id="news-settings-fetch">今すぐニュースを取得</button>
+    </div>`;
+
+  app.querySelectorAll("[data-go]").forEach(button => button.onclick = () => go(button.dataset.go));
+  const frequency = document.getElementById("news-setting-frequency");
+  const timeRow = document.getElementById("news-setting-time-row");
+  const provider = document.getElementById("news-setting-provider");
+  const feedDetails = app.querySelector(".njp-feed-details");
+  const syncVisibility = () => {
+    if(timeRow) timeRow.hidden = frequency.value !== "daily";
+    if(feedDetails) feedDetails.hidden = provider.value !== "rss";
+  };
+  frequency.onchange = syncVisibility;
+  provider.onchange = syncVisibility;
+  syncVisibility();
+
+  const statusEl = document.getElementById("news-settings-status");
+  const saveBtn = document.getElementById("news-settings-save");
+  saveBtn.onclick = async () => {
+    saveBtn.disabled = true;
+    statusEl.textContent = "設定を保存中…";
+    try{
+      newsSyncSettingsState = await saveNewsSyncSettings({
+        enabled: document.getElementById("news-setting-enabled").checked,
+        frequency: frequency.value,
+        time: document.getElementById("news-setting-time").value || "07:00",
+        timeZone: "Asia/Tokyo",
+        maxPerCategory: Number(document.getElementById("news-setting-limit").value),
+        provider: provider.value,
+        feeds: {
+          japan: document.getElementById("news-feed-japan").value.trim(),
+          world: document.getElementById("news-feed-world").value.trim(),
+          stocks: document.getElementById("news-feed-stocks").value.trim(),
+        },
+      });
+      newsSyncUiMessage = "設定を保存しました";
+      statusEl.textContent = newsSyncUiMessage;
+    }catch(error){
+      const code = error && error.message || "";
+      statusEl.textContent = code.includes("contains-secret") ? "URLにAPIキーなどの機密情報を含めないでください" : "設定を保存できませんでした";
+    }finally{ saveBtn.disabled = false; }
+  };
+
+  const fetchBtn = document.getElementById("news-settings-fetch");
+  fetchBtn.onclick = async () => {
+    fetchBtn.disabled = true;
+    fetchBtn.textContent = "取得中…";
+    statusEl.textContent = "ニュースを取得中…";
+    try{
+      const result = await triggerNewsFetch();
+      await Promise.all(NEWS_CATEGORY_DETAILS.map(conf => fetchNewsCategory(conf.category, { force:true })));
+      newsSyncSettingsState = await getNewsSyncSettings({ force:true });
+      newsSyncUiMessage = result.status === "partial"
+        ? `一部取得：新しい記事 ${result.saved || 0}件（取得できなかった情報元があります）`
+        : `取得成功：新しい記事 ${result.saved || 0}件`;
+      statusEl.textContent = newsSyncUiMessage;
+    }catch(error){
+      statusEl.textContent = "取得に失敗しました。保存済みの記事は削除されていません";
+    }finally{
+      fetchBtn.disabled = false;
+      fetchBtn.textContent = "今すぐニュースを取得";
+    }
+  };
+}
 
 // ニュース詳細画面：一覧でカードをタップした際の遷移先。管理者が登録した
 // 本文（content）をそのまま表示するだけの単純な画面で、外部サイトへは
@@ -8767,12 +8974,18 @@ function renderNewsDetail(){
   chappyOnNewsOpened(`${d.dateKey || ""}:${d.title || ""}`);
   // 🎖️ 同じ記事は同日1回・1日上限つきで活動BPも付与する
   bpOnNewsRead(`${d.dateKey || ""}:${d.title || ""}`, d.title || "");
+  const articleUrl = /^https?:\/\//i.test(d.url || "") ? d.url : "";
+  const meta = [d.sourceName, newsPublishedLabel(d.publishedAt)].filter(Boolean).map(esc).join(" ・ ");
   app.innerHTML = `
     <div class="q-head"><button class="quit" data-go="${esc(d.returnScreen||"select")}">← 戻る</button><span class="q-count">${d.icon||""} ${esc(d.label||"ニュース")}</span></div>
     <div class="njp-detail">
+      ${d.thumbnailUrl ? `<img class="njp-detail-thumb" src="${esc(d.thumbnailUrl)}" alt="" referrerpolicy="no-referrer">` : ""}
       <div class="njp-detail-date">${esc(newsDetailDateLabel(d.dateKey))}</div>
       <h2 class="njp-detail-title">${esc(d.title)}</h2>
+      ${meta ? `<div class="njp-detail-meta">${meta}</div>` : ""}
+      ${d.summary && d.summary !== d.content ? `<p class="njp-detail-summary">${esc(d.summary)}</p>` : ""}
       <div class="njp-detail-body">${newsDetailBodyHTML(d.content)}</div>
+      ${articleUrl ? `<a class="njp-source-link" href="${esc(articleUrl)}" target="_blank" rel="noopener noreferrer">情報元の記事を開く</a>` : ""}
     </div>`;
   app.querySelectorAll("[data-go]").forEach(b=>b.onclick=()=>go(b.dataset.go));
 }

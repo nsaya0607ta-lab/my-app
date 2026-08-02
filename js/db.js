@@ -198,14 +198,14 @@ import { applyCloudValueGame } from './valuegame/store.js';
         if (!state.db || !id) return;
         await deleteDoc(doc(state.db, "news", id));
       },
-      // 指定カテゴリ（"japan" | "world"）の全件を、日付キー→登録日時の昇順で返す。
+      // 指定カテゴリ（"japan" | "world" | "stocks"）の全件を、新しい掲載日時順で返す。
       // カレンダーの「ニュースがある日」マークも一覧もこの1回の取得結果から作る
       listByCategory: async (category) => {
         if (!state.db) return [];
         const snap = await getDocs(query(collection(state.db, "news"), where("category", "==", category)));
         const rows = [];
         snap.forEach(d => rows.push(Object.assign({ id: d.id }, d.data())));
-        rows.sort((a, b) => (a.dateKey || "").localeCompare(b.dateKey || "") || (a.createdAt || "").localeCompare(b.createdAt || ""));
+        rows.sort((a, b) => (b.publishedAt || b.createdAt || "").localeCompare(a.publishedAt || a.createdAt || ""));
         return rows;
       }
     };
