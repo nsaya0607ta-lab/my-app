@@ -27,9 +27,7 @@ jobs:
       - run: npm run news:test
       - name: 設定時刻を迎えたニュースを取得
         env:
-          FIREBASE_PROJECT_ID: ${{ secrets.FIREBASE_PROJECT_ID }}
-          FIREBASE_CLIENT_EMAIL: ${{ secrets.FIREBASE_CLIENT_EMAIL }}
-          FIREBASE_PRIVATE_KEY: ${{ secrets.FIREBASE_PRIVATE_KEY }}
+          FIREBASE_SERVICE_ACCOUNT_JSON: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_JSON }}
           NEWS_API_KEY: ${{ secrets.NEWS_API_KEY }}
           NEWS_FEED_JAPAN_URL: ${{ vars.NEWS_FEED_JAPAN_URL }}
           NEWS_FEED_WORLD_URL: ${{ vars.NEWS_FEED_WORLD_URL }}
