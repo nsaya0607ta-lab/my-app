@@ -481,6 +481,16 @@ h1.title.title--badge{margin:2px 0 0;}
    まで縮むだけなのでスクロールしてもレイアウトが崩れない */
 .sheet-grid{display:grid;grid-template-columns:repeat(var(--cols,5),1fr);gap:24px clamp(4px,1.8vw,10px);
   padding:2px clamp(6px,3.2vw,18px) 12px;align-items:start;}
+/* 「各種機能」は目的ごとにまとまりを分け、iOSの設定画面のような
+   小見出し＋インセットカードで一覧性を高める。丸アイコンの寸法は既存のまま。 */
+.sheet-menu-groups{display:flex;flex-direction:column;gap:22px;padding:0 12px 8px;}
+.sheet-menu-section{margin:0;padding:13px 6px 10px;border:1px solid var(--line);border-radius:20px;
+  background:var(--bg2);box-shadow:0 5px 16px rgba(15,23,42,.045);}
+.sheet-menu-section-title{margin:0;padding:0 10px 13px;font-size:12px;font-weight:800;line-height:1.2;
+  letter-spacing:.04em;color:var(--muted);}
+.sheet-menu-section .sheet-grid{padding:0 2px 2px;gap:18px clamp(4px,1.8vw,10px);}
+.sheet-menu-section--settings .sheet-grid{width:min(210px,100%);margin-inline:auto;}
+.sheet-menu-section--settings{margin-bottom:2px;}
 /* セル全体がタップ領域。押し込みの拡縮は中身（.sheet-grid-inner）側に掛けて、
    セル自身の表示アニメーション（transform）と競合しないようにしている */
 .sheet-grid-item{display:block;width:100%;margin:0;padding:0;border:none;background:none;
@@ -541,6 +551,11 @@ h1.title.title--badge{margin:2px 0 0;}
 @media (prefers-reduced-motion:reduce){
   .sheet-grid-item{opacity:1;animation:none;}
   .sheet-grid-inner{transition:none;}
+}
+@media (max-width:360px){
+  .sheet-menu-groups{gap:18px;padding-inline:9px;}
+  .sheet-menu-section{padding-inline:4px;}
+  .sheet-menu-section .sheet-grid{gap:16px 3px;}
 }
 .launcher-icon-playground{--icon-a:#ecfeff;--icon-b:#a5f3fc;}
 .launcher-icon-scenario{--icon-a:#fff7ed;--icon-b:#fed7aa;}

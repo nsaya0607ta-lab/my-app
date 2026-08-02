@@ -4650,9 +4650,9 @@ function sheetGridItemHTML({ icon, label, key, variant, photo }, i){
 
 // 5列が基本だが、項目が5個未満のシート（学習＝4項目）で右側だけ空いて
 // 偏って見えないよう、項目数が5未満のときは列数をその数に合わせる
-function sheetGridHTML(items){
+function sheetGridHTML(items, itemOffset = 0){
   const cols = Math.min(5, items.length);
-  return `<div class="sheet-grid" style="--cols:${cols}">${items.map(sheetGridItemHTML).join("")}</div>`;
+  return `<div class="sheet-grid" style="--cols:${cols}">${items.map((item, i) => sheetGridItemHTML(item, itemOffset + i)).join("")}</div>`;
 }
 
 // タップ時の軽いHaptic Feedback。非対応ブラウザ（iOS Safari等）では
@@ -4661,21 +4661,51 @@ function sheetTapHaptic(){
   try{ navigator.vibrate && navigator.vibrate(10); }catch(e){}
 }
 
-const QUICK_MENU_ITEMS = [
-  { key: "news-japan", icon: quickMenuPhotoIconHTML("news-jp"), label: "J-NEWS", variant: "news-jp", photo: true },
-  { key: "news-world", icon: quickMenuPhotoIconHTML("news-world"), label: "F-NEWS", variant: "news-world", photo: true },
-  { key: "portfolio", icon: quickMenuPhotoIconHTML("stock"), label: "株価", variant: "stock", photo: true },
-  { key: "calendar", icon: quickMenuPhotoIconHTML("calendar"), label: "カレンダー", variant: "calendar", photo: true },
-  { key: "introquiz", icon: quickMenuPhotoIconHTML("introquiz"), label: "イントロドン", variant: "introquiz", photo: true },
-  { key: "lightpuzzle", icon: quickMenuPhotoIconHTML("lightpuzzle"), label: "ライト消しパズル", variant: "lightpuzzle", photo: true },
-  { key: "valuegame", icon: quickMenuPhotoIconHTML("valuegame"), label: "カードゲーム", variant: "valuegame", photo: true },
-  { key: "chappy", icon: quickMenuPhotoIconHTML("chappy"), label: "チャッピーハウス", variant: "chappy", photo: true },
-  { key: "settings", icon: quickMenuPhotoIconHTML("settings"), label: "設定", variant: "settings", photo: true },
-  { key: "rules", icon: quickMenuPhotoIconHTML("rules"), label: "ルール", variant: "rules", photo: true },
+const QUICK_MENU_GROUPS = [
+  {
+    key: "info",
+    label: "情報",
+    items: [
+      { key: "news-japan", icon: quickMenuPhotoIconHTML("news-jp"), label: "J-NEWS", variant: "news-jp", photo: true },
+      { key: "news-world", icon: quickMenuPhotoIconHTML("news-world"), label: "F-NEWS", variant: "news-world", photo: true },
+      { key: "portfolio", icon: quickMenuPhotoIconHTML("stock"), label: "株価", variant: "stock", photo: true },
+      { key: "calendar", icon: quickMenuPhotoIconHTML("calendar"), label: "カレンダー", variant: "calendar", photo: true },
+    ],
+  },
+  {
+    key: "entertainment",
+    label: "ゲーム・エンタメ",
+    items: [
+      { key: "introquiz", icon: quickMenuPhotoIconHTML("introquiz"), label: "イントロドン", variant: "introquiz", photo: true },
+      { key: "valuegame", icon: quickMenuPhotoIconHTML("valuegame"), label: "カードゲーム", variant: "valuegame", photo: true },
+      { key: "lightpuzzle", icon: quickMenuPhotoIconHTML("lightpuzzle"), label: "ライト消しパズル", variant: "lightpuzzle", photo: true },
+      { key: "chappy", icon: quickMenuPhotoIconHTML("chappy"), label: "チャッピーハウス", variant: "chappy", photo: true },
+    ],
+  },
+  {
+    key: "settings",
+    label: "設定",
+    items: [
+      { key: "settings", icon: quickMenuPhotoIconHTML("settings"), label: "設定", variant: "settings", photo: true },
+      { key: "rules", icon: quickMenuPhotoIconHTML("rules"), label: "ルール", variant: "rules", photo: true },
+    ],
+  },
 ];
 
+function quickMenuGroupsHTML(){
+  let itemOffset = 0;
+  return `<div class="sheet-menu-groups">${QUICK_MENU_GROUPS.map(group => {
+    const html = `<section class="sheet-menu-section sheet-menu-section--${group.key}" aria-label="${esc(group.label)}">
+      <h2 class="sheet-menu-section-title">${esc(group.label)}</h2>
+      ${sheetGridHTML(group.items, itemOffset)}
+    </section>`;
+    itemOffset += group.items.length;
+    return html;
+  }).join("")}</div>`;
+}
+
 export function openQuickMenuSheet(){
-  const ov = openSheet("各種機能", sheetGridHTML(QUICK_MENU_ITEMS));
+  const ov = openSheet("各種機能", quickMenuGroupsHTML());
   ov.querySelectorAll("[data-sheet-item]").forEach(b => b.onclick = () => {
     const key = b.dataset.sheetItem;
     sheetTapHaptic();
