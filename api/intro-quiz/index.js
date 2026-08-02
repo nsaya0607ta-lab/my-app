@@ -9,8 +9,9 @@ const { matchAnswer } = require("../_lib/textMatch");
 const { finalizeSession, SESSION_TTL_MS, MAX_ATTEMPTS_PER_SESSION } = require("../_lib/introQuizDaily");
 
 const MATCH_FIELDS = ["title", "titleKana", "titleRomaji", "titleEn"];
-// この類似度以上なら「もしかして」サジェストの対象にする（8割程度一致）
-const SUGGEST_THRESHOLD = 0.8;
+// 自動正解には届かないが、読みがある程度近い場合は確認を出す。
+// 音声認識の1〜2文字の聞き違いを救いつつ、短い別タイトルの誤正解は避ける。
+const SUGGEST_THRESHOLD = 0.65;
 
 // 「イントロドンに挑戦」ボタン（モード選択後）を押した直後に呼ばれる処理。
 // 出題モード（mode: "random" | "artist"）に応じてサーバー側で出題曲を1曲選び、
@@ -77,7 +78,15 @@ async function handleStart(req, res, uid, admin, body) {
 async function handleAnswer(req, res, uid, admin, body) {
   const sessionId = typeof body.sessionId === "string" ? body.sessionId.slice(0, 64) : "";
   const answerText = typeof body.answerText === "string" ? body.answerText.slice(0, 200) : "";
-  if (!sessionId || !answerText.trim()) {
+  const answerAlternatives = Array.isArray(body.answerAlternatives)
+    ? body.answerAlternatives
+      .filter((value) => typeof value === "string")
+      .slice(0, 8)
+      .map((value) => value.slice(0, 200).trim())
+      .filter(Boolean)
+    : [];
+  const answerTexts = Array.from(new Set([answerText.trim(), ...answerAlternatives].filter(Boolean)));
+  if (!sessionId || !answerTexts.length) {
     res.status(400).json({ error: "bad-request" });
     return;
   }
@@ -107,9 +116,16 @@ async function handleAnswer(req, res, uid, admin, body) {
       const candidates = MATCH_FIELDS
         .map((f) => ({ field: f, value: session.match && session.match[f] }))
         .filter((c) => c.value);
-      const match = matchAnswer(answerText, candidates);
+      // SpeechRecognitionは複数の変換候補を返す。先頭が誤った漢字でも、別候補の
+      // ひらがな・カタカナ読みが合っていれば正解にできるよう全候補を比較する。
+      const matches = answerTexts.map((text) => matchAnswer(text, candidates));
+      const match = matches.reduce((best, current) => {
+        if (current.exact !== best.exact) return current.exact ? current : best;
+        if (current.confident !== best.confident) return current.confident ? current : best;
+        return current.score > best.score ? current : best;
+      });
 
-      if (match.exact) {
+      if (match.exact || match.confident) {
         const fin = await finalizeSession(tx, db, { uid, sessionRef, correct: true });
         return {
           done: true, correct: true, bp: fin.reward.bp, ac: fin.reward.ac, capReached: fin.capReached,

@@ -176,8 +176,31 @@ function createRecognition({ lang = "ja-JP", interim = false, continuous = false
   rec.lang = lang;
   rec.interimResults = interim;
   rec.continuous = continuous;
-  rec.maxAlternatives = 3;
+  rec.maxAlternatives = 8;
   return rec;
+}
+
+let introSpeechPermission = "unknown"; // unknown | granted | denied | unsupported
+
+// iPhoneでは非同期処理の後から初めてマイクを開くと拒否されることがあるため、
+// 「ゲーム開始」という明確なユーザー操作の中で先に権限を確認しておく。
+// 権限が取れなくても手動の「はい！」と文字入力でゲームは続行できる。
+async function prepareIntroMicrophone() {
+  if (!speechSupported()) {
+    introSpeechPermission = "unsupported";
+    return introSpeechPermission;
+  }
+  if (!navigator.mediaDevices || typeof navigator.mediaDevices.getUserMedia !== "function") {
+    return introSpeechPermission;
+  }
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    stream.getTracks().forEach((track) => track.stop());
+    introSpeechPermission = "granted";
+  } catch (e) {
+    introSpeechPermission = "denied";
+  }
+  return introSpeechPermission;
 }
 
 // 同時に有効な音声認識セッションは常に1つだけ（「はい！」検知 → 曲名の聞き取り、
@@ -188,7 +211,7 @@ function stopActiveSpeech() {
   if (!activeSpeechRecognition) return;
   const rec = activeSpeechRecognition;
   activeSpeechRecognition = null;
-  rec.onresult = null; rec.onerror = null; rec.onend = null;
+  rec.onstart = null; rec.onresult = null; rec.onerror = null; rec.onend = null;
   try { rec.stop(); } catch (e) {}
   try { if (rec.abort) rec.abort(); } catch (e) {}
 }
@@ -210,13 +233,18 @@ function normalizeVoiceText(str) {
   return hira.replace(VOICE_STRIP_RE, "").trim();
 }
 
-// 「はい！」「ハイ！」「はい」「あ、はい」「はいはい」などの表記ゆれ・
-// 前後の余計な音（フィラーや助詞）を拾いこぼさないよう、先頭一致ではなく
-// 文中のどこかに「はい」が含まれていれば拾う（「はい」を聞き取れないという
-// 声が多かったため、判定はできるだけ緩めにしている）
+const BUZZ_WORD_VARIANTS = new Set(["はい", "はいはい", "はあい", "へい", "hey", "灰", "配", "肺", "牌"]);
+
+// 「はい！」をカナ・漢字・英語に誤変換した候補も拾う一方、歌詞の長い文章に
+// 「はい」が含まれただけでは反応しないよう短い発話だけに限定する。
 function isBuzzWord(text) {
   const n = normalizeVoiceText(text);
-  return !!n && n.includes("はい");
+  if (!n) return false;
+  // Web Speechは「はい」を「灰」「配」「肺」「hey」等に変換することがある。
+  // 曲中の歌詞による誤反応を避けるため、長い文章への部分一致は行わない。
+  if (BUZZ_WORD_VARIANTS.has(n)) return true;
+  const withoutFiller = n.replace(/^(?:あ|え|えっと|あの)+/, "");
+  return withoutFiller.length <= 4 && /^(?:はい|へい)(?:はい)?$/.test(withoutFiller);
 }
 
 // SpeechRecognitionはlang="ja-JP"だと同音異義語をIMEのように漢字へ自動変換して
@@ -234,6 +262,21 @@ function pickNonKanjiTranscript(result) {
     if (!KANJI_RE.test(t)) return t;
   }
   return fallback;
+}
+
+function collectTranscripts(result) {
+  const values = [];
+  for (let j = 0; j < result.length; j++) {
+    const text = result[j] && String(result[j].transcript || "").trim();
+    if (text && !values.includes(text)) values.push(text);
+  }
+  return values;
+}
+
+function transcriptForDisplay(result) {
+  const picked = pickNonKanjiTranscript(result);
+  if (!picked || KANJI_RE.test(picked)) return "ことばを確認しています…";
+  return normalizeVoiceText(picked) || "ことばを確認しています…";
 }
 
 // ヘッダー左上「← ホーム」。再生中の音を必ず止めてから画面を離れる
@@ -487,12 +530,18 @@ function renderSetupScreen(myGen) {
             <span class="iq-volume-pct" id="iq-volume-pct">${v}%</span>
           </div>
           <input type="range" id="iq-volume" class="iq-ios-slider" min="0" max="100" value="${v}" style="--val:${v}%" aria-label="音量">
+          <div class="iq-volume-warning" id="iq-volume-warning"${v === 0 ? "" : ' hidden'}>音量が0%です。曲を聴くには音量を上げてください。</div>
         </div>
       </div>
 
       <div class="iq-card">
         <div class="iq-card-title"><span class="iq-card-icon iq-card-icon--gray">${ICON_INFO}</span>遊び方</div>
-        <p class="iq-howto-text">イントロを聴いて曲名を当てましょう。日本語・英語・ローマ字入力に対応しています。</p>
+        <ol class="iq-howto-list">
+          <li>イントロを聴き、わかったら「はい！」と言います。</li>
+          <li>曲が止まったら、曲名をそのまま話します。</li>
+          <li>読みはひらがなに寄せ、少しの聞き違いも含めて判定します。</li>
+        </ol>
+        <p class="iq-voice-guide">最初の開始時にマイクの使用を「許可」してください。使えない場合も、画面のボタンと文字入力で遊べます。</p>
       </div>
 
       <div>
@@ -554,6 +603,7 @@ function renderSetupScreen(myGen) {
   function wireVolume() {
     const slider = app.querySelector("#iq-volume");
     const pct = app.querySelector("#iq-volume-pct");
+    const warning = app.querySelector("#iq-volume-warning");
     if (!slider) return;
     slider.oninput = () => {
       const val = parseInt(slider.value, 10) || 0;
@@ -561,6 +611,7 @@ function renderSetupScreen(myGen) {
       applyVolume(val);
       slider.style.setProperty("--val", val + "%");
       if (pct) pct.textContent = val + "%";
+      if (warning) warning.hidden = val !== 0;
     };
   }
 
@@ -665,12 +716,16 @@ function renderSetupScreen(myGen) {
     updateStartButtonState();
     const btn = app.querySelector("#iq-start-btn");
     if (!btn) return;
-    btn.onclick = () => {
+    btn.onclick = async () => {
       if (btn.disabled) return;
       const params = selectedMode === "artist" ? { mode: "artist", artist: selectedArtist } : { mode: "random" };
       lastStartParams = params;
       activePlaySeconds = playSeconds;
       activeTimeLimit = timeLimit;
+      btn.disabled = true;
+      btn.textContent = speechSupported() ? "マイクを確認中…" : "準備中…";
+      await prepareIntroMicrophone();
+      if (myGen !== renderGeneration) return;
       renderCard(loadingCardHTML("出題を準備しています…"));
       startQuiz(myGen, params);
     };
@@ -734,6 +789,8 @@ function renderQuizState(myGen, sessionId, videoId, startParams) {
   let fallbackPlayTimer2 = null;
   let playClipTimer = null;   // 「再生秒数」設定に応じた自動一時停止
   let roundTimeoutTimer = null; // 「制限時間」設定に応じた自動タイムアップ
+  let speechRestartTimer = null;
+  let answerStartTimer = null;
 
   function setGiveupEnabled(enabled) {
     if (giveupBtn) giveupBtn.disabled = !enabled;
@@ -847,17 +904,34 @@ function renderQuizState(myGen, sessionId, videoId, startParams) {
       </div>
       <div class="iq-live-waveform${paused ? " iq-live-waveform--idle" : ""}" aria-hidden="true">${bars}</div>
       <div class="iq-hint">曲がわかったら「はい！」と言ってね</div>
+      <div class="iq-mic-status" id="iq-mic-status">${speechSupported() && introSpeechPermission !== "denied"
+        ? "マイクで「はい！」を待っています"
+        : "音声が使えません。下のボタンで早押しできます"}</div>
       <button type="button" class="iq-buzz-btn" id="iq-buzz-btn">${ICON_HAND}<span>はい！</span></button>`;
     const btn = el.querySelector("#iq-buzz-btn");
     if (btn) btn.onclick = () => triggerBuzz();
   }
 
+  function updateMicStatus(message, isError) {
+    const el = app.querySelector("#iq-mic-status");
+    if (!el) return;
+    el.textContent = message;
+    el.classList.toggle("iq-mic-status--error", !!isError);
+  }
+
   function startBuzzListening() {
-    if (!speechSupported()) return;
+    if (!speechSupported() || introSpeechPermission === "denied") return;
+    if (speechRestartTimer) { clearTimeout(speechRestartTimer); speechRestartTimer = null; }
     const myListenGen = ++listenGen;
     const rec = createRecognition({ lang: "ja-JP", interim: true, continuous: true });
     if (!rec) return;
     activeSpeechRecognition = rec;
+    let canRestart = true;
+    rec.onstart = () => {
+      if (myGen === renderGeneration && myListenGen === listenGen) {
+        updateMicStatus("マイクで「はい！」を待っています", false);
+      }
+    };
     rec.onresult = (ev) => {
       if (myGen !== renderGeneration || myListenGen !== listenGen || buzzed) return;
       for (let i = ev.resultIndex; i < ev.results.length; i++) {
@@ -873,15 +947,28 @@ function renderQuizState(myGen, sessionId, videoId, startParams) {
       if (myGen !== renderGeneration || myListenGen !== listenGen) return;
       // マイク権限が無い等、続行不能なエラーだけ認識を諦める（無音などはonendで再開する）
       if (ev.error === "not-allowed" || ev.error === "service-not-allowed") {
-        try { rec.stop(); } catch (e) {}
+        canRestart = false;
+        introSpeechPermission = "denied";
+        updateMicStatus("マイクが許可されていません。下のボタンで早押しできます", true);
+      } else if (ev.error === "audio-capture" || ev.error === "network") {
+        canRestart = false;
+        updateMicStatus("音声認識を開始できません。下のボタンをご利用ください", true);
       }
     };
     rec.onend = () => {
       if (myGen !== renderGeneration || myListenGen !== listenGen || buzzed) return;
-      // ブラウザが一定時間で認識を打ち切ることがあるため、再生中はずっと聞き続ける
-      try { rec.start(); } catch (e) {}
+      if (activeSpeechRecognition === rec) activeSpeechRecognition = null;
+      if (!canRestart) return;
+      // iPhone Safariは終了直後に同じRecognitionをstartすると失敗するため、
+      // 少し待って新しいインスタンスで聞き直す。
+      speechRestartTimer = setTimeout(() => {
+        if (myGen === renderGeneration && phase === "playing" && !buzzed) startBuzzListening();
+      }, 320);
     };
-    try { rec.start(); } catch (e) {}
+    try { rec.start(); } catch (e) {
+      if (activeSpeechRecognition === rec) activeSpeechRecognition = null;
+      updateMicStatus("音声認識を開始できません。下のボタンをご利用ください", true);
+    }
   }
 
   // 「はい！」を検知（または手動ボタン）→ すぐに音楽を止めて回答受付状態へ
@@ -890,6 +977,7 @@ function renderQuizState(myGen, sessionId, videoId, startParams) {
     buzzed = true;
     if (playClipTimer) { clearTimeout(playClipTimer); playClipTimer = null; }
     if (roundTimeoutTimer) { clearTimeout(roundTimeoutTimer); roundTimeoutTimer = null; }
+    if (speechRestartTimer) { clearTimeout(speechRestartTimer); speechRestartTimer = null; }
     stopActiveSpeech();
     if (hiddenPlayer) { try { hiddenPlayer.pauseVideo(); } catch (e) {} }
     enterAnsweringPhase();
@@ -898,7 +986,15 @@ function renderQuizState(myGen, sessionId, videoId, startParams) {
   // 音楽停止後にのみ、曲名の音声認識を開始する
   function enterAnsweringPhase() {
     phase = "answering";
-    startAnswerListening();
+    const el = stage();
+    if (el) el.innerHTML = `
+      <div class="iq-feedback iq-feedback--good">「はい！」を認識しました</div>
+      <div class="iq-hint">曲名を話す準備をしています…</div>`;
+    // 早押し用Recognitionの終了を待ってから回答用を開始する。
+    answerStartTimer = setTimeout(() => {
+      answerStartTimer = null;
+      if (myGen === renderGeneration && phase === "answering" && !finished) startAnswerListening();
+    }, 360);
   }
 
   function renderAnsweringUI() {
@@ -912,7 +1008,8 @@ function renderQuizState(myGen, sessionId, videoId, startParams) {
       </div>
       <div class="iq-status-text" style="text-align:center;margin-bottom:14px">曲名を話してください</div>
       <div class="iq-waveform" aria-hidden="true"><span></span><span></span><span></span><span></span><span></span></div>
-      <div class="iq-live-transcript" id="iq-live-transcript">&nbsp;</div>`;
+      <div class="iq-live-transcript" id="iq-live-transcript" aria-live="polite">ききとり中…</div>
+      <button type="button" class="ghost iq-text-fallback-btn" id="iq-text-fallback">キーボードで入力する</button>`;
   }
 
   function updateLiveTranscript(text) {
@@ -923,7 +1020,10 @@ function renderQuizState(myGen, sessionId, videoId, startParams) {
   function startAnswerListening() {
     phase = "answering";
     renderAnsweringUI();
-    if (!speechSupported()) { renderTextFallbackForm(); return; }
+    const textFallbackBtn = app.querySelector("#iq-text-fallback");
+    if (textFallbackBtn) textFallbackBtn.onclick = () => renderTextFallbackForm();
+    if (!speechSupported()) { renderTextFallbackForm("このブラウザは音声認識に対応していません。曲名を入力してください。"); return; }
+    if (introSpeechPermission === "denied") { renderTextFallbackForm("マイクが許可されていません。曲名を入力してください。"); return; }
     const myListenGen = ++listenGen;
     const rec = createRecognition({ lang: "ja-JP", interim: true, continuous: false });
     if (!rec) { renderTextFallbackForm(); return; }
@@ -931,40 +1031,62 @@ function renderQuizState(myGen, sessionId, videoId, startParams) {
     let finalized = false;
     rec.onresult = (ev) => {
       if (myGen !== renderGeneration || myListenGen !== listenGen || finalized) return;
-      let interimText = "", finalText = "";
-      for (let i = ev.resultIndex; i < ev.results.length; i++) {
+      const finalGroups = [];
+      let interimResult = null;
+      for (let i = 0; i < ev.results.length; i++) {
         const r = ev.results[i];
-        const t = pickNonKanjiTranscript(r);
-        if (r.isFinal) finalText += t; else interimText += t;
+        if (r.isFinal) finalGroups.push(collectTranscripts(r));
+        else interimResult = r;
       }
-      updateLiveTranscript(finalText || interimText);
-      const text = finalText.trim();
-      if (text) {
+      if (finalGroups.length) {
+        const alternatives = [];
+        for (let alternativeIndex = 0; alternativeIndex < 8; alternativeIndex++) {
+          const phrase = finalGroups
+            .map((group) => group[alternativeIndex] || group[0] || "")
+            .join(" ").trim();
+          if (phrase && !alternatives.includes(phrase)) alternatives.push(phrase);
+        }
+        const text = alternatives.find((value) => !KANJI_RE.test(value)) || alternatives[0] || "";
+        updateLiveTranscript(text && !KANJI_RE.test(text) ? normalizeVoiceText(text) : "ことばを確認しています…");
+        if (!text) return;
         finalized = true;
         try { rec.stop(); } catch (e) {}
-        submitAnswer(text);
+        if (activeSpeechRecognition === rec) activeSpeechRecognition = null;
+        submitAnswer(text, alternatives);
+      } else if (interimResult) {
+        updateLiveTranscript(transcriptForDisplay(interimResult));
       }
     };
     rec.onerror = (ev) => {
       if (myGen !== renderGeneration || myListenGen !== listenGen || finalized) return;
       if (ev.error === "no-speech" || ev.error === "aborted") return; // onendでまとめて処理する
       finalized = true;
-      renderAnswerRetry();
+      if (activeSpeechRecognition === rec) activeSpeechRecognition = null;
+      if (ev.error === "not-allowed" || ev.error === "service-not-allowed") {
+        introSpeechPermission = "denied";
+        renderTextFallbackForm("マイクが許可されていません。曲名を入力してください。");
+      } else {
+        renderAnswerRetry("音声をうまく聞き取れませんでした");
+      }
     };
     rec.onend = () => {
       if (myGen !== renderGeneration || myListenGen !== listenGen || finalized) return;
       finalized = true;
+      if (activeSpeechRecognition === rec) activeSpeechRecognition = null;
       renderAnswerRetry(); // 音声が認識できなかった場合
     };
-    try { rec.start(); } catch (e) { renderAnswerRetry(); }
+    try { rec.start(); } catch (e) {
+      if (activeSpeechRecognition === rec) activeSpeechRecognition = null;
+      renderAnswerRetry("音声認識を開始できませんでした");
+    }
   }
 
-  function renderAnswerRetry() {
+  function renderAnswerRetry(message) {
     if (phase !== "answering" || finished) return;
     const el = stage();
     if (!el) return;
     el.innerHTML = `
-      <div class="iq-feedback">もう一度お願いします</div>
+      <div class="iq-feedback">${esc(message || "もう一度お願いします")}</div>
       <button type="button" class="iq-buzz-btn" id="iq-retry-listen">${ICON_MIC}<span>もう一度話す</span></button>
       <button type="button" class="ghost iq-text-fallback-btn" id="iq-text-fallback">キーボードで入力する</button>`;
     const retryBtn = el.querySelector("#iq-retry-listen");
@@ -1034,11 +1156,16 @@ function renderQuizState(myGen, sessionId, videoId, startParams) {
     setGiveupEnabled(!busy);
   }
 
-  async function submitAnswer(text) {
+  async function submitAnswer(text, alternatives) {
     setBusy(true);
     let data;
     try {
-      data = await postJSON("/api/intro-quiz", { action: "answer", sessionId, answerText: text });
+      data = await postJSON("/api/intro-quiz", {
+        action: "answer",
+        sessionId,
+        answerText: text,
+        answerAlternatives: Array.isArray(alternatives) ? alternatives.slice(0, 8) : [],
+      });
     } catch (e) {
       if (myGen !== renderGeneration) return;
       renderErrorState(myGen, "回答の送信に失敗しました。時間をおいて再度お試しください。", () => startQuiz(myGen, startParams));
@@ -1066,6 +1193,10 @@ function renderQuizState(myGen, sessionId, videoId, startParams) {
     if (finished || phase === "busy") return;
     if (playClipTimer) { clearTimeout(playClipTimer); playClipTimer = null; }
     if (roundTimeoutTimer) { clearTimeout(roundTimeoutTimer); roundTimeoutTimer = null; }
+    if (speechRestartTimer) { clearTimeout(speechRestartTimer); speechRestartTimer = null; }
+    if (answerStartTimer) { clearTimeout(answerStartTimer); answerStartTimer = null; }
+    listenGen++;
+    stopActiveSpeech();
     setBusy(true);
     let data;
     try {
