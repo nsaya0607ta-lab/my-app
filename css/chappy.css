@@ -28,6 +28,9 @@ body[data-theme="dark"], body[data-theme="galaxy"]{
 /* ===== 育成画面全体 ===== */
 .chp-screen{display:flex;flex-direction:column;gap:12px;}
 
+body.chp-modal-open{overflow:hidden!important;overscroll-behavior:none;}
+body.chp-modal-open .shell,body.chp-modal-open #bottom-nav{pointer-events:none;user-select:none;}
+
 .chp-head{display:flex;align-items:center;justify-content:space-between;gap:10px;
   background:var(--chp-card);border:1px solid var(--chp-line);border-radius:18px;
   padding:12px 14px;box-shadow:0 6px 16px rgba(124,199,240,.14);}
@@ -299,6 +302,18 @@ body[data-theme="dark"] .chp-window-frame, body[data-theme="galaxy"] .chp-window
 .chp-card{background:var(--chp-card);border:1px solid var(--chp-line);border-radius:20px;
   padding:16px;box-shadow:0 6px 16px rgba(124,199,240,.12);}
 .chp-stats{display:flex;flex-direction:column;gap:9px;}
+.chp-section-head{display:flex;align-items:flex-start;gap:10px;margin-bottom:2px;}
+.chp-section-head>span{display:flex;min-width:0;flex-direction:column;gap:2px;}
+.chp-section-head b{font-size:14px;font-weight:800;color:var(--chp-text);}
+.chp-section-head small{font-size:10.8px;font-weight:700;color:var(--chp-muted);line-height:1.45;}
+.chp-room-tip{display:flex;align-items:center;gap:9px;margin-top:-4px;padding:9px 12px;border:1px solid var(--chp-line);
+  border-radius:14px;background:var(--chp-card);color:var(--chp-text);}
+.chp-room-tip>span:first-child{flex:none;width:30px;height:30px;display:flex;align-items:center;justify-content:center;
+  border-radius:10px;background:var(--chp-pink);color:#a95673;}
+.chp-room-tip .ui-icon-svg{width:18px;height:18px;}
+.chp-room-tip>span:last-child{display:flex;min-width:0;flex-direction:column;gap:1px;}
+.chp-room-tip b{font-size:12.5px;font-weight:800;}
+.chp-room-tip small{font-size:10.5px;font-weight:700;color:var(--chp-muted);line-height:1.4;}
 .chp-stat-row{display:flex;align-items:center;gap:10px;}
 .chp-stat-lab{flex:none;width:100px;font-size:12.5px;font-weight:800;color:var(--chp-text);white-space:nowrap;}
 .chp-stat-track{flex:1;height:11px;border-radius:99px;background:var(--chp-cream);overflow:hidden;
@@ -333,13 +348,18 @@ body[data-theme="dark"] .chp-window-frame, body[data-theme="galaxy"] .chp-window
 
 /* ===== 操作ボタン（3列グリッド・押しやすい大きさ） ===== */
 .chp-actions{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;}
+.chp-action-section{display:flex;flex-direction:column;gap:10px;}
+.chp-action-section>.chp-section-head{margin-bottom:0;}
 .chp-action{position:relative;display:flex;flex-direction:column;align-items:center;gap:5px;
   min-height:74px;padding:12px 6px;border-radius:16px;cursor:pointer;
   background:var(--chp-cream);border:1px solid var(--chp-line);
   transition:transform .1s, filter .1s;}
 .chp-action:active{transform:scale(.94);filter:brightness(.97);}
-.chp-action-icon{font-size:24px;line-height:1;}
+.chp-action-icon{width:30px;height:30px;display:flex;align-items:center;justify-content:center;color:#3d87b2;}
+.chp-action-icon .ui-icon-svg{width:25px;height:25px;}
 .chp-action-label{font-size:12px;font-weight:800;color:var(--chp-text);}
+.chp-action-hint{font-size:9.5px;font-weight:700;color:var(--chp-muted);line-height:1.25;text-align:center;}
+.chp-actions--care .chp-action{min-height:88px;background:linear-gradient(180deg,var(--chp-cream),var(--chp-card));}
 .chp-action-badge{position:absolute;top:6px;right:6px;min-width:18px;height:18px;padding:0 5px;
   border-radius:99px;background:#f5738b;color:#fff;font-size:10.5px;font-weight:800;
   display:flex;align-items:center;justify-content:center;}
@@ -370,6 +390,8 @@ body[data-theme="dark"] .chp-window-frame, body[data-theme="galaxy"] .chp-window
   background:linear-gradient(90deg,var(--chp-sky),var(--chp-sky-deep));color:#1b3c55;
   font-size:13.5px;font-weight:800;transition:transform .1s;}
 .chp-modal-close:active{transform:scale(.97);}
+.chp-modal-attention{animation:chpModalAttention .24s ease;}
+@keyframes chpModalAttention{0%,100%{transform:translateX(0);}40%{transform:translateX(-4px);}70%{transform:translateX(4px);}}
 .chp-ghost{width:100%;margin-top:10px;padding:11px 0;border-radius:14px;cursor:pointer;
   background:var(--chp-cream);border:1px solid var(--chp-line);color:var(--chp-text);
   font-size:12.5px;font-weight:800;}
@@ -418,6 +440,7 @@ body[data-theme="dark"] .weather-chappy-btn, body[data-theme="galaxy"] .weather-
   .chp-char{width:152px;height:152px;}
   .chp-stat-lab{width:88px;font-size:11.5px;}
   .chp-actions{gap:8px;}
+  .chp-room-tip small{font-size:9.8px;}
   .chp-furni-ico{font-size:27px;}
   .chp-window{width:74px;height:84px;}
   .weather-card .weather-top--nochappy{grid-template-columns:minmax(44px,auto) minmax(0,1fr) minmax(0,1fr);}
@@ -442,4 +465,5 @@ body[data-theme="dark"] .weather-chappy-btn, body[data-theme="galaxy"] .weather-
   .chp-char{transition:none;}
   .chp-fx-item{animation:none;opacity:0;}
   .chp-bubble-show{animation:none;opacity:1;} /* 表示・非表示はJS側のタイマーが行う */
+  .chp-modal-attention{animation:none;}
 }

@@ -54,7 +54,6 @@ export function openChappyMissions(onChange){
   const body = ov.querySelector(".chp-sheet-body");
   const close = () => { try{ ov.remove(); }catch(e){} if(onChange) onChange(); };
   ov.querySelector(".chp-sheet-x").onclick = () => { playTapSound(); close(); };
-  ov.addEventListener("click", (e) => { if(e.target === ov) close(); });
 
   const render = () => {
     const list = chappyMissions();
@@ -139,7 +138,6 @@ export function openChappyBook(onChange){
   const body = ov.querySelector(".chp-sheet-body");
   const close = () => { try{ ov.remove(); }catch(e){} if(onChange) onChange(); };
   ov.querySelector(".chp-sheet-x").onclick = () => { playTapSound(); close(); };
-  ov.addEventListener("click", (e) => { if(e.target === ov) close(); });
 
   let tab = "record";
   const render = () => {

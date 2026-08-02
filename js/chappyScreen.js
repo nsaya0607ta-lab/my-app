@@ -28,7 +28,7 @@ import { openChappyMissions, openChappyBook } from './chappyBook.js';
 import { chappyInventorySummary, openChappyInventory } from './chappyInventory.js';
 import { openChappyGuide } from './chappyGuide.js';
 import { iconHTML } from './icons.js';
-import { startChappyLife, stopChappyLife, chappyLifeInterrupt, chappyPickLine } from './chappyLife.js';
+import { startChappyLife, stopChappyLife, chappyLifeInterrupt, chappyPickLine, setChappyLifeUiPaused } from './chappyLife.js';
 import {
   chappyAudioStart, chappyAudioStop, chappyAudioSwitch, chappyAudioProfileFor,
   chappyAudioIsPlaying, chappySfx,
@@ -119,6 +119,10 @@ let bubbleTimer = null;
 let lastPetTs = 0;
 let viewFloor = "f1";
 let teardownObserver = null;
+let chappyModalObserver = null;
+let activeChappyOverlay = null;
+let modalReturnFocus = null;
+let lockedBackgroundRoots = [];
 let audioTimer = null;
 
 function showBubble(text){
@@ -293,7 +297,6 @@ function openFoodModal(){
     if(!list || !list.contains(e.target) || list.scrollHeight <= list.clientHeight) e.preventDefault();
   }, { passive: false });
   ov.querySelector("#chp-food-close").onclick = () => { playTapSound(); closeChappyModal(ov); };
-  ov.addEventListener("click", (e) => { if(e.target === ov) closeChappyModal(ov); });
   ov.querySelectorAll("[data-food]").forEach(b => b.onclick = () => {
     const r = chappyFeed(b.dataset.food);
     const note = ov.querySelector("#chp-food-note");
@@ -338,7 +341,6 @@ function openCareModal(){
     </div>`;
   document.body.appendChild(ov);
   ov.querySelector("#chp-care-close").onclick = () => { playTapSound(); closeChappyModal(ov); };
-  ov.addEventListener("click", (e) => { if(e.target === ov) closeChappyModal(ov); });
   ov.querySelectorAll("[data-care]").forEach(b => b.onclick = () => {
     playTapSound();
     const r = chappyCare(b.dataset.care);
@@ -384,7 +386,6 @@ function openChappySettingsModal(){
     if(e.target.checked) startAudio(); else chappyAudioStop();
   };
   ov.querySelector("#chp-settings-close").onclick = () => { playTapSound(); closeChappyModal(ov); };
-  ov.addEventListener("click", (e) => { if(e.target === ov) closeChappyModal(ov); });
 }
 
 /* =========================================================================
@@ -415,6 +416,88 @@ function stopAudio(){
 }
 
 /* =========================================================================
+   チャッピー用モーダル：背面のタップ・スクロール・自律行動をまとめて止める
+   ========================================================================= */
+function chappyOverlays(){
+  return Array.from(document.body.children).filter(node => node.classList?.contains("modal-ov"));
+}
+
+function setChappyBackgroundLocked(locked){
+  if(locked){
+    if(!lockedBackgroundRoots.length){
+      lockedBackgroundRoots = [document.querySelector(".shell"), document.getElementById("bottom-nav")]
+        .filter(Boolean)
+        .map(node => ({ node, inert: !!node.inert }));
+    }
+    lockedBackgroundRoots.forEach(({ node }) => { node.inert = true; });
+    document.body.classList.add("chp-modal-open");
+    setChappyLifeUiPaused(true);
+    return;
+  }
+  lockedBackgroundRoots.forEach(({ node, inert }) => { node.inert = inert; });
+  lockedBackgroundRoots = [];
+  document.body.classList.remove("chp-modal-open");
+  setChappyLifeUiPaused(false);
+}
+
+function focusChappyOverlay(overlay){
+  requestAnimationFrame(() => {
+    if(!overlay?.isConnected) return;
+    const target = overlay.querySelector("[autofocus], .chp-sheet-x, .chp-modal-close, button");
+    if(target) target.focus({ preventScroll: true });
+  });
+}
+
+function syncChappyModalGuard(){
+  const overlays = chappyOverlays();
+  const nextOverlay = overlays[overlays.length - 1] || null;
+  if(nextOverlay === activeChappyOverlay) return;
+  if(nextOverlay && !activeChappyOverlay){
+    modalReturnFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    setChappyBackgroundLocked(true);
+  }
+  activeChappyOverlay = nextOverlay;
+  if(nextOverlay){
+    focusChappyOverlay(nextOverlay);
+    return;
+  }
+  setChappyBackgroundLocked(false);
+  if(modalReturnFocus?.isConnected) modalReturnFocus.focus({ preventScroll: true });
+  modalReturnFocus = null;
+}
+
+function blockChappyBackdrop(event){
+  if(!activeChappyOverlay || event.target !== activeChappyOverlay) return;
+  event.preventDefault();
+  event.stopImmediatePropagation();
+  if(event.type !== "click") return;
+  const panel = activeChappyOverlay.querySelector(".chp-sheet, .chp-modal");
+  if(!panel) return;
+  panel.classList.remove("chp-modal-attention");
+  void panel.offsetWidth;
+  panel.classList.add("chp-modal-attention");
+}
+
+function startChappyModalGuard(){
+  if(chappyModalObserver) return;
+  document.addEventListener("pointerdown", blockChappyBackdrop, true);
+  document.addEventListener("click", blockChappyBackdrop, true);
+  chappyModalObserver = new MutationObserver(syncChappyModalGuard);
+  chappyModalObserver.observe(document.body, { childList: true });
+  syncChappyModalGuard();
+}
+
+function stopChappyModalGuard(){
+  if(chappyModalObserver) chappyModalObserver.disconnect();
+  chappyModalObserver = null;
+  document.removeEventListener("pointerdown", blockChappyBackdrop, true);
+  document.removeEventListener("click", blockChappyBackdrop, true);
+  activeChappyOverlay = null;
+  setChappyBackgroundLocked(false);
+  modalReturnFocus = null;
+}
+
+/* =========================================================================
    画面を離れたときの後片付け（生活エンジン・BGM・タイマー）
    ========================================================================= */
 function watchTeardown(){
@@ -422,6 +505,7 @@ function watchTeardown(){
   teardownObserver = new MutationObserver(() => {
     if(document.getElementById("chp-room")) return;
     stopChappyLife();
+    stopChappyModalGuard();
     stopAudio();
     clearTimeout(bubbleTimer);
     teardownObserver.disconnect();
@@ -434,21 +518,32 @@ function watchTeardown(){
    操作ボタン
    ========================================================================= */
 const CHAPPY_ACTIONS = [
-  { key: "food",    label: "ごはん",   icon: "🍚" },
-  { key: "pet",     label: "なでる",   icon: "🤗" },
-  { key: "care",    label: "お世話",   icon: "🫧" },
-  { key: "dressup", label: "着せ替え", icon: "👕" },
-  { key: "room",    label: "模様がえ", icon: "🛋️" },
-  { key: "shop",    label: "ショップ", icon: "🛍️" },
-  { key: "gacha",   label: "ガチャ",   icon: "🎁" },
-  { key: "mission", label: "ミッション", icon: "🎯", badge: true },
-  { key: "book",    label: "図鑑",     icon: "📖" },
+  { key: "food",    label: "ごはん",   hint: "おなかを回復", icon: "bowl", group: "care" },
+  { key: "pet",     label: "なでる",   hint: "なかよしアップ", icon: "heart", group: "care" },
+  { key: "care",    label: "お世話",   hint: "状態を整える", icon: "sparkles", group: "care" },
+  { key: "dressup", label: "着せ替え", icon: "shirt", group: "collection" },
+  { key: "room",    label: "模様がえ", icon: "palette", group: "collection" },
+  { key: "shop",    label: "ショップ", icon: "cart", group: "collection" },
+  { key: "gacha",   label: "ガチャ",   icon: "ticket", group: "collection" },
+  { key: "mission", label: "ミッション", icon: "target", badge: true, group: "collection" },
+  { key: "book",    label: "図鑑",     icon: "book", group: "collection" },
 ];
+
+function chappyActionHTML(action, missionSummary){
+  return `<button type="button" class="chp-action" data-chp-action="${action.key}">
+    <span class="chp-action-icon" aria-hidden="true">${iconHTML(action.icon)}</span>
+    <span class="chp-action-label">${esc(action.label)}</span>
+    ${action.hint ? `<span class="chp-action-hint">${esc(action.hint)}</span>` : ""}
+    ${action.badge ? `<span class="chp-action-badge" id="chp-mission-badge"${missionSummary.claimable > 0 ? "" : " hidden"}>${missionSummary.claimable || ""}</span>` : ""}
+  </button>`;
+}
 
 /* =========================================================================
    画面本体
    ========================================================================= */
 export function renderChappyScreen(){
+  const sharedHeader = document.querySelector(".top");
+  if(sharedHeader) sharedHeader.style.display = "none";
   const st = getChappy();
   const stage = chappyStageForXp(st.xp);
   const nextStage = chappyNextStage(st.xp);
@@ -503,7 +598,7 @@ export function renderChappyScreen(){
       <div class="${chappyRoomClass(viewFloor)}" style="${chappyRoomStyleAttr(viewFloor)}" id="chp-room">
         ${chappyRoomLayersHTML(viewFloor)}
         <div class="chp-bubble" id="chp-bubble" hidden></div>
-        <button type="button" class="${charCls.join(" ")}" id="chp-char" aria-label="${CHAPPY_NAME}をなでる">
+        <button type="button" class="${charCls.join(" ")}" id="chp-char" aria-label="${CHAPPY_NAME}をなでる" aria-describedby="chp-room-tip">
           ${chappySVG(stage.key, eq)}
           <span class="chp-act-badge" aria-hidden="true"></span>
         </button>
@@ -514,8 +609,15 @@ export function renderChappyScreen(){
           <span>✨ おしゃれ ${chappyStyleScore(st)}</span>
         </div>
       </div>
+      <div class="chp-room-tip" id="chp-room-tip">
+        <span aria-hidden="true">${iconHTML("heart")}</span>
+        <span><b>タップでなでる</b><small>操作後はその場で反応し、しばらくすると自分で歩きます。</small></span>
+      </div>
 
       <div class="chp-card chp-stats">
+        <div class="chp-section-head">
+          <span><b>いまの状態</b><small>低くなった項目は「今日のお世話」で回復できます。</small></span>
+        </div>
         ${CHAPPY_CARE_STATS.map(def => statRowHTML(def, stats[def.key])).join("")}
         <div class="chp-xp-row">
           <div class="chp-xp-head">
@@ -539,14 +641,23 @@ export function renderChappyScreen(){
         <span class="chp-mission-strip-go">›</span>
       </button>
 
-      <div class="chp-card chp-actions">
-        ${CHAPPY_ACTIONS.map(a => `
-          <button type="button" class="chp-action" data-chp-action="${a.key}">
-            <span class="chp-action-icon">${a.icon}</span>
-            <span class="chp-action-label">${esc(a.label)}</span>
-            ${a.badge ? `<span class="chp-action-badge" id="chp-mission-badge"${ms.claimable > 0 ? "" : " hidden"}>${ms.claimable || ""}</span>` : ""}
-          </button>`).join("")}
-      </div>
+      <section class="chp-card chp-action-section" aria-labelledby="chp-care-title">
+        <div class="chp-section-head">
+          <span><b id="chp-care-title">今日のお世話</b><small>まずはここから。状態に合わせて選べます。</small></span>
+        </div>
+        <div class="chp-actions chp-actions--care">
+          ${CHAPPY_ACTIONS.filter(a => a.group === "care").map(a => chappyActionHTML(a, ms)).join("")}
+        </div>
+      </section>
+
+      <section class="chp-card chp-action-section" aria-labelledby="chp-collection-title">
+        <div class="chp-section-head">
+          <span><b id="chp-collection-title">楽しむ・集める</b><small>衣装や部屋、ショップなどのメニューです。</small></span>
+        </div>
+        <div class="chp-actions chp-actions--collection">
+          ${CHAPPY_ACTIONS.filter(a => a.group === "collection").map(a => chappyActionHTML(a, ms)).join("")}
+        </div>
+      </section>
 
       <div class="chp-meta">
         いっしょに ${st.totalDays}日目 ・ ${st.streak}日連続であそんでいます
@@ -554,6 +665,7 @@ export function renderChappyScreen(){
     </div>`;
 
   bindScreen();
+  startChappyModalGuard();
 
   // あいさつの吹き出し（時間帯・季節・お世話状況で出し分け）
   setTimeout(() => showBubble(greetLine(stats)), 500);
@@ -572,6 +684,7 @@ export function renderChappyScreen(){
     },
     onSecret: (secret) => handleSecret(secret),
   });
+  if(activeChappyOverlay) setChappyLifeUiPaused(true);
 
   watchTeardown();
   if(isChappyBgmOn()) startAudio();
@@ -647,7 +760,11 @@ function bindScreen(){
   if(char){
     char.onclick = doPet;
     let strokeArmed = false;
-    char.addEventListener("pointerdown", () => { strokeArmed = true; });
+    char.addEventListener("pointerdown", () => {
+      strokeArmed = true;
+      // click の成立を待たず、指が触れた時点で自律移動をその場に止める。
+      chappyLifeInterrupt();
+    });
     char.addEventListener("pointermove", (e) => {
       if(!strokeArmed || e.pressure === 0) return;
       doPet(); // 内部で400msのスロットルがかかる

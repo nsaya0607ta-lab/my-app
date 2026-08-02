@@ -20,14 +20,17 @@ import {
 const ACT_MIN_MS = 5200;      // 1つの行動を続ける最短時間
 const ACT_MAX_MS = 9000;      // 同上・最長
 const WALK_MS = 1100;         // 家具まで歩く時間（CSSのtransitionと合わせる）
+const INTERACTION_REST_MS = 4800; // ユーザー操作の直後に自律移動を始めないための休止時間
 const SECRET_INTERVAL_MS = 20000;
 const SECRET_LIFE_MS = 13000;
 
 let cfg = null;
 let actTimer = null;
+let walkTimer = null;
 let secretTimer = null;
 let running = false;
 let paused = false;
+let uiPaused = false;
 let currentActivity = null;
 let lastActivityId = null;
 
@@ -52,6 +55,7 @@ export function startChappyLife(config){
   cfg = config || {};
   running = true;
   paused = false;
+  uiPaused = false;
   document.addEventListener("visibilitychange", onVisibility);
   scheduleNext(1800);
   secretTimer = setInterval(rollSecret, SECRET_INTERVAL_MS);
@@ -60,23 +64,43 @@ export function startChappyLife(config){
 export function stopChappyLife(){
   running = false;
   clearTimeout(actTimer); actTimer = null;
+  clearTimeout(walkTimer); walkTimer = null;
   clearInterval(secretTimer); secretTimer = null;
   currentActivity = null;
+  uiPaused = false;
   document.removeEventListener("visibilitychange", onVisibility);
   cfg = null;
 }
 
 function onVisibility(){
   paused = document.visibilityState !== "visible";
-  if(!paused && running){ clearTimeout(actTimer); scheduleNext(1200); }
+  if(!paused && !uiPaused && running){ clearTimeout(actTimer); scheduleNext(1200); }
 }
 
 // なでる等の操作をした直後は、少しのあいだ自分の行動を中断してこちらを見る
 export function chappyLifeInterrupt(ms){
   if(!running) return;
+  freezeCharMotion();
   clearActivityClass();
   clearTimeout(actTimer);
-  scheduleNext(ms || 4000);
+  clearTimeout(walkTimer); walkTimer = null;
+  if(uiPaused) return;
+  scheduleNext(Math.max(INTERACTION_REST_MS, Number(ms) || 0));
+}
+
+// モーダル表示中は、背面で歩いたり状態を更新したりしない。
+export function setChappyLifeUiPaused(value){
+  const next = !!value;
+  if(uiPaused === next) return;
+  uiPaused = next;
+  clearTimeout(actTimer); actTimer = null;
+  clearTimeout(walkTimer); walkTimer = null;
+  if(uiPaused){
+    freezeCharMotion();
+    clearActivityClass();
+    return;
+  }
+  if(running && !paused) scheduleNext(INTERACTION_REST_MS);
 }
 
 export function chappyLifeCurrent(){ return currentActivity; }
@@ -138,11 +162,28 @@ function clearActivityClass(){
   char.removeAttribute("data-act");
 }
 
+function freezeCharMotion(){
+  const char = el(cfg && cfg.charId);
+  const room = el(cfg && cfg.roomId);
+  if(!char || !room || !char.classList.contains("chp-walking") || room.clientWidth <= 0) return;
+  const currentLeft = parseFloat(getComputedStyle(char).left);
+  if(!Number.isFinite(currentLeft)) return;
+  const x = Math.max(16, Math.min(84, currentLeft / room.clientWidth * 100));
+  char.style.transition = "none";
+  char.style.left = `${currentLeft}px`;
+  void char.offsetWidth;
+  char.style.setProperty("--chp-x", `${x.toFixed(1)}%`);
+  char.style.removeProperty("left");
+  void char.offsetWidth;
+  char.style.removeProperty("transition");
+}
+
 function step(){
   if(!running) return;
   const room = el(cfg && cfg.roomId);
   const char = el(cfg && cfg.charId);
   if(!room || !char){ stopChappyLife(); return; }
+  if(uiPaused) return;
   if(paused){ scheduleNext(4000); return; }
 
   const act = pickActivity();
@@ -163,7 +204,9 @@ function step(){
   char.classList.toggle("chp-flip", targetX < currentX(char));
   char.style.setProperty("--chp-x", `${targetX.toFixed(1)}%`);
 
-  setTimeout(() => {
+  clearTimeout(walkTimer);
+  walkTimer = setTimeout(() => {
+    walkTimer = null;
     if(!running || !el(cfg && cfg.charId)) return;
     const c = el(cfg.charId);
     c.classList.remove("chp-walking", "chp-flip");
@@ -225,7 +268,7 @@ export function chappyPickLine(act){
    一定時間で自然に消えるので、見逃してもストレスにならない。
    ========================================================================= */
 function rollSecret(){
-  if(!running || paused) return;
+  if(!running || paused || uiPaused) return;
   const room = el(cfg && cfg.roomId);
   if(!room) return;
   if(room.querySelector(".chp-secret")) return;   // 同時に2つは出さない
