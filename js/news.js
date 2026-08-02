@@ -6,6 +6,8 @@
    Firestoreへ問い合わせない（画面を行き来しても不要なAPIアクセスを増やさない）。
    ========================================================================= */
 
+import { state } from './state.js';
+
 const CACHE_TTL_MS = 5 * 60 * 1000; // 5分
 
 const store = {}; // category -> { items, error, fetchedAt, promise }
@@ -56,17 +58,66 @@ export function invalidateNewsCategory(category){
   entry(category).fetchedAt = 0;
 }
 
+export function invalidateAllNewsCategories(){
+  Object.keys(store).forEach(category => { entry(category).fetchedAt = 0; });
+}
+
 // 指定した日付（YYYY-MM-DD）のニュースだけを、登録の新しい順に返す。
 // ホームの予定カードで日付を前後させた際も、同じ日付のニュースへ連動させるための共通処理。
 export function newsForCategoryOnDate(category, dateKey, limit){
   const items = entry(category).items || [];
   const selected = items
     .filter(n => n.dateKey === dateKey)
-    .sort((a, b) => (b.createdAt || "").localeCompare(a.createdAt || ""));
+    .sort((a, b) => (b.publishedAt || b.createdAt || "").localeCompare(a.publishedAt || a.createdAt || ""));
   return typeof limit === "number" ? selected.slice(0, limit) : selected;
 }
 
 // 今日の日付のニュースだけを返す既存API。ニュース検定などの本日専用処理との互換性を保つ。
 export function todaysNewsForCategory(category, limit){
   return newsForCategoryOnDate(category, todayKey(), limit);
+}
+
+let newsSettingsCache = null;
+
+async function newsSyncRequest(action, extra = {}){
+  if(!state.currentUser){
+    const error = new Error("login-required");
+    error.code = "login-required";
+    throw error;
+  }
+  const token = await state.currentUser.getIdToken();
+  const response = await fetch("/api/news-sync", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+    body: JSON.stringify({ action, ...extra }),
+  });
+  let data = null;
+  try{ data = await response.json(); }catch(e){}
+  if(!response.ok){
+    const error = new Error((data && data.error) || `http-${response.status}`);
+    error.code = error.message;
+    error.result = data;
+    throw error;
+  }
+  return data;
+}
+
+export async function getNewsSyncSettings({ force = false } = {}){
+  if(newsSettingsCache && !force) return newsSettingsCache;
+  const data = await newsSyncRequest("status");
+  newsSettingsCache = data.settings;
+  return newsSettingsCache;
+}
+
+export async function saveNewsSyncSettings(settings){
+  const data = await newsSyncRequest("settings", { settings });
+  newsSettingsCache = data.settings;
+  return newsSettingsCache;
+}
+
+export async function triggerNewsFetch(){
+  const data = await newsSyncRequest("fetch");
+  if(data.settings) newsSettingsCache = data.settings;
+  invalidateAllNewsCategories();
+  return data;
 }
