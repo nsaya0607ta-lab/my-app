@@ -148,7 +148,6 @@ export function openChappyRoomEditor(onChange){
 
   const close = () => { try{ ov.remove(); }catch(e){} if(onChange) onChange(); };
   ov.querySelector(".chp-sheet-x").onclick = () => { playTapSound(); close(); };
-  ov.addEventListener("click", (e) => { if(e.target === ov) close(); });
 
   let tab = "furniture";
   const body = ov.querySelector("#chp-edit-body");
@@ -426,7 +425,6 @@ function openFurniturePicker(floorKey, slotId, onDone){
 
   const close = () => { try{ ov.remove(); }catch(e){} };
   ov.querySelector("#chp-pick-close").onclick = () => { playTapSound(); close(); };
-  ov.addEventListener("click", (e) => { if(e.target === ov) close(); });
   const rm = ov.querySelector("#chp-pick-remove");
   if(rm) rm.onclick = () => { playTapSound(); chappyRemoveFurniture(floorKey, slotId); close(); if(onDone) onDone(); };
   ov.querySelectorAll("[data-chp-pick]").forEach(b => b.onclick = () => {

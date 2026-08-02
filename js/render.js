@@ -202,7 +202,7 @@ function updateHeaderTitle(){
   const screen = resolveScreen();
   // 🃏 価値観ゲームは画面内に専用のヘッダー（戻る・ラウンド・ライフ）を持つ
   // フルスクリーンのゲーム画面なので、共通の見出しは出さず縦幅を譲る
-  if(screen === "select" || screen === "certs" || screen === "lpic-certs" || screen === "valuegame"){
+  if(screen === "select" || screen === "certs" || screen === "lpic-certs" || screen === "valuegame" || screen === "chappy"){
     topEl.style.display = "none";
     return;
   }
@@ -313,7 +313,9 @@ function renderScreen(){
   updateBottomNav();
   // 🎨 アプリ全体の背景スキンを body に適用（default のときは元の背景のまま）
   const sk = S.currentSkin || "default";
+  const keepChappyModalLock = document.body.classList.contains("chp-modal-open");
   document.body.className = (sk && sk!=="default") ? ("sb-theme-"+sk) : "";
+  if(keepChappyModalLock) document.body.classList.add("chp-modal-open");
   // ⚙️ 設定＞スキン設定のUIテーマ（配色）を body に適用
   applyUiTheme();
   // アカウントの認証ゲート（ゲストモードならスキップ）

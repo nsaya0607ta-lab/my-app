@@ -35,7 +35,6 @@ export function openChappyCloset(onChange){
 
   const close = () => { try{ ov.remove(); }catch(e){} if(onChange) onChange(); };
   ov.querySelector(".chp-sheet-x").onclick = () => { playTapSound(); close(); };
-  ov.addEventListener("click", (e) => { if(e.target === ov) close(); });
 
   let slot = "outfit";
   const body = ov.querySelector("#chp-closet-body");

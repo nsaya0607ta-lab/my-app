@@ -90,7 +90,6 @@ export function openChappyGuide({ onOpenInventory, onOpenMissions } = {}){
 
   const close = () => { try{ overlay.remove(); }catch(e){} };
   overlay.querySelector(".chp-sheet-x").onclick = () => { playTapSound(); close(); };
-  overlay.addEventListener("click", event => { if(event.target === overlay) close(); });
   overlay.querySelectorAll("[data-chp-guide-action]").forEach(button => button.onclick = () => {
     playTapSound();
     const action = button.dataset.chpGuideAction;

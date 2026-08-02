@@ -147,7 +147,6 @@ export function openChappyInventory(onClose){
   let activeTab = "all";
   const close = () => { try{ overlay.remove(); }catch(e){} if(onClose) onClose(); };
   overlay.querySelector(".chp-sheet-x").onclick = () => { playTapSound(); close(); };
-  overlay.addEventListener("click", event => { if(event.target === overlay) close(); });
 
   const render = () => {
     const state = getChappy();

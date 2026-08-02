@@ -39,7 +39,7 @@ const EXPAND     = "cubic-bezier(.34,.86,.28,1.03)"; // 一定の速さで広が
 /* 押した感触（縮小）と遷移の起点にする要素。main.js のタップ音と同じ範囲 */
 const PRESS_SEL = 'button,[role="button"],.cert-card,.link,.link2,.bp-link,[data-go],[data-nav],[data-mission],[data-pc],[data-mode],[data-practice],[data-review]';
 /* 押した感触を付けない要素（問題の選択肢・設定モーダル・入力欄） */
-const PRESS_SKIP_SEL = '.opt,.settings-modal,input,textarea,select';
+const PRESS_SKIP_SEL = '.opt,.settings-modal,input,textarea,select,.chp-char,.chp-furni,.chp-slot-empty,.chp-secret';
 /* 「ボタンを含むカード」を起点にするための候補 */
 const CARD_SEL = '[class*="card"],[class*="tile"],[class*="panel"],[class*="wrap"]';
 /* 遷移先で元の起点を探し直すための手がかりになる属性 */

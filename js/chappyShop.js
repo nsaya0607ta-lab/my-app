@@ -58,7 +58,6 @@ export function openChappyShop(onChange){
 
   const close = () => { try{ ov.remove(); }catch(e){} if(onChange) onChange(); };
   ov.querySelector(".chp-sheet-x").onclick = () => { playTapSound(); close(); };
-  ov.addEventListener("click", (e) => { if(e.target === ov) close(); });
 
   let tab = "furniture";
   const body = ov.querySelector("#chp-shop-body");
@@ -140,7 +139,6 @@ export function openChappyGacha(onChange){
 
   const close = () => { try{ ov.remove(); }catch(e){} if(onChange) onChange(); };
   ov.querySelector(".chp-sheet-x").onclick = () => { playTapSound(); close(); };
-  ov.addEventListener("click", (e) => { if(e.target === ov) close(); });
 
   const body = ov.querySelector("#chp-gacha-body");
   const render = () => {
@@ -238,5 +236,4 @@ function showGachaResult(result, onClose){
   document.body.appendChild(ov);
   const close = () => { try{ ov.remove(); }catch(e){} if(onClose) onClose(); };
   ov.querySelector("#chp-gacha-ok").onclick = () => { playTapSound(); close(); };
-  ov.addEventListener("click", (e) => { if(e.target === ov) close(); });
 }
