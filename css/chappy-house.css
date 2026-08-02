@@ -18,6 +18,8 @@
 .chp-sheet-head{display:flex;align-items:center;gap:10px;padding:8px 16px 10px;flex:none;
   border-bottom:1px solid var(--chp-line);}
 .chp-sheet-title{flex:1;min-width:0;font-size:15.5px;font-weight:800;color:var(--chp-text);}
+.chp-sheet-title--icon{display:flex;align-items:center;gap:7px;}
+.chp-sheet-title--icon .ui-icon-svg{width:20px;height:20px;color:#4b96c8;}
 .chp-sheet-coin{flex:none;font-size:12px;font-weight:800;color:#c99225;
   background:var(--chp-cream);border-radius:99px;padding:5px 11px;white-space:nowrap;}
 .chp-sheet-x{flex:none;width:34px;height:34px;border-radius:50%;cursor:pointer;
@@ -327,6 +329,89 @@ body[data-theme="dark"] .chp-rarity--n, body[data-theme="galaxy"] .chp-rarity--n
 .chp-empty{padding:28px 16px;text-align:center;font-size:12px;font-weight:700;
   color:var(--chp-muted);line-height:1.8;}
 
+/* =========================================================================
+   所持品
+   ========================================================================= */
+.chp-inv-summary{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:7px;}
+.chp-inv-summary>span{display:flex;flex-direction:column;align-items:center;gap:1px;padding:9px 3px;
+  border-radius:13px;background:var(--chp-cream);border:1px solid var(--chp-line);}
+.chp-inv-summary b{font-size:17px;font-weight:800;color:var(--chp-text);font-variant-numeric:tabular-nums;}
+.chp-inv-summary small{font-size:9px;font-weight:700;color:var(--chp-muted);}
+.chp-tabs .ui-icon-svg{width:15px;height:15px;}
+.chp-inv-panels{display:flex;flex-direction:column;gap:14px;}
+.chp-inv-section{display:flex;flex-direction:column;gap:7px;}
+.chp-inv-section-head{display:flex;align-items:center;justify-content:space-between;padding:0 2px 5px;
+  border-bottom:1px dashed var(--chp-line);font-size:12px;font-weight:800;color:var(--chp-text);}
+.chp-inv-section-head b{min-width:24px;text-align:center;border-radius:99px;padding:2px 7px;
+  background:var(--chp-sky);color:#285f82;font-size:10px;}
+.chp-inv-list{display:flex;flex-direction:column;gap:7px;}
+.chp-inv-card{display:flex;align-items:center;gap:10px;min-height:68px;padding:9px 10px;
+  border-radius:15px;background:var(--chp-cream);border:1px solid var(--chp-line);}
+.chp-inv-card--empty{opacity:.55;}
+.chp-inv-motif{flex:none;width:42px;height:42px;display:flex;align-items:center;justify-content:center;border-radius:13px;
+  color:#397da6;background:linear-gradient(145deg,#eaf7ff,#cdeafd);}
+.chp-inv-motif .ui-icon-svg{width:23px;height:23px;}
+.chp-inv-motif--wear{color:#9a5872;background:linear-gradient(145deg,#fff0f5,#fbd0da);}
+.chp-inv-motif--theme,.chp-inv-motif--decor{color:#8a6a2e;background:linear-gradient(145deg,#fff9ec,#ffe9bd);}
+.chp-inv-motif--background{color:#5373a9;background:linear-gradient(145deg,#f0f3ff,#d7e2ff);}
+.chp-inv-motif--ticket{color:#7b5aa6;background:linear-gradient(145deg,#f7f0ff,#e5d5fa);}
+.chp-inv-main{flex:1;min-width:0;display:flex;flex-direction:column;gap:2px;}
+.chp-inv-name{font-size:12px;font-weight:800;color:var(--chp-text);}
+.chp-inv-desc{font-size:9.8px;font-weight:600;color:var(--chp-muted);line-height:1.35;}
+.chp-inv-meta{display:flex;align-items:center;gap:5px;flex-wrap:wrap;margin-top:2px;}
+.chp-inv-group{font-size:9px;font-weight:700;color:var(--chp-muted);}
+.chp-inv-state{flex:none;align-self:flex-start;margin-top:2px;padding:4px 7px;border-radius:99px;
+  background:var(--chp-card);border:1px solid var(--chp-line);font-size:9.5px;font-weight:800;color:#4b96c8;white-space:nowrap;}
+.chp-inv-note{margin:0;padding:10px 12px;border-radius:13px;background:var(--chp-cream);border:1px dashed var(--chp-line);
+  font-size:10.5px;font-weight:700;color:var(--chp-muted);line-height:1.6;}
+
+/* =========================================================================
+   遊び方・ルールガイド
+   ========================================================================= */
+.chp-guide-hero{display:flex;align-items:center;gap:12px;padding:14px;border-radius:17px;
+  background:linear-gradient(135deg,#eaf7ff,#fff6e3);border:1px solid var(--chp-line);}
+.chp-guide-hero-icon{flex:none;width:46px;height:46px;border-radius:15px;display:flex;align-items:center;justify-content:center;
+  background:#fff;color:#4b96c8;box-shadow:0 4px 12px rgba(75,150,200,.12);}
+.chp-guide-hero-icon .ui-icon-svg{width:26px;height:26px;}
+.chp-guide-hero>span:last-child{display:flex;flex-direction:column;gap:3px;}
+.chp-guide-hero b{font-size:13px;font-weight:800;color:var(--chp-text);line-height:1.4;}
+.chp-guide-hero small{font-size:10.5px;font-weight:700;color:var(--chp-muted);line-height:1.5;}
+.chp-guide-next{padding:13px 14px;border-radius:16px;background:var(--chp-card);border:1.5px solid var(--chp-sky-deep);}
+.chp-guide-next-label{display:inline-block;margin-bottom:5px;padding:3px 8px;border-radius:99px;background:var(--chp-sky);
+  color:#285f82;font-size:9.5px;font-weight:800;}
+.chp-guide-next b{display:block;font-size:13px;font-weight:800;color:var(--chp-text);}
+.chp-guide-next p{margin:3px 0 0;font-size:10.5px;font-weight:700;color:var(--chp-muted);line-height:1.5;}
+.chp-guide-next-btn{margin-top:9px;padding:8px 12px;border:none;border-radius:11px;cursor:pointer;
+  background:#4b96c8;color:#fff;font-size:10.5px;font-weight:800;}
+.chp-guide-section-title{font-size:12px;font-weight:800;color:var(--chp-text);padding-bottom:5px;border-bottom:1px dashed var(--chp-line);}
+.chp-guide-steps{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:8px;}
+.chp-guide-steps li{display:grid;grid-template-columns:22px 36px 1fr;align-items:start;gap:8px;padding:10px;
+  border-radius:14px;background:var(--chp-cream);border:1px solid var(--chp-line);}
+.chp-guide-step-no{width:22px;height:22px;border-radius:50%;display:flex;align-items:center;justify-content:center;
+  background:#4b96c8;color:#fff;font-size:10px;font-weight:800;}
+.chp-guide-step-icon{width:34px;height:34px;border-radius:10px;display:flex;align-items:center;justify-content:center;
+  background:var(--chp-card);color:#4b96c8;}
+.chp-guide-step-icon .ui-icon-svg{width:19px;height:19px;}
+.chp-guide-steps li>span:last-child{display:flex;flex-direction:column;gap:2px;}
+.chp-guide-steps b{font-size:11.5px;font-weight:800;color:var(--chp-text);}
+.chp-guide-steps small{font-size:9.8px;font-weight:600;color:var(--chp-muted);line-height:1.5;}
+.chp-guide-stats{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:7px;margin:0;}
+.chp-guide-stats>div{padding:8px 10px;border-radius:12px;background:var(--chp-cream);border:1px solid var(--chp-line);}
+.chp-guide-stats dt{font-size:10.5px;font-weight:800;color:var(--chp-text);}
+.chp-guide-stats dd{margin:2px 0 0;font-size:9px;font-weight:600;color:var(--chp-muted);}
+.chp-guide-rules{display:flex;flex-direction:column;gap:7px;}
+.chp-guide-rules>div{display:flex;align-items:center;gap:9px;padding:9px 10px;border-radius:13px;
+  background:var(--chp-card);border:1px solid var(--chp-line);color:#4b96c8;}
+.chp-guide-rules .ui-icon-svg{flex:none;width:20px;height:20px;}
+.chp-guide-rules span{display:flex;flex-direction:column;gap:1px;}
+.chp-guide-rules b{font-size:10.8px;font-weight:800;color:var(--chp-text);}
+.chp-guide-rules small{font-size:9.3px;font-weight:600;color:var(--chp-muted);line-height:1.45;}
+.chp-guide-actions{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;}
+.chp-guide-actions button{min-height:44px;display:flex;align-items:center;justify-content:center;gap:6px;padding:9px;
+  border-radius:13px;cursor:pointer;background:var(--chp-sky);border:1px solid var(--chp-sky-deep);color:#285f82;
+  font-size:10.5px;font-weight:800;}
+.chp-guide-actions .ui-icon-svg{width:17px;height:17px;}
+
 @media (max-width:390px){
   .chp-shop-grid, .chp-item-grid{grid-template-columns:repeat(2,minmax(0,1fr));}
   .chp-item-grid--sm{grid-template-columns:repeat(3,minmax(0,1fr));}
@@ -334,6 +419,8 @@ body[data-theme="dark"] .chp-rarity--n, body[data-theme="galaxy"] .chp-rarity--n
   .chp-edit-preview{height:196px;}
   .chp-closet-char{width:96px;height:96px;}
   .chp-col-lab{width:96px;font-size:11px;}
+  .chp-inv-summary{gap:5px;}
+  .chp-inv-card{padding:8px;gap:8px;}
 }
 
 @media (prefers-reduced-motion: reduce){

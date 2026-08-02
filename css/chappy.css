@@ -43,6 +43,20 @@ body[data-theme="dark"] .chp-stage-badge, body[data-theme="galaxy"] .chp-stage-b
   box-shadow:0 2px 6px rgba(58,74,92,.08);transition:transform .12s;color:var(--chp-text);}
 .chp-gear:active{transform:scale(.9);}
 
+/* 遊び方・所持品への常設ショートカット */
+.chp-utility-row{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:9px;}
+.chp-utility-btn{min-height:58px;display:flex;align-items:center;gap:9px;width:100%;padding:9px 11px;
+  border-radius:16px;cursor:pointer;text-align:left;background:var(--chp-card);border:1px solid var(--chp-line);
+  color:var(--chp-text);box-shadow:0 4px 12px rgba(124,199,240,.1);transition:transform .1s,background .15s;}
+.chp-utility-btn:active{transform:scale(.97);background:var(--chp-cream);}
+.chp-utility-icon{flex:none;width:34px;height:34px;border-radius:11px;display:flex;align-items:center;justify-content:center;
+  background:var(--chp-sky);color:#2f7eaa;}
+.chp-utility-icon .ui-icon-svg{width:20px;height:20px;}
+.chp-utility-main{flex:1;min-width:0;display:flex;flex-direction:column;gap:1px;}
+.chp-utility-main b{font-size:12.5px;font-weight:800;}
+.chp-utility-main small{font-size:9.8px;font-weight:700;color:var(--chp-muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.chp-utility-arrow{flex:none;color:var(--chp-muted);font-size:20px;line-height:1;}
+
 /* 季節イベントの帯 */
 .chp-event-banner{background:linear-gradient(90deg,#ffe9f2,#eaf6ff);border:1px solid var(--chp-line);
   border-radius:14px;padding:9px 13px;font-size:12px;font-weight:700;color:#4b6a86;line-height:1.5;}

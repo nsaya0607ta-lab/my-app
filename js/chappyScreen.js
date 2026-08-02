@@ -25,6 +25,9 @@ import {
 import { openChappyShop, openChappyGacha } from './chappyShop.js';
 import { openChappyCloset } from './chappyCloset.js';
 import { openChappyMissions, openChappyBook } from './chappyBook.js';
+import { chappyInventorySummary, openChappyInventory } from './chappyInventory.js';
+import { openChappyGuide } from './chappyGuide.js';
+import { iconHTML } from './icons.js';
 import { startChappyLife, stopChappyLife, chappyLifeInterrupt, chappyPickLine } from './chappyLife.js';
 import {
   chappyAudioStart, chappyAudioStop, chappyAudioSwitch, chappyAudioProfileFor,
@@ -455,6 +458,7 @@ export function renderChappyScreen(){
   const ev = chappyCurrentEvent();
   const ms = chappyMissionSummary();
   const roomInfo = chappyRoomInfo();
+  const inventory = chappyInventorySummary(st);
   if(!chappyFloorUnlocked(viewFloor)) viewFloor = "f1";
   const floors = CHAPPY_FLOORS.filter(f => chappyFloorUnlocked(f.key));
   const charCls = ["chp-char", ...moodClasses(stats)];
@@ -473,6 +477,19 @@ export function renderChappyScreen(){
           <span class="chp-head-pill chp-head-pill-coin">🪙 <b id="chp-head-coin">${st.coins.toLocaleString()}</b></span>
           <button type="button" class="chp-gear" id="chp-settings" aria-label="チャッピーハウス設定">⚙️</button>
         </div>
+      </div>
+
+      <div class="chp-utility-row" aria-label="チャッピーハウスの案内">
+        <button type="button" class="chp-utility-btn" id="chp-guide-open">
+          <span class="chp-utility-icon" aria-hidden="true">${iconHTML("help")}</span>
+          <span class="chp-utility-main"><b>遊び方</b><small>ルールと育て方</small></span>
+          <span class="chp-utility-arrow" aria-hidden="true">›</span>
+        </button>
+        <button type="button" class="chp-utility-btn" id="chp-inventory-open">
+          <span class="chp-utility-icon" aria-hidden="true">${iconHTML("folder")}</span>
+          <span class="chp-utility-main"><b>所持品</b><small>${inventory.itemCount}点・券${inventory.ticketCount}枚</small></span>
+          <span class="chp-utility-arrow" aria-hidden="true">›</span>
+        </button>
       </div>
 
       ${ev ? `<div class="chp-event-banner">${ev.icon} <b>${esc(ev.name)}</b> かいさい中！ ${esc(ev.line)}</div>` : ""}
@@ -602,6 +619,19 @@ function bindScreen(){
   app.querySelectorAll("[data-go]").forEach(b => b.onclick = () => go(b.dataset.go));
   const gear = document.getElementById("chp-settings");
   if(gear) gear.onclick = () => { playTapSound(); openChappySettingsModal(); };
+  const inventoryButton = document.getElementById("chp-inventory-open");
+  if(inventoryButton) inventoryButton.onclick = () => {
+    playTapSound();
+    openChappyInventory(() => refreshAfterModal());
+  };
+  const guideButton = document.getElementById("chp-guide-open");
+  if(guideButton) guideButton.onclick = () => {
+    playTapSound();
+    openChappyGuide({
+      onOpenInventory: () => openChappyInventory(() => refreshAfterModal()),
+      onOpenMissions: () => openChappyMissions(() => refreshAfterModal()),
+    });
+  };
 
   app.querySelectorAll("[data-chp-viewfloor]").forEach(b => b.onclick = () => {
     playTapSound();
