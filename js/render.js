@@ -241,7 +241,12 @@ function updateBottomNav(){
   nav.classList.toggle("show", !gated);
   if(gated) return;
   const active = BNAV_TAB_BY_SCREEN[resolveScreen()] || "profile";
-  nav.querySelectorAll(".bnav-btn").forEach(b => b.classList.toggle("active", b.dataset.nav === active));
+  nav.querySelectorAll(".bnav-btn").forEach(b => {
+    const isActive = b.dataset.nav === active;
+    b.classList.toggle("active", isActive);
+    if(isActive) b.setAttribute("aria-current", "page");
+    else b.removeAttribute("aria-current");
+  });
 }
 
 // ⚙️ 設定モーダルの「スキン設定」で選んだUIテーマ（配色）を <body data-theme="..."> へ

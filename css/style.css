@@ -22,10 +22,12 @@
    （コピー／調べる／翻訳…）が独自の長押しメニュー（js/buttonColors.js）と
    二重に出てしまうのを防ぐため。入力欄やテキスト本文は下の
    input/textarea/[contenteditable]のルールで選択可能に戻す */
-*{box-sizing:border-box;-webkit-tap-highlight-color:transparent;touch-action:manipulation;
-  -webkit-touch-callout:none;-webkit-user-select:none;user-select:none;}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent;touch-action:manipulation;}
+button,[role="button"],nav,.no-select{
+  -webkit-touch-callout:none;-webkit-user-select:none;user-select:none;
+}
 html,body{margin:0;padding:0;}
-input, textarea, [contenteditable]{
+body,p,li,article,.rules-text,.news-today-title,.njp-detail-body,input,textarea,[contenteditable]{
   -webkit-touch-callout:default;-webkit-user-select:text;user-select:text;
 }
 /* iOS Safariはフォーカスした input/select/textarea の文字サイズが
@@ -39,14 +41,13 @@ body{
   background:radial-gradient(120% 90% at 50% -10%, #e0f2fe 0%, var(--bg) 65%) fixed;
   color:var(--text); min-height:100vh; -webkit-font-smoothing:antialiased;
 }
-/* 起動スプラッシュ：写真を画面いっぱい（フルブリード）に表示し、
-   3秒間表示した後にjs/main.jsからフェードアウトさせる（js/main.js参照） */
+/* 起動スプラッシュ：初回だけ短く表示し、再訪時やユーザー操作時はすぐ閉じる。 */
 .splash-screen{
   position:fixed; inset:0; z-index:3000;
   width:100vw; height:100dvh;
   background:#0a1626;
-  opacity:1; transition:opacity .6s ease;
-  overflow:hidden;
+  opacity:1; transition:opacity .26s ease;
+  overflow:hidden;pointer-events:none;
 }
 .splash-screen.splash-hide{opacity:0; pointer-events:none;}
 .splash-photo{
@@ -83,7 +84,7 @@ body{
 .bottom-nav.show{display:flex;}
 .bnav-btn{
   flex:1; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:3px;
-  background:none; border:none; padding:6px 2px; color:var(--muted); cursor:pointer;
+  min-height:48px;background:none; border:none; padding:6px 2px; color:var(--muted); cursor:pointer;
   transition:color .15s ease, transform .12s ease;
 }
 .bnav-btn:active{transform:scale(.92);}
@@ -106,12 +107,25 @@ h1.title.title--badge{margin:2px 0 0;}
 /* ヘッダー右上：ランキング／プロフィールへの小さな丸型ショートカット */
 .top-nav{display:flex;flex:none;gap:10px;padding-top:2px;}
 .hdr-icobtn{display:flex;flex-direction:column;align-items:center;gap:3px;background:none;border:none;padding:0;cursor:pointer;color:var(--text);}
-.hdr-icobtn-circle{width:40px;height:40px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:17px;line-height:1;background:var(--surface);border:1px solid var(--line);box-shadow:0 2px 6px rgba(15,23,42,.06);transition:transform .12s,box-shadow .12s;}
+.hdr-icobtn-circle{width:44px;height:44px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:19px;line-height:1;background:var(--surface);border:1px solid var(--line);box-shadow:0 2px 6px rgba(15,23,42,.06);transition:transform .12s,box-shadow .12s;}
 .hdr-icobtn:active .hdr-icobtn-circle{transform:scale(.9);box-shadow:0 1px 3px rgba(15,23,42,.08);}
 .hdr-icobtn-lab{font-size:9.5px;font-weight:700;color:var(--muted);letter-spacing:.01em;white-space:nowrap;}
 @media (max-width:360px){
-  .hdr-icobtn-circle{width:36px;height:36px;font-size:15px;}
+  .hdr-icobtn-circle{width:44px;height:44px;font-size:18px;}
   .hdr-icobtn-lab{font-size:9px;}
+}
+.ui-icon{display:inline-flex;align-items:center;justify-content:center;width:1.08em;height:1.08em;vertical-align:-.16em;color:currentColor;line-height:1;flex:none;}
+.ui-icon-svg{display:block;width:100%;height:100%;overflow:visible;}
+.hdr-icobtn-circle .ui-icon{width:21px;height:21px;color:var(--accent);}
+.stats-dash-ico .ui-icon{width:19px;height:19px;color:#fff;}
+.stat-tile-ico .ui-icon{width:14px;height:14px;}
+.settings-nav-icon .ui-icon,.settings-card-icon .ui-icon{width:21px;height:21px;color:var(--accent);}
+.weather-icon .ui-icon{width:1em;height:1em;}
+
+:where(button,a,input,select,textarea,[role="button"],[tabindex]):focus-visible{
+  outline:3px solid var(--accent);
+  outline:3px solid color-mix(in srgb,var(--accent) 58%,white);
+  outline-offset:3px;
 }
 .page{flex:1;animation:fade .35s ease;}
 
@@ -172,6 +186,9 @@ h1.title.title--badge{margin:2px 0 0;}
   .sb-coin b{font-size:14px;}
 }
 @keyframes fade{from{opacity:0;transform:translateY(8px);}to{opacity:1;transform:none;}}
+@media (prefers-reduced-motion:reduce){
+  *,*::before,*::after{animation-duration:.01ms!important;animation-iteration-count:1!important;scroll-behavior:auto!important;transition-duration:.01ms!important;}
+}
 .foot{margin-top:18px;font-size:11px;color:var(--muted);text-align:center;letter-spacing:.02em;}
 .empty,.loading{color:var(--muted);text-align:center;padding:50px 0;line-height:1.7;}
 
