@@ -91,7 +91,6 @@ export const CHAPPY_ACTIVITY_BY_ID = Object.fromEntries(CHAPPY_ACTIVITIES.map(a 
 export const CHAPPY_MISSION_DEFS = [
   { id: "m-login",     label: "アプリを開く",                metric: "login",        target: 1,  reward: { coins: 20, xp: 5 },  icon: "🌅", always: true },
   { id: "m-study30",   label: "30分学習する",                metric: "studyMinutes", target: 30, reward: { coins: 60, xp: 30 }, icon: "⏱️" },
-  { id: "m-study10",   label: "10分だけ学習する",            metric: "studyMinutes", target: 10, reward: { coins: 30, xp: 12 }, icon: "📗" },
   { id: "m-quiz",      label: "演習・試験を2回やりきる",     metric: "studySession", target: 2,  reward: { coins: 45, xp: 20 }, icon: "📝" },
   { id: "m-lpic",      label: "LPICの問題に10問正解する",    metric: "lpicCorrect",  target: 10, reward: { coins: 50, xp: 25 }, icon: "🐧" },
   { id: "m-azure",     label: "Azureの問題に10問正解する",   metric: "azureCorrect", target: 10, reward: { coins: 50, xp: 25 }, icon: "☁️" },
