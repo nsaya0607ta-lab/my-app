@@ -39,6 +39,7 @@ const ui = {
   ledgerAcct: null,   // 収支画面で表示中の口座ID
   ledgerFilter: 'all', // すべて/収入/支出/振替
   acctReorder: false,  // 口座の並び替えモード
+  expandedSections: new Set(), // 補足情報は必要なときに開く。再描画しても開閉状態を保つ。
 };
 
 // 口座の並び替え（配列順を上下に移動）
@@ -75,7 +76,7 @@ const ROUTES = {
   transfers: renderTransfers,
 };
 // 下部ナビにある主画面。これ以外（各種メニュー配下の詳細画面）には戻るボタンを出す。
-const PRIMARY_ROUTES = ['dashboard', 'transactions', 'cards', 'simulate', 'menu'];
+const PRIMARY_ROUTES = ['dashboard', 'transactions', 'simulate', 'menu'];
 const isSecondaryRoute = (r) => !PRIMARY_ROUTES.includes(r);
 const navStack = []; // アプリ内ナビゲーション履歴（画面遷移の実体はこの配列で管理）
 const scrollTop = () => window.scrollTo({ top: 0, behavior: 'instant' in window ? 'instant' : 'auto' });
@@ -142,8 +143,10 @@ function enhanceTapAccessibility(root) {
 function updateNav() {
   qs('#fc-nav')?.querySelectorAll('.fc-nav-btn').forEach((b) => {
     const r = b.dataset.route;
-    const active = r === ui.route || (r === 'menu' && ['accounts', 'pl', 'calendar', 'analysis', 'data', 'categories', 'recurring', 'transfers'].includes(ui.route));
+    const active = r === ui.route || (r === 'menu' && isSecondaryRoute(ui.route));
     b.classList.toggle('active', active);
+    if (active) b.setAttribute('aria-current', 'page');
+    else b.removeAttribute('aria-current');
   });
 }
 
@@ -161,6 +164,66 @@ function iconBtn(label, onClick, cls = '') {
   return el('button', { class: 'fc-icobtn ' + cls, type: 'button', onclick: onClick, text: label });
 }
 function pill(text, cls = '') { return el('span', { class: 'fc-pill ' + cls, text }); }
+
+// 同じ見た目・言葉で操作先と目的を伝える共通行。
+function actionRow(iconName, title, description, onClick) {
+  return el('button', { class: 'fc-action-row', type: 'button', onclick: onClick },
+    el('span', { class: 'fc-action-icon', html: iconHtml(iconName, { size: 21 }) }),
+    el('span', { class: 'fc-action-copy' },
+      el('span', { class: 'fc-action-title', text: title }),
+      el('span', { class: 'fc-action-description', text: description })),
+    el('span', { class: 'fc-link-arrow', html: iconHtml('chevronRight', { size: 17 }) }));
+}
+
+// 閉じている補足は描画・計算せず、開いた時点で内容を用意する。
+function disclosure(key, title, description, build) {
+  const details = el('details', { class: 'fc-disclosure' });
+  const content = el('div', { class: 'fc-disclosure-content' });
+  let built = false;
+  const populate = () => {
+    if (built) return;
+    content.append(build());
+    built = true;
+    enhanceTapAccessibility(content);
+  };
+  details.append(el('summary', {},
+    el('span', { class: 'fc-action-copy' },
+      el('span', { class: 'fc-action-title', text: title }),
+      el('span', { class: 'fc-action-description', text: description })),
+    el('span', { class: 'fc-disclosure-chevron', html: iconHtml('chevronDown', { size: 18 }) })), content);
+  if (ui.expandedSections.has(key)) { details.open = true; populate(); }
+  details.addEventListener('toggle', () => {
+    if (details.open) { ui.expandedSections.add(key); populate(); }
+    else ui.expandedSections.delete(key);
+  });
+  return details;
+}
+
+// 記録の入口をホーム・履歴で統一。カード利用を通常支出と区別して二重登録を防ぐ。
+function recordEntry(defaultAccountId) {
+  const st = S.getState();
+  if (!st.accounts.length) { accountForm(); return; }
+  const body = el('div', { class: 'fc-action-list' });
+  let sheet;
+  for (const [type, ic, title, description] of [
+    ['expense', 'receipt', '支出', '現金・口座から支払ったお金'],
+    ['income', 'plus', '収入', '給料など、受け取ったお金'],
+    ['transfer', 'swap', '口座間の移動', '銀行から財布・証券口座への振替'],
+    ['card', 'card', 'カード利用', '引落前のクレジットカードの支払い'],
+  ]) body.append(actionRow(ic, title, description, () => {
+    sheet.close();
+    if (type !== 'card') { txForm(null, type, defaultAccountId); return; }
+    if (!st.cards.length) { go('cards'); toast('先にカードと引落口座を登録してください', 'card'); }
+    else if (st.cards.length === 1) cardTxForm(st.cards[0]);
+    else {
+      let picker;
+      const list = el('div', { class: 'fc-action-list' }, ...st.cards.map((c) =>
+        actionRow('card', c.name, `引落口座：${S.findAccount(c.payAccountId)?.name || '未設定'}`, () => { picker.close(); cardTxForm(c); })));
+      picker = modal('利用したカードを選ぶ', list);
+    }
+  }));
+  sheet = modal('何を記録しますか？', body);
+}
 
 // iOS風の戻るボタン（画面タイトルの左に配置）
 function backBtn() {
@@ -428,22 +491,28 @@ function renderDashboard() {
   const st = S.getState();
   const secret = st.settings.secret;
   const total = C.totalAssets(st);
-  const disp = C.disposableAssets(st);
-  const reserved = C.reservedAssets(st);
   const cur = ym(new Date());
   const pl = C.monthlyPL(st, cur);
-  const byType = C.assetsByType(st);
-  const typeLabel = { cash: '現金', bank: '預金', securities: '証券', other: 'その他' };
-  const deltas = C.assetDeltas(st);
-  const trend = C.assetTrendSeries(st, 12);
   const wrap = el('div', { class: 'fc-view' });
+  wrap.append(pageHead('ホーム'));
+
+  if (!st.accounts.length) {
+    wrap.append(card(
+      el('div', { class: 'fc-welcome-icon', html: iconHtml('wallet', { size: 30 }) }),
+      el('h2', { class: 'fc-welcome-title', text: 'まずは口座を1つ登録' }),
+      el('p', { class: 'fc-page-description', text: '銀行口座や財布の残高を入れると、資金管理を始められます。' }),
+      btnIcon('primary block', 'plus', '口座を登録する', () => accountForm()),
+      el('p', { class: 'fc-note', text: '登録したあとは「記録する」から収入・支出を追加できます。' }),
+    ));
+    return wrap;
+  }
 
   // --- 合計資産ヒーロー ---
   const amountNode = el('div', { class: 'fc-hero-amount' + (secret ? ' masked' : ''), text: M(total) });
-  const linkArrow = (route) => el('span', { class: 'fc-link-arrow', html: iconHtml('chevronRight', { size: 15 }) });
-  const hero = el('div', { class: 'fc-hero tap', role: 'button', 'aria-label': '資産シミュレーションを開く', onclick: () => go('simulate') },
+  const linkArrow = () => el('span', { class: 'fc-link-arrow', html: iconHtml('chevronRight', { size: 15 }) });
+  const hero = el('div', { class: 'fc-hero' },
     el('div', { class: 'fc-hero-row' },
-      el('span', { class: 'fc-hero-lab' }, el('span', { text: '合計資産' }), el('span', { class: 'fc-hero-sim', html: iconHtml('trending', { size: 13 }) + '<span>シミュレーション</span>' + iconHtml('chevronRight', { size: 13 }) })),
+      el('span', { class: 'fc-hero-lab', text: '合計資産' }),
       el('button', {
         class: 'fc-secret', type: 'button', 'aria-label': 'シークレットモード',
         html: iconHtml(secret ? 'eyeOff' : 'eye', { size: 16 }) + `<span>${secret ? '表示' : '隠す'}</span>`,
@@ -451,24 +520,9 @@ function renderDashboard() {
       }),
     ),
     amountNode,
-    // 可処分資金（今すぐ自由に使える口座の残高）／ 投資・その他
-    st.accounts.length ? el('div', { class: 'fc-hero-split' },
-      el('div', { class: 'fc-hsplit' }, el('span', { class: 'fc-hsplit-lab', text: '可処分資金' }), el('span', { class: 'fc-hsplit-val', text: secret ? '＊＊＊' : yen(disp) })),
-      el('div', { class: 'fc-hsplit' }, el('span', { class: 'fc-hsplit-lab', text: '投資・その他' }), el('span', { class: 'fc-hsplit-val dim', text: secret ? '＊＊＊' : yen(reserved) })),
-    ) : '',
-    // 証券口座を保有している場合は「評価損益・利益率」を、なければ資産増減（昨日比・今月比・前年比）を表示
-    Sec.hasSecurities(st) ? heroProfit(st, secret) : el('div', { class: 'fc-delta-row' },
-      deltaChip('昨日比', deltas.yesterday, secret),
-      deltaChip('今月比', deltas.month, secret),
-      deltaChip('前年比', deltas.year, secret),
-    ),
-    // 残高推移スパークライン
-    !secret && trend.data.length > 1
-      ? el('div', { class: 'fc-hero-spark', html: lineChart(trend.data, { color: '#7db8ff', height: 60, width: 640, spark: true }) })
-      : '',
   );
   wrap.append(hero);
-  if (!secret) animateCount(amountNode, total);
+  wrap.append(btnIcon('primary block fc-record-button', 'plus', '記録する', () => recordEntry()));
 
   // ダッシュボードは 合計資産 / 口座一覧 / 今月の収支 / 次回引落予定 の4点に絞る。
 
@@ -481,7 +535,7 @@ function renderDashboard() {
       const rate = cost > 0 ? (profit / cost) * 100 : null;
       const cls = profit === 0 ? 'muted' : profit > 0 ? 'pos' : 'neg';
       sub = el('div', { class: 'fc-row-sub' }, el('span', { text: '評価損益 ' }),
-        el('span', { class: 'fc-valchg ' + cls, text: `${secret ? '＊＊' : yen(profit, { sign: profit > 0 })}${rate != null ? ` (${rate >= 0 ? '+' : ''}${rate.toFixed(2)}%)` : ''}` }));
+        el('span', { class: 'fc-valchg ' + cls, text: secret ? '＊＊' : `${yen(profit, { sign: profit > 0 })}${rate != null ? ` (${rate >= 0 ? '+' : ''}${rate.toFixed(2)}%)` : ''}` }));
     } else {
       sub = el('div', { class: 'fc-row-sub', text: '取引履歴を見る' });
     }
@@ -493,35 +547,20 @@ function renderDashboard() {
       el('span', { class: 'fc-link-arrow', html: iconHtml('chevronRight', { size: 16 }) }));
   };
   wrap.append(card(
-    sectionTitle('口座', el('button', { class: 'fc-link', type: 'button', onclick: () => go('accounts') }, '管理', linkArrow())),
+    sectionTitle('口座', el('button', { class: 'fc-link', type: 'button', onclick: () => go('accounts') }, '口座を管理', linkArrow())),
     st.accounts.length === 0
       ? el('button', { class: 'fc-btn ghost block', type: 'button', text: '口座を追加して残高を登録', onclick: () => accountForm() })
       : el('div', { class: 'fc-list' }, ...st.accounts.map(acctRow)),
   ));
 
-  // --- 今月の収支 ---
-  const mom = C.momChange(st, cur);
-  const sr = C.savingsRate(st, cur);
+  // 収入・支出・差額に絞り、比較や分析は詳細へ。
   wrap.append(card(
-    el('div', { class: 'fc-disp-head' },
-      el('span', { class: 'fc-disp-title', text: '今月の収支' }),
-      el('button', { class: 'fc-link', type: 'button', onclick: () => go('pl') }, '損益', linkArrow())),
-    el('div', { class: 'fc-disp-mainrow' },
-      el('div', { class: 'fc-disp-amount ' + (pl.disposable >= 0 ? 'pos' : 'neg'), text: secret ? '＊＊＊＊' : yen(pl.disposable, { sign: pl.disposable > 0 }) }),
-      sr != null ? el('div', { class: 'fc-savings' },
-        el('span', { class: 'fc-savings-lab', text: '貯蓄率' }),
-        el('span', { class: 'fc-savings-val', text: sr + '%' })) : '',
-    ),
-    el('div', { class: 'fc-disp-bars' },
-      miniBar('収入', pl.incomeTotal, Math.max(pl.incomeTotal, pl.expenseTotal, 1), 'var(--fc-pos)', mom.income.pct, secret),
-      miniBar('支出', pl.expenseTotal, Math.max(pl.incomeTotal, pl.expenseTotal, 1), 'var(--fc-neg)', mom.expense.pct, secret),
-    ),
+    sectionTitle('今月の収支', el('button', { class: 'fc-link', type: 'button', onclick: () => go('pl') }, '詳しく見る', linkArrow())),
+    el('div', { class: 'fc-month-summary' },
+      secBox('収入', M(pl.incomeTotal)),
+      secBox('支出', M(pl.expenseTotal)),
+      secBox('収支', secret ? '＊＊＊＊' : yen(pl.disposable, { sign: pl.disposable > 0 }))),
   ));
-
-  // --- 投資状況（証券口座を保有している場合のみ表示） ---
-  // 今月の収支（生活の収入・支出）とは明確に分けて表示する。投資の評価損益・利益率は
-  // 収支には一切含めず、この投資状況カードと証券口座画面・合計資産の内訳にのみ反映する。
-  if (Sec.hasSecurities(st)) wrap.append(renderInvestmentStatus(st, secret));
 
   // --- 次回引落予定 ---
   const upcoming = C.upcomingSettlements(st);
@@ -536,8 +575,23 @@ function renderDashboard() {
               el('div', { class: 'fc-row-sub', text: `${fmtDate(u.payISO)} 引落・${u.count}件` })),
             el('div', { class: 'fc-row-amt neg', text: secret ? '＊＊＊' : yen(u.amount) })))
         )
-      : el('p', { class: 'fc-empty', text: 'カード利用の登録がありません' }),
+      : el('p', { class: 'fc-empty', text: '引落予定はありません。カード利用は「記録する」から追加できます。' }),
   ));
+
+  wrap.append(disclosure('home-assets', '資産の内訳・投資状況', '口座の区分と投資の評価損益を見る', () => {
+    const detail = el('div', { class: 'fc-view' });
+    detail.append(card(
+      el('div', { class: 'fc-total-line' }, el('span', { text: '可処分資金' }), el('b', { text: M(C.disposableAssets(st)) })),
+      el('div', { class: 'fc-total-line' }, el('span', { text: '投資・その他' }), el('b', { text: M(C.reservedAssets(st)) }))));
+    if (Sec.hasSecurities(st)) detail.append(renderInvestmentStatus(st, secret));
+    const deltas = C.assetDeltas(st);
+    const trend = C.assetTrendSeries(st, 12);
+    detail.append(el('div', { class: 'fc-hero' },
+      sectionTitle('資産の増減'),
+      el('div', { class: 'fc-delta-row' }, deltaChip('昨日比', deltas.yesterday, secret), deltaChip('今月比', deltas.month, secret), deltaChip('前年比', deltas.year, secret)),
+      !secret && trend.data.length > 1 ? el('div', { class: 'fc-hero-spark', html: lineChart(trend.data, { color: '#7db8ff', height: 60, width: 640, spark: true }) }) : ''));
+    return detail;
+  }));
 
   // バックアップの控えめな案内: 口座があり、未実施 or 30日以上経過のときのみ表示。
   const days = daysSinceBackup(st);
@@ -914,8 +968,8 @@ function accountDeleteOptions(acc, u) {
 function renderTransactions() {
   const st = S.getState();
   const wrap = el('div', { class: 'fc-view' });
+  wrap.append(pageHead('履歴', st.accounts.length ? '記録する' : null, st.accounts.length ? () => recordEntry(ui.ledgerAcct) : null));
   if (!st.accounts.length) {
-    wrap.append(el('h1', { class: 'fc-page-title', text: '収支' }));
     wrap.append(card(
       el('p', { class: 'fc-empty', text: 'まず口座を追加してください。すべての取引（収入・支出・振替）は口座に紐付きます。' }),
       el('button', { class: 'fc-btn primary block', type: 'button', text: '口座を追加', onclick: () => accountForm() })));
@@ -935,7 +989,11 @@ function renderTransactions() {
 
   // 証券口座: 資産内訳・保有割合・保有銘柄一覧・積立・購入・履歴
   if (acc.type === 'securities') {
-    renderSecuritiesPanel(wrap, st, acc);
+    wrap.append(disclosure('holdings-' + acc.id, '保有銘柄・積立を管理', '評価額の更新・株式の購入・積立設定・投資履歴', () => {
+      const panel = el('div', { class: 'fc-view' });
+      renderSecuritiesPanel(panel, st, acc);
+      return panel;
+    }));
   }
 
   // 種別フィルター
@@ -945,8 +1003,7 @@ function renderTransactions() {
   wrap.append(chips);
 
   wrap.append(accountLedgerView(st, acc));
-  // 新規登録 FAB（表示中口座を初期値に）
-  wrap.append(fab(() => txForm(null, ui.ledgerFilter === 'transfer' || ui.ledgerFilter === 'income' ? ui.ledgerFilter : 'expense', acc.id)));
+  // 新規登録は画面上部の説明付きの入口へ統一。
   return wrap;
 }
 
@@ -1653,8 +1710,8 @@ function txForm(tx, initialType, defaultAccountId) {
   const st = S.getState();
   const lu = st.settings.lastUsed || {}; // 前回使用したカテゴリー・口座
   let type = tx?.type || initialType || 'expense';
-  // 支払/入金口座の初期値: 編集中の口座 > 前回使用 > 表示中口座 > 先頭
-  const defAcc = tx?.accountId || lu.account || defaultAccountId || st.accounts[0]?.id || '';
+  // 支払/入金口座の初期値: 編集中の口座 > 表示中口座 > 前回使用 > 先頭
+  const defAcc = tx?.accountId || defaultAccountId || lu.account || st.accounts[0]?.id || '';
   const otherAcc = st.accounts.find((a) => a.id !== defAcc)?.id || defAcc;
 
   // 種別セグメント（新規のみ振替を含む）
@@ -2094,11 +2151,13 @@ function renderSimulate() {
   const st = S.getState();
   const secret = st.settings.secret;
   const wrap = el('div', { class: 'fc-view' });
-  wrap.append(el('h1', { class: 'fc-page-title', text: '資産シミュレーション' }));
+  wrap.append(el('h1', { class: 'fc-page-title', text: '将来予測' }));
+
+  wrap.append(el('p', { class: 'fc-page-description', text: '登録済みの残高や毎月の収支から、将来の残高を確認できます。' }));
 
   // 収支シミュレーション / 投資将来予測 の切替(一元管理)
   const tabSeg = el('div', { class: 'fc-seg' });
-  for (const [v, l] of [['cashflow', '収支シミュレーション'], ['invest', '投資将来予測']])
+  for (const [v, l] of [['cashflow', '口座の残高予測'], ['invest', '投資の予測・試算']])
     tabSeg.append(el('button', { class: 'fc-seg-btn' + (ui.simTab === v ? ' on' : ''), type: 'button', text: l, onclick: () => { ui.simTab = v; render(); } }));
   wrap.append(tabSeg);
 
@@ -2136,13 +2195,13 @@ function renderSimulate() {
   ));
 
   // ② 将来の合計予想（時点別）。タップでその時点の口座別内訳を表示する。
-  wrap.append(simForecastCard(st, proj, secret));
+  if (shortages.length) wrap.append(simShortageCard(shortages, secret));
 
   // ③ 口座別の将来残高一覧
   wrap.append(simAccountCard(st, proj, k, secret));
 
   // ④ 資産構成比
-  wrap.append(simCompositionCard(proj, k, secret));
+  // 構成比と複数時点の比較は下の詳細から開く。
 
   // ⑤ 資産推移グラフ（合計）
   const totalChart = proj.series.slice(0, ui.simMonths + 1).map((p) => ({ label: p.label, value: p.total }));
@@ -2153,13 +2212,11 @@ function renderSimulate() {
   ));
 
   // ⑥ 口座別推移グラフ
-  wrap.append(simTrendCard(proj, secret));
+  wrap.append(disclosure('forecast-breakdown', '時期別・口座別に詳しく見る', '複数の時期の比較・資産構成比・口座別グラフ', () =>
+    el('div', { class: 'fc-view' }, simForecastCard(st, proj, secret), simCompositionCard(proj, k, secret), simTrendCard(proj, secret))));
 
-  // ⑦ 資金不足警告（口座単位）
-  if (shortages.length) wrap.append(simShortageCard(shortages, secret));
-
-  // ⑧ 前提条件
-  wrap.append(simAssumptionCard(st, proj));
+  // 前提条件は必要なときに開く。
+  wrap.append(disclosure('forecast-assumptions', '予測の条件を確認・変更', '固定収支・振替・積立など、計算に使う設定', () => simAssumptionCard(st, proj)));
 
   // 未払いカード
   if (st.cards.length) {
@@ -2910,17 +2967,14 @@ function renderFutureSim() {
   } else {
     // 詳細設定: 実際の設定に基づく将来予測（実績＋予測）の前提・分析ツール。
     wrap.append(futureConditionsCard(fs));
-    wrap.append(futureGoalsCard(st, fs));
-    wrap.append(futureEventsCard(fs));
-    wrap.append(futureDividendCard(st, fs));
-    wrap.append(futureStockPlansCard(st));
-    wrap.append(collapsible('sensitivity', '年利の感度分析', futureSensitivityCard(st, fs)));
-    wrap.append(collapsible('scenario', 'シナリオ（プラン）比較', futureCompareCard(st, fs)));
-    wrap.append(collapsible('datelookup', '資産推移を日付で確認', futureDateLookupCard(st, fs)));
-    wrap.append(futureMonteCarloCard(st, fs));
-    wrap.append(futurePlansCard(st, fs));
-    wrap.append(futureInsightsCard(st));
-    wrap.append(perfHistoryEntryCard(st)); // 投資実績履歴の編集への入口
+    const sections = [
+      ['goals', '目標・将来の予定', '目標金額や大きな出費の予定', () => el('div', { class: 'fc-view' }, futureGoalsCard(st, fs), futureEventsCard(fs))],
+      ['purchases', '配当・株式の購入予定', '配当の再投資や個別株の購入条件', () => el('div', { class: 'fc-view' }, futureDividendCard(st, fs), futureStockPlansCard(st))],
+      ['comparison', '条件を変えて比較', '年利・シナリオ比較・日付指定・確率による試算', () => el('div', { class: 'fc-view' }, futureSensitivityCard(st, fs), futureCompareCard(st, fs), futureDateLookupCard(st, fs), futureMonteCarloCard(st, fs))],
+      ['plans', 'プランの保存・投資実績', '保存した条件・参考分析・過去の実績修正', () => el('div', { class: 'fc-view' }, futurePlansCard(st, fs), futureInsightsCard(st), perfHistoryEntryCard(st))],
+    ];
+    for (const [key, title, description, build] of sections)
+      wrap.append(disclosure('invest-' + key, title, description, build));
   }
 
   wrap.append(el('p', { class: 'fc-note', text: '※「概要」「詳細設定」は登録済みの口座・保有銘柄・積立設定・購入予定から計算した実績と予測です。「投資シミュレーション」はシミュレーション画面で入力した条件だけで計算し、実際の残高・設定は変更しません。' }));
@@ -4364,29 +4418,33 @@ function renderAnalysis() {
 // ============ メニュー ============
 function renderMenu() {
   const wrap = el('div', { class: 'fc-view' });
-  wrap.append(el('h1', { class: 'fc-page-title', text: '各種機能' }));
-  const items = [
-    ['accounts', 'bank', '口座管理', '残高・可処分設定'],
-    ['transfers', 'swap', '振替履歴', '口座間の資産移動'],
-    ['pl', 'receipt', '損益計算書', '今月の収支'],
-    ['calendar', 'calendar', 'カレンダー', '給料日・引落日'],
-    ['analysis', 'pie', '分析', '支出割合・推移'],
-    ['recurring', 'repeat', '固定収支', '毎月の収入・支出'],
-    ['categories', 'tag', 'カテゴリー', '追加・編集・削除'],
-    ['data', 'database', 'データ管理', 'バックアップ・CSV'],
+  wrap.append(el('h1', { class: 'fc-page-title', text: 'メニュー' }));
+  const groups = [
+    ['口座・毎月の支払い', [
+      ['accounts', 'bank', '口座を管理', '口座の追加・残高の修正'],
+      ['cards', 'card', 'クレジットカード', 'カードの登録・利用履歴・引落日'],
+      ['recurring', 'repeat', '毎月の収入・支出', '給料や家賃などの固定収支'],
+      ['transfers', 'swap', '口座間の移動', '振替履歴・毎月の自動振替の設定'],
+    ]],
+    ['収支を振り返る', [
+      ['pl', 'receipt', '月ごとの収支', '収入と支出の内訳'],
+      ['calendar', 'calendar', 'カレンダー', '給料日・引落日の確認'],
+      ['analysis', 'pie', '支出の分析', 'カテゴリー別の割合や推移'],
+    ]],
+    ['データ・分類', [
+      ['data', 'database', 'バックアップ・データ管理', 'データの保存・復元・CSV入出力'],
+      ['categories', 'tag', 'カテゴリーを編集', '収入・支出の分類を追加・変更'],
+    ]],
   ];
-  const grid = el('div', { class: 'fc-menu-grid' });
-  for (const [route, ic, title, sub] of items)
-    grid.append(el('button', { class: 'fc-menu-tile', type: 'button', onclick: () => go(route) },
-      el('span', { class: 'fc-menu-ic', html: iconHtml(ic, { size: 22 }) }),
-      el('span', { class: 'fc-menu-title', text: title }),
-      el('span', { class: 'fc-menu-sub', text: sub })));
-  wrap.append(grid);
+  for (const [title, items] of groups) wrap.append(card(
+    sectionTitle(title),
+    el('div', { class: 'fc-action-list' }, ...items.map(([route, ic, label, sub]) =>
+      actionRow(ic, label, sub, () => go(route))))));
 
   // 設定
   const st = S.getState();
   const per = C.currentPeriod(st);
-  wrap.append(card(sectionTitle('設定'),
+  wrap.append(disclosure('menu-settings', '表示・集計の設定', 'テーマ・金額の表示・予算・管理期間', () => card(
     el('div', { class: 'fc-set-row' }, el('span', { text: '月の予算' }),
       el('button', { class: 'fc-link', type: 'button', text: yen(st.settings.monthlyBudget), onclick: () => budgetForm() })),
     el('div', { class: 'fc-set-row' }, el('span', {}, el('div', { text: '管理期間の開始日' }), el('div', { class: 'fc-set-sub', text: `${per.startDay}日始まり（${fmtDate(per.startISO).replace(/\(.\)/, '')}〜${fmtDate(per.endISO).replace(/\(.\)/, '')}）` })),
@@ -4394,7 +4452,7 @@ function renderMenu() {
     el('div', { class: 'fc-set-row' }, el('span', { text: 'テーマ' }), themeSeg()),
     el('div', { class: 'fc-set-row' }, el('span', { text: 'シークレットモード' }),
       toggle(st.settings.secret, () => { S.update((s) => { s.settings.secret = !s.settings.secret; }); render(); })),
-  ));
+  )));
   wrap.append(el('p', { class: 'fc-appfoot', text: '資産管理アプリ・データはこの端末内に保存されます' }));
   return wrap;
 }
@@ -4897,13 +4955,12 @@ function checkNotifications() {
 }
 
 function buildNav() {
-  const nav = el('nav', { id: 'fc-nav', class: 'fc-nav' });
+  const nav = el('nav', { id: 'fc-nav', class: 'fc-nav', 'aria-label': 'メインメニュー' });
   const items = [
     ['dashboard', 'ホーム', 'home'],
-    ['transactions', '収支', 'swap'],
-    ['cards', 'カード', 'card'],
-    ['simulate', '将来', 'trending'],
-    ['menu', '各種', 'grid'],
+    ['transactions', '履歴', 'list'],
+    ['simulate', '将来予測', 'trending'],
+    ['menu', 'メニュー', 'grid'],
   ];
   for (const [route, label, iconName] of items) {
     nav.append(el('button', {
